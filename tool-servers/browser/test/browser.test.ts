@@ -14,7 +14,13 @@ import {
   ToolGateway,
 } from '@lw/tool-gateway';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BrowserToolServer, isBlockedSubresource, isPrivateAddress } from '../src';
+import {
+  BrowserToolServer,
+  EgressProxy,
+  GuardedBrowser,
+  isBlockedSubresource,
+  isPrivateAddress,
+} from '../src';
 
 const SITE = fileURLToPath(new URL('./fixture-site', import.meta.url));
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
@@ -29,6 +35,7 @@ let http: Server;
 let origin: string;
 let blobDir: string;
 let browser: BrowserToolServer;
+let guarded: GuardedBrowser;
 
 beforeAll(async () => {
   http = createServer(async (req, res) => {
@@ -50,14 +57,17 @@ beforeAll(async () => {
   const addr = http.address();
   origin = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
   blobDir = await mkdtemp(join(tmpdir(), 'lw-blobs-'));
+  guarded = new GuardedBrowser({ allowPrivateNetworks: true });
   browser = new BrowserToolServer({
     policy: () => ({ allowedHosts: ['127.0.0.1'], allowPrivateNetworks: true }),
     blobs: new LocalBlobStore(blobDir),
+    browser: guarded,
   });
 }, 60_000);
 
 afterAll(async () => {
   await browser.close();
+  await guarded.close();
   await new Promise((r) => http.close(r));
 });
 
@@ -253,4 +263,55 @@ describe('through the tool gateway', () => {
       denied: 'not_allowed',
     });
   }, 60_000);
+});
+
+describe('egress proxy', () => {
+  const dns: Record<string, string[]> = {
+    'intranet.corp': ['10.0.0.5'],
+    'split.example': ['93.184.215.14', '169.254.169.254'],
+  };
+  const lookup = async (h: string) => dns[h] ?? [];
+
+  it('refuses hosts that resolve to private addresses, over HTTP and CONNECT', async () => {
+    const proxy = await EgressProxy.start({ lookup });
+    try {
+      const { request } = await import('node:http');
+      const send = (opts: object) =>
+        new Promise<number>((resolve, reject) => {
+          const req = request({ host: '127.0.0.1', port: new URL(proxy.url).port, ...opts });
+          req.on('response', (r) => resolve(r.statusCode!));
+          req.on('connect', (r, socket) => (socket.destroy(), resolve(r.statusCode!)));
+          req.on('error', reject);
+          req.end();
+        });
+      expect(await send({ method: 'GET', path: 'http://intranet.corp/secret' })).toBe(403);
+      expect(await send({ method: 'CONNECT', path: 'split.example:443' })).toBe(403);
+      expect(await send({ method: 'GET', path: `${origin}/` })).toBe(403);
+      expect(proxy.refused).toEqual(['intranet.corp', 'split.example', '127.0.0.1']);
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it('keeps a page from loading subresources on privately resolving names', async () => {
+    // The page asks for an image on a name the in-page check can't judge; the proxy can.
+    const proxy = await EgressProxy.start({
+      lookup: async (h) => (h === 'cdn.lan.example' ? ['192.168.1.20'] : []),
+      allowPrivateNetworks: false,
+    });
+    const { chromium } = await import('playwright-core');
+    const b = await chromium.launch({
+      executablePath: guarded.executablePath,
+      args: ['--no-sandbox', ...proxy.chromeFlags()],
+    });
+    try {
+      const page = await b.newPage();
+      await page.setContent('<img src="http://cdn.lan.example/pixel.png">');
+      await page.waitForLoadState('load');
+      expect(proxy.refused).toContain('cdn.lan.example');
+    } finally {
+      await b.close();
+      await proxy.close();
+    }
+  });
 });

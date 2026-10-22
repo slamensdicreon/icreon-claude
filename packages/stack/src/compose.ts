@@ -9,7 +9,7 @@ import {
 } from '@lw/orchestrator';
 import { Blueprint } from '@lw/plan';
 import type { Playbook } from '@lw/playbook-sdk';
-import { BrowserToolServer } from '@lw/tool-browser';
+import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
 import {
   LocalBlobStore,
   MemoryIdempotencyStore,
@@ -17,7 +17,13 @@ import {
   ToolGateway,
   type ToolServer,
 } from '@lw/tool-gateway';
-import { ArtifactLibrary, ArtifactsToolServer, BlackboardToolServer } from '@lw/tool-workspace';
+import { ValidatorsToolServer } from '@lw/tool-validators';
+import {
+  ArtifactLibrary,
+  ArtifactsToolServer,
+  BlackboardToolServer,
+  DecisionLogToolServer,
+} from '@lw/tool-workspace';
 
 export interface StackOptions {
   store: EventStore;
@@ -70,20 +76,21 @@ export function liveRoles(playbook: Playbook, servers: ToolServer[]): string[] {
 export async function composeStack(opts: StackOptions): Promise<Stack> {
   const blobs = new LocalBlobStore(join(opts.dataDir, 'blobs'));
   const library = new ArtifactLibrary(opts.store, blobs);
-  const browser = new BrowserToolServer({
-    blobs,
-    policy: (projectId) => {
-      const url = opts.projections.get(projectId)?.sourceUrl;
-      return {
-        allowedHosts: url ? [new URL(url).hostname] : [],
-        allowPrivateNetworks: opts.allowPrivateNetworks,
-      };
-    },
-  });
+  // One Chromium behind one egress proxy for every browser-driven server.
+  const chromium = new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });
+  const policy = (projectId: string): UrlPolicy => {
+    const url = opts.projections.get(projectId)?.sourceUrl;
+    return {
+      allowedHosts: url ? [new URL(url).hostname] : [],
+      allowPrivateNetworks: opts.allowPrivateNetworks,
+    };
+  };
   const servers: ToolServer[] = [
-    browser,
+    new BrowserToolServer({ blobs, policy, browser: chromium }),
+    new ValidatorsToolServer({ blobs, policy, browser: chromium }),
     new ArtifactsToolServer(library),
     new BlackboardToolServer(library),
+    new DecisionLogToolServer((id) => opts.projections.get(id)?.decisions ?? []),
     ...(opts.servers ?? []),
   ];
   const gateway = new ToolGateway({
@@ -132,7 +139,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       )
     : base;
 
-  return { activities, liveRoles: live, gateway, library, close: () => browser.close() };
+  return { activities, liveRoles: live, gateway, library, close: () => chromium.close() };
 }
 
 /** What every agent is told about the project: its source site and the documents so far. */

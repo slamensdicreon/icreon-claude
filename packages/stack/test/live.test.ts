@@ -146,6 +146,44 @@ function scriptedClaude(sourceUrl: () => string): ModelClient & { roles: string[
         }
         return msg([submit('Blueprint v1 maps every crawled page to the Content Page template.')]);
       }
+      if (role.includes('Visual QA')) {
+        if (turn === 1)
+          return msg([
+            call('browser__screenshot', { url: `${sourceUrl()}/`, breakpoints: ['desktop'] }),
+          ]);
+        if (turn === 3) {
+          const ref = lastResult(params).shots[0].ref as string;
+          return msg([call('validators__visual_diff', { baseline: ref, candidate: ref })]);
+        }
+        const d = lastResult(params) as { mismatchPercent: number };
+        return msg([submit(`Home matches at desktop: ${d.mismatchPercent}% of pixels differ.`)]);
+      }
+      if (role.includes('Performance and Accessibility QA')) {
+        if (turn === 1) return msg([call('validators__axe_run', { url: `${sourceUrl()}/` })]);
+        const v = lastResult(params).content.violations as unknown[];
+        return msg([submit(`axe found ${v.length} rule violations on the home page.`)]);
+      }
+      if (role.includes('Handover Writer')) {
+        if (turn === 1) return msg([call('decision-log__read', {})]);
+        if (turn === 3) {
+          const { decisions } = lastResult(params).content as {
+            decisions: { question: string; answer: string }[];
+          };
+          return msg([
+            call('artifacts__write', {
+              artifactId: 'handover-pack',
+              kind: 'handover_pack',
+              title: 'Handover pack',
+              format: 'markdown',
+              content: [
+                '# Decision register',
+                ...decisions.map((d) => `- ${d.question}: ${d.answer}`),
+              ].join('\n'),
+            }),
+          ]);
+        }
+        return msg([submit('Handover pack written.')]);
+      }
       return msg([submit('ok')]);
     },
   };
@@ -159,7 +197,7 @@ afterAll(async () => {
   await env?.teardown();
 });
 
-it('runs a live Content Analyst and Solution Architect whose crawl becomes the plan', async () => {
+it('runs every role whose tools exist on live agents: the crawl becomes the plan, QA checks run, the handover quotes the Decision Log', async () => {
   env = await TestWorkflowEnvironment.createTimeSkipping();
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
@@ -175,7 +213,13 @@ it('runs a live Content Analyst and Solution Architect whose crawl becomes the p
     model: claude,
     allowPrivateNetworks: true,
   });
-  expect(stack.liveRoles.sort()).toEqual(['content-analyst', 'solution-architect']);
+  expect(stack.liveRoles.sort()).toEqual([
+    'content-analyst',
+    'handover-writer',
+    'perf-a11y-qa',
+    'solution-architect',
+    'visual-qa',
+  ]);
   // Connected servers are not enough: Editor Experience QA's Page builder operations don't exist yet.
   expect(liveRoles(playbook, [])).toEqual([]);
 
@@ -272,10 +316,26 @@ it('runs a live Content Analyst and Solution Architect whose crawl becomes the p
   );
   expect(plan(s).tasks.every((t) => t.state === 'done')).toBe(true);
 
+  // QA ran real checks; the handover pack quotes the Decision Log.
+  const op = (server: string, operation: string) =>
+    steps.filter((e) => e.data.toolServer === server && e.data.operation === operation);
+  expect(op('validators', 'visual.diff').map((e) => e.data.summary)).toEqual([
+    'Visual match: 0% of pixels differ (tolerance 0.5%)',
+    'Visual match: 0% of pixels differ (tolerance 0.5%)',
+  ]);
+  expect(op('validators', 'axe.run')).toHaveLength(1);
+  expect(op('decision-log', 'read')[0]!.data.resultCode).toBe(200);
+  expect(s.artifacts['handover-pack']).toMatchObject({ kind: 'handover_pack', latest: 1 });
+  const pack = await stack.library.read('p1', 'handover-pack');
+  expect(pack!.content).toMatch(/^# Decision register\n- /);
+
   // Only the live roles called the model.
   expect([...new Set(claude.roles)].sort()).toEqual([
     'Your role: Content Analyst.',
+    'Your role: Handover Writer.',
+    'Your role: Performance and Accessibility QA.',
     'Your role: Solution Architect.',
+    'Your role: Visual QA.',
   ]);
 
   const last = new Map<string, string>();

@@ -53,8 +53,9 @@ The Control Center calls `GET /auth/me` to know who is signed in, sends people t
 | `packages/tool-gateway`          | Policy enforcement point for every agent tool call: grants, scopes, credentials, audit  |
 | `packages/agent-runtime`         | Agent loop on the Claude Messages API: tools via the gateway, caching, budgets          |
 | `packages/stack`                 | Composition root: tool servers behind the gateway, live agents where tools exist        |
-| `tool-servers/browser`           | Crawl, page snapshots, screenshots at 3 breakpoints, asset fetch; SSRF-guarded          |
-| `tool-servers/workspace`         | Versioned project documents (artifacts) and the Blueprint blackboard                    |
+| `tool-servers/browser`           | Crawl, snapshots, screenshots at 3 breakpoints, asset fetch; egress proxy blocks SSRF   |
+| `tool-servers/validators`        | axe-core, Lighthouse and screenshot pixel diff for the QA roles                         |
+| `tool-servers/workspace`         | Versioned project documents (artifacts), the Blueprint blackboard, the Decision Log     |
 | `packages/playbook-sdk`          | Schema, loader and validator for playbooks                                              |
 | `packages/simulator`             | Scripted engagements for UI work and demos                                              |
 | `playbooks/sitecoreai-migration` | Playbook #1: 11 phases, 2 Director gates, 24 roles, task templates, demo fixtures       |

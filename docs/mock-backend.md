@@ -37,8 +37,10 @@ playbook, Gate 1 expands it from the example Blueprint, and directives re-plan f
 - **One project to start.** Create more with `POST /projects {"name": "...", "client": "...", "sourceUrl": "https://..."}`.
 - **Real agents, where their tools exist.** With `AGENTS=claude` and `ANTHROPIC_API_KEY` set, the
   roles whose tools are all connected run on Claude: today the Content Analyst (crawls
-  `sourceUrl`, writes the page inventory) and the Solution Architect (writes the Blueprint that
-  Gate 1 expands the plan from). Every other role stays a stub until its tool servers land. The
+  `sourceUrl`, writes the page inventory), the Solution Architect (writes the Blueprint that
+  Gate 1 expands the plan from), Visual QA (screenshots and pixel diffs), Performance and
+  Accessibility QA (axe and Lighthouse) and the Handover Writer (reads the Decision Log, writes
+  the handover pack). QA can only reach the source site's host until preview deployments exist. Every other role stays a stub until its tool servers land. The
   startup log names the live roles.
 
 ## Data shapes

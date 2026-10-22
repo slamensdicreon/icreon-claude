@@ -1,23 +1,16 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/tool-gateway';
-import { chromium, type Browser, type BrowserContext } from 'playwright-core';
+import type { BrowserContext } from 'playwright-core';
+import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
 import { extractPage, type PageExtract } from './extract';
-import { assertNavigable, BlockedUrlError, isBlockedSubresource, type UrlPolicy } from './ssrf';
-
-export const BREAKPOINTS = {
-  desktop: { width: 1440, height: 900 },
-  tablet: { width: 834, height: 1112 },
-  phone: { width: 390, height: 844 },
-} as const;
-type Breakpoint = keyof typeof BREAKPOINTS;
+import { assertNavigable, BlockedUrlError, type UrlPolicy } from './ssrf';
 
 export interface BrowserServerOptions {
   /** Source-site hosts per project; the browser goes nowhere else. */
   policy: (projectId: string) => UrlPolicy;
   blobs: BlobStore;
-  /** Defaults to CHROMIUM_PATH, then the image's pre-installed Chromium. */
-  executablePath?: string;
+  /** Shared with other browser-driven servers; one is launched if not given. */
+  browser?: GuardedBrowser;
   navigationTimeoutMs?: number;
 }
 
@@ -84,17 +77,24 @@ const CATALOG: OperationCatalog = {
 export class BrowserToolServer implements ToolServer {
   readonly name = 'browser';
   readonly catalog = CATALOG;
-  private browser: Promise<Browser> | null = null;
+  private readonly browser: GuardedBrowser;
+  private readonly ownsBrowser: boolean;
 
-  constructor(private readonly opts: BrowserServerOptions) {}
+  constructor(private readonly opts: BrowserServerOptions) {
+    this.ownsBrowser = !opts.browser;
+    this.browser = opts.browser ?? new GuardedBrowser();
+  }
 
   target(projectId: string): string {
     return this.opts.policy(projectId).allowedHosts[0] ?? projectId;
   }
 
   async close(): Promise<void> {
-    if (this.browser) await (await this.browser).close();
-    this.browser = null;
+    if (this.ownsBrowser) await this.browser.close();
+  }
+
+  private withPage<T>(policy: UrlPolicy, fn: (context: BrowserContext) => Promise<T>) {
+    return this.browser.withContext(policy, fn);
   }
 
   async call(
@@ -132,44 +132,6 @@ export class BrowserToolServer implements ToolServer {
       if (err instanceof BlockedUrlError)
         return { code: 403, body: { error: err.message }, summary: `Blocked: ${err.message}` };
       throw err;
-    }
-  }
-
-  private launch(): Promise<Browser> {
-    this.browser ??= chromium.launch({
-      executablePath:
-        this.opts.executablePath ??
-        process.env.CHROMIUM_PATH ??
-        (existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined),
-      args: ['--no-sandbox'],
-    });
-    return this.browser;
-  }
-
-  /** A fresh context per call: no cookies or storage carried between projects or tasks. */
-  private async withPage<T>(
-    policy: UrlPolicy,
-    fn: (context: BrowserContext) => Promise<T>,
-  ): Promise<T> {
-    const context = await (
-      await this.launch()
-    ).newContext({ javaScriptEnabled: true, viewport: BREAKPOINTS.desktop });
-    await context.addInitScript('globalThis.__name = (f) => f;');
-    await context.route('**/*', (route) => {
-      const req = route.request();
-      if (isBlockedSubresource(req.url(), policy)) return route.abort('blockedbyclient');
-      // Navigations (and redirects) must stay on the project's hosts.
-      if (req.isNavigationRequest()) {
-        const host = new URL(req.url()).hostname.toLowerCase();
-        if (!policy.allowedHosts.map((h) => h.toLowerCase()).includes(host))
-          return route.abort('blockedbyclient');
-      }
-      return route.continue();
-    });
-    try {
-      return await fn(context);
-    } finally {
-      await context.close();
     }
   }
 

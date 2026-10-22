@@ -1,3 +1,4 @@
+import type { DecisionView } from '@lw/contracts';
 import { Blueprint } from '@lw/plan';
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
@@ -166,5 +167,48 @@ export class BlackboardToolServer implements ToolServer {
       return { code: 200, body: { version: v.version }, summary: `Blueprint v${v.version}` };
     }
     return bad(`Unknown operation ${op}`);
+  }
+}
+
+/** The project's Decision Log, for writing the handover pack's decision register. */
+export class DecisionLogToolServer implements ToolServer {
+  readonly name = 'decision-log';
+  readonly catalog: OperationCatalog = {
+    read: {
+      description:
+        'Every decision recorded on this project, oldest first: the question, the answer, why, and who decided (Director, Chief of Staff, or the default at deadline).',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      mutates: false,
+      // Questions and rationales quote agents' text, which quotes source content.
+      untrusted: true,
+    },
+  };
+
+  constructor(private readonly decisions: (projectId: string) => DecisionView[]) {}
+
+  target(projectId: string) {
+    return `workspace:${projectId}`;
+  }
+
+  async call(
+    op: string,
+    _args: Record<string, unknown>,
+    ctx: ToolCallContext,
+  ): Promise<ToolResult> {
+    if (op !== 'read') return bad(`Unknown operation ${op}`);
+    const decisions = this.decisions(ctx.projectId).map(
+      ({ ts, question, answer, rationale, decidedBy }) => ({
+        ts,
+        question,
+        answer,
+        rationale,
+        decidedBy,
+      }),
+    );
+    return {
+      code: 200,
+      body: { decisions },
+      summary: `Read ${decisions.length} decision${decisions.length === 1 ? '' : 's'}`,
+    };
   }
 }
