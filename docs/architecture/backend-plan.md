@@ -4,7 +4,8 @@ _Status: proposal for review · 2026-10-22 · Companion to the two source specs:
 _[Requirements & Technical Architecture](https://claude.ai/artifact/PxHxU9S1KjYcpcuktN46f7) and
 [Control Center Design Requirements](https://claude.ai/artifact/43ybuCVtG7tjNd68SXDeLR)._
 
-**The plan in one paragraph.** Build Launchworks as a **multi-tenant agent delivery platform**, and treat
+**The plan in one paragraph.** Build Launchworks as an **internal, multi-project agent delivery platform** (one or two Icreon operators,
+many client projects), and treat
 the SitecoreAI replatform as its **first playbook**, not as the whole product. The platform core knows
 nothing about Sitecore. It owns projects, the plan tree, durable orchestration (Temporal), the agent
 runtime, a policy-enforcing tool gateway, escalations, the event log, and budgets. Everything
@@ -31,18 +32,17 @@ Center UI can be built against real event shapes before any agent exists.
 | A7 | Data | Postgres 16 (Aurora) + pgvector; S3; Secrets Manager + per-client KMS keys; Redis (Valkey) | One operational database; cheap durable artifacts; per-client crypto isolation | Same as doc, adds per-client KMS |
 | A8 | GitHub access | **GitHub App** installed per client org, short-lived installation tokens | No long-lived PATs; fine-grained, revocable, auditable | Doc says "token" |
 | A9 | Models | Opus 5.5 (`claude-opus-5-5`) for Chief of Staff, Architect, Leads; Sonnet 5.5 (`claude-sonnet-5-5`) for specialists; Haiku 5.5 (`claude-haiku-5-5`) for sweeps and classification. All per-role configurable | Matches NFR-12. Current list prices: $4/$20, $2/$10, $0.10/$0.50 per M tokens (in/out) | Concrete IDs |
-| A10 | Identity | **WorkOS** (AuthKit + SSO) behind our own session layer; RBAC stays in our database | IdP-agnostic: works with whatever IdP Icreon staff use, and lets client Observers sign in with their own IdP later without rework. SCIM and SSO are ready for the GA enterprise requirement | Pulls SSO earlier |
+| A10 | Identity | **GitHub OAuth** (Auth.js) restricted to an allow-list of named GitHub accounts; 2FA required by the Icreon GitHub org. One operator role | Internal tool with one or two users: no identity vendor, no user management UI, and the operators already hold GitHub accounts for the repos | Doc's Reviewer/Observer roles deferred; schema keeps a role column so they can be added later |
 
 ---
 
 ## 2. Platform vs. playbook: the multi-project model
 
 ```
-Workspace (Icreon)
- └─ Client (e.g. Acme Corp)            ← KMS key, GitHub App installation, vault namespace
-     └─ Project (Acme corporate site)  ← pins PlaybookVersion; owns budgets, policies, credentials refs
-         └─ Run (new | resume | re-run phase)
-             └─ Phase → Workstream → Task → Step
+Client (e.g. Acme Corp)                ← KMS key, GitHub App installation, vault namespace
+ └─ Project (Acme corporate site)  ← pins PlaybookVersion; owns budgets, policies, credentials refs
+     └─ Run (new | resume | re-run phase)
+         └─ Phase → Workstream → Task → Step
 ```
 
 **Playbook** = a versioned bundle, authored in git under `playbooks/<name>/`, validated in CI, and
@@ -82,8 +82,7 @@ flowchart TB
   end
 
   subgraph Edge["Edge"]
-    API["control-api<br/>REST commands + queries"]
-    RT["realtime-gateway<br/>SSE per project"]
+    API["control-api<br/>REST commands + queries + SSE stream"]
   end
 
   subgraph Core["Platform core"]
@@ -122,10 +121,10 @@ flowchart TB
   end
 
   UI --> API
-  RT -. SSE .-> UI
+  API -. SSE .-> UI
   API --> TC
   API --> PG
-  RT --> RD
+  API --> RD
   TC <--> ORCH
   TC <--> COS
   TC <--> AGW
@@ -150,8 +149,7 @@ flowchart TB
 
 | Service | Responsibility | Scales on | Notes |
 |---|---|---|---|
-| `control-api` | Auth, RBAC, queries (snapshots, inspectors), commands → Temporal signals/updates, intake, credential capture → vault | Request rate | Stateless. Fastify + zod. OpenAPI generated from the contracts package |
-| `realtime-gateway` | SSE per project; replays from `seq`, then tails Redis Streams | Open connections | Stateless; sticky only for the connection's lifetime |
+| `control-api` | Auth (operator allow-list), queries (snapshots, inspectors), commands → Temporal signals/updates, intake, credential capture → vault, **SSE stream** (replays from `seq`, then tails Redis Streams) | Not a concern: one or two operators | Fastify + zod. OpenAPI generated from the contracts package. Two small instances for availability |
 | `worker-orchestrator` | Project, Phase, Task, Gate, Escalation and Directive workflows | Temporal task-queue backlog | Deterministic workflow code only, no I/O |
 | `worker-agents` | Agent loops: model calls, context building, budget metering, Lead reviews | `llm` queue backlog, capped by the global LLM limiter | The CPU-light, I/O-heavy part of the system |
 | `sandbox-pool` | Ephemeral containers: repo checkout, `npm`/`next build`, Content SDK CLI, Sitecore CLI (.NET), local editing host, Claude Agent SDK sessions | Concurrent code tasks | Isolation boundary per task; egress allow-list (§10) |
@@ -395,7 +393,7 @@ Two platform notes to feed the Research Agent's first run. They are exactly the 
 
 | Group | Tables |
 |---|---|
-| Tenancy & identity | `workspace`, `client`, `user`, `membership` (role per project: director, reviewer, observer, admin) |
+| Clients & operators | `client`, `operator` (GitHub login, role = `operator` for now) |
 | Configuration | `playbook_version`, `role_version`, `skill_version`, `validator_version`, `project_policy` (budgets, gates, thresholds, conventions; locked after Gate 1) |
 | Project state | `project`, `run`, `phase`, `workstream`, `task`, `task_dependency`, `agent_instance`, `gate_record` |
 | Director-facing | `escalation`, `decision` (append-only), `conversation_message`, `directive`, `pending_command` (undo window) |
@@ -405,8 +403,9 @@ Two platform notes to feed the Research Agent's first run. They are exactly the 
 | Read models | `project_status` (health, phase %, waiting count, cost), `agent_state`, `task_view`, `metric_counter`, `page_inventory` (parity and visual scores for Site Preview) |
 | Retrieval | `embedding` (pgvector, `project_id`-scoped) |
 
-- **Every row carries `workspace_id`** and, where applicable, `project_id`. Postgres row-level security
-  enforces tenancy as defense in depth behind the API's RBAC.
+- **Every project-owned row carries `client_id` and `project_id`.** Isolation between clients is about
+  data (KMS keys, vault paths, S3 prefixes, blackboard scope), not about users: every repository function
+  takes a `projectId`, and agents never query the database directly.
 - **Event log:** `(project_id, seq)` is unique, and `seq` increases monotonically per project. The event
   insert and its read-model updates commit in one transaction (a transactional outbox). A relay then
   publishes to Redis Streams for fan-out.
@@ -417,7 +416,7 @@ Two platform notes to feed the Research Agent's first run. They are exactly the 
 ### 8.2 Object storage layout
 
 ```
-s3://lw-artifacts-{env}/{workspace}/{client}/{project}/
+s3://lw-artifacts-{env}/{client}/{project}/
     artifacts/{artifactId}/v{n}/...        # Blueprint exports, reports, handover pack (MD + PDF)
     evidence/{taskId}/{stepId}/...         # screenshots, videos, Lighthouse JSON
     payloads/{workflowId}/{hash}           # Temporal claim-check (encrypted, 30-day lifecycle)
@@ -496,8 +495,10 @@ and every state (empty, streaming, degraded, completed) against it before any ag
   branches are never pushed to.
 - **Prompt injection:** untrusted-content wrapping + classifier (§6.1), Lead review before downstream
   use, and agents cannot edit their own role, tools or budget (doc §10).
-- **AuthN/Z:** WorkOS for authentication only (OIDC/SAML, MFA); authorization is ours: project-level RBAC (director, reviewer, observer, admin), phone-scope
-  restrictions enforced server-side (no rollback or settings from mobile sessions, per design spec §12).
+- **AuthN/Z:** GitHub OAuth with an allow-list of operator accounts (kept in config, changed by a
+  deploy), short-lived sessions, 2FA enforced by the GitHub org. Optionally put the Control Center behind
+  the office VPN or an IP allow-list on the load balancer for a second layer. Phone-scope restrictions are
+  still enforced server-side (no rollback or settings from mobile sessions, per design spec §12).
 - **Audit:** immutable `step` + `event`, S3 Object Lock export, and every human approval stored with the
   user, timestamp and artifact version hash (contractual record, R13).
 
@@ -517,7 +518,6 @@ real constraints are external rate limits:
 | **Sandbox capacity** | Pool with min/max per environment; tasks queue on the `sandbox` task queue; per-project concurrency cap from policy (FR-09) |
 | **Temporal history size** | Per-Step activities with claim-check payloads; continue-as-new at phase boundaries |
 | **Event volume** | Monthly partitions; Activity uses keyset pagination + `tsvector` full-text; OpenSearch only if Activity search becomes slow at scale |
-| **SSE connections** | Stateless gateway behind an ALB; Redis Streams consumer per project |
 | **Noisy neighbors** | Per-project budgets (hard stop), per-project concurrency caps, per-client KMS and vault namespaces |
 
 **Compute plan:** start on ECS Fargate for services and workers. Move the sandbox pool, and only it, to
@@ -555,7 +555,6 @@ icreon-claude/
 ├─ apps/
 │  ├─ control-center/          # Next.js UI (your track)
 │  ├─ control-api/             # Fastify: queries, commands, intake, auth
-│  ├─ realtime-gateway/        # SSE fan-out + replay
 │  ├─ worker-orchestrator/     # Temporal workflows (deterministic only)
 │  ├─ worker-agents/           # Temporal activities: model calls, agent loops
 │  ├─ sandbox-runner/          # image + entrypoint for sandbox jobs (Node 24, .NET, Playwright deps)
@@ -568,7 +567,7 @@ icreon-claude/
 ├─ packages/
 │  ├─ contracts/               # zod: API DTOs, event union, command schemas (shared with UI)
 │  ├─ domain/                  # entities, task FSM, health computation, pure logic
-│  ├─ db/                      # Drizzle schema, migrations, RLS policies, repositories
+│  ├─ db/                      # Drizzle schema, migrations, repositories
 │  ├─ plan/                    # plan compiler, diff, gate predicates, rollback ordering
 │  ├─ escalation-policy/       # deterministic rules engine
 │  ├─ agent-runtime/           # role loader, model router, context builder, budget meter, adapters
@@ -614,7 +613,7 @@ Fastify, zod, Temporal TS SDK, `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-
 | Browser | Playwright + Chromium in our containers | Crawl, screenshots, Page builder QA, video | M3 | Browserbase if we need scale or session recording as a service |
 | QA libraries | Lighthouse, axe-core, odiff/pixelmatch, sanitize-html | Validators | M5 | Applitools (not needed) |
 | Research | Claude server tools `web_search` / `web_fetch` with domain allow-list | Research Agent | M3 | Exa / Tavily |
-| Identity | **WorkOS** (AuthKit, SSO, SCIM) | Staff sign-in now; client Observers' SSO later | M0 | AWS Cognito (stays in AWS, weaker enterprise SSO) |
+| Identity | **GitHub OAuth** via Auth.js (no vendor) | Operator sign-in | M0 | Google OAuth if operators prefer Google accounts |
 | Notifications | **Slack app** (Bolt), Amazon SES, Web Push | Escalations, digests | M2 | Postmark |
 | Observability | OpenTelemetry → **Grafana Cloud** or **Datadog**; **Langfuse** (self-hosted); **Sentry** | Traces, LLM traces, errors | M0–M2 | Braintrust for evals |
 | IaC / CI | AWS CDK (TS), GitHub Actions | Deploy | M0 | Terraform |
@@ -631,7 +630,7 @@ rough until M1's spikes land. Each milestone ends in a demonstrable proof, not a
 
 | # | Milestone | Scope | Exit proof | Rough size |
 |---|---|---|---|---|
-| **M0** | Foundations + contract | Monorepo, CI, CDK skeleton, local compose; `contracts`, `db` (core tables + event log), `control-api` (auth, snapshots), `realtime-gateway` (SSE + replay); **simulator** | The UI renders Mission Control, the dock and Activity from a simulated project over real SSE, including reconnect/catch-up | 2–3 wks |
+| **M0** | Foundations + contract | Monorepo, CI, CDK skeleton, local compose; `contracts`, `db` (core tables + event log), `control-api` (GitHub sign-in, snapshots, SSE + replay); **simulator** | The UI renders Mission Control, the dock and Activity from a simulated project over real SSE, including reconnect/catch-up | 2–3 wks |
 | **M1** | Tool servers + vault + **spikes** | Gateway (authz, scopes, idempotency, recording); `github`, `sitecore-authoring`, `sitecore-cli`, `sitecore-deploy`, `hosting-vercel`, driven by scripts. Spikes: **R1** site creation via API vs. browser, deterministic item IDs for idempotent pushes, Content SDK 2.x conventions, sandbox provider choice, Managed Agents fit, Agent API fit | A script creates a site, pushes serialized items, registers a rendering and deploys a head on the sandbox tenant, all through the gateway, with the Steps visible in Activity | 3–4 wks |
 | **M2** | Orchestration core + Chief of Staff (stub team) | Project/Phase/Task workflows, task FSM, gates, the escalation policy engine + deadlines, directives with plan diff + stop window, pause/resume, budgets, notifier (Slack + email), digest | A stub team (scripted agents) runs all 11 phases; the Director approves Gate 1 from the UI, answers a Decision, lets one expire to default, and pauses a workstream | 3–4 wks |
 | **M3** | Discovery + Blueprint agents | Agent runtime (`messages` adapter, model router, caching, ledger); Repo Analyst, Content Analyst, Research Agent, Solution Architect; Workbench Blueprint versions + diff | A real fixture repo produces a Blueprint the Director can edit and approve; Platform Notes cite sources | 3 wks |
@@ -641,8 +640,8 @@ rough until M1's spikes land. Each milestone ends in a demonstrable proof, not a
 
 M0 to the MVP is about 5–6 months. **Beta** adds task/phase rollback UI, re-run, concurrent client
 projects in shadow mode, full Visual and Editor QA with video, and playbook canarying. **GA** adds the
-settings and policy surface, a skills library fed by retros, project templates, SOC 2 controls, data
-deletion, and an Observer role with external SSO.
+settings and policy surface, a skills library fed by retros, project templates, SOC 2 controls, and data deletion. A
+read-only Reviewer or Observer role is a small addition if it's ever needed.
 
 ---
 
