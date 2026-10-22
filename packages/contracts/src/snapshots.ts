@@ -74,6 +74,8 @@ export const ProjectSummary = z.object({
   presence: CosPresence,
   /** What is paused below the project level, in words for the status strip. */
   holds: z.array(z.object({ kind: ScopeKind, id: z.string(), label: z.string() })),
+  /** The live site being migrated, as given at intake. */
+  sourceUrl: z.string().nullable(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 

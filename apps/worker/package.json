@@ -8,9 +8,11 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@lw/agent-runtime": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/orchestrator": "workspace:*",
     "@lw/playbook-sdk": "workspace:*",
+    "@lw/stack": "workspace:*",
     "@temporalio/worker": "^1.24.0",
     "zod": "^4.6.7"
   }

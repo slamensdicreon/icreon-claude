@@ -400,6 +400,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     spent: s.spent,
     presence: s.presence,
     holds: Object.values(s.holds),
+    sourceUrl: s.sourceUrl,
   };
 }
 

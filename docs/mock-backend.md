@@ -34,7 +34,12 @@ playbook, Gate 1 expands it from the example Blueprint, and directives re-plan f
   not after seconds.
 - **State survives restarts.** The event log and the workflows persist in `.data/`; kill the
   process at any point and it resumes where it stopped. Delete `.data/` to start over.
-- **One project to start.** Create more with `POST /projects {"name": "...", "client": "..."}`.
+- **One project to start.** Create more with `POST /projects {"name": "...", "client": "...", "sourceUrl": "https://..."}`.
+- **Real agents, where their tools exist.** With `AGENTS=claude` and `ANTHROPIC_API_KEY` set, the
+  roles whose tools are all connected run on Claude: today the Content Analyst (crawls
+  `sourceUrl`, writes the page inventory) and the Solution Architect (writes the Blueprint that
+  Gate 1 expands the plan from). Every other role stays a stub until its tool servers land. The
+  startup log names the live roles.
 
 ## Data shapes
 
@@ -69,10 +74,12 @@ es.addEventListener('lw', (msg) => apply(JSON.parse(msg.data))); // typed LwEven
 | Activity | `GET /projects/:id/activity?limit=100&before=<seq>&severity=warning,failure&type=step.recorded&agent=<id>&phase=<n>` |
 | Escalation card | `GET /projects/:id/escalations/:escalationId` |
 | Decision Log | `GET /projects/:id/decisions` |
+| Workbench (documents) | `GET /projects/:id/workbench` · one: `GET /projects/:id/artifacts/:artifactId` · content: `GET /projects/:id/artifacts/:artifactId/versions/:version/content` (`:version` may be `latest`; served as Markdown or JSON; `404 no_content` for versions that only have a record, which is every version in simulated projects) |
 | Live updates | `GET /projects/:id/stream?after=<seq>` (SSE, event name `lw`) |
 
 | Action | Request |
 |---|---|
+| New project (intake) | `POST /projects {"name": "...", "client": "...", "sourceUrl": "https://..."}` → `201 {"projectId"}`. `sourceUrl` is optional and must be http(s); it shows as `sourceUrl` on the project summary |
 | Send a directive or ask for status | `POST /projects/:id/messages {"body": "status"}` (also `/pause`, `/resume`) |
 | Choose an option | `POST /projects/:id/escalations/:escalationId/resolve {"optionId": "..."}` |
 | Defer | `POST /projects/:id/escalations/:escalationId/defer {"until": "<ISO time>"}` |

@@ -1,17 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { anthropicModelClient } from '@lw/agent-runtime';
+import type { CreateProject } from '@lw/contracts';
 import { openStore, Projections } from '@lw/events';
-import {
-  createStubActivities,
-  createWorker,
-  defaultPolicy,
-  loadFixtures,
-  ProjectCommandsClient,
-  startProject,
-} from '@lw/orchestrator';
+import { createWorker, defaultPolicy, ProjectCommandsClient, startProject } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { Simulation, sitecoreScenario } from '@lw/simulator';
+import { composeStack } from '@lw/stack';
+import { LocalBlobStore } from '@lw/tool-gateway';
 import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
@@ -22,13 +19,15 @@ import { simulationCommands, type ProjectCommands } from './commands';
  * Control API entry point.
  *
  *   ORCHESTRATOR=simulator  scripted projects (default; what the UI prototype runs against)
- *   ORCHESTRATOR=temporal   the real orchestrator with stub agents. Without TEMPORAL_ADDRESS it
- *                           starts a local Temporal dev server and an in-process worker.
+ *   ORCHESTRATOR=temporal   the real orchestrator. Without TEMPORAL_ADDRESS it starts a local
+ *                           Temporal dev server and an in-process worker.
  *
- *   STORE=memory | pglite | postgres   where the event log lives (see stores.ts)
+ *   AGENTS=stub | claude    with claude, roles whose tools are all connected run on Claude
+ *                           (ANTHROPIC_API_KEY); the rest stay on stub agents
  *
- * No sign-in yet, so it binds to localhost by default; GitHub sign-in lands before this runs
- * anywhere shared.
+ *   STORE=memory | pglite | postgres   where the event log lives
+ *
+ * Without AUTH=github it only binds to localhost.
  */
 const env = z
   .object({
@@ -42,6 +41,7 @@ const env = z
     TEMPORAL_ADDRESS: z.string().optional(),
     TEMPORAL_NAMESPACE: z.string().default('default'),
     INLINE_WORKER: z.enum(['true', 'false']).default('true'),
+    AGENTS: z.enum(['stub', 'claude']).default('stub'),
     AUTH: z.enum(['none', 'github']).default('none'),
     GITHUB_CLIENT_ID: z.string().optional(),
     GITHUB_CLIENT_SECRET: z.string().optional(),
@@ -94,10 +94,12 @@ const projections = new Projections(store);
 await projections.start();
 const playbook = await loadPlaybook(env.PLAYBOOK_DIR);
 const cleanups: (() => Promise<void>)[] = [];
+// Shared with the worker's tool servers (one folder in dev; object storage when deployed).
+const blobs = new LocalBlobStore(join(env.DATA_DIR, 'blobs'));
 
 let commands: (projectId: string) => ProjectCommands | undefined;
-let createProject: (input: { name: string; client: string }) => Promise<string>;
-const seeds: { name: string; client: string }[] = [];
+let createProject: (input: CreateProject) => Promise<string>;
+const seeds: CreateProject[] = [];
 
 if (env.ORCHESTRATOR === 'simulator') {
   const sims = new Map<string, ProjectCommands>();
@@ -105,6 +107,7 @@ if (env.ORCHESTRATOR === 'simulator') {
   const startSimulation = (opts: {
     name: string;
     client: string;
+    sourceUrl?: string;
     autopilot: boolean;
     speed: number;
   }) => {
@@ -118,11 +121,23 @@ if (env.ORCHESTRATOR === 'simulator') {
     return projectId;
   };
   commands = (id) => sims.get(id);
-  createProject = async ({ name, client }) =>
-    startSimulation({ name, client, autopilot: false, speed: env.SIM_SPEED });
+  createProject = async (input) =>
+    startSimulation({ ...input, autopilot: false, speed: env.SIM_SPEED });
   const SEEDS = [
-    { name: 'Acme corporate site', client: 'Acme Corp', autopilot: false, speedFactor: 1 },
-    { name: 'Northwind marketing site', client: 'Northwind', autopilot: true, speedFactor: 3 },
+    {
+      name: 'Acme corporate site',
+      client: 'Acme Corp',
+      sourceUrl: 'https://www.acme.example',
+      autopilot: false,
+      speedFactor: 1,
+    },
+    {
+      name: 'Northwind marketing site',
+      client: 'Northwind',
+      sourceUrl: 'https://www.northwind.example',
+      autopilot: true,
+      speedFactor: 3,
+    },
   ];
   for (const s of SEEDS.slice(0, env.SIM_PROJECTS)) {
     startSimulation({ ...s, speed: env.SIM_SPEED * s.speedFactor });
@@ -146,26 +161,40 @@ if (env.ORCHESTRATOR === 'simulator') {
   });
 
   if (env.INLINE_WORKER === 'true') {
-    const { blueprint, outputs } = await loadFixtures(env.PLAYBOOK_DIR);
+    const stack = await composeStack({
+      store,
+      projections,
+      playbook,
+      playbookDir: env.PLAYBOOK_DIR,
+      dataDir: env.DATA_DIR,
+      model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
+    });
+    console.log(
+      stack.liveRoles.length
+        ? `Live agents: ${stack.liveRoles.join(', ')}; every other role is a stub.`
+        : 'All agents are stubs (AGENTS=claude runs the roles whose tools are connected).',
+    );
     const worker = await createWorker({
       connection: await NativeConnection.connect({ address }),
       namespace: env.TEMPORAL_NAMESPACE,
-      activities: createStubActivities({ store, playbook, blueprint, outputs }),
+      activities: stack.activities,
     });
     const run = worker.run();
     cleanups.unshift(async () => {
       worker.shutdown();
       await run;
+      await stack.close();
     });
   }
 
   commands = (id) => (projections.get(id) ? new ProjectCommandsClient(client, id) : undefined);
-  createProject = async ({ name, client: clientName }) => {
+  createProject = async ({ name, client: clientName, sourceUrl }) => {
     const projectId = `prj-${randomUUID().slice(0, 8)}`;
     await startProject(client, {
       projectId,
       name,
       client: clientName,
+      site: sourceUrl ? { sourceUrl } : undefined,
       playbook,
       policy: defaultPolicy(playbook),
     });
@@ -181,6 +210,7 @@ const app = await buildApp({
   projections,
   commands,
   createProject,
+  artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
   corsOrigin: env.CORS_ORIGIN,
   auth,
   logger: true,

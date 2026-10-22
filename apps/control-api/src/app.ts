@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import {
   ApproveGate,
   Control,
+  CreateProject,
   DeferEscalation,
   PostMessage,
   ResolveEscalation,
@@ -9,6 +10,7 @@ import {
   type ActivityItem,
   type ActivityPage,
   type ApiError,
+  type ArtifactView,
   type CommandResult,
 } from '@lw/contracts';
 import {
@@ -20,6 +22,7 @@ import {
   projectListItem,
   team,
   toActivity,
+  workbench,
   type ProjectState,
 } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
@@ -36,7 +39,9 @@ export interface AppDeps {
   /** Command handlers for a project, or undefined if no such project runs here. */
   commands: (projectId: string) => ProjectCommands | undefined;
   /** Intake: starts a new project and returns its id. Absent where intake isn't wired. */
-  createProject?: (input: { name: string; client: string }) => Promise<string>;
+  createProject?: (input: CreateProject) => Promise<string>;
+  /** Stored content of an artifact version, or null if none is stored. */
+  artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
   /** Origin allowed to call the API from a browser (the Control Center or the prototype). */
   corsOrigin?: string | null;
   /** GitHub sign-in. Without it the API is open, which main.ts only allows on localhost. */
@@ -100,13 +105,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get('/projects', async () => projections.all().map(projectListItem));
 
-  const Intake = z.object({ name: z.string().min(1).max(120), client: z.string().min(1).max(120) });
-
   app.post('/projects', async (req, reply) => {
     if (!deps.createProject) {
       return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
     }
-    const projectId = await deps.createProject(Intake.parse(req.body));
+    const projectId = await deps.createProject(CreateProject.parse(req.body));
     return reply.status(201).send({ projectId });
   });
 
@@ -171,6 +174,56 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const s = project(req.params.id);
     return s ? decisions(s) : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
   });
+
+  app.get<P>('/projects/:id/workbench', async (req, reply) => {
+    const s = project(req.params.id);
+    return s ? workbench(s) : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+  });
+
+  const artifact = (projectId: string, artifactId: string): ArtifactView => {
+    const s = project(projectId);
+    if (!s) throw new CommandError(404, 'unknown_project', `No project "${projectId}".`);
+    const a = s.artifacts[artifactId];
+    if (!a) throw new CommandError(404, 'unknown_artifact', `No artifact "${artifactId}".`);
+    return a;
+  };
+
+  app.get<{ Params: { id: string; artifactId: string } }>(
+    '/projects/:id/artifacts/:artifactId',
+    async (req) => artifact(req.params.id, req.params.artifactId),
+  );
+
+  const CONTENT_TYPES = {
+    markdown: 'text/markdown; charset=utf-8',
+    json: 'application/json; charset=utf-8',
+    png: 'image/png',
+    binary: 'application/octet-stream',
+  } as const;
+
+  /** A version's stored content: `latest` or a version number. */
+  app.get<{ Params: { id: string; artifactId: string; version: string } }>(
+    '/projects/:id/artifacts/:artifactId/versions/:version/content',
+    async (req, reply) => {
+      const a = artifact(req.params.id, req.params.artifactId);
+      const n = req.params.version === 'latest' ? a.latest : Number(req.params.version);
+      const v = a.versions.find((x) => x.version === n);
+      if (!v) return fail(reply, 404, 'unknown_version', `No version ${req.params.version}.`);
+      const bytes =
+        v.ref && deps.artifactContent ? await deps.artifactContent(req.params.id, v.ref) : null;
+      if (!bytes) {
+        return fail(
+          reply,
+          404,
+          'no_content',
+          `Version ${n} has no stored content (scripted projects record versions only).`,
+        );
+      }
+      return reply
+        .header('content-type', CONTENT_TYPES[v.format ?? 'binary'])
+        .header('cache-control', 'private, max-age=31536000, immutable')
+        .send(Buffer.from(bytes));
+    },
+  );
 
   const ActivityQuery = z.object({
     before: z.coerce.number().int().positive().optional(),

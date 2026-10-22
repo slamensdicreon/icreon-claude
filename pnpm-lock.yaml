@@ -32,6 +32,9 @@ importers:
       '@fastify/cors':
         specifier: ^11.3.1
         version: 11.3.1
+      '@lw/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@lw/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -50,6 +53,12 @@ importers:
       '@lw/simulator':
         specifier: workspace:*
         version: link:../../packages/simulator
+      '@lw/stack':
+        specifier: workspace:*
+        version: link:../../packages/stack
+      '@lw/tool-gateway':
+        specifier: workspace:*
+        version: link:../../packages/tool-gateway
       '@temporalio/client':
         specifier: ^1.24.0
         version: 1.24.0
@@ -68,6 +77,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@lw/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@lw/events':
         specifier: workspace:*
         version: link:../../packages/events
@@ -77,6 +89,9 @@ importers:
       '@lw/playbook-sdk':
         specifier: workspace:*
         version: link:../../packages/playbook-sdk
+      '@lw/stack':
+        specifier: workspace:*
+        version: link:../../packages/stack
       '@temporalio/worker':
         specifier: ^1.24.0
         version: 1.24.0(esbuild@0.28.2)

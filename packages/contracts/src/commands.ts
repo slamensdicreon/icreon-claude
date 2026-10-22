@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { ControlVerb, ScopeKind } from './enums';
 
+/**
+ * POST /projects — intake. `sourceUrl` is the live site being migrated; the crawl tools may only
+ * reach its host.
+ */
+export const CreateProject = z.object({
+  name: z.string().min(1).max(120),
+  client: z.string().min(1).max(120),
+  sourceUrl: z.url({ protocol: /^https?$/ }).optional(),
+});
+export type CreateProject = z.infer<typeof CreateProject>;
+
 /** POST /projects/:id/messages — a directive or a question for the Chief of Staff. */
 export const PostMessage = z.object({ body: z.string().min(1).max(8000) });
 export type PostMessage = z.infer<typeof PostMessage>;

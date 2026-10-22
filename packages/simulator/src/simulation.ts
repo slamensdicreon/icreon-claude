@@ -22,6 +22,8 @@ export interface SimulationOptions {
   projectId: string;
   name: string;
   client: string;
+  /** The site being migrated, as given at intake. */
+  sourceUrl?: string;
   /** Speed multiplier. 1 ≈ a full engagement in about ten minutes; tests use 10_000+. */
   speed?: number;
   seed?: number;
@@ -54,7 +56,8 @@ interface PendingEscalation {
  */
 export class Simulation {
   readonly projectId: string;
-  readonly opts: Required<SimulationOptions>;
+  readonly opts: Required<Omit<SimulationOptions, 'sourceUrl'>> &
+    Pick<SimulationOptions, 'sourceUrl'>;
   readonly rand: Rng;
   private readonly abort = new AbortController();
   private readonly projectLatch = new Latch();
@@ -143,6 +146,7 @@ export class Simulation {
           budgets: budgets ?? manifest.defaults.budgets,
           phases: phaseDefs(this.playbook),
           roster: roster(this.playbook),
+          site: { sourceUrl: this.opts.sourceUrl ?? null },
         },
       },
       this.projectStatus('running'),
