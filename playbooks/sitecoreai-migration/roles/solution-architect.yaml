@@ -1,5 +1,7 @@
 role: solution-architect
 name: Solution Architect
+persona: 'Aisha Johnson'
+description: 'Designs the Implementation Blueprint: which renderings, templates and data items the site becomes. Consulted again while the build runs.'
 tier: specialist
 reportsTo: discovery-lead
 workstream: discovery

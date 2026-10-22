@@ -132,6 +132,7 @@ describe('decision log', () => {
               decidedBy: 'director',
               scopeKey: 'blog',
               escalationId: 'x1',
+              ref: 'D-01',
             },
           ]
         : [],

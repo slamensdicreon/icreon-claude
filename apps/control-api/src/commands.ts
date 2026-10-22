@@ -1,4 +1,4 @@
-import type { Control } from '@lw/contracts';
+import type { Control, SettingKey } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
 import type { Simulation } from '@lw/simulator';
 
@@ -16,9 +16,21 @@ export interface ProjectCommands {
   defer(escalationId: string, until: Date): Promise<unknown>;
   /** Takes back a reversible choice inside its undo window. */
   undo(escalationId: string): Promise<unknown>;
-  postMessage(body: string): Promise<unknown>;
+  postMessage(body: string, about?: string): Promise<unknown>;
   stopDirective(directiveId: string): Promise<unknown>;
   control(cmd: Control): Promise<unknown>;
+  /** Ends a deferral early ("Resume now"). */
+  resume?(escalationId: string): Promise<unknown>;
+  rerunTask?(taskId: string, instructions: string): Promise<unknown>;
+  rollbackTask?(taskId: string): Promise<unknown>;
+  rollbackPhase?(phase: number): Promise<unknown>;
+  archive?(): Promise<unknown>;
+  changeSetting?(key: SettingKey, value: unknown): Promise<unknown>;
+  verifyCredential?(credentialId: string): Promise<unknown>;
+  /** Simulated projects only: raise one of the scripted scenarios on demand. */
+  runScenario?(key: string): Promise<unknown>;
+  /** Simulated projects only: the scenarios `runScenario` accepts. */
+  scenarios?(): { key: string; label: string }[];
 }
 
 export function simulationCommands(sim: Simulation): ProjectCommands {

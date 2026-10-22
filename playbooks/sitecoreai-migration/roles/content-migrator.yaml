@@ -1,5 +1,7 @@
 role: content-migrator
 name: Content Migrator
+persona: 'Leila Hassan'
+description: 'Creates pages and data items from the source content, places components on each page, and rewrites internal links.'
 tier: specialist
 reportsTo: content-lead
 workstream: content

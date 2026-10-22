@@ -12,8 +12,12 @@ export const CreateProject = z.object({
 });
 export type CreateProject = z.infer<typeof CreateProject>;
 
-/** POST /projects/:id/messages — a directive or a question for the Chief of Staff. */
-export const PostMessage = z.object({ body: z.string().min(1).max(8000) });
+/** POST /projects/:id/messages — a directive or a question for Cypher. */
+export const PostMessage = z.object({
+  body: z.string().min(1).max(8000),
+  /** Escalation id when asked from a card ("Ask a question"). */
+  about: z.string().optional(),
+});
 export type PostMessage = z.infer<typeof PostMessage>;
 
 /** POST /projects/:id/escalations/:escalationId/resolve */
@@ -41,6 +45,22 @@ export const Control = z.object({
   scope: z.object({ kind: ScopeKind, id: z.string() }),
 });
 export type Control = z.infer<typeof Control>;
+
+/** POST /projects/:id/tasks/:taskId/rerun */
+export const RerunTask = z.object({ instructions: z.string().min(1).max(4000) });
+export type RerunTask = z.infer<typeof RerunTask>;
+
+/** POST /projects/:id/phases/:phase/rollback — destructive: type ROLL BACK. */
+export const RollbackPhase = z.object({ confirmation: z.literal('ROLL BACK') });
+export type RollbackPhase = z.infer<typeof RollbackPhase>;
+
+/** POST /projects/:id/archive — type the project name. */
+export const ArchiveProject = z.object({ confirmation: z.string() });
+export type ArchiveProject = z.infer<typeof ArchiveProject>;
+
+/** PUT /projects/:id/settings/:key */
+export const ChangeSetting = z.object({ value: z.json() });
+export type ChangeSetting = z.infer<typeof ChangeSetting>;
 
 /** Every command answers with the seq of the last event it produced, so the UI can reconcile. */
 export const CommandResult = z.object({ accepted: z.literal(true), seq: z.number().int() });

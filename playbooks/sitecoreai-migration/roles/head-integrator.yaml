@@ -1,5 +1,7 @@
 role: head-integrator
 name: Head Integrator
+persona: 'David Kim'
+description: 'Owns the Next.js head: Content SDK configuration, middleware, the editing host Page builder runs on, and every preview build.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering

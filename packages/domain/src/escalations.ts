@@ -1,14 +1,14 @@
 import type { EscalationStatus, EscalationType } from '@lw/contracts';
 
 /**
- * Queue order from the design spec (§5 dock anatomy): Blocker, Decision, Access, Budget, Risk.
- * Gate approvals sit right after Blockers: they hold the whole engagement.
+ * Queue order from the Control Center: Blocker, Access, Decision, Review (gates), Budget, Risk.
+ * Access sits with Blockers because a tool the team cannot reach stops work the same way.
  */
 const TYPE_RANK: Record<EscalationType, number> = {
   blocker: 0,
-  gate: 1,
+  access: 1,
   decision: 2,
-  access: 3,
+  gate: 3,
   budget: 4,
   risk: 5,
 };
@@ -21,11 +21,11 @@ export interface Rankable {
   raisedAt: string;
 }
 
-/** Open before deferred, then by type rank, then oldest first (age is what makes it urgent). */
+/** Open before deferred, then by type rank, then newest first (what just arrived is on top). */
 export function compareEscalations(a: Rankable, b: Rankable): number {
   const deferred = Number(a.status === 'deferred') - Number(b.status === 'deferred');
   if (deferred !== 0) return deferred;
   const rank = TYPE_RANK[a.type] - TYPE_RANK[b.type];
   if (rank !== 0) return rank;
-  return a.raisedAt.localeCompare(b.raisedAt);
+  return b.raisedAt.localeCompare(a.raisedAt);
 }

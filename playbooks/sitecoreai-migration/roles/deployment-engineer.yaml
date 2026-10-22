@@ -1,5 +1,7 @@
 role: deployment-engineer
 name: Deployment Engineer
+persona: 'Ryan Mitchell'
+description: 'Deploys the head to hosting, connects it to Page builder as the editing host, and publishes content to Experience Edge.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering

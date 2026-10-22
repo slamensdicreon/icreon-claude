@@ -1,5 +1,7 @@
 role: rendering-registrar
 name: Rendering Registrar
+persona: 'Carlos Ramirez'
+description: 'Creates each component’s Sitecore definition: the rendering, its datasource and parameter templates, its thumbnail, and its place in Available Renderings.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering

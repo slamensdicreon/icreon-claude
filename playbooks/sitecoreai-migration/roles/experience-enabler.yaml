@@ -1,5 +1,7 @@
 role: experience-enabler
 name: Experience Enabler
+persona: 'Sarah Thompson'
+description: 'Makes the site ready for personalization and A/B tests, and sets up redirects, SEO fields and error pages.'
 tier: specialist
 reportsTo: content-lead
 workstream: content

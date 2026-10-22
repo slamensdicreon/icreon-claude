@@ -14,6 +14,10 @@ export type ToolGrant = z.infer<typeof ToolGrant>;
 export const RoleDef = z.object({
   role: Kebab,
   name: z.string(),
+  /** The person the role is shown as in the Control Center. */
+  persona: z.string().optional(),
+  /** What the role does, in plain words for the Director. */
+  description: z.string().optional(),
   tier: AgentTier,
   /** Role id of the manager; null only for the Chief of Staff. */
   reportsTo: Kebab.nullable(),
@@ -42,7 +46,11 @@ export type RoleDef = z.infer<typeof RoleDef>;
 export const PhaseSpec = z.object({
   number: z.number().int().min(0),
   name: z.string(),
+  /** One word for the status strip and stepper ("Components"). */
+  shortName: z.string().optional(),
   gate: z.enum(['none', 'director']).default('none'),
+  /** How the gate reads on the plan ("Gate 1: Director approves the Blueprint"). */
+  gateLabel: z.string().optional(),
   /** Optional gates the Director may switch on in Settings (e.g. review after the pilot slice). */
   optionalGates: z.array(z.string()).default([]),
   /** Phases that must be done before this one starts. Defaults to the previous phase. */
@@ -64,6 +72,23 @@ export const PlaybookManifest = z.object({
       hours: z.number().positive(),
     }),
     escalationDeadlines: z.record(z.string(), z.string().regex(/^\d+[mh]$/)),
+    /** How each escalation type behaves without an answer, and who hears about it. */
+    escalationPolicy: z
+      .record(
+        z.string(),
+        z.object({
+          default: z.boolean(),
+          behaviour: z.string(),
+          notifies: z.string(),
+        }),
+      )
+      .default({}),
+    /** Mission Control stat cards when a project doesn't set its own. */
+    stats: z
+      .array(z.object({ metric: MetricKey, label: z.string(), icon: z.string(), note: z.string() }))
+      .default([]),
+    /** Tool server display names for Activity. */
+    toolLabels: z.record(z.string(), z.string()).default({}),
   }),
   phases: z.array(PhaseSpec).min(1),
 });
@@ -96,6 +121,20 @@ export const TaskTemplate = z.object({
   acceptance: z.array(z.string()).default([]),
   /** Count metric this template's completed tasks drive, against the template's task total. */
   metric: MetricKey.optional(),
+  /** Working hours one task takes, for the forecast. */
+  estimate: z.number().positive().optional(),
+  /** Engagement-view row the template's tasks roll up into. Defaults to the title, sans item. */
+  activity: z.string().optional(),
+  /** The task contract the inspector shows; `{name}` interpolates the item name. */
+  contract: z
+    .object({
+      inputs: z.string(),
+      outputs: z.string(),
+      acceptance: z.string().optional(),
+      rollback: z.string(),
+      maxAttempts: z.number().int().positive().default(3),
+    })
+    .optional(),
 });
 export type TaskTemplate = z.infer<typeof TaskTemplate>;
 

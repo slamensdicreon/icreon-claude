@@ -1,5 +1,7 @@
 role: discovery-lead
 name: Discovery Lead
+persona: 'Danielle Brooks'
+description: 'Runs discovery. Assigns the analysts, checks their inventories, and signs off the Blueprint before it reaches you.'
 tier: lead
 reportsTo: chief-of-staff
 workstream: discovery

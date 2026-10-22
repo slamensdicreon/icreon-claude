@@ -1,12 +1,13 @@
 import type {
   ActivityItem,
   AgentDetail,
-  ArtifactView,
   AgentView,
+  ArtifactView,
   Budgets,
   ConversationItem,
   ConversationSnapshot,
   CosPresence,
+  CredentialView,
   DecisionView,
   EscalationView,
   LeadRow,
@@ -18,38 +19,55 @@ import type {
   PhaseStatus,
   PhaseView,
   PlanSnapshot,
+  PreviewPage,
+  PreviewSnapshot,
   ProjectListItem,
+  ProjectSource,
   ProjectStatus,
   ProjectSummary,
+  ProjectTarget,
   RosterEntry,
   ScopeKind,
+  SettingKey,
   Spend,
+  StatCard,
   StepView,
   TaskView,
   TeamSnapshot,
   WorkbenchSnapshot,
 } from '@lw/contracts';
-import { toActivityItem } from './describe';
+import { isLogEvent, toActivityItem } from './describe';
 import { compareEscalations, UNRESOLVED } from './escalations';
 import { computeHealth } from './health';
+import { nextForAgents } from './schedule';
 import { ACTIVE_TASK_STATES } from './task-fsm';
 
 /**
  * Read model for one project, built by folding its events in `seq` order. Every snapshot the API
- * serves is a pure function of this state, so the simulator, the real orchestrator, and a replay
- * after a restart all produce identical views.
+ * serves is a pure function of this state (and, for forecasts, the current time), so the
+ * simulator, the real orchestrator, and a replay after a restart all produce identical views.
  */
 export interface ProjectState {
   projectId: string;
   seq: number;
   name: string;
   client: string;
+  initials: string;
+  subtitle: string | null;
+  timezone: string;
+  source: ProjectSource;
+  target: ProjectTarget | null;
+  statCards: StatCard[];
+  toolLabels: Record<string, string>;
   status: ProjectStatus;
   budgets: Budgets;
   spent: Spend;
+  createdAt: string | null;
   startedAt: string | null;
   presence: CosPresence;
   phases: Record<number, PhaseDef & { status: PhaseStatus; enteredAt: string | null }>;
+  /** When each Director gate was approved, by phase. */
+  gateApprovals: Record<number, string>;
   agents: Record<string, AgentRecord>;
   tasks: Record<string, TaskView>;
   escalations: Record<string, EscalationView>;
@@ -60,11 +78,14 @@ export interface ProjectState {
   holds: Record<string, { kind: ScopeKind; id: string; label: string }>;
   artifacts: Record<string, ArtifactView>;
   sourceUrl: string | null;
+  pages: Record<string, PreviewPage>;
+  preview: Pick<PreviewSnapshot, 'source' | 'target'>;
+  credentials: Record<string, CredentialView>;
+  settings: Partial<Record<SettingKey, unknown>>;
+  conventions: { key: string; value: string }[];
 }
 
-interface AgentRecord extends AgentView {
-  lastSteps: StepView[];
-}
+type AgentRecord = Omit<AgentView, 'modelClass' | 'next'> & { lastSteps: StepView[] };
 
 const METRIC_LABELS: Record<MetricKey, { label: string; unit: 'count' | 'percent' }> = {
   components_registered: { label: 'Components registered', unit: 'count' },
@@ -72,39 +93,45 @@ const METRIC_LABELS: Record<MetricKey, { label: string; unit: 'count' | 'percent
   media_uploaded: { label: 'Media uploaded', unit: 'count' },
   qa_pass: { label: 'QA pass', unit: 'percent' },
   parity: { label: 'Content parity', unit: 'percent' },
+  source_mapped: { label: 'Source mapped', unit: 'count' },
 };
 
-/** Types that never appear in "Latest from the team": they have their own surfaces. */
-const NOT_LATEST = new Set<LwEvent['type']>([
-  'cos.message',
-  'director.message',
-  'cos.presence',
-  'escalation.raised',
-  'escalation.updated',
-  'decision.recorded',
-  'metric.updated',
-  'budget.updated',
-  'agent.state',
-  'task.planned',
-  'control.hold',
-]);
+/** Steps too low-level for "Latest from the team" (builds, model turns). */
+const NOT_LATEST_SERVERS = new Set(['sandbox', 'model']);
 
 export function createProjectState(projectId: string): ProjectState {
   const metrics = {} as Record<MetricKey, MetricView>;
   for (const [key, { label, unit }] of Object.entries(METRIC_LABELS)) {
-    metrics[key as MetricKey] = { key: key as MetricKey, label, unit, value: null, total: null };
+    metrics[key as MetricKey] = {
+      key: key as MetricKey,
+      label,
+      unit,
+      value: null,
+      total: null,
+      icon: null,
+      note: null,
+    };
   }
   return {
     projectId,
     seq: 0,
     name: '',
     client: '',
+    initials: '',
+    subtitle: null,
+    timezone: 'America/New_York',
+    source: { repo: null, url: null, framework: null, label: null },
+    target: null,
+    statCards: [],
+    toolLabels: {},
     status: 'intake',
     budgets: { tokens: 1, usd: 1, hours: 1 },
     spent: { tokens: 0, usd: 0, hours: 0 },
+    createdAt: null,
     startedAt: null,
     presence: 'listening',
     phases: {},
+    gateApprovals: {},
     agents: {},
     tasks: {},
     escalations: {},
@@ -115,10 +142,38 @@ export function createProjectState(projectId: string): ProjectState {
     holds: {},
     artifacts: {},
     sourceUrl: null,
+    pages: {},
+    preview: { source: null, target: null },
+    credentials: {},
+    settings: {},
+    conventions: [],
   };
 }
 
 export class SeqGapError extends Error {}
+
+const initialsOf = (name: string) =>
+  name
+    .split(/[\s&]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join('') || '?';
+
+const SHORT_TITLE: Record<string, string> = {
+  blueprint: 'Blueprint',
+  platform_notes: 'Platform Notes',
+  handover_pack: 'Handover pack',
+};
+
+function shortTitle(kind: string, title: string, artifactId: string): string {
+  if (SHORT_TITLE[kind]) return SHORT_TITLE[kind]!;
+  if (kind === 'pull_request') {
+    const n = /^(\d+)\b/.exec(title)?.[1] ?? /(\d+)$/.exec(artifactId)?.[1];
+    return n ? `PR ${n}` : title;
+  }
+  return title.replace(/ (inventory|report)$/i, '').replace(/^(.)/, (c) => c.toUpperCase());
+}
 
 /** Applies one event in place. Events must arrive in order with no gaps. */
 export function applyEvent(s: ProjectState, e: LwEvent): void {
@@ -129,13 +184,35 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
 
   switch (e.type) {
     case 'project.created': {
-      s.name = e.data.name;
-      s.client = e.data.client;
-      s.budgets = e.data.budgets;
-      s.sourceUrl = e.data.site.sourceUrl;
-      for (const p of e.data.phases)
-        s.phases[p.number] = { ...p, status: 'future', enteredAt: null };
-      for (const r of e.data.roster) s.agents[r.agentId] = newAgent(r);
+      const d = e.data;
+      s.name = d.name;
+      s.client = d.client;
+      s.createdAt = e.ts;
+      s.budgets = d.budgets;
+      s.sourceUrl = d.site.sourceUrl ?? d.source.url;
+      s.initials = d.initials ?? initialsOf(d.name);
+      s.subtitle = d.subtitle;
+      s.timezone = d.timezone;
+      s.source = { ...d.source, url: d.source.url ?? d.site.sourceUrl };
+      s.target = d.target;
+      s.statCards = d.stats;
+      s.toolLabels = d.toolLabels;
+      for (const p of d.phases) s.phases[p.number] = { ...p, status: 'future', enteredAt: null };
+      for (const r of d.roster) s.agents[r.agentId] = newAgent(r);
+      if (s.source.label || s.source.url)
+        s.preview.source = {
+          label: s.source.label ?? s.source.url!,
+          url: s.source.url,
+          deployment: null,
+        };
+      break;
+    }
+    case 'project.updated': {
+      const d = e.data;
+      if (d.subtitle !== undefined) s.subtitle = d.subtitle;
+      if (d.target !== undefined) s.target = d.target;
+      if (d.stats !== undefined) s.statCards = d.stats;
+      if (d.timezone !== undefined) s.timezone = d.timezone;
       break;
     }
     case 'project.status':
@@ -144,7 +221,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       break;
     case 'phase.entered': {
       const p = s.phases[e.data.phase];
-      if (p) Object.assign(p, { status: 'current', enteredAt: e.ts });
+      if (p) Object.assign(p, { status: 'current', enteredAt: p.enteredAt ?? e.ts });
       break;
     }
     case 'phase.exited': {
@@ -152,17 +229,27 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (p) p.status = 'done';
       break;
     }
-    case 'task.planned':
+    case 'task.planned': {
+      const prior = s.tasks[e.data.taskId];
       s.tasks[e.data.taskId] = {
         ...e.data,
-        state: 'planned',
-        attempt: 0,
-        startedAt: null,
-        endedAt: null,
-        escalationId: null,
-        lastReason: null,
+        agentId: e.data.role,
+        state: prior?.state ?? 'planned',
+        attempt: prior?.attempt ?? 0,
+        startedAt: prior?.startedAt ?? null,
+        endedAt: prior?.endedAt ?? null,
+        escalationId: prior?.escalationId ?? null,
+        lastReason: prior?.lastReason ?? null,
+        plannedStart: prior?.plannedStart ?? null,
+        plannedEnd: prior?.plannedEnd ?? null,
       };
       break;
+    }
+    case 'task.scheduled': {
+      const t = s.tasks[e.data.taskId];
+      if (t) Object.assign(t, { plannedStart: e.data.start, plannedEnd: e.data.end });
+      break;
+    }
     case 'task.state': {
       const t = s.tasks[e.data.taskId];
       if (!t) break;
@@ -172,6 +259,10 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (e.data.to === 'running' && !t.startedAt) t.startedAt = e.ts;
       if (e.data.to === 'running') t.escalationId = null;
       if (['done', 'cancelled', 'rolled_back'].includes(e.data.to)) t.endedAt = e.ts;
+      if (e.data.to === 'ready' && e.data.from === 'rolled_back') {
+        t.startedAt = null;
+        t.endedAt = null;
+      }
       // A placeholder replaced by the Blueprint's real tasks leaves the plan entirely.
       if (t.kind === 'placeholder' && e.data.to === 'cancelled') delete s.tasks[e.data.taskId];
       break;
@@ -183,28 +274,56 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       a.state = e.data.state;
       a.now = e.data.now;
       a.taskId = e.data.taskId;
+      a.step = e.data.step;
       a.since = e.ts;
+      break;
+    }
+    case 'agent.noted': {
+      const a = s.agents[e.data.agentId];
+      if (a) a.projectNote = e.data.note;
       break;
     }
     case 'step.recorded': {
       const a = s.agents[e.data.agentId];
       if (a) {
         a.tokensThisTask += e.data.tokens;
+        a.tokensProject += e.data.tokens;
         a.lastSteps = [
           {
             stepId: e.data.stepId,
             ts: e.ts,
-            toolServer: e.data.toolServer,
+            toolServer: s.toolLabels[e.data.toolServer] ?? e.data.toolServer,
             operation: e.data.operation,
             resultCode: e.data.resultCode,
             durationMs: e.data.durationMs,
             summary: e.data.summary,
+            outcome: e.data.outcome,
           },
           ...a.lastSteps,
         ].slice(0, 3);
       }
       break;
     }
+    case 'review.recorded': {
+      const a = s.agents[e.data.reviewerId];
+      if (a)
+        a.lastSteps = [
+          {
+            stepId: `review-${e.seq}`,
+            ts: e.ts,
+            toolServer: 'Review',
+            operation: `${e.data.verdict} ${e.data.subject}`,
+            resultCode: e.data.verdict === 'accept' ? 200 : 409,
+            durationMs: 0,
+            summary: e.data.note ?? '',
+            outcome: e.data.verdict === 'accept' ? 'ok' : 'reject',
+          },
+          ...a.lastSteps,
+        ].slice(0, 3);
+      break;
+    }
+    case 'plan.changed':
+      break;
     case 'escalation.raised': {
       s.escalations[e.data.escalationId] = {
         ...e.data,
@@ -228,10 +347,25 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       // Re-opened by an Undo: the earlier choice no longer stands.
       x.resolution = e.data.status === 'open' ? null : (e.data.resolution ?? x.resolution);
       x.resolvedAt = UNRESOLVED.has(e.data.status) ? null : e.ts;
+      if (x.type === 'gate' && x.gate && e.data.status === 'resolved') {
+        if (x.resolution?.optionId === 'approve') {
+          s.gateApprovals[x.gate.phase] = e.ts;
+          const a = s.artifacts[x.gate.artifactId];
+          if (a)
+            a.approved = [
+              { version: x.gate.artifactVersion, at: e.ts, gate: x.typeLabel ?? x.title },
+              ...a.approved,
+            ];
+        }
+      }
       break;
     }
     case 'decision.recorded':
-      s.decisions.push({ ...e.data, ts: e.ts });
+      s.decisions.push({
+        ...e.data,
+        ts: e.ts,
+        ref: e.data.ref ?? `D-${String(s.decisions.length + 1).padStart(2, '0')}`,
+      });
       break;
     case 'cos.message':
       s.conversation.push({
@@ -245,8 +379,25 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         sections: e.data.sections,
         proceedsAt: e.data.proceedsAt,
         directiveId: e.data.directiveId,
+        label: e.data.label,
+        rows: e.data.rows,
+        bullets: e.data.bullets,
+        note: e.data.note,
+        links: e.data.links,
+        status: e.data.status,
+        needs: e.data.needs,
+        upNext: e.data.upNext,
+        about: null,
+        settled: null,
       });
       break;
+    case 'directive.settled': {
+      const m = s.conversation.find(
+        (c) => c.kind === 'directive_ack' && c.directiveId === e.data.directiveId,
+      );
+      if (m) m.settled = { outcome: e.data.outcome, summary: e.data.summary };
+      break;
+    }
     case 'director.message':
       s.conversation.push({
         messageId: e.data.messageId,
@@ -259,6 +410,16 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         sections: [],
         proceedsAt: null,
         directiveId: null,
+        label: null,
+        rows: [],
+        bullets: [],
+        note: null,
+        links: [],
+        status: null,
+        needs: [],
+        upNext: [],
+        about: e.data.about,
+        settled: null,
       });
       break;
     case 'cos.presence':
@@ -282,10 +443,13 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         artifactId: e.data.artifactId,
         kind: e.data.kind,
         title: e.data.title,
+        shortTitle: shortTitle(e.data.kind, e.data.title, e.data.artifactId),
         latest: e.data.version,
         versions: [],
+        approved: [],
       });
       a.title = e.data.title;
+      a.shortTitle = shortTitle(e.data.kind, e.data.title, e.data.artifactId);
       a.latest = Math.max(a.latest, e.data.version);
       a.versions = [
         {
@@ -296,26 +460,100 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
           producer: e.actor.id,
         },
         ...a.versions.filter((v) => v.version !== e.data.version),
-      ];
+      ].sort((x, y) => y.version - x.version);
       break;
     }
+    case 'page.updated': {
+      const d = e.data;
+      const prior = s.pages[d.pageKey];
+      const p: PreviewPage = (s.pages[d.pageKey] = prior ?? {
+        pageKey: d.pageKey,
+        name: d.name ?? d.pageKey,
+        path: d.path ?? `/${d.pageKey}`,
+        template: null,
+        layout: null,
+        pilot: false,
+        migrated: false,
+        parity: null,
+        visual: null,
+        shots: { source: {}, target: {} },
+        pageBuilderUrl: null,
+        previewUrl: null,
+      });
+      if (d.name !== undefined) p.name = d.name;
+      if (d.path !== undefined) p.path = d.path;
+      if (d.template !== undefined) p.template = d.template;
+      if (d.layout !== undefined) p.layout = d.layout;
+      if (d.pilot !== undefined) p.pilot = d.pilot;
+      if (d.migrated !== undefined) p.migrated = d.migrated;
+      if (d.parity !== undefined) p.parity = d.parity;
+      if (d.visual !== undefined) p.visual = d.visual;
+      if (d.shots?.source) p.shots.source = { ...p.shots.source, ...d.shots.source };
+      if (d.shots?.target) p.shots.target = { ...p.shots.target, ...d.shots.target };
+      if (d.pageBuilderUrl !== undefined) p.pageBuilderUrl = d.pageBuilderUrl;
+      if (d.previewUrl !== undefined) p.previewUrl = d.previewUrl;
+      break;
+    }
+    case 'preview.deployed':
+      s.preview[e.data.side] = {
+        label: e.data.label,
+        url: e.data.url,
+        deployment: e.data.deployment,
+      };
+      break;
+    case 'credential.registered':
+      s.credentials[e.data.credentialId] = {
+        credentialId: e.data.credentialId,
+        system: e.data.system,
+        scope: e.data.scope,
+        provided: e.data.reference !== null,
+        verifiedAt: null,
+        ok: null,
+        detail: e.data.reference === null ? 'Not provided' : null,
+        expiresAt: e.data.expiresAt,
+      };
+      break;
+    case 'credential.verified': {
+      const c = s.credentials[e.data.credentialId];
+      if (c)
+        Object.assign(c, {
+          verifiedAt: e.ts,
+          ok: e.data.ok,
+          detail: e.data.detail,
+          expiresAt: e.data.expiresAt ?? c.expiresAt,
+        });
+      break;
+    }
+    case 'settings.changed':
+      s.settings[e.data.key] = e.data.value;
+      break;
+    case 'conventions.recorded':
+      s.conventions = e.data.entries;
+      break;
     case 'tool.health':
       break;
   }
 
-  if (e.severity !== 'routine' && !NOT_LATEST.has(e.type)) {
-    s.latest = [toActivity(s, e), ...s.latest].slice(0, 3);
+  if (isLogEvent(e)) {
+    const item = toActivity(s, e);
+    if (!(item.toolServer && NOT_LATEST_SERVERS.has(item.toolServer)))
+      s.latest = [item, ...s.latest].slice(0, 4);
   }
 }
 
 function newAgent(r: RosterEntry): AgentRecord {
   return {
     ...r,
+    persona: r.persona ?? null,
+    description: r.description ?? '',
     state: r.tier === 'specialist' ? 'inactive' : 'idle',
     now: null,
     taskId: null,
     tokensThisTask: 0,
+    tokensProject: 0,
     since: null,
+    projectNote: null,
+    step: null,
     lastSteps: [],
   };
 }
@@ -324,6 +562,9 @@ export function toActivity(s: ProjectState, e: LwEvent): ActivityItem {
   return toActivityItem(e, (taskId) => s.tasks[taskId]?.phase ?? null, {
     agentName: (agentId) => s.agents[agentId]?.name ?? agentId,
     taskTitle: (taskId) => s.tasks[taskId]?.title ?? taskId,
+    toolLabel: (server) => s.toolLabels[server] ?? server,
+    escalation: (id) => s.escalations[id] ?? null,
+    decisionRef: () => s.decisions.at(-1)?.ref ?? null,
   });
 }
 
@@ -349,12 +590,16 @@ export function phaseViews(s: ProjectState): PhaseView[] {
       return {
         number: p.number,
         name: p.name,
+        shortName: p.shortName ?? p.name,
         status: p.status,
         gate: p.gate,
+        gateLabel: p.gateLabel,
         exitCriteria: p.exitCriteria,
         percent,
         tasksRunning: mine.filter((t) => ACTIVE_TASK_STATES.has(t.state)).length,
-        tasksQueued: mine.filter((t) => t.state === 'planned' || t.state === 'ready').length,
+        tasksQueued: mine.filter(
+          (t) => t.state === 'planned' || t.state === 'ready' || t.state === 'waiting',
+        ).length,
         tasksDone: done,
         tasksTotal: mine.length,
       };
@@ -367,14 +612,18 @@ function unresolvedEscalations(s: ProjectState): EscalationView[] {
     .sort(compareEscalations);
 }
 
+/** Escalations that stop work: Blockers, and Access problems (a tool the team can't reach). */
+const STOPPING = new Set(['blocker', 'access']);
+
 export function projectSummary(s: ProjectState): ProjectSummary {
   const phases = phaseViews(s);
-  const current = phases.find((p) => p.status === 'current') ?? null;
+  const current = phases.filter((p) => p.status === 'current');
+  const lead = current[0] ?? null;
   const nextGate = phases.find((p) => p.gate === 'director' && p.status !== 'done') ?? null;
   const open = Object.values(s.escalations).filter((x) => x.status === 'open');
-  const openBlockers = open.filter((x) => x.type === 'blocker');
+  const openBlockers = open.filter((x) => STOPPING.has(x.type));
   const { health, reason } =
-    s.status === 'completed'
+    s.status === 'completed' || s.status === 'archived'
       ? { health: 'healthy' as const, reason: null }
       : computeHealth({
           openBlockers,
@@ -389,10 +638,10 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     status: s.status,
     health,
     healthReason: reason,
-    currentPhase: current
-      ? { number: current.number, name: current.name, percent: current.percent ?? 0 }
+    currentPhase: lead
+      ? { number: lead.number, name: lead.shortName, percent: lead.percent ?? 0 }
       : null,
-    nextGate: nextGate ? { phase: nextGate.number, name: nextGate.name } : null,
+    nextGate: nextGate ? { phase: nextGate.number, name: nextGate.shortName } : null,
     waitingCount: open.length,
     hasOpenBlocker: openBlockers.length > 0,
     startedAt: s.startedAt,
@@ -401,13 +650,28 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     presence: s.presence,
     holds: Object.values(s.holds),
     sourceUrl: s.sourceUrl,
+    initials: s.initials,
+    subtitle: s.subtitle,
+    timezone: s.timezone,
+    source: s.source,
+    target: s.target,
   };
 }
 
 export function projectListItem(s: ProjectState): ProjectListItem {
-  const { id, name, client, status, health, waitingCount, hasOpenBlocker, currentPhase } =
-    projectSummary(s);
-  return { id, name, client, status, health, waitingCount, hasOpenBlocker, currentPhase };
+  const p = projectSummary(s);
+  return {
+    id: p.id,
+    name: p.name,
+    client: p.client,
+    status: p.status,
+    health: p.health,
+    waitingCount: p.waitingCount,
+    hasOpenBlocker: p.hasOpenBlocker,
+    currentPhase: p.currentPhase,
+    initials: p.initials,
+    subtitle: p.subtitle,
+  };
 }
 
 function leadRows(s: ProjectState): LeadRow[] {
@@ -429,6 +693,35 @@ function leadRows(s: ProjectState): LeadRow[] {
     });
 }
 
+/** "Phase 4, Components, runs with phase 5 in parallel. Next gate: Acceptance." */
+export function missionSubtitle(s: ProjectState): string {
+  const phases = phaseViews(s);
+  const current = phases.filter((p) => p.status === 'current');
+  if (s.status === 'completed') return 'Engagement complete. Handover delivered.';
+  if (s.status === 'archived') return 'Archived. Read-only.';
+  if (!current.length) return 'Not started yet.';
+  const [first, ...rest] = current;
+  const head = `Phase ${first!.number}, ${first!.shortName}${
+    rest.length ? `, runs with phase ${rest.map((p) => p.number).join(' and ')} in parallel` : ''
+  }.`;
+  const gateWaiting = Object.values(s.escalations).find(
+    (x) => x.type === 'gate' && x.status === 'open' && x.gate,
+  );
+  if (gateWaiting) return `${head} ${gateWaiting.typeLabel ?? 'The gate'} waits on your approval.`;
+  const gate = phases.find((p) => p.gate === 'director' && p.status !== 'done');
+  return gate ? `${head} Next gate: ${gate.shortName}.` : head;
+}
+
+function stats(s: ProjectState): MetricView[] {
+  if (!s.statCards.length) return Object.values(s.metrics);
+  return s.statCards.map((c) => ({
+    ...s.metrics[c.metric],
+    label: c.label,
+    icon: c.icon,
+    note: c.note,
+  }));
+}
+
 export function missionControl(s: ProjectState): MissionControlSnapshot {
   return {
     seq: s.seq,
@@ -437,21 +730,40 @@ export function missionControl(s: ProjectState): MissionControlSnapshot {
     phases: phaseViews(s),
     teamNow: leadRows(s),
     metrics: Object.values(s.metrics),
+    stats: stats(s),
     latest: s.latest,
+    subtitle: missionSubtitle(s),
   };
 }
 
-function agentView({ lastSteps: _steps, ...a }: AgentRecord): AgentView {
-  return a;
+/** "claude-opus-5-5" → "Opus-class". */
+export function modelClass(model: string): string {
+  const family = /(opus|sonnet|haiku|fable)/i.exec(model)?.[1];
+  return family ? `${family[0]!.toUpperCase()}${family.slice(1).toLowerCase()}-class` : model;
 }
 
-export function team(s: ProjectState): TeamSnapshot {
-  return { seq: s.seq, agents: Object.values(s.agents).map(agentView) };
+function agentView(
+  { lastSteps: _steps, ...a }: AgentRecord,
+  next: AgentView['next'] | undefined,
+): AgentView {
+  return { ...a, modelClass: modelClass(a.model), next: next ?? null };
 }
 
-export function agentDetail(s: ProjectState, agentId: string): AgentDetail | null {
+export function team(s: ProjectState, now = Date.now()): TeamSnapshot {
+  const next = nextForAgents(s, now);
+  return {
+    seq: s.seq,
+    agents: Object.values(s.agents).map((a) => agentView(a, next.get(a.agentId))),
+  };
+}
+
+export function agentDetail(
+  s: ProjectState,
+  agentId: string,
+  now = Date.now(),
+): AgentDetail | null {
   const a = s.agents[agentId];
-  return a ? { ...agentView(a), lastSteps: a.lastSteps } : null;
+  return a ? { ...agentView(a, nextForAgents(s, now).get(agentId)), lastSteps: a.lastSteps } : null;
 }
 
 export function plan(s: ProjectState): PlanSnapshot {
@@ -473,8 +785,8 @@ export function decisions(s: ProjectState): DecisionView[] {
 
 const KIND_ORDER = [
   'blueprint',
-  'platform_notes',
   'inventory',
+  'platform_notes',
   'report',
   'handover_pack',
   'pull_request',
@@ -483,9 +795,15 @@ const KIND_ORDER = [
 ];
 
 export function workbench(s: ProjectState): WorkbenchSnapshot {
+  const order = Object.keys(s.artifacts);
   const artifacts = Object.values(s.artifacts).sort(
     (a, b) =>
-      KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.title.localeCompare(b.title),
+      KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
+      order.indexOf(a.artifactId) - order.indexOf(b.artifactId),
   );
   return { seq: s.seq, artifacts };
+}
+
+export function preview(s: ProjectState): PreviewSnapshot {
+  return { seq: s.seq, ...s.preview, pages: Object.values(s.pages) };
 }

@@ -1,5 +1,7 @@
 role: layout-engineer
 name: Layout Engineer
+persona: "Megan O'Brien"
+description: 'Builds page templates, standard values, and the page and partial designs that hold headers and footers.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering

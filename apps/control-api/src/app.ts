@@ -1,12 +1,18 @@
 import cors from '@fastify/cors';
 import {
   ApproveGate,
+  ArchiveProject,
+  ChangeSetting,
   Control,
   CreateProject,
   DeferEscalation,
   PostMessage,
+  RerunTask,
   ResolveEscalation,
+  RollbackPhase,
   SendBackGate,
+  SettingKey,
+  type PolicyRow,
   type ActivityItem,
   type ActivityPage,
   type ApiError,
@@ -20,11 +26,17 @@ import {
   missionControl,
   plan,
   projectListItem,
+  isLogEvent,
+  preview,
+  scheduleSnapshot,
+  settingsView,
+  sinceSummary,
   team,
   toActivity,
   workbench,
   type ProjectState,
 } from '@lw/domain';
+import { Blueprint, blueprintSnapshot } from '@lw/plan';
 import type { EventStore, Projections } from '@lw/events';
 import { CommandError } from '@lw/domain';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
@@ -42,6 +54,10 @@ export interface AppDeps {
   createProject?: (input: CreateProject) => Promise<string>;
   /** Stored content of an artifact version, or null if none is stored. */
   artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
+  /** The playbook's escalation policy table, for Settings. */
+  policyDefaults?: (projectId: string) => PolicyRow[];
+  /** Server clock; tests pin it. */
+  now?: () => number;
   /** Origin allowed to call the API from a browser (the Control Center or the prototype). */
   corsOrigin?: string | null;
   /** GitHub sign-in. Without it the API is open, which main.ts only allows on localhost. */
@@ -225,6 +241,88 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
+  const clock = deps.now ?? Date.now;
+  const known = (id: string): ProjectState => {
+    const s = project(id);
+    if (!s) throw new CommandError(404, 'unknown_project', `No project "${id}".`);
+    return s;
+  };
+
+  app.get<P>('/projects/:id/schedule', async (req) =>
+    scheduleSnapshot(known(req.params.id), clock()),
+  );
+
+  app.get<P>('/projects/:id/preview', async (req) => preview(known(req.params.id)));
+
+  app.get<P>('/projects/:id/settings', async (req) =>
+    settingsView(known(req.params.id), deps.policyDefaults?.(req.params.id) ?? []),
+  );
+
+  const readJson = async (projectId: string, ref: string | null) => {
+    if (!ref || !deps.artifactContent) return null;
+    const bytes = await deps.artifactContent(projectId, ref);
+    return bytes ? (JSON.parse(new TextDecoder().decode(bytes)) as unknown) : null;
+  };
+
+  app.get<P>('/projects/:id/blueprint', async (req, reply) => {
+    const s = known(req.params.id);
+    const a = s.artifacts.blueprint;
+    const latest = a?.versions.find((v) => v.ref);
+    const current = latest ? Blueprint.safeParse(await readJson(s.projectId, latest.ref)) : null;
+    if (!a || !latest || !current?.success) {
+      return fail(reply, 404, 'no_blueprint', 'No Blueprint content has been written yet.');
+    }
+    const ok = a.approved[0];
+    const approvedRef = ok ? a.versions.find((v) => v.version === ok.version)?.ref : null;
+    const approved = approvedRef
+      ? Blueprint.safeParse(await readJson(s.projectId, approvedRef))
+      : null;
+    return blueprintSnapshot({
+      seq: s.seq,
+      current: { version: latest.version, blueprint: current.data },
+      approved:
+        ok && approved?.success
+          ? { version: ok.version, at: ok.at, blueprint: approved.data }
+          : null,
+      tasks: Object.values(s.tasks),
+      decisions: s.decisions,
+    });
+  });
+
+  app.get<P & { Querystring: { seq?: string } }>('/projects/:id/since', async (req) => {
+    const s = known(req.params.id);
+    const from = z.coerce
+      .number()
+      .int()
+      .min(0)
+      .parse(req.query.seq ?? s.seq);
+    const events = await store.read(s.projectId, { after: Math.max(0, from - 2000) });
+    return sinceSummary(s, events, from, clock());
+  });
+
+  /** Screenshots and images a project's documents refer to (`blob://<project>/<key>`). */
+  app.get<{ Params: { id: string; '*': string } }>('/projects/:id/blobs/*', async (req, reply) => {
+    known(req.params.id);
+    const ref = `blob://${req.params.id}/${req.params['*']}`;
+    const bytes = deps.artifactContent ? await deps.artifactContent(req.params.id, ref) : null;
+    if (!bytes) return fail(reply, 404, 'no_blob', 'Nothing is stored at that reference.');
+    const ext = /\.([a-z0-9]+)$/i.exec(ref)?.[1]?.toLowerCase();
+    const type =
+      {
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        webp: 'image/webp',
+        svg: 'image/svg+xml',
+        json: 'application/json',
+        md: 'text/markdown; charset=utf-8',
+      }[ext ?? ''] ?? 'application/octet-stream';
+    return reply
+      .header('content-type', type)
+      .header('cache-control', 'private, max-age=31536000, immutable')
+      .send(Buffer.from(bytes));
+  });
+
   const ActivityQuery = z.object({
     before: z.coerce.number().int().positive().optional(),
     limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -232,6 +330,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     agent: z.string().optional(),
     type: z.string().optional(), // comma-separated
     phase: z.coerce.number().int().optional(),
+    /** `log`: only the rows the Activity surface lists (tool calls, reviews, controls…). */
+    view: z.enum(['all', 'log']).default('all'),
   });
 
   app.get<P & { Querystring: Record<string, string> }>(
@@ -243,6 +343,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const severities = q.severity?.split(',');
       const types = q.type?.split(',');
       const keep = (i: ActivityItem) =>
+        (q.view === 'all' || i.toolLabel !== null) &&
         (!severities || severities.includes(i.severity)) &&
         (!types || types.includes(i.type)) &&
         (!q.agent || i.agentId === q.agent) &&
@@ -275,9 +376,82 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // ---- Commands ---------------------------------------------------------------------------
 
   app.post<P>('/projects/:id/messages', async (req) => {
-    const { body } = PostMessage.parse(req.body);
-    return command(req.params.id, (o) => o.postMessage(body));
+    const { body, about } = PostMessage.parse(req.body);
+    return command(req.params.id, (o) => o.postMessage(body, about));
   });
+
+  /** Commands only some runners support answer 501 elsewhere. */
+  const supported = <K extends keyof ProjectCommands>(o: ProjectCommands, k: K) => {
+    const fn = o[k];
+    if (typeof fn !== 'function')
+      throw new CommandError(
+        501,
+        'not_supported',
+        `This project's runner does not support ${String(k)}.`,
+      );
+    return (fn as (...args: unknown[]) => Promise<unknown>).bind(o);
+  };
+
+  app.post<{ Params: { id: string; escalationId: string } }>(
+    '/projects/:id/escalations/:escalationId/resume',
+    async (req) => command(req.params.id, (o) => supported(o, 'resume')(req.params.escalationId)),
+  );
+
+  app.post<{ Params: { id: string; taskId: string } }>(
+    '/projects/:id/tasks/:taskId/rerun',
+    async (req) => {
+      const { instructions } = RerunTask.parse(req.body);
+      return command(req.params.id, (o) =>
+        supported(o, 'rerunTask')(req.params.taskId, instructions),
+      );
+    },
+  );
+
+  app.post<{ Params: { id: string; taskId: string } }>(
+    '/projects/:id/tasks/:taskId/rollback',
+    async (req) => command(req.params.id, (o) => supported(o, 'rollbackTask')(req.params.taskId)),
+  );
+
+  app.post<{ Params: { id: string; phase: string } }>(
+    '/projects/:id/phases/:phase/rollback',
+    async (req) => {
+      RollbackPhase.parse(req.body);
+      const phase = z.coerce.number().int().parse(req.params.phase);
+      return command(req.params.id, (o) => supported(o, 'rollbackPhase')(phase));
+    },
+  );
+
+  app.post<P>('/projects/:id/archive', async (req) => {
+    const { confirmation } = ArchiveProject.parse(req.body);
+    if (confirmation !== known(req.params.id).name)
+      throw new CommandError(
+        422,
+        'confirmation_mismatch',
+        'Type the project name exactly to archive it.',
+      );
+    return command(req.params.id, (o) => supported(o, 'archive')());
+  });
+
+  app.put<{ Params: { id: string; key: string } }>('/projects/:id/settings/:key', async (req) => {
+    const key = SettingKey.parse(req.params.key);
+    const { value } = ChangeSetting.parse(req.body);
+    return command(req.params.id, (o) => supported(o, 'changeSetting')(key, value));
+  });
+
+  app.post<{ Params: { id: string; credentialId: string } }>(
+    '/projects/:id/credentials/:credentialId/verify',
+    async (req) =>
+      command(req.params.id, (o) => supported(o, 'verifyCredential')(req.params.credentialId)),
+  );
+
+  app.get<P>('/projects/:id/scenarios', async (req) => {
+    known(req.params.id);
+    return deps.commands(req.params.id)?.scenarios?.() ?? [];
+  });
+
+  app.post<{ Params: { id: string; key: string } }>('/projects/:id/scenarios/:key', async (req) =>
+    command(req.params.id, (o) => supported(o, 'runScenario')(req.params.key)),
+  );
 
   app.post<{ Params: { id: string; escalationId: string } }>(
     '/projects/:id/escalations/:escalationId/resolve',

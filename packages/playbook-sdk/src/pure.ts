@@ -97,10 +97,12 @@ export function validatePlaybook({ manifest, roles, plan }: Playbook): string[] 
 }
 
 export function phaseDefs({ manifest }: Playbook): PhaseDef[] {
-  return manifest.phases.map(({ number, name, gate, exitCriteria }) => ({
+  return manifest.phases.map(({ number, name, shortName, gate, gateLabel, exitCriteria }) => ({
     number,
     name,
+    shortName: shortName ?? null,
     gate,
+    gateLabel: gateLabel ?? null,
     exitCriteria,
   }));
 }
@@ -132,5 +134,7 @@ export function roster({ manifest, roles }: Playbook): RosterEntry[] {
     workstream: r.workstream,
     activePhases: r.activePhases === 'all' ? allPhases : r.activePhases,
     model: r.model.id,
+    persona: r.persona ?? null,
+    description: r.description ?? r.mandate,
   }));
 }

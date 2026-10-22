@@ -1,5 +1,7 @@
 role: parity-auditor
 name: Parity Auditor
+persona: 'Samantha Wright'
+description: 'Compares text, links and media between the source and the Sitecore build, page by page, and lists every gap.'
 tier: specialist
 reportsTo: quality-lead
 workstream: quality

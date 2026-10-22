@@ -1,4 +1,4 @@
-import type { MetricKey, Workstream } from '@lw/contracts';
+import type { MetricKey, TaskContract, Workstream } from '@lw/contracts';
 import type { Playbook, TaskTemplate } from '@lw/playbook-sdk';
 import type { Blueprint, BlueprintItem } from './blueprint';
 
@@ -26,6 +26,10 @@ export interface PlannedTask {
   batchSize: number;
   /** Count metric driven by this task's template, if any. */
   metric: MetricKey | null;
+  estimateHours: number | null;
+  /** Engagement-view row title. */
+  groupTitle: string | null;
+  contract: TaskContract | null;
 }
 
 export interface Plan {
@@ -89,6 +93,20 @@ export function compilePlan(
         gate: null,
         batchSize: template.batchSize ?? 1,
         metric: template.metric ?? null,
+        estimateHours: template.estimate ?? null,
+        groupTitle: template.activity ?? activityTitle(template.title),
+        contract: template.contract
+          ? {
+              inputs: fill(template.contract.inputs, unit.name),
+              outputs: fill(template.contract.outputs, unit.name),
+              acceptance: fill(
+                template.contract.acceptance ?? (template.acceptance.join('. ') || 'Lead review'),
+                unit.name,
+              ),
+              rollback: fill(template.contract.rollback, unit.name),
+              maxAttempts: template.contract.maxAttempts,
+            }
+          : null,
       });
     }
   }
@@ -119,6 +137,9 @@ export function compilePlan(
         gate: enabled ? pilot.optionalGate! : null,
         batchSize: 1,
         metric: null,
+        estimateHours: null,
+        groupTitle: null,
+        contract: null,
       });
     }
   }
@@ -194,6 +215,8 @@ export function compilePlan(
 interface Unit {
   taskId: string;
   key: string | null;
+  /** The item's name, for `{name}` in contracts; null for singleton templates. */
+  name: string | null;
   title: string;
   kind: PlannedTask['kind'];
   itemKeys: string[];
@@ -201,13 +224,23 @@ interface Unit {
 
 function expand(template: TaskTemplate, blueprint: Blueprint | null, problems: string[]): Unit[] {
   if (!template.forEach) {
-    return [{ taskId: template.id, key: null, title: template.title, kind: 'work', itemKeys: [] }];
+    return [
+      {
+        taskId: template.id,
+        key: null,
+        name: null,
+        title: template.title,
+        kind: 'work',
+        itemKeys: [],
+      },
+    ];
   }
   if (!blueprint) {
     return [
       {
         taskId: template.id.replace('{key}', PLACEHOLDER_KEY),
         key: PLACEHOLDER_KEY,
+        name: `all ${template.forEach}`,
         title: template.title.replace('{name}', `all ${template.forEach}`),
         kind: 'placeholder',
         itemKeys: [],
@@ -224,10 +257,19 @@ function expand(template: TaskTemplate, blueprint: Blueprint | null, problems: s
     .map((i: BlueprintItem) => ({
       taskId: template.id.replace('{key}', i.key),
       key: i.key,
+      name: i.name,
       title: template.title.replace('{name}', i.name),
       kind: 'work' as const,
       itemKeys: [i.key],
     }));
+}
+
+const fill = (text: string, name: string | null) => text.replaceAll('{name}', name ?? 'the item');
+
+/** "Port {name}" → "Port". Engagement rows name the activity, not one item of it. */
+function activityTitle(title: string): string | null {
+  if (!title.includes('{name}')) return null;
+  return title.replace(/\s*:?\s*\{name\}\s*/, ' ').trim();
 }
 
 /** Stable topological sort: phase first, then dependencies, then declaration order. */

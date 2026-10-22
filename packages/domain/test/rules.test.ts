@@ -64,7 +64,7 @@ describe('health (design spec status strip rule)', () => {
 });
 
 describe('escalation queue order', () => {
-  it('puts open before deferred, then Blocker, gate, Decision, Access, Budget, Risk, then oldest first', () => {
+  it('puts open before deferred, then Blocker, Access, Decision, Review, Budget, Risk, then newest first', () => {
     const x = (type: any, raisedAt: string, status: any = 'open') => ({ type, raisedAt, status });
     const sorted = [
       x('risk', '2026-01-01T00:00:00Z'),
@@ -73,11 +73,20 @@ describe('escalation queue order', () => {
       x('decision', '2026-01-01T00:01:00Z'),
       x('blocker', '2026-01-01T00:03:00Z'),
       x('gate', '2026-01-01T00:04:00Z'),
+      x('access', '2026-01-01T00:06:00Z'),
     ].sort(compareEscalations);
     expect(
       sorted.map(
         (s) => `${s.type}@${s.raisedAt.slice(14, 16)}${s.status === 'deferred' ? '*' : ''}`,
       ),
-    ).toEqual(['blocker@03', 'gate@04', 'decision@01', 'decision@02', 'risk@00', 'blocker@05*']);
+    ).toEqual([
+      'blocker@03',
+      'access@06',
+      'decision@02',
+      'decision@01',
+      'gate@04',
+      'risk@00',
+      'blocker@05*',
+    ]);
   });
 });

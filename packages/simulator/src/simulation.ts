@@ -4,6 +4,7 @@ import type {
   Control,
   CosMessageKind,
   EscalationCard,
+  EscalationCardInput,
   MessageSection,
   MetricKey,
   NewEvent,
@@ -33,14 +34,8 @@ export interface SimulationOptions {
   directiveWindowSec?: number;
 }
 
-type EscalationInput = Omit<
-  EscalationCard,
-  'escalationId' | 'deadline' | 'evidence' | 'gate' | 'options'
-> & {
-  options: { id: string; label: string; recommended?: boolean }[];
+type EscalationInput = Omit<EscalationCardInput, 'escalationId' | 'deadline'> & {
   deadlineSimSeconds?: number;
-  evidence?: EscalationCard['evidence'];
-  gate?: EscalationCard['gate'];
 };
 
 interface PendingEscalation {
@@ -389,12 +384,15 @@ export class Simulation {
       title: card.title,
       context: card.context,
       impact: card.impact,
-      options: card.options.map((o) => ({ ...o, recommended: o.recommended ?? false })),
+      options: card.options.map((o) => ({ recommended: false, key: null, ...o })),
       defaultOptionId: card.defaultOptionId,
       deadline: deadlineMs ? new Date(Date.now() + deadlineMs).toISOString() : null,
       evidence: card.evidence ?? [],
       sourceTaskId: card.sourceTaskId,
       gate: card.gate ?? null,
+      typeLabel: card.typeLabel ?? null,
+      waitNote: card.waitNote ?? null,
+      reversible: card.reversible ?? true,
     };
     const answer = new Promise<string>((resolve) => {
       const p: PendingEscalation = { card: full, resolve, timer: null };

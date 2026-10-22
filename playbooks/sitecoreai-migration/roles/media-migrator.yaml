@@ -1,5 +1,7 @@
 role: media-migrator
 name: Media Migrator
+persona: 'Brandon Lee'
+description: 'Uploads every image and file in use to the Media Library with alt text, and skips files nothing references.'
 tier: specialist
 reportsTo: content-lead
 workstream: content

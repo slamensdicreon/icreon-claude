@@ -13,6 +13,7 @@ import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 import { buildApp } from './app';
+import { policyRows } from './policy';
 import { simulationCommands, type ProjectCommands } from './commands';
 
 /**
@@ -211,6 +212,7 @@ const app = await buildApp({
   commands,
   createProject,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
+  policyDefaults: () => policyRows(playbook),
   corsOrigin: env.CORS_ORIGIN,
   auth,
   logger: true,

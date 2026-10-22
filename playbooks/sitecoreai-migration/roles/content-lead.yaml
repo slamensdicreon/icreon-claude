@@ -1,5 +1,7 @@
 role: content-lead
 name: Content Lead
+persona: 'Rachel Goldstein'
+description: 'Runs migration and personalization readiness. Plans the order content moves in and checks that it lands complete.'
 tier: lead
 reportsTo: chief-of-staff
 workstream: content

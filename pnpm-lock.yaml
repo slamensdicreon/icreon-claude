@@ -47,6 +47,9 @@ importers:
       '@lw/orchestrator':
         specifier: workspace:*
         version: link:../../packages/orchestrator
+      '@lw/plan':
+        specifier: workspace:*
+        version: link:../../packages/plan
       '@lw/playbook-sdk':
         specifier: workspace:*
         version: link:../../packages/playbook-sdk

@@ -9,6 +9,7 @@ export const AgentState = z.enum([
   'blocked',
   'failed',
   'done',
+  'paused', // held by the Director; resumes where it stopped
 ]);
 export type AgentState = z.infer<typeof AgentState>;
 
@@ -24,13 +25,21 @@ export const TaskState = z.enum([
   'paused',
   'cancelled',
   'rolled_back',
+  'waiting', // waits on a decision or a consult; not a failure
 ]);
 export type TaskState = z.infer<typeof TaskState>;
 
 export const PhaseStatus = z.enum(['future', 'current', 'done']);
 export type PhaseStatus = z.infer<typeof PhaseStatus>;
 
-export const ProjectStatus = z.enum(['intake', 'running', 'paused', 'completed', 'cancelled']);
+export const ProjectStatus = z.enum([
+  'intake',
+  'running',
+  'paused',
+  'completed',
+  'cancelled',
+  'archived',
+]);
 export type ProjectStatus = z.infer<typeof ProjectStatus>;
 
 export const Health = z.enum(['healthy', 'attention', 'blocked']);
@@ -59,3 +68,7 @@ export type ControlVerb = z.infer<typeof ControlVerb>;
 
 export const ScopeKind = z.enum(['project', 'phase', 'workstream', 'task', 'agent']);
 export type ScopeKind = z.infer<typeof ScopeKind>;
+
+/** Breakpoints every visual comparison and screenshot uses. */
+export const Breakpoint = z.enum(['desktop', 'tablet', 'phone']);
+export type Breakpoint = z.infer<typeof Breakpoint>;

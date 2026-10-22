@@ -4,13 +4,15 @@ import type { TaskState } from '@lw/contracts';
 export const MAX_REJECTIONS = 2;
 
 const TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
-  planned: ['ready', 'cancelled'],
-  ready: ['running', 'paused', 'blocked', 'cancelled'],
-  running: ['validating', 'blocked', 'paused', 'cancelled'],
+  planned: ['ready', 'waiting', 'cancelled'],
+  ready: ['running', 'paused', 'blocked', 'waiting', 'cancelled'],
+  running: ['validating', 'blocked', 'paused', 'waiting', 'cancelled'],
   validating: ['done', 'rejected', 'blocked'],
   rejected: ['running', 'blocked'],
   blocked: ['running', 'ready', 'cancelled'],
   paused: ['running', 'ready', 'cancelled'],
+  // Waiting on a decision or a consult: picks up where it can once answered.
+  waiting: ['planned', 'ready', 'running', 'cancelled'],
   done: ['rolled_back'],
   cancelled: [],
   rolled_back: ['ready'],

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   AgentState,
   AgentTier,
+  Breakpoint,
   CosPresence,
   EscalationStatus,
   EscalationType,
@@ -44,8 +45,11 @@ export type Subject = z.infer<typeof Subject>;
 export const PhaseDef = z.object({
   number: z.number().int().min(0),
   name: z.string(),
+  /** One word for the strip and stepper ("Components"). */
+  shortName: z.string().nullable().default(null),
   /** Hard gates wait on the Director. */
   gate: z.enum(['none', 'director']).default('none'),
+  gateLabel: z.string().nullable().default(null),
   exitCriteria: z.string(),
 });
 export type PhaseDef = z.infer<typeof PhaseDef>;
@@ -59,6 +63,10 @@ export const RosterEntry = z.object({
   workstream: Workstream.nullable(),
   activePhases: z.array(z.number().int()),
   model: z.string(),
+  /** The person this role is shown as ("Emily Chen"); the Chief of Staff's is "Cypher". */
+  persona: z.string().nullable().default(null),
+  /** What the role does, in plain words for the Director (Team cards, inspector). */
+  description: z.string().default(''),
 });
 export type RosterEntry = z.infer<typeof RosterEntry>;
 
@@ -80,14 +88,37 @@ export const EscalationOption = z.object({
   id: z.string(),
   label: z.string(),
   recommended: z.boolean().default(false),
+  /** Letter shown on the card and typed as a shortcut (A, B, C). Defaults to the position. */
+  key: z.string().max(2).nullable().default(null),
 });
 export type EscalationOption = z.infer<typeof EscalationOption>;
 
-export const EvidenceLink = z.object({
-  kind: z.enum(['artifact', 'log', 'page_builder', 'delivery_host', 'pull_request']),
-  label: z.string(),
+/**
+ * Where an evidence chip (or any jump link) goes. `ref` by kind: artifact id, agent id, activity
+ * filter text, preview page path, settings section, or an absolute URL for external systems.
+ */
+export const LinkTarget = z.object({
+  kind: z.enum([
+    'artifact',
+    'agent',
+    'task',
+    'activity',
+    'preview',
+    'settings',
+    'surface',
+    'decision',
+    'external',
+    // Earlier names, kept so old events still parse.
+    'log',
+    'page_builder',
+    'delivery_host',
+    'pull_request',
+  ]),
   ref: z.string(),
 });
+export type LinkTarget = z.infer<typeof LinkTarget>;
+
+export const EvidenceLink = LinkTarget.extend({ label: z.string() });
 export type EvidenceLink = z.infer<typeof EvidenceLink>;
 
 /** Escalation card, as specified in design spec §5. Gate approvals are escalations of type `gate`. */
@@ -100,8 +131,14 @@ export const EscalationCard = z.object({
   options: z.array(EscalationOption).min(1).max(4),
   defaultOptionId: z.string().nullable(),
   deadline: z.iso.datetime().nullable(),
-  evidence: z.array(EvidenceLink).max(3).default([]),
+  evidence: z.array(EvidenceLink).max(4).default([]),
   sourceTaskId: z.string().nullable(),
+  /** Overrides the type's label on the card ("Gate 1", "Review"). */
+  typeLabel: z.string().nullable().default(null),
+  /** For escalations without a default: what happens meanwhile ("Batch 2 continues meanwhile"). */
+  waitNote: z.string().nullable().default(null),
+  /** Whether a choice can be undone during the undo window. */
+  reversible: z.boolean().default(true),
   /** Set for gate escalations. */
   gate: z
     .object({
@@ -114,6 +151,8 @@ export const EscalationCard = z.object({
     .default(null),
 });
 export type EscalationCard = z.infer<typeof EscalationCard>;
+/** An escalation card before defaults apply (what raisers write). */
+export type EscalationCardInput = z.input<typeof EscalationCard>;
 
 export const Resolution = z.object({
   optionId: z.string().nullable(),
@@ -129,22 +168,90 @@ export const MetricKey = z.enum([
   'media_uploaded',
   'qa_pass',
   'parity',
+  'source_mapped',
 ]);
 export type MetricKey = z.infer<typeof MetricKey>;
 
 export const CosMessageKind = z.enum([
   'text',
-  'phase_brief_entry',
-  'phase_brief_exit',
+  'brief',
   'status',
+  'needs',
+  'next',
   'digest',
   'directive_ack',
+  // Earlier names for briefs, kept so old events still parse.
+  'phase_brief_entry',
+  'phase_brief_exit',
 ]);
 export type CosMessageKind = z.infer<typeof CosMessageKind>;
 
 /** Structured message sections (briefs, status answers) render as headed blocks, not prose. */
 export const MessageSection = z.object({ heading: z.string(), lines: z.array(z.string()) });
 export type MessageSection = z.infer<typeof MessageSection>;
+
+/** A button under a message or inside an embed ("Open Blueprint"). */
+export const MessageLink = z.object({ label: z.string(), target: LinkTarget });
+export type MessageLink = z.infer<typeof MessageLink>;
+
+/** The status card Cypher answers "Status" with. Numbers as of the message, in words. */
+export const StatusCard = z.object({
+  phase: z.string(),
+  percent: z.number(),
+  blockers: z.array(z.string()),
+  waiting: z.number().int(),
+  headline: z.object({ label: z.string(), value: z.string(), sub: z.string().nullable() }),
+  nextGate: z.string(),
+  cost: z.string(),
+  elapsed: z.string(),
+});
+export type StatusCard = z.infer<typeof StatusCard>;
+
+export const ProjectSource = z.object({
+  repo: z.string().nullable(),
+  url: z.string().nullable(),
+  /** "Vite 7, React 19", "Next.js 16". */
+  framework: z.string().nullable(),
+  /** How the source pane is labelled ("Vite build of ansell-main"). */
+  label: z.string().nullable(),
+});
+export type ProjectSource = z.infer<typeof ProjectSource>;
+
+export const ProjectTarget = z.object({
+  /** Sitecore site collection and site. */
+  collection: z.string().nullable(),
+  site: z.string().nullable(),
+  /** Hosting project for the head ("Vercel, ansell-website"). */
+  hosting: z.string().nullable(),
+});
+export type ProjectTarget = z.infer<typeof ProjectTarget>;
+
+export const StatCard = z.object({
+  metric: MetricKey,
+  label: z.string(),
+  /** Carbon icon name. */
+  icon: z.string(),
+  note: z.string(),
+});
+export type StatCard = z.infer<typeof StatCard>;
+
+/** The task contract the inspector shows (from the playbook template, filled per item). */
+export const TaskContract = z.object({
+  inputs: z.string(),
+  outputs: z.string(),
+  acceptance: z.string(),
+  rollback: z.string(),
+  maxAttempts: z.number().int().positive().default(3),
+});
+export type TaskContract = z.infer<typeof TaskContract>;
+
+export const SettingKey = z.enum([
+  'gates.pilotReview',
+  'gates.publishReview',
+  'escalationPolicy',
+  'notifications',
+]);
+export type SettingKey = z.infer<typeof SettingKey>;
 
 // ---------------------------------------------------------------------------
 // Event union
@@ -165,6 +272,28 @@ export const EventBody = z.discriminatedUnion('type', [
       roster: z.array(RosterEntry),
       /** Site definition from intake: where the source content lives. */
       site: z.object({ sourceUrl: z.string().url().nullable() }).default({ sourceUrl: null }),
+      /** Two letters for the project switcher. */
+      initials: z.string().max(3).nullable().default(null),
+      /** One line under the name ("ansell-main to SitecoreAI"). */
+      subtitle: z.string().nullable().default(null),
+      /** IANA zone every time is shown in, and the working day is counted in. */
+      timezone: z.string().default('America/New_York'),
+      source: ProjectSource.default({ repo: null, url: null, framework: null, label: null }),
+      target: ProjectTarget.nullable().default(null),
+      /** Mission Control stat cards, in order. Empty: the playbook's defaults. */
+      stats: z.array(StatCard).default([]),
+      /** Display names for tool servers in Activity ("sitecore-authoring" → "Authoring API"). */
+      toolLabels: z.record(z.string(), z.string()).default({}),
+    }),
+  ),
+  /** Settings changed after intake: subtitle, target, stats, time zone. */
+  ev(
+    'project.updated',
+    z.object({
+      subtitle: z.string().nullable().optional(),
+      target: ProjectTarget.nullable().optional(),
+      stats: z.array(StatCard).optional(),
+      timezone: z.string().optional(),
     }),
   ),
   ev('project.status', z.object({ status: ProjectStatus })),
@@ -183,7 +312,20 @@ export const EventBody = z.discriminatedUnion('type', [
       kind: z.enum(['work', 'placeholder', 'checkpoint']).default('work'),
       /** Template the task came from; the Plan view groups many same-template bars into one. */
       group: z.string().nullable().default(null),
+      /** Engagement-view row this task rolls up into ("Pilot slice and batch 1"). */
+      groupTitle: z.string().nullable().default(null),
+      /** Blueprint item keys this task works on (one for forEach tasks). */
+      itemKeys: z.array(z.string()).default([]),
+      /** Expected effort in working hours, for the forecast. */
+      estimateHours: z.number().positive().nullable().default(null),
+      /** The task's contract, as the inspector shows it. */
+      contract: TaskContract.nullable().default(null),
     }),
+  ),
+  /** A planned window set by a Lead (or the simulator); the forecast keeps it when it can. */
+  ev(
+    'task.scheduled',
+    z.object({ taskId: z.string(), start: z.iso.datetime(), end: z.iso.datetime() }),
   ),
   ev(
     'task.state',
@@ -203,8 +345,12 @@ export const EventBody = z.discriminatedUnion('type', [
       /** One line, e.g. "Registering PromoCard, step 3 of 5". Waiting says what it waits for. */
       now: z.string().nullable(),
       taskId: z.string().nullable(),
+      /** Progress through the task's own plan ("step 3 of 5"), when the agent reports it. */
+      step: z.object({ n: z.number().int(), of: z.number().int() }).nullable().default(null),
     }),
   ),
+  /** What a role does on this project specifically ("reads data/corpus.ts instead of crawling"). */
+  ev('agent.noted', z.object({ agentId: z.string(), note: z.string() })),
   ev(
     'step.recorded',
     z.object({
@@ -219,8 +365,26 @@ export const EventBody = z.discriminatedUnion('type', [
       summary: z.string(),
       /** sha256 of the canonical request, for the audit trail; null for model-only steps. */
       requestHash: z.string().nullable().default(null),
+      /** Result in the tool's own words when a code says too little ("green", "pass, 1 warning"). */
+      outcome: z.string().nullable().default(null),
+      /** Why a warning or failure matters, shown under the row. */
+      note: z.string().nullable().default(null),
     }),
   ),
+  /** A Lead accepting or rejecting a specialist's output. */
+  ev(
+    'review.recorded',
+    z.object({
+      reviewerId: z.string(),
+      agentId: z.string(),
+      taskId: z.string().nullable(),
+      verdict: z.enum(['accept', 'reject']),
+      subject: z.string(),
+      note: z.string().nullable().default(null),
+    }),
+  ),
+  /** The Chief of Staff changing the plan ("close pilot slice, open batch 2"). */
+  ev('plan.changed', z.object({ summary: z.string(), taskIds: z.array(z.string()).default([]) })),
   ev('escalation.raised', EscalationCard),
   ev(
     'escalation.updated',
@@ -243,6 +407,8 @@ export const EventBody = z.discriminatedUnion('type', [
       decidedBy: z.enum(['director', 'chief_of_staff', 'default']),
       scopeKey: z.string(),
       escalationId: z.string().nullable(),
+      /** Display id, "D-07". Assigned in order when absent. */
+      ref: z.string().nullable().default(null),
     }),
   ),
   ev(
@@ -256,9 +422,50 @@ export const EventBody = z.discriminatedUnion('type', [
       /** Directive acks carry the stop window. */
       proceedsAt: z.iso.datetime().nullable().default(null),
       directiveId: z.string().nullable().default(null),
+      /** Brief embeds: the label over the title ("Phase 4 brief"), labelled rows, bullets. */
+      label: z.string().nullable().default(null),
+      rows: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
+      bullets: z.array(z.string()).default([]),
+      /** The highlighted line at the foot of a brief. */
+      note: z.string().nullable().default(null),
+      links: z.array(MessageLink).default([]),
+      status: StatusCard.nullable().default(null),
+      /** "What needs me?": the open items, as of the message. */
+      needs: z
+        .array(z.object({ escalationId: z.string(), type: EscalationType, title: z.string() }))
+        .default([]),
+      /** "What is next?": the next activities, as of the message. */
+      upNext: z
+        .array(
+          z.object({
+            taskId: z.string(),
+            title: z.string(),
+            agentId: z.string(),
+            start: z.iso.datetime(),
+            state: TaskState,
+          }),
+        )
+        .default([]),
     }),
   ),
-  ev('director.message', z.object({ messageId: z.string(), body: z.string() })),
+  /** A directive's stop window closed: applied, or stopped by the Director. */
+  ev(
+    'directive.settled',
+    z.object({
+      directiveId: z.string(),
+      outcome: z.enum(['applied', 'stopped']),
+      summary: z.string(),
+    }),
+  ),
+  ev(
+    'director.message',
+    z.object({
+      messageId: z.string(),
+      body: z.string(),
+      /** Set when asked from an escalation card ("Ask a question"). */
+      about: z.string().nullable().default(null),
+    }),
+  ),
   ev('cos.presence', z.object({ presence: CosPresence })),
   ev(
     'artifact.versioned',
@@ -300,6 +507,68 @@ export const EventBody = z.discriminatedUnion('type', [
       held: z.boolean(),
       label: z.string(),
     }),
+  ),
+  /** One page (or section) of the site in Site preview. Absent fields are unchanged. */
+  ev(
+    'page.updated',
+    z.object({
+      pageKey: z.string(),
+      name: z.string().optional(),
+      path: z.string().optional(),
+      template: z.string().nullable().optional(),
+      layout: z.string().nullable().optional(),
+      pilot: z.boolean().optional(),
+      migrated: z.boolean().optional(),
+      /** 0–100. Content parity (text, links, media) and visual match. */
+      parity: z.number().min(0).max(100).nullable().optional(),
+      visual: z.number().min(0).max(100).nullable().optional(),
+      shots: z
+        .object({
+          source: z.partialRecord(Breakpoint, z.string()).optional(),
+          target: z.partialRecord(Breakpoint, z.string()).optional(),
+        })
+        .optional(),
+      pageBuilderUrl: z.string().nullable().optional(),
+      previewUrl: z.string().nullable().optional(),
+    }),
+  ),
+  /** What each Site preview pane shows ("Vite build of ansell-main", "preview deploy 6"). */
+  ev(
+    'preview.deployed',
+    z.object({
+      side: z.enum(['source', 'target']),
+      label: z.string(),
+      url: z.string().nullable().default(null),
+      deployment: z.string().nullable().default(null),
+    }),
+  ),
+  /** A credential the project uses, by reference only. Secrets never enter the log. */
+  ev(
+    'credential.registered',
+    z.object({
+      credentialId: z.string(),
+      system: z.string(),
+      scope: z.string(),
+      /** Vault path; null when the client has not provided it yet. */
+      reference: z.string().nullable(),
+      expiresAt: z.iso.datetime().nullable().default(null),
+    }),
+  ),
+  ev(
+    'credential.verified',
+    z.object({
+      credentialId: z.string(),
+      ok: z.boolean(),
+      detail: z.string(),
+      expiresAt: z.iso.datetime().nullable().default(null),
+    }),
+  ),
+  /** A project setting changed (optional gates, escalation policy). */
+  ev('settings.changed', z.object({ key: SettingKey, value: z.json() })),
+  /** Project conventions (naming, grid, languages…), recorded with the Blueprint. */
+  ev(
+    'conventions.recorded',
+    z.object({ entries: z.array(z.object({ key: z.string(), value: z.string() })) }),
   ),
   ev(
     'tool.health',

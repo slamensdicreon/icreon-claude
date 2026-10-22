@@ -1,5 +1,7 @@
 role: handover-writer
 name: Handover Writer
+persona: 'Lauren Fitzgerald'
+description: 'Writes the runbook, the component catalog for marketers, and the list of known gaps at handover.'
 tier: specialist
 reportsTo: chief-of-staff
 workstream: null

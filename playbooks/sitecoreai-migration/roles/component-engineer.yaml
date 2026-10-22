@@ -1,5 +1,7 @@
 role: component-engineer
 name: Component Engineer
+persona: 'Emily Chen'
+description: 'Rebuilds each source component in the Content SDK head so marketers can edit it inline, then registers it in the component map.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering

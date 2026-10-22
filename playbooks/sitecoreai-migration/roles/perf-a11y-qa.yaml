@@ -1,5 +1,7 @@
 role: perf-a11y-qa
 name: Performance and Accessibility QA
+persona: 'Michael Robinson'
+description: 'Runs Lighthouse and axe on representative pages and reports performance and accessibility issues.'
 tier: specialist
 reportsTo: quality-lead
 workstream: quality

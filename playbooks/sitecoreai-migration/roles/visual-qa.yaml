@@ -1,5 +1,7 @@
 role: visual-qa
 name: Visual QA
+persona: 'Natalie Torres'
+description: 'Compares source and Sitecore pages screenshot by screenshot at desktop, tablet and phone widths.'
 tier: specialist
 reportsTo: quality-lead
 workstream: quality

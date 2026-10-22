@@ -18,30 +18,71 @@ defaults:
     budget: 1h
     risk: 24h
     gate: 24h
+  escalationPolicy:
+    blocker:
+      { default: false, behaviour: Pauses that path. No default, notifies: 'Immediately, Slack' }
+    access: { default: true, behaviour: Proceeds with the default, notifies: 'Immediately, Slack' }
+    decision:
+      { default: true, behaviour: Proceeds with the default, notifies: 'Digest, unless under 2 h' }
+    gate: { default: false, behaviour: Waits for you. No default, notifies: 'Immediately, Slack' }
+    budget:
+      { default: false, behaviour: Pauses dispatch. No default, notifies: 'Immediately, email' }
+    risk: { default: true, behaviour: Proceeds; logged, notifies: Digest }
+  stats:
+    - {
+        metric: components_registered,
+        label: Renderings,
+        icon: application,
+        note: Registered in SitecoreAI,
+      }
+    - { metric: pages_migrated, label: Pages, icon: document, note: Created in SitecoreAI }
+    - { metric: media_uploaded, label: Media, icon: image, note: Uploaded with alt text }
+    - { metric: qa_pass, label: QA pass, icon: task--complete, note: Of renderings registered }
+  toolLabels:
+    browser: Browser
+    validators: Validators
+    artifacts: Workbench
+    blackboard: Blackboard
+    decision-log: Decision Log
+    model: Model
+    plan: Planner
+    sitecore-authoring: Authoring API
+    sitecore-cli: Sitecore CLI
+    sitecore-deploy: Deploy API
+    github: GitHub
+    sandbox: Sandbox
+    hosting: Vercel
+    research: Docs
 phases:
   - number: 0
     name: Intake and access verification
+    shortName: Intake
     exitCriteria: >-
       Every credential verified against its endpoint (GitHub clone, Authoring & Management API, Deploy API,
       Experience Edge, hosting); tenant facts recorded.
   - number: 1
     name: Discovery and analysis
+    shortName: Discovery
     exitCriteria: >-
       Component inventory, page inventory, asset manifest and risk list complete; every sitemap URL crawled
       or marked excluded.
   - number: 2
     name: Blueprint
+    shortName: Blueprint
     gate: director
+    gateLabel: 'Gate 1: Director approves the Blueprint'
     exitCriteria: >-
       Every source component mapped to a rendering (or merged, split, dropped), every page to a template;
       naming and folder scheme fixed; open decisions listed.
   - number: 3
     name: Foundation
+    shortName: Foundation
     exitCriteria: >-
       Site collection, site, languages, grid and module folders exist; hosting project and env vars exist;
       an empty page renders on the editing host; zero critical findings.
   - number: 4
     name: Component build and registration
+    shortName: Components
     optionalGates:
       - pilot-slice-review
     exitCriteria: >-
@@ -49,6 +90,7 @@ phases:
       and enabled in Page builder on the preview editing host.
   - number: 5
     name: Templates, layouts, and designs
+    shortName: Templates
     dependsOn:
       - 3
     exitCriteria: >-
@@ -56,6 +98,7 @@ phases:
       partial designs render on every template.
   - number: 6
     name: Content and media migration
+    shortName: Migration
     dependsOn:
       - 4
       - 5
@@ -64,22 +107,27 @@ phases:
       sample within tolerance.
   - number: 7
     name: Experience enablement
+    shortName: Experience
     exitCriteria: >-
       Components datasource-driven; redirects, SEO fields, sitemap, robots, 404/500, dictionary in place;
       one page variant and one A/B/n test resolve on the preview host.
   - number: 8
     name: Deployment and publishing
+    shortName: Deployment
     exitCriteria: >-
       Production editing host registered; delivery host live; content published to Experience Edge; smoke
       test green.
   - number: 9
     name: Validation and acceptance
+    shortName: Acceptance
     gate: director
+    gateLabel: 'Gate 2: Director accepts'
     exitCriteria: >-
       Acceptance Report compiled against the Definition of Done; every open defect triaged as fix, accept
       or defer.
   - number: 10
     name: Handover
+    shortName: Handover
     exitCriteria: >-
       Runbook, marketer component catalog and known-gaps register delivered; project archived with full
       audit trail.

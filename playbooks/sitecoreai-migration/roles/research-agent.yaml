@@ -1,5 +1,7 @@
 role: research-agent
 name: Research Agent
+persona: 'Tyler Morgan'
+description: 'Checks platform facts against current Sitecore documentation, such as SDK versions, API limits and conventions. Stops once the Blueprint is approved.'
 tier: specialist
 reportsTo: discovery-lead
 workstream: discovery

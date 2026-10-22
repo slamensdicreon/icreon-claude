@@ -2,7 +2,9 @@ import { z } from 'zod';
 import {
   AgentState,
   AgentTier,
+  Breakpoint,
   CosPresence,
+  EscalationType,
   EscalationStatus,
   Health,
   PhaseStatus,
@@ -16,10 +18,15 @@ import {
   Budgets,
   CosMessageKind,
   EscalationCard,
+  MessageLink,
   MessageSection,
   MetricKey,
+  ProjectSource,
+  ProjectTarget,
   Resolution,
   Spend,
+  StatusCard,
+  TaskContract,
 } from './events';
 
 /**
@@ -31,8 +38,10 @@ const Seq = z.number().int().nonnegative();
 export const PhaseView = z.object({
   number: z.number().int(),
   name: z.string(),
+  shortName: z.string(),
   status: PhaseStatus,
   gate: z.enum(['none', 'director']),
+  gateLabel: z.string().nullable(),
   exitCriteria: z.string(),
   /** null for future phases: the stepper never shows a percent it hasn't measured. */
   percent: z.number().min(0).max(100).nullable(),
@@ -76,6 +85,11 @@ export const ProjectSummary = z.object({
   holds: z.array(z.object({ kind: ScopeKind, id: z.string(), label: z.string() })),
   /** The live site being migrated, as given at intake. */
   sourceUrl: z.string().nullable(),
+  initials: z.string(),
+  subtitle: z.string().nullable(),
+  timezone: z.string(),
+  source: ProjectSource,
+  target: ProjectTarget.nullable(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 
@@ -93,6 +107,10 @@ export type LeadRow = z.infer<typeof LeadRow>;
 export const MetricView = z.object({
   key: MetricKey,
   label: z.string(),
+  /** Carbon icon name, when the project's stat cards set one. */
+  icon: z.string().nullable().default(null),
+  /** The line under a stat card ("Registered in SitecoreAI"). */
+  note: z.string().nullable().default(null),
   /** null = not yet measured. */
   value: z.number().nullable(),
   total: z.number().nullable(),
@@ -114,6 +132,14 @@ export const ActivityItem = z.object({
   durationMs: z.number().int().nullable(),
   tokens: z.number().int().nullable(),
   summary: z.string(),
+  /** Who acted when not an agent step: "director", "chief-of-staff", "system". */
+  actorId: z.string(),
+  /** Tool column in words ("Authoring API", "Review", "Planner", "Control"). */
+  toolLabel: z.string().nullable(),
+  /** Result column in words ("200", "green", "pass, 1 warning", "reject"). */
+  outcome: z.string().nullable(),
+  /** Explanation under warnings and failures. */
+  note: z.string().nullable(),
 });
 export type ActivityItem = z.infer<typeof ActivityItem>;
 
@@ -125,7 +151,11 @@ export const MissionControlSnapshot = z.object({
   phases: z.array(PhaseView),
   teamNow: z.array(LeadRow),
   metrics: z.array(MetricView),
-  latest: z.array(ActivityItem).max(3),
+  /** The project's stat cards, in order (a subset of `metrics`, labelled for this project). */
+  stats: z.array(MetricView),
+  latest: z.array(ActivityItem).max(4),
+  /** One line under the page title ("Phase 4, Components, runs with phase 5 in parallel."). */
+  subtitle: z.string(),
 });
 export type MissionControlSnapshot = z.infer<typeof MissionControlSnapshot>;
 
@@ -137,6 +167,7 @@ export const StepView = z.object({
   resultCode: z.number().int(),
   durationMs: z.number().int(),
   summary: z.string(),
+  outcome: z.string().nullable().default(null),
 });
 export type StepView = z.infer<typeof StepView>;
 
@@ -154,6 +185,16 @@ export const AgentView = z.object({
   taskId: z.string().nullable(),
   tokensThisTask: z.number().int(),
   since: z.iso.datetime().nullable(),
+  persona: z.string().nullable(),
+  description: z.string(),
+  /** What the role does on this project specifically, when it differs from the description. */
+  projectNote: z.string().nullable(),
+  step: z.object({ n: z.number().int(), of: z.number().int() }).nullable(),
+  tokensProject: z.number().int(),
+  /** "Opus-class", "Sonnet-class", "Haiku-class". */
+  modelClass: z.string(),
+  /** What it picks up next and when, from the forecast. */
+  next: z.object({ title: z.string(), when: z.string(), taskId: z.string().nullable() }).nullable(),
 });
 export type AgentView = z.infer<typeof AgentView>;
 
@@ -179,6 +220,15 @@ export const TaskView = z.object({
   /** Set when blocked: the escalation it waits on. */
   escalationId: z.string().nullable(),
   lastReason: z.string().nullable(),
+  /** The roster agent that runs this task. */
+  agentId: z.string(),
+  groupTitle: z.string().nullable(),
+  itemKeys: z.array(z.string()),
+  estimateHours: z.number().nullable(),
+  contract: TaskContract.nullable(),
+  /** Window a Lead planned, if any. The schedule adds the forecast. */
+  plannedStart: z.iso.datetime().nullable(),
+  plannedEnd: z.iso.datetime().nullable(),
 });
 export type TaskView = z.infer<typeof TaskView>;
 
@@ -207,6 +257,26 @@ export const ConversationItem = z.object({
   sections: z.array(MessageSection),
   proceedsAt: z.iso.datetime().nullable(),
   directiveId: z.string().nullable(),
+  label: z.string().nullable(),
+  rows: z.array(z.object({ label: z.string(), value: z.string() })),
+  bullets: z.array(z.string()),
+  note: z.string().nullable(),
+  links: z.array(MessageLink),
+  status: StatusCard.nullable(),
+  needs: z.array(z.object({ escalationId: z.string(), type: EscalationType, title: z.string() })),
+  upNext: z.array(
+    z.object({
+      taskId: z.string(),
+      title: z.string(),
+      agentId: z.string(),
+      start: z.iso.datetime(),
+      state: TaskState,
+    }),
+  ),
+  /** For a Director question asked from a card. */
+  about: z.string().nullable(),
+  /** For a directive ack, once its window closed. */
+  settled: z.object({ outcome: z.enum(['applied', 'stopped']), summary: z.string() }).nullable(),
 });
 export type ConversationItem = z.infer<typeof ConversationItem>;
 
@@ -227,6 +297,8 @@ export const DecisionView = z.object({
   decidedBy: z.enum(['director', 'chief_of_staff', 'default']),
   scopeKey: z.string(),
   escalationId: z.string().nullable(),
+  /** "D-07". */
+  ref: z.string(),
 });
 export type DecisionView = z.infer<typeof DecisionView>;
 
@@ -239,6 +311,8 @@ export const ProjectListItem = ProjectSummary.pick({
   waitingCount: true,
   hasOpenBlocker: true,
   currentPhase: true,
+  initials: true,
+  subtitle: true,
 });
 export type ProjectListItem = z.infer<typeof ProjectListItem>;
 
@@ -255,6 +329,12 @@ export const ArtifactView = z.object({
   artifactId: z.string(),
   kind: z.string(),
   title: z.string(),
+  /** Tab label ("Blueprint", "PR 12"). */
+  shortTitle: z.string(),
+  /** Versions a Director gate approved, newest first. */
+  approved: z.array(
+    z.object({ version: z.number().int(), at: z.iso.datetime(), gate: z.string() }),
+  ),
   latest: z.number().int().positive(),
   versions: z.array(ArtifactVersionView),
 });
@@ -266,3 +346,212 @@ export const WorkbenchSnapshot = z.object({
   artifacts: z.array(ArtifactView),
 });
 export type WorkbenchSnapshot = z.infer<typeof WorkbenchSnapshot>;
+
+// ---------------------------------------------------------------------------
+// Schedule: the Plan surface's Today, Engagement and list views
+// ---------------------------------------------------------------------------
+
+export const ScheduledTask = z.object({
+  taskId: z.string(),
+  title: z.string(),
+  agentId: z.string(),
+  workstream: Workstream.nullable(),
+  phase: z.number().int(),
+  state: TaskState,
+  dependsOn: z.array(z.string()),
+  start: z.iso.datetime(),
+  end: z.iso.datetime(),
+  /** actual = from task events; planned = a Lead's window; forecast = the scheduler's estimate. */
+  basis: z.enum(['actual', 'planned', 'forecast']),
+});
+export type ScheduledTask = z.infer<typeof ScheduledTask>;
+
+export const ScheduleActivity = z.object({
+  key: z.string(),
+  title: z.string(),
+  agentId: z.string(),
+  start: z.iso.datetime(),
+  end: z.iso.datetime(),
+  state: TaskState,
+  taskIds: z.array(z.string()),
+});
+export type ScheduleActivity = z.infer<typeof ScheduleActivity>;
+
+export const ScheduleSnapshot = z.object({
+  seq: Seq,
+  timezone: z.string(),
+  now: z.iso.datetime(),
+  /** Local calendar day the Today view shows, and its 8 AM–8 PM span. */
+  today: z.object({
+    date: z.string(),
+    label: z.string(),
+    from: z.iso.datetime(),
+    to: z.iso.datetime(),
+  }),
+  tasks: z.array(ScheduledTask),
+  /** Working days the engagement spans. */
+  days: z.array(
+    z.object({ date: z.string(), label: z.string(), weekStart: z.boolean(), today: z.boolean() }),
+  ),
+  phases: z.array(
+    z.object({
+      phase: z.number().int(),
+      name: z.string(),
+      state: z.enum(['done', 'running', 'planned']),
+      start: z.iso.datetime().nullable(),
+      end: z.iso.datetime().nullable(),
+      /** When the phase's Director gate is (or was) due. */
+      gateAt: z.iso.datetime().nullable(),
+      gateLabel: z.string().nullable(),
+      activities: z.array(ScheduleActivity),
+    }),
+  ),
+  /** Engagement end as forecast, and when Gate 2 lands. */
+  finishAt: z.iso.datetime().nullable(),
+});
+export type ScheduleSnapshot = z.infer<typeof ScheduleSnapshot>;
+
+// ---------------------------------------------------------------------------
+// Site preview
+// ---------------------------------------------------------------------------
+
+export const PreviewPage = z.object({
+  pageKey: z.string(),
+  name: z.string(),
+  path: z.string(),
+  template: z.string().nullable(),
+  layout: z.string().nullable(),
+  pilot: z.boolean(),
+  migrated: z.boolean(),
+  parity: z.number().nullable(),
+  visual: z.number().nullable(),
+  shots: z.object({
+    source: z.partialRecord(Breakpoint, z.string()),
+    target: z.partialRecord(Breakpoint, z.string()),
+  }),
+  pageBuilderUrl: z.string().nullable(),
+  previewUrl: z.string().nullable(),
+});
+export type PreviewPage = z.infer<typeof PreviewPage>;
+
+export const PreviewPane = z.object({
+  label: z.string(),
+  url: z.string().nullable(),
+  deployment: z.string().nullable(),
+});
+
+export const PreviewSnapshot = z.object({
+  seq: Seq,
+  source: PreviewPane.nullable(),
+  target: PreviewPane.nullable(),
+  pages: z.array(PreviewPage),
+});
+export type PreviewSnapshot = z.infer<typeof PreviewSnapshot>;
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+export const CredentialView = z.object({
+  credentialId: z.string(),
+  system: z.string(),
+  scope: z.string(),
+  provided: z.boolean(),
+  verifiedAt: z.iso.datetime().nullable(),
+  ok: z.boolean().nullable(),
+  detail: z.string().nullable(),
+  expiresAt: z.iso.datetime().nullable(),
+});
+export type CredentialView = z.infer<typeof CredentialView>;
+
+export const PolicyRow = z.object({
+  type: EscalationType,
+  /** "20 min", or null when the type has no default and waits. */
+  defaultAfterMinutes: z.number().int().nullable(),
+  /** What happens without a default ("Pauses that path", "Pauses dispatch", "Proceeds; logged"). */
+  behaviour: z.string(),
+  notifies: z.string(),
+});
+export type PolicyRow = z.infer<typeof PolicyRow>;
+
+export const SettingsSnapshot = z.object({
+  seq: Seq,
+  timezone: z.string(),
+  credentials: z.array(CredentialView),
+  budgets: Budgets,
+  spent: Spend,
+  gates: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      kind: z.enum(['director', 'optional']),
+      /** Director gates: where they stand. */
+      state: z.enum(['approved', 'waiting', 'future']).nullable(),
+      phase: z.number().int().nullable(),
+      at: z.iso.datetime().nullable(),
+      /** Optional reviews: on or off. */
+      enabled: z.boolean().nullable(),
+    }),
+  ),
+  escalationPolicy: z.array(PolicyRow),
+  conventions: z.object({
+    entries: z.array(z.object({ key: z.string(), value: z.string() })),
+    lockedAt: z.iso.datetime().nullable(),
+  }),
+  /** What rolling back the current phase would undo, in words; null when nothing would. */
+  rollback: z.object({ phase: z.number().int(), name: z.string(), detail: z.string() }).nullable(),
+});
+export type SettingsSnapshot = z.infer<typeof SettingsSnapshot>;
+
+// ---------------------------------------------------------------------------
+// Blueprint, as the Workbench shows it
+// ---------------------------------------------------------------------------
+
+export const BlueprintRow = z.object({
+  key: z.string(),
+  name: z.string(),
+  source: z.string(),
+  fields: z.string(),
+  params: z.string(),
+  placeholders: z.string(),
+  variants: z.string(),
+  status: z.enum(['done', 'in_progress', 'planned', 'dropped', 'merged']),
+  /** Changed since the approved version, and what it was. */
+  changed: z.boolean(),
+  was: z.string().nullable(),
+});
+export type BlueprintRow = z.infer<typeof BlueprintRow>;
+
+export const BlueprintSnapshot = z.object({
+  seq: Seq,
+  version: z.number().int(),
+  approvedVersion: z.number().int().nullable(),
+  approvedAt: z.iso.datetime().nullable(),
+  /** Decisions that changed it after approval ("D-07"). */
+  updatedBy: z.array(z.string()),
+  collections: z.array(
+    z.object({
+      name: z.string(),
+      /** What "done" is called in this collection ("registered", "migrated"). */
+      doneLabel: z.string(),
+      rows: z.array(BlueprintRow),
+    }),
+  ),
+});
+export type BlueprintSnapshot = z.infer<typeof BlueprintSnapshot>;
+
+// ---------------------------------------------------------------------------
+// "Since you were away"
+// ---------------------------------------------------------------------------
+
+export const SinceSummary = z.object({
+  fromSeq: z.number().int(),
+  toSeq: z.number().int(),
+  minutes: z.number().int(),
+  raised: z.number().int(),
+  resolved: z.number().int(),
+  phase: z.object({ name: z.string(), percent: z.number() }).nullable(),
+  usd: z.number(),
+  events: z.number().int(),
+});
+export type SinceSummary = z.infer<typeof SinceSummary>;

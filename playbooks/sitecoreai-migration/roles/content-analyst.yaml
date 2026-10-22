@@ -1,5 +1,7 @@
 role: content-analyst
 name: Content Analyst
+persona: 'Maria Gonzalez'
+description: 'Builds the content inventory, page by page and item by item. Re-reads the source during migration to prove nothing was lost.'
 tier: specialist
 reportsTo: discovery-lead
 workstream: discovery

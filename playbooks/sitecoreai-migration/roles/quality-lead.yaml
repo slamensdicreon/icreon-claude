@@ -1,5 +1,7 @@
 role: quality-lead
 name: Quality Lead
+persona: 'Kevin Nguyen'
+description: 'Runs validation in every phase. Decides what passes, what goes back, and what you need to see.'
 tier: lead
 reportsTo: chief-of-staff
 workstream: quality

@@ -1,6 +1,7 @@
 import type {
   AgentState,
   EscalationCard,
+  EscalationCardInput,
   EscalationOption,
   EscalationStatus,
   EscalationType,
@@ -175,6 +176,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       dependsOn: t.dependsOn,
       kind: t.kind,
       group: t.collection ? t.templateId : null,
+      groupTitle: t.groupTitle,
+      itemKeys: t.itemKeys,
+      estimateHours: t.estimateHours,
+      contract: t.contract,
     },
   });
 
@@ -296,9 +301,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const unresolved = (e: Escalation) => e.status === 'open' || e.status === 'deferred';
 
   async function raise(
-    card: Omit<EscalationCard, 'escalationId' | 'deadline' | 'options'> & {
-      options: EscalationOption[];
-    },
+    card: Omit<EscalationCardInput, 'escalationId' | 'deadline'>,
     onResolve: Escalation['onResolve'],
   ): Promise<string> {
     const escalationId = `esc-${uuid4().slice(0, 8)}`;
@@ -308,6 +311,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     const deadlineAt = windowMs ? Date.now() + windowMs : null;
     const full: EscalationCard = {
       ...card,
+      options: card.options.map((o) => ({ recommended: false, key: null, ...o })),
+      evidence: card.evidence ?? [],
+      gate: card.gate ?? null,
+      typeLabel: card.typeLabel ?? null,
+      waitNote: card.waitNote ?? null,
+      reversible: card.reversible ?? true,
       escalationId,
       deadline: deadlineAt ? new Date(deadlineAt).toISOString() : null,
     };

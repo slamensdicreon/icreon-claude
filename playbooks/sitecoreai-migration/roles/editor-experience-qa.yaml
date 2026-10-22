@@ -1,5 +1,7 @@
 role: editor-experience-qa
 name: Editor Experience QA
+persona: 'Jessica Martinez'
+description: 'Works in Page builder the way a marketer would: dragging components, editing inline, publishing, and setting up variants.'
 tier: specialist
 reportsTo: quality-lead
 workstream: quality
