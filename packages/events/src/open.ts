@@ -6,6 +6,15 @@ import { InMemoryEventStore, type EventStore } from './store';
 
 export type StoreKind = 'memory' | 'pglite' | 'postgres';
 
+/**
+ * Pins TLS to full verification. node-postgres already treats `sslmode=require` (what Neon's URLs
+ * carry) as verify-full and warns that a future major version will weaken it; saying so explicitly
+ * keeps the stronger check and the logs quiet.
+ */
+export function verifiedTls(url: string): string {
+  return url.replace(/([?&]sslmode=)(prefer|require|verify-ca)\b/, '$1verify-full');
+}
+
 export interface OpenedStore {
   store: EventStore;
   /** The Postgres client behind the store, for the command bus. Null for the memory store. */
@@ -62,7 +71,7 @@ export async function openStore(kind: StoreKind, opts: OpenStoreOptions): Promis
   }
 
   if (!opts.databaseUrl) throw new Error('STORE=postgres needs DATABASE_URL');
-  const pool = new pg.Pool({ connectionString: opts.databaseUrl, max: 5 });
+  const pool = new pg.Pool({ connectionString: verifiedTls(opts.databaseUrl), max: 5 });
   // An idle client that the server or pooler closes emits here; without a handler it crashes the
   // process. The pool replaces the client on next use.
   pool.on('error', (err) => log('Postgres pool client error', err));
@@ -129,7 +138,7 @@ class ListenConnection {
   }
 
   private async connect(): Promise<void> {
-    const client = new pg.Client({ connectionString: this.url });
+    const client = new pg.Client({ connectionString: verifiedTls(this.url) });
     client.on('notification', (msg) => {
       if (msg.payload) this.channels.get(msg.channel)?.(msg.payload);
     });

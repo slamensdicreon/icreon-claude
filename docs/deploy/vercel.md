@@ -1,7 +1,8 @@
 # Deploying Launchworks on Vercel
 
-_Status: config and images built and run locally (compose, below); not yet deployed to a Vercel
-account. Services, Daemons and the container runtime are in beta on Vercel._
+_Status: deployed as project `launchworks` (https://launchworks-one.vercel.app). The web app, both
+daemon images, the demo runner, Neon and Blob are verified on Vercel; the API waits on the GitHub
+OAuth app. Services, Daemons and the container runtime are in beta on Vercel._
 
 Everything runs in one Vercel project, on one domain:
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { CreateProject } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
-import { CommandBus, openStore } from '@lw/events';
+import { CommandBus, openStore, verifiedTls } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import {
   DEMO_SCENARIOS,
@@ -45,7 +45,7 @@ const env = z
 
 const direct = env.DATABASE_URL_UNPOOLED ?? env.DATABASE_URL;
 
-const lock = new pg.Client({ connectionString: direct });
+const lock = new pg.Client({ connectionString: verifiedTls(direct) });
 await lock.connect();
 lock.on('error', (err) => {
   // Losing the lock's connection means another runner may start: stop rather than both play.

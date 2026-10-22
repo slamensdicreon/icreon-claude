@@ -21,9 +21,10 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY --from=build /repo /repo
 WORKDIR /repo
 
-# Chromium only (not Playwright's other browsers), at the revision this playwright-core expects,
-# with the system libraries it needs.
-RUN node tool-servers/browser/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium \
+# System CA certificates, then Chromium only (not Playwright's other browsers) at the revision this
+# playwright-core expects, with the system libraries it needs.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+ && node tool-servers/browser/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /repo/apps/worker
