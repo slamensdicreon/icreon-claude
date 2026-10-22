@@ -176,6 +176,10 @@ export const EventBody = z.discriminatedUnion('type', [
       role: z.string(),
       title: z.string(),
       dependsOn: z.array(z.string()).default([]),
+      /** `placeholder` stands for a forEach template until the Blueprint expands it. */
+      kind: z.enum(['work', 'placeholder', 'checkpoint']).default('work'),
+      /** Template the task came from; the Plan view groups many same-template bars into one. */
+      group: z.string().nullable().default(null),
     }),
   ),
   ev(

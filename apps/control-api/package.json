@@ -17,6 +17,10 @@
     "@lw/playbook-sdk": "workspace:*",
     "@lw/simulator": "workspace:*",
     "fastify": "^5.12.7",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@lw/orchestrator": "workspace:*",
+    "@temporalio/client": "^1.24.0",
+    "@temporalio/worker": "^1.24.0",
+    "@temporalio/testing": "^1.24.0"
   }
 }

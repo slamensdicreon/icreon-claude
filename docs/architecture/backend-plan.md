@@ -1,6 +1,6 @@
 # Launchworks — Backend, Architecture & Build Plan
 
-_Status: proposal for review · 2026-10-22 · Companion to the two source specs:_
+_Status: in build. M0 done; M2 core done on stub agents (see below) · 2026-10-22 · Companion to the two source specs:_
 _[Requirements & Technical Architecture](https://claude.ai/artifact/PxHxU9S1KjYcpcuktN46f7) and
 [Control Center Design Requirements](https://claude.ai/artifact/43ybuCVtG7tjNd68SXDeLR)._
 
@@ -16,6 +16,14 @@ it started on, and later add a second engagement type (an XP→SitecoreAI upgrad
 touching the core. All code is TypeScript in one pnpm/Turborepo monorepo, and everything runs on AWS in a
 single region. The first milestone ships the API contract and a **project simulator**, so the Control
 Center UI can be built against real event shapes before any agent exists.
+
+**Built so far** (on branch, all tested): the contract package, read models and SSE API (M0); the
+plan compiler with re-plan impact; the Temporal project and task workflows with gates, the pilot
+checkpoint, Lead-review retries, escalations with default-at-deadline and deferral, budget holds,
+pause/resume and directives with a stop window (the M2 core, driven by stub agents); and the
+Postgres event store. Deviation from §8: the event store uses hand-written SQL rather than Drizzle,
+because its single-statement append is the part that matters. Still open in M2: continue-as-new
+at phase boundaries, phase- and task-level pause, cancel, and the 10-second Undo window.
 
 ---
 

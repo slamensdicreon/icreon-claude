@@ -162,6 +162,8 @@ export const TaskView = z.object({
   workstream: Workstream.nullable(),
   role: z.string(),
   title: z.string(),
+  kind: z.enum(['work', 'placeholder', 'checkpoint']),
+  group: z.string().nullable(),
   state: TaskState,
   attempt: z.number().int(),
   dependsOn: z.array(z.string()),

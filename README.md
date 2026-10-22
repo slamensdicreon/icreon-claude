@@ -9,21 +9,26 @@ Home of **Launchworks**, Icreon's agentic implementation studio for SitecoreAI (
 
 ```bash
 pnpm install
-pnpm dev          # Control API on http://127.0.0.1:4000 with two simulated projects
-pnpm test         # all packages
+pnpm dev            # Control API on http://127.0.0.1:4000 with two simulated projects
+pnpm dev:temporal   # the real orchestrator (stub agents), local Temporal + Postgres, data in .data/
+pnpm test           # all packages
 pnpm typecheck
 ```
 
-Requires Node 22+ (24 in CI) and pnpm 10.
+Requires Node 22+ (24 in CI) and pnpm 10. `pnpm dev:temporal` downloads the Temporal dev server on
+first run; delete `.data/` to start from scratch.
 
 ## Layout
 
-| Path                             | What it is                                                                          |
-| -------------------------------- | ----------------------------------------------------------------------------------- |
-| `apps/control-api`               | Fastify API: snapshots, commands, SSE stream with replay                            |
-| `packages/contracts`             | zod schemas for every event, snapshot and command (shared with the UI)              |
-| `packages/domain`                | Pure logic: task state machine, health rule, escalation order, read-model projector |
-| `packages/events`                | Event store interface (in-memory for now) and the projection registry               |
-| `packages/playbook-sdk`          | Schema, loader and validator for playbooks                                          |
-| `packages/simulator`             | Scripted engagements that stand in for the agent team until it exists               |
-| `playbooks/sitecoreai-migration` | Playbook #1: 11 phases, 2 Director gates, 24 roles                                  |
+| Path                             | What it is                                                                              |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| `apps/control-api`               | Fastify API: snapshots, commands, SSE stream with replay; simulator or Temporal mode    |
+| `apps/worker`                    | Orchestration worker as its own process (Temporal + shared Postgres event log)          |
+| `packages/contracts`             | zod schemas for every event, snapshot and command (shared with the UI)                  |
+| `packages/domain`                | Pure logic: task state machine, health rule, escalation order, read-model projector     |
+| `packages/events`                | Event store: in-memory and Postgres (atomic seqs, LISTEN/NOTIFY live tail), projections |
+| `packages/plan`                  | Plan compiler: playbook + Blueprint → task graph; re-plan diff and impact preview       |
+| `packages/orchestrator`          | Temporal workflows (project, task), Director commands, stub agent activities            |
+| `packages/playbook-sdk`          | Schema, loader and validator for playbooks                                              |
+| `packages/simulator`             | Scripted engagements for UI work and demos                                              |
+| `playbooks/sitecoreai-migration` | Playbook #1: 11 phases, 2 Director gates, 24 roles, task templates, demo fixtures       |

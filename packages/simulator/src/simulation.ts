@@ -11,7 +11,9 @@ import type {
   TaskState,
   Workstream,
 } from '@lw/contracts';
-import { assertTransition } from '@lw/domain';
+import { assertTransition, CommandError } from '@lw/domain';
+
+export { CommandError };
 import type { EventStore } from '@lw/events';
 import { phaseDefs, roster, type Playbook } from '@lw/playbook-sdk';
 import { Latch, rng, sleep, SimulationStopped, type Rng } from './runtime';
@@ -27,17 +29,6 @@ export interface SimulationOptions {
   autopilot?: boolean;
   /** Real-time length of the directive stop window, before speed scaling. Spec: 30 s. */
   directiveWindowSec?: number;
-}
-
-/** A command the simulator cannot act on, surfaced to the API as a 4xx with a plain message. */
-export class CommandError extends Error {
-  constructor(
-    readonly status: 400 | 404 | 409 | 422,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
 }
 
 type EscalationInput = Omit<
@@ -195,7 +186,7 @@ export class Simulation {
         actor: system(),
         subject: { kind: 'task', id: t.taskId },
         severity: 'routine',
-        data: { ...t, phase, dependsOn: t.dependsOn ?? [] },
+        data: { ...t, phase, dependsOn: t.dependsOn ?? [], kind: 'work', group: null },
       })),
     );
   }

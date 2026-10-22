@@ -12,6 +12,15 @@
   },
   "dependencies": {
     "@lw/contracts": "workspace:*",
-    "@lw/domain": "workspace:*"
-  }
+    "@lw/domain": "workspace:*",
+    "pg": "^8.23.1",
+    "@electric-sql/pglite": "^0.5.11"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  },
+  "files": [
+    "src",
+    "migrations"
+  ]
 }

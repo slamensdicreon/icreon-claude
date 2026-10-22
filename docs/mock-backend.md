@@ -23,6 +23,19 @@ SIM_PROJECTS=1 pnpm dev        # one project only
 Start another project at any time with `POST /dev/simulations` and a body like
 `{"name": "Demo", "autopilot": false}`. All state is in memory, so restarting the server resets everything.
 
+## Or run the real orchestrator
+
+`pnpm dev:temporal` serves the same API on the same port, backed by the real Temporal
+orchestrator with stub agents instead of the scripted simulator. The plan is compiled from the
+playbook, Gate 1 expands it from the example Blueprint, and directives re-plan for real
+(try "Skip the blog"). What's different:
+
+- **Deadlines are real.** Defaults apply after the playbook's deadlines (Decisions after 2 hours),
+  not after seconds.
+- **State survives restarts.** The event log and the workflows persist in `.data/`; kill the
+  process at any point and it resumes where it stopped. Delete `.data/` to start over.
+- **One project to start.** Create more with `POST /projects {"name": "...", "client": "..."}`.
+
 ## Data shapes
 
 Every request and response shape is a zod schema in [`packages/contracts`](../packages/contracts/src).

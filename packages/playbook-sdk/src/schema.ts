@@ -1,4 +1,4 @@
-import { AgentTier, Workstream } from '@lw/contracts';
+import { AgentTier, MetricKey, Workstream } from '@lw/contracts';
 import { z } from 'zod';
 
 const Kebab = z.string().regex(/^[a-z][a-z0-9-]*$/, 'kebab-case');
@@ -94,6 +94,8 @@ export const TaskTemplate = z.object({
    */
   dependsOn: z.array(z.string()).default([]),
   acceptance: z.array(z.string()).default([]),
+  /** Count metric this template's completed tasks drive, against the template's task total. */
+  metric: MetricKey.optional(),
 });
 export type TaskTemplate = z.infer<typeof TaskTemplate>;
 

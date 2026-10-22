@@ -1,4 +1,4 @@
-import type { Workstream } from '@lw/contracts';
+import type { MetricKey, Workstream } from '@lw/contracts';
 import type { Playbook, TaskTemplate } from '@lw/playbook-sdk';
 import type { Blueprint, BlueprintItem } from './blueprint';
 
@@ -24,6 +24,8 @@ export interface PlannedTask {
   gate: string | null;
   /** Dispatch hint from the template: ready tasks of the same template per agent session. */
   batchSize: number;
+  /** Count metric driven by this task's template, if any. */
+  metric: MetricKey | null;
 }
 
 export interface Plan {
@@ -86,6 +88,7 @@ export function compilePlan(
         acceptance: template.acceptance,
         gate: null,
         batchSize: template.batchSize ?? 1,
+        metric: template.metric ?? null,
       });
     }
   }
@@ -115,6 +118,7 @@ export function compilePlan(
         acceptance: [],
         gate: enabled ? pilot.optionalGate! : null,
         batchSize: 1,
+        metric: null,
       });
     }
   }

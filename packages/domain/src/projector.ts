@@ -161,6 +161,8 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (e.data.to === 'running' && !t.startedAt) t.startedAt = e.ts;
       if (e.data.to === 'running') t.escalationId = null;
       if (['done', 'cancelled', 'rolled_back'].includes(e.data.to)) t.endedAt = e.ts;
+      // A placeholder replaced by the Blueprint's real tasks leaves the plan entirely.
+      if (t.kind === 'placeholder' && e.data.to === 'cancelled') delete s.tasks[e.data.taskId];
       break;
     }
     case 'agent.state': {

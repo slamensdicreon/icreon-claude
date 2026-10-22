@@ -15,6 +15,7 @@ import { Simulation, sitecoreScenario } from '@lw/simulator';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
+import { simulationCommands } from '../src/commands';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 const NAME = 'Acme corporate site';
@@ -39,10 +40,11 @@ async function start(speed = 300): Promise<Harness> {
     speed,
     directiveWindowSec: 0.05,
   });
+  const cmds = simulationCommands(sim);
   const app = await buildApp({
     store,
     projections,
-    orchestrators: new Map([['p1', sim]]),
+    commands: (id) => (id === 'p1' ? cmds : undefined),
     corsOrigin: '*',
   });
   await app.listen({ port: 0, host: '127.0.0.1' });

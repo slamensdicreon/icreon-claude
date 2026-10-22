@@ -23,16 +23,19 @@ import {
   type ProjectState,
 } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
-import { CommandError, type Simulation } from '@lw/simulator';
+import { CommandError } from '@lw/domain';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
+import type { ProjectCommands } from './commands';
 import { streamProject } from './sse';
 
 export interface AppDeps {
   store: EventStore;
   projections: Projections;
-  /** Command handlers per project. In M0 the simulator plays the orchestrator's part. */
-  orchestrators: Map<string, Simulation>;
+  /** Command handlers for a project, or undefined if no such project runs here. */
+  commands: (projectId: string) => ProjectCommands | undefined;
+  /** Intake: starts a new project and returns its id. Absent where intake isn't wired. */
+  createProject?: (input: { name: string; client: string }) => Promise<string>;
   /** Origin allowed to call the API from a browser (the Control Center or the prototype). */
   corsOrigin?: string | null;
   logger?: boolean;
@@ -46,7 +49,7 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
-  const { store, projections, orchestrators } = deps;
+  const { store, projections } = deps;
   const corsOrigin = deps.corsOrigin ?? null;
   const app = Fastify({ logger: deps.logger ?? false });
   await app.register(cors, { origin: corsOrigin ?? false });
@@ -71,16 +74,33 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   const project = (id: string): ProjectState | null => projections.get(id) ?? null;
-  const orchestrator = (id: string): Simulation => {
-    const o = orchestrators.get(id);
+  const orchestrator = (id: string): ProjectCommands => {
+    const o = deps.commands(id);
     if (!o) throw new CommandError(404, 'unknown_project', `No project "${id}".`);
     return o;
   };
-  const result = (seq: number): CommandResult => ({ accepted: true, seq });
+  /** Runs a command, then answers with the log position it reached, so the UI can reconcile. */
+  const command = async (projectId: string, fn: (o: ProjectCommands) => Promise<unknown>) => {
+    await fn(orchestrator(projectId));
+    const seq = await store.head(projectId);
+    await projections.waitFor(projectId, seq);
+    const r: CommandResult = { accepted: true, seq };
+    return r;
+  };
 
   app.get('/health', async () => ({ ok: true }));
 
   app.get('/projects', async () => projections.all().map(projectListItem));
+
+  const Intake = z.object({ name: z.string().min(1).max(120), client: z.string().min(1).max(120) });
+
+  app.post('/projects', async (req, reply) => {
+    if (!deps.createProject) {
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    }
+    const projectId = await deps.createProject(Intake.parse(req.body));
+    return reply.status(201).send({ projectId });
+  });
 
   // ---- Snapshots --------------------------------------------------------------------------
 
@@ -195,7 +215,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post<P>('/projects/:id/messages', async (req) => {
     const { body } = PostMessage.parse(req.body);
-    return result(await orchestrator(req.params.id).postMessage(body));
+    return command(req.params.id, (o) => o.postMessage(body));
   });
 
   app.post<{ Params: { id: string; escalationId: string } }>(
@@ -209,7 +229,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           'use_gate_endpoint',
           'This is a gate: use approve or send-back.',
         );
-      return result(await orchestrator(req.params.id).resolve(req.params.escalationId, optionId));
+      return command(req.params.id, (o) => o.resolve(req.params.escalationId, optionId));
     },
   );
 
@@ -217,9 +237,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     '/projects/:id/escalations/:escalationId/defer',
     async (req) => {
       const { until } = DeferEscalation.parse(req.body);
-      return result(
-        await orchestrator(req.params.id).defer(req.params.escalationId, new Date(until)),
-      );
+      return command(req.params.id, (o) => o.defer(req.params.escalationId, new Date(until)));
     },
   );
 
@@ -235,14 +253,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     async (req) => {
       const { confirmation } = ApproveGate.parse(req.body ?? {});
       requireGate(req.params.id, req.params.escalationId);
-      return result(
-        await orchestrator(req.params.id).resolve(
-          req.params.escalationId,
-          'approve',
-          'director',
-          null,
-          confirmation,
-        ),
+      return command(req.params.id, (o) =>
+        o.resolve(req.params.escalationId, 'approve', null, confirmation),
       );
     },
   );
@@ -252,25 +264,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     async (req) => {
       const { notes } = SendBackGate.parse(req.body);
       requireGate(req.params.id, req.params.escalationId);
-      return result(
-        await orchestrator(req.params.id).resolve(
-          req.params.escalationId,
-          'send_back',
-          'director',
-          notes,
-        ),
-      );
+      return command(req.params.id, (o) => o.resolve(req.params.escalationId, 'send_back', notes));
     },
   );
 
   app.post<{ Params: { id: string; directiveId: string } }>(
     '/projects/:id/directives/:directiveId/stop',
-    async (req) => result(await orchestrator(req.params.id).stopDirective(req.params.directiveId)),
+    async (req) => command(req.params.id, (o) => o.stopDirective(req.params.directiveId)),
   );
 
   app.post<P>('/projects/:id/control', async (req) => {
     const cmd = Control.parse(req.body);
-    return result(await orchestrator(req.params.id).control(cmd));
+    return command(req.params.id, (o) => o.control(cmd));
   });
 
   return app;

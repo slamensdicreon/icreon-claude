@@ -1,0 +1,43 @@
+# What stub agents report per task template (metrics, artifacts) until real agents exist.
+inventory-repo:
+  artifacts:
+    - artifactId: component-inventory
+      kind: inventory
+      title: Component inventory
+crawl-site:
+  artifacts:
+    - artifactId: page-inventory
+      kind: inventory
+      title: Page inventory
+platform-notes:
+  artifacts:
+    - artifactId: platform-notes
+      kind: platform_notes
+      title: Platform Notes
+draft-blueprint:
+  artifacts:
+    - artifactId: blueprint
+      kind: blueprint
+      title: Implementation Blueprint
+audit-parity:
+  metrics:
+    parity: 98.6
+  artifacts:
+    - artifactId: parity-report
+      kind: report
+      title: Content parity report
+final-parity:
+  metrics:
+    parity: 98.9
+editor-checklist:
+  metrics:
+    qa_pass: 100
+  artifacts:
+    - artifactId: acceptance-report
+      kind: report
+      title: Acceptance Report
+handover-pack:
+  artifacts:
+    - artifactId: handover-pack
+      kind: handover_pack
+      title: Handover pack

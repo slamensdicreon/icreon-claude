@@ -28,6 +28,19 @@ export class Projections {
     this.unsubscribe?.();
   }
 
+  /**
+   * Resolves once the project's read model has caught up to `seq`. Commands await this before
+   * answering, so a snapshot fetched right after a command always reflects it.
+   */
+  async waitFor(projectId: string, seq: number, timeoutMs = 5_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while ((this.states.get(projectId)?.seq ?? 0) < seq) {
+      if (Date.now() > deadline)
+        throw new Error(`Read model for ${projectId} stuck below seq ${seq}`);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+
   get(projectId: string): ProjectState | undefined {
     return this.states.get(projectId);
   }
