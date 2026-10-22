@@ -21,6 +21,7 @@ import type {
   ProjectStatus,
   ProjectSummary,
   RosterEntry,
+  ScopeKind,
   Spend,
   StepView,
   TaskView,
@@ -54,6 +55,7 @@ export interface ProjectState {
   conversation: ConversationItem[];
   metrics: Record<MetricKey, MetricView>;
   latest: ActivityItem[];
+  holds: Record<string, { kind: ScopeKind; id: string; label: string }>;
 }
 
 interface AgentRecord extends AgentView {
@@ -80,6 +82,7 @@ const NOT_LATEST = new Set<LwEvent['type']>([
   'budget.updated',
   'agent.state',
   'task.planned',
+  'control.hold',
 ]);
 
 export function createProjectState(projectId: string): ProjectState {
@@ -105,6 +108,7 @@ export function createProjectState(projectId: string): ProjectState {
     conversation: [],
     metrics,
     latest: [],
+    holds: {},
   };
 }
 
@@ -202,6 +206,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         deferredUntil: null,
         resolution: null,
         resolvedAt: null,
+        undoUntil: null,
       };
       const t = e.data.sourceTaskId ? s.tasks[e.data.sourceTaskId] : undefined;
       if (t) t.escalationId = e.data.escalationId;
@@ -212,8 +217,10 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (!x) break;
       x.status = e.data.status;
       x.deferredUntil = e.data.deferredUntil;
-      if (e.data.resolution) x.resolution = e.data.resolution;
-      if (!UNRESOLVED.has(e.data.status)) x.resolvedAt = e.ts;
+      x.undoUntil = e.data.undoUntil;
+      // Re-opened by an Undo: the earlier choice no longer stands.
+      x.resolution = e.data.status === 'open' ? null : (e.data.resolution ?? x.resolution);
+      x.resolvedAt = UNRESOLVED.has(e.data.status) ? null : e.ts;
       break;
     }
     case 'decision.recorded':
@@ -256,6 +263,13 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     case 'budget.updated':
       s.spent = e.data.spent;
       break;
+    case 'control.hold': {
+      const key = `${e.data.scope.kind}:${e.data.scope.id}`;
+      if (e.data.held && e.data.scope.kind !== 'project')
+        s.holds[key] = { ...e.data.scope, label: e.data.label };
+      else delete s.holds[key];
+      break;
+    }
     case 'artifact.versioned':
     case 'tool.health':
       break;
@@ -357,6 +371,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     budgets: s.budgets,
     spent: s.spent,
     presence: s.presence,
+    holds: Object.values(s.holds),
   };
 }
 

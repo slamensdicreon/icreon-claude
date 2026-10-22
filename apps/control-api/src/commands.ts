@@ -1,4 +1,5 @@
 import type { Control } from '@lw/contracts';
+import { CommandError } from '@lw/domain';
 import type { Simulation } from '@lw/simulator';
 
 /**
@@ -13,6 +14,8 @@ export interface ProjectCommands {
     confirmation?: string,
   ): Promise<unknown>;
   defer(escalationId: string, until: Date): Promise<unknown>;
+  /** Takes back a reversible choice inside its undo window. */
+  undo(escalationId: string): Promise<unknown>;
   postMessage(body: string): Promise<unknown>;
   stopDirective(directiveId: string): Promise<unknown>;
   control(cmd: Control): Promise<unknown>;
@@ -23,6 +26,13 @@ export function simulationCommands(sim: Simulation): ProjectCommands {
     resolve: (escalationId, optionId, notes = null, confirmation) =>
       sim.resolve(escalationId, optionId, 'director', notes, confirmation),
     defer: (escalationId, until) => sim.defer(escalationId, until),
+    undo: async () => {
+      throw new CommandError(
+        422,
+        'not_supported',
+        'Undo runs on the orchestrator, not in the simulator.',
+      );
+    },
     postMessage: (body) => sim.postMessage(body),
     stopDirective: (directiveId) => sim.stopDirective(directiveId),
     control: (cmd) => sim.control(cmd),

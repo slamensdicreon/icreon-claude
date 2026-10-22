@@ -121,6 +121,8 @@ export async function launch(
   h.projects.set(projectId, opts.runner ? withAgentRunner(stubs, opts.runner) : stubs);
   const policy = defaultPolicy(h.playbook, {
     budgets: { tokens: 50_000_000, usd: 10_000, hours: 10_000 },
+    // Undo has its own tests; elsewhere choices take effect at once.
+    undoWindowMs: 0,
     ...opts.policy,
   });
   const handle = await startProject(

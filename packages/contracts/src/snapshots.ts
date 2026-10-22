@@ -7,6 +7,7 @@ import {
   Health,
   PhaseStatus,
   ProjectStatus,
+  ScopeKind,
   Severity,
   TaskState,
   Workstream,
@@ -48,6 +49,8 @@ export const EscalationView = EscalationCard.extend({
   deferredUntil: z.iso.datetime().nullable(),
   resolution: Resolution.nullable(),
   resolvedAt: z.iso.datetime().nullable(),
+  /** While set, the choice can be undone (POST …/undo) and has not taken effect yet. */
+  undoUntil: z.iso.datetime().nullable(),
 });
 export type EscalationView = z.infer<typeof EscalationView>;
 
@@ -69,6 +72,8 @@ export const ProjectSummary = z.object({
   budgets: Budgets,
   spent: Spend,
   presence: CosPresence,
+  /** What is paused below the project level, in words for the status strip. */
+  holds: z.array(z.object({ kind: ScopeKind, id: z.string(), label: z.string() })),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 

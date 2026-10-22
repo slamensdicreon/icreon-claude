@@ -6,6 +6,7 @@ import {
   EscalationStatus,
   EscalationType,
   ProjectStatus,
+  ScopeKind,
   Severity,
   TaskState,
   Workstream,
@@ -226,6 +227,8 @@ export const EventBody = z.discriminatedUnion('type', [
       status: EscalationStatus,
       deferredUntil: z.iso.datetime().nullable().default(null),
       resolution: Resolution.nullable().default(null),
+      /** Set while a reversible choice can still be undone; its effect applies at this time. */
+      undoUntil: z.iso.datetime().nullable().default(null),
     }),
   ),
   ev(
@@ -284,6 +287,15 @@ export const EventBody = z.discriminatedUnion('type', [
     }),
   ),
   ev('budget.updated', z.object({ spent: Spend })),
+  /** A pause placed or lifted on part of the project ("Paused: phase 6"). */
+  ev(
+    'control.hold',
+    z.object({
+      scope: z.object({ kind: ScopeKind, id: z.string() }),
+      held: z.boolean(),
+      label: z.string(),
+    }),
+  ),
   ev(
     'tool.health',
     z.object({

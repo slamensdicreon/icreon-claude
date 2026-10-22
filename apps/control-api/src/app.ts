@@ -249,6 +249,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
+  app.post<{ Params: { id: string; escalationId: string } }>(
+    '/projects/:id/escalations/:escalationId/undo',
+    async (req) => command(req.params.id, (o) => o.undo(req.params.escalationId)),
+  );
+
   const requireGate = (projectId: string, escalationId: string) => {
     const x = project(projectId)?.escalations[escalationId];
     if (!x) throw new CommandError(404, 'unknown_gate', `No gate "${escalationId}".`);

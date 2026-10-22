@@ -79,7 +79,8 @@ es.addEventListener('lw', (msg) => apply(JSON.parse(msg.data))); // typed LwEven
 | Approve a gate | `POST /projects/:id/gates/:escalationId/approve {}`. Gate 2 needs `{"confirmation": "<project name>"}` |
 | Send a gate back | `POST /projects/:id/gates/:escalationId/send-back {"notes": "..."}` (notes required) |
 | Stop a directive in its window | `POST /projects/:id/directives/:directiveId/stop` |
-| Pause / resume | `POST /projects/:id/control {"verb": "pause", "scope": {"kind": "project" \| "workstream" \| "agent", "id": "..."}}` |
+| Pause / resume / cancel | `POST /projects/:id/control {"verb": "pause" \| "resume" \| "cancel", "scope": {"kind": "project" \| "phase" \| "workstream" \| "agent" \| "task", "id": "..."}}`. Cancel takes a task (with its same-item dependents), a phase or the project. What is paused shows in `project.holds`. |
+| Undo a choice | `POST /projects/:id/escalations/:escalationId/undo` while the card's `undoUntil` is set (10 s; orchestrator only) |
 
 Commands return `{accepted: true, seq}`. Errors return `{error: {code, message}}`, and the message
 names the system and the next step, per the design spec. For example, a Gate 2 approval without

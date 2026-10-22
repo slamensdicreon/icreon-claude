@@ -46,6 +46,7 @@ import {
   resolveEscalation,
   resumeTask,
   stopDirective,
+  undoResolution,
 } from '../definitions';
 import type { AgentResult, ProjectInput, TaskOutcome } from '../types';
 import { taskWorkflow } from './task';
@@ -66,6 +67,8 @@ interface Escalation {
   deadlineAt: number | null;
   windowMs: number | null;
   deferredUntil: number | null;
+  /** A Director's choice inside its undo window. */
+  pending: { optionId: string; notes: string | null; undone: boolean } | null;
   onResolve: (optionId: string, notes: string | null) => Promise<void>;
 }
 
@@ -107,6 +110,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const running = new Map<string, Set<string>>(); // role → task ids
   const agentStates = new Map<string, AgentState>();
   const pausedRoles = new Set<string>();
+  const pausedPhases = new Set<number>();
+  const pausedTasks = new Set<string>();
+  const cancelledPhases = new Set<number>();
   const artifactVersions = new Map<string, number>();
   const phaseArtifact = new Map<number, { artifactId: string; title: string; version: number }>();
   const directives = new Map<string, { stopped: boolean; settled: boolean }>();
@@ -123,6 +129,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const poke = () => void (wake = true);
   const task = (id: string) => plan.tasks.find((t) => t.taskId === id);
   const stateOf = (id: string): TaskState => states[id] ?? 'planned';
+  /** Paused by the Director at any level that covers this task. */
+  const held = (t: PlannedTask) =>
+    projectPaused ||
+    pausedRoles.has(t.role) ||
+    pausedPhases.has(t.phase) ||
+    pausedTasks.has(t.taskId);
   const now = () => new Date(Date.now()).toISOString();
 
   // -------------------------------------------------------------------------------------------
@@ -244,8 +256,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
 
   const metricEvents = (): NewEvent[] => {
     const byMetric = new Map<MetricKey, PlannedTask[]>();
+    // Cancelled work leaves the total, so "4 of 4" can still be reached.
     for (const t of plan.tasks)
-      if (t.metric) byMetric.set(t.metric, [...(byMetric.get(t.metric) ?? []), t]);
+      if (t.metric && stateOf(t.taskId) !== 'cancelled')
+        byMetric.set(t.metric, [...(byMetric.get(t.metric) ?? []), t]);
     return [...byMetric].map(([key, ts]) => ({
       type: 'metric.updated' as const,
       actor: SYSTEM,
@@ -303,6 +317,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       deadlineAt,
       windowMs,
       deferredUntil: null,
+      pending: null,
       onResolve,
     });
     await send({
@@ -352,6 +367,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     }
   }
 
+  /**
+   * Records a choice. A Director's reversible choice (any option except approving a gate) takes
+   * effect after the undo window; until then it shows as resolved with `undoUntil`, and Undo
+   * re-opens the card. Defaults and gate approvals take effect at once.
+   */
   async function settle(
     id: string,
     optionId: string,
@@ -360,20 +380,44 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   ) {
     const e = escalations.get(id)!;
     e.status = by === 'default' ? 'expired' : 'resolved';
+    const undoable =
+      by === 'director' &&
+      policy.undoWindowMs > 0 &&
+      (e.card.type !== 'gate' || optionId === 'send_back');
+    if (!undoable) {
+      await commit(id, optionId, notes, by);
+      return;
+    }
+    const pending = { optionId, notes, undone: false };
+    e.pending = pending;
+    await send(
+      updated(
+        id,
+        e.status,
+        { optionId, notes, by, supersededBy: null },
+        {
+          undoUntil: new Date(Date.now() + policy.undoWindowMs).toISOString(),
+        },
+      ),
+    );
+    void (async () => {
+      const undone = await condition(() => pending.undone, policy.undoWindowMs);
+      if (undone) return;
+      e.pending = null;
+      await commit(id, optionId, notes, by);
+    })();
+  }
+
+  async function commit(
+    id: string,
+    optionId: string,
+    notes: string | null,
+    by: 'director' | 'default' | 'chief_of_staff',
+  ) {
+    const e = escalations.get(id)!;
     const option = e.card.options.find((o) => o.id === optionId);
     await send(
-      {
-        type: 'escalation.updated',
-        actor: by === 'director' ? DIRECTOR : CHIEF,
-        subject: { kind: 'escalation', id },
-        severity: 'notable',
-        data: {
-          escalationId: id,
-          status: e.status,
-          deferredUntil: null,
-          resolution: { optionId, notes, by, supersededBy: null },
-        },
-      },
+      updated(id, e.status, { optionId, notes, by, supersededBy: null }),
       decision(
         e.card.title,
         option?.label ?? optionId,
@@ -389,6 +433,25 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     await e.onResolve(optionId, notes);
     poke();
   }
+
+  const updated = (
+    id: string,
+    status: EscalationStatus,
+    resolution: Extract<NewEvent, { type: 'escalation.updated' }>['data']['resolution'],
+    extra: { undoUntil?: string } = {},
+  ): NewEvent => ({
+    type: 'escalation.updated',
+    actor: resolution?.by === 'director' ? DIRECTOR : CHIEF,
+    subject: { kind: 'escalation', id },
+    severity: 'notable',
+    data: {
+      escalationId: id,
+      status,
+      deferredUntil: null,
+      resolution,
+      undoUntil: extra.undoUntil ?? null,
+    },
+  });
 
   async function supersede(id: string, by: string) {
     const e = escalations.get(id);
@@ -434,7 +497,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           from,
           attempt: attempts[t.taskId] ?? 0,
           instructions: instructions[t.taskId] ?? null,
-          paused: projectPaused || pausedRoles.has(t.role),
+          paused: held(t),
         },
       ],
     });
@@ -665,7 +728,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       data: { status: paused ? 'paused' : 'running' },
     });
     if (paused) signalAll(pauseTask);
-    else signalAll(resumeTask, (t) => !pausedRoles.has(t.role));
+    else signalAll(resumeTask, (t) => !held(t));
     poke();
   }
 
@@ -1087,32 +1150,146 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     ];
   };
 
+  const scopeLabel = (kind: ScopeKind, id: string): string => {
+    switch (kind) {
+      case 'project':
+        return input.name;
+      case 'workstream':
+        return `${id.charAt(0).toUpperCase()}${id.slice(1)} workstream`;
+      case 'agent':
+        return roles.get(id)?.name ?? id;
+      case 'phase':
+        return `Phase ${id}: ${phaseInfo.get(Number(id))?.name ?? ''}`;
+      case 'task':
+        return task(id)?.title ?? id;
+    }
+  };
+
+  /**
+   * A task and everything downstream of it for the same Blueprint item: cancelling "Port Hero"
+   * also cancels "Register Hero", but not "Validate components", which carries on without it.
+   */
+  const cancelSet = (taskId: string): string[] => {
+    const root = task(taskId)!;
+    const keys = new Set(root.itemKeys);
+    const out = new Set([taskId]);
+    const queue = [taskId];
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const t of plan.tasks) {
+        if (!out.has(t.taskId) && t.dependsOn.includes(id) && t.itemKeys.some((k) => keys.has(k))) {
+          out.add(t.taskId);
+          queue.push(t.taskId);
+        }
+      }
+    }
+    return [...out];
+  };
+
+  const SETTLED_STATES: ReadonlySet<TaskState> = new Set(['done', 'cancelled', 'rolled_back']);
+
+  async function cancelTasks(ids: string[], reason: string) {
+    const events: NewEvent[] = [];
+    const touched = new Set<string>();
+    for (const id of ids) {
+      const t = task(id);
+      if (!t || SETTLED_STATES.has(stateOf(id))) continue;
+      const esc = taskEscalation.get(id);
+      if (esc) {
+        await supersede(esc, 'cancelled by the Director');
+        taskEscalation.delete(id);
+      }
+      retryFromBlocked.delete(id);
+      touched.add(t.role);
+      // A running task stops at its next step boundary and reports itself cancelled.
+      if (children.has(id)) void children.get(id)!.signal(cancelTask);
+      else events.push(taskMove(t, 'cancelled', reason));
+    }
+    events.push(...[...touched].map((r) => agentRefresh(r)));
+    await send(...events, ...metricEvents());
+    poke();
+  }
+
   setHandler(
     control,
     async ({ verb, scope }) => {
-      if (scope.kind === 'project') {
-        await setProjectPaused(verb === 'pause');
+      const label = scopeLabel(scope.kind, scope.id);
+      if (verb === 'cancel') {
+        const ids =
+          scope.kind === 'task'
+            ? cancelSet(scope.id)
+            : scope.kind === 'phase'
+              ? plan.tasks.filter((t) => t.phase === Number(scope.id)).map((t) => t.taskId)
+              : plan.tasks.map((t) => t.taskId);
+        if (scope.kind === 'phase') cancelledPhases.add(Number(scope.id));
+        await send(
+          decision(
+            `Cancel ${label}`,
+            'Cancelled',
+            `${ids.length} task(s) cancelled by the Director.`,
+            'director',
+            `cancel:${scope.kind}:${scope.id}`,
+            null,
+          ),
+        );
+        await cancelTasks(ids, 'Cancelled by the Director');
+        if (scope.kind === 'project') {
+          for (const e of escalations.keys()) await supersede(e, 'project cancelled');
+          await condition(() => children.size === 0);
+          await send({
+            type: 'project.status',
+            actor: DIRECTOR,
+            subject: { kind: 'project', id: projectId },
+            severity: 'notable',
+            data: { status: 'cancelled' },
+          });
+          completed = true;
+          poke();
+        }
         return { accepted: true };
       }
-      const affected = scopeRoles(scope.kind, scope.id);
-      for (const r of affected) verb === 'pause' ? pausedRoles.add(r) : pausedRoles.delete(r);
-      if (verb === 'pause') signalAll(pauseTask, (t) => affected.includes(t.role));
-      else if (!projectPaused) signalAll(resumeTask, (t) => affected.includes(t.role));
-      await send(...affected.map((r) => ({ ...agentRefresh(r), actor: DIRECTOR })));
+
+      const pause = verb === 'pause';
+      await send({
+        type: 'control.hold',
+        actor: DIRECTOR,
+        subject: { kind: 'project', id: projectId },
+        severity: 'notable',
+        data: { scope, held: pause, label },
+      });
+      if (scope.kind === 'project') {
+        await setProjectPaused(pause);
+        return { accepted: true };
+      }
+      if (scope.kind === 'phase') {
+        const n = Number(scope.id);
+        if (pause) pausedPhases.add(n);
+        else pausedPhases.delete(n);
+      } else if (scope.kind === 'task') {
+        if (pause) pausedTasks.add(scope.id);
+        else pausedTasks.delete(scope.id);
+      } else {
+        for (const r of scopeRoles(scope.kind, scope.id)) {
+          if (pause) pausedRoles.add(r);
+          else pausedRoles.delete(r);
+        }
+        await send(
+          ...scopeRoles(scope.kind, scope.id).map((r) => ({ ...agentRefresh(r), actor: DIRECTOR })),
+        );
+      }
+      const covered = (t: PlannedTask) =>
+        scope.kind === 'phase'
+          ? t.phase === Number(scope.id)
+          : scope.kind === 'task'
+            ? t.taskId === scope.id
+            : scopeRoles(scope.kind, scope.id).includes(t.role);
+      if (pause) signalAll(pauseTask, covered);
+      else signalAll(resumeTask, (t) => covered(t) && !held(t));
       poke();
       return { accepted: true };
     },
     {
       validator: ({ verb, scope }) => {
-        if (verb === 'cancel')
-          return reject('not_supported', 'Cancel is not available yet; pause instead.');
-        if (scope.kind === 'project') {
-          if (verb === 'pause' && projectPaused)
-            return reject('conflict', 'The project is already paused.');
-          if (verb === 'resume' && !projectPaused)
-            return reject('conflict', 'The project is not paused.');
-          return;
-        }
         if (scope.kind === 'agent' && !roles.has(scope.id))
           return reject('not_found', `No agent "${scope.id}".`);
         if (
@@ -1121,12 +1298,72 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         ) {
           return reject('not_found', `No workstream "${scope.id}".`);
         }
-        if (scope.kind === 'phase' || scope.kind === 'task') {
-          return reject(
-            'not_supported',
-            `Pausing a single ${scope.kind} is not available yet; pause its workstream.`,
-          );
+        if (scope.kind === 'phase' && !phaseInfo.has(Number(scope.id)))
+          return reject('not_found', `No phase "${scope.id}".`);
+        if (scope.kind === 'task' && !task(scope.id))
+          return reject('not_found', `No task "${scope.id}".`);
+
+        if (verb === 'cancel') {
+          if (scope.kind === 'agent' || scope.kind === 'workstream') {
+            return reject(
+              'not_supported',
+              `Cancel a task, a phase or the project; pause a ${scope.kind} instead.`,
+            );
+          }
+          if (scope.kind === 'task' && SETTLED_STATES.has(stateOf(scope.id)))
+            return reject('conflict', 'This task already finished.');
+          if (scope.kind === 'phase' && done.has(Number(scope.id)))
+            return reject('conflict', 'This phase already finished.');
+          return;
         }
+        if (scope.kind === 'project') {
+          if (verb === 'pause' && projectPaused)
+            return reject('conflict', 'The project is already paused.');
+          if (verb === 'resume' && !projectPaused)
+            return reject('conflict', 'The project is not paused.');
+          return;
+        }
+        if (scope.kind === 'phase') {
+          const n = Number(scope.id);
+          if (verb === 'pause' && pausedPhases.has(n))
+            return reject('conflict', 'This phase is already paused.');
+          if (verb === 'resume' && !pausedPhases.has(n))
+            return reject('conflict', 'This phase is not paused.');
+        }
+        if (scope.kind === 'task') {
+          if (verb === 'pause' && !children.has(scope.id)) {
+            return reject(
+              'conflict',
+              'Only a running task can be paused; pause its phase or workstream to hold queued work.',
+            );
+          }
+          if (verb === 'pause' && pausedTasks.has(scope.id))
+            return reject('conflict', 'This task is already paused.');
+          if (verb === 'resume' && !pausedTasks.has(scope.id))
+            return reject('conflict', 'This task is not paused.');
+        }
+      },
+    },
+  );
+
+  setHandler(
+    undoResolution,
+    async ({ escalationId }) => {
+      const e = escalations.get(escalationId)!;
+      e.pending!.undone = true;
+      e.pending = null;
+      e.status = 'open';
+      if (e.windowMs) e.deadlineAt = Date.now() + e.windowMs;
+      await send(updated(escalationId, 'open', null));
+      void watch(escalationId);
+      return { accepted: true };
+    },
+    {
+      validator: ({ escalationId }) => {
+        const e = escalations.get(escalationId);
+        if (!e) return reject('not_found', `No escalation "${escalationId}".`);
+        if (!e.pending || e.pending.undone)
+          return reject('conflict', 'This choice can no longer be undone.');
       },
     },
   );
@@ -1221,7 +1458,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         if (t.kind !== 'work' || !active.has(t.phase) || (s !== 'planned' && s !== 'ready'))
           continue;
         if (children.has(t.taskId)) continue;
-        if (pausedRoles.has(t.role)) continue;
+        if (held(t)) continue;
         if (!t.dependsOn.every((d) => stateOf(d) === 'done' || stateOf(d) === 'cancelled'))
           continue;
         await dispatch(t, 'ready');
@@ -1235,7 +1472,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const info = phaseInfo.get(n)!;
       const key = `phase-${n}`;
       const gate = gates.get(key)?.status ?? 'none';
-      if (info.gate === 'director' && gate !== 'approved') {
+      if (info.gate === 'director' && gate !== 'approved' && !cancelledPhases.has(n)) {
         if (gate === 'none') {
           await raiseGate(
             key,

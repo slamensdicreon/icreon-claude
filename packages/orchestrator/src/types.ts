@@ -14,6 +14,8 @@ export interface ProjectPolicy {
   escalationDeadlinesMs: Partial<Record<EscalationType, number>>;
   /** Stop window after a directive acknowledgement. Spec: 30 s. */
   directiveWindowMs: number;
+  /** How long a reversible Director choice can be undone before it takes effect. Spec: 10 s. */
+  undoWindowMs: number;
 }
 
 export interface ProjectInput {

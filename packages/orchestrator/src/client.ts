@@ -9,6 +9,7 @@ import {
   postMessage,
   resolveEscalation,
   stopDirective,
+  undoResolution,
 } from './definitions';
 import { TASK_QUEUE, type ProjectInput, type ProjectPolicy } from './types';
 
@@ -30,6 +31,7 @@ export function defaultPolicy(
     enabledGates: [],
     escalationDeadlinesMs: deadlines,
     directiveWindowMs: 30_000,
+    undoWindowMs: 10_000,
     ...overrides,
   };
 }
@@ -100,6 +102,10 @@ export class ProjectCommandsClient {
         args: [{ escalationId, until: until.toISOString() }],
       }),
     );
+  }
+
+  undo(escalationId: string) {
+    return this.run(() => this.handle.executeUpdate(undoResolution, { args: [{ escalationId }] }));
   }
 
   postMessage(body: string) {

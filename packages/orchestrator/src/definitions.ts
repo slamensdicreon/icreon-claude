@@ -21,6 +21,11 @@ export const stopDirective = defineUpdate<CommandAck, [{ directiveId: string }]>
 
 export const control = defineUpdate<CommandAck, [Control]>('control');
 
+/** Takes back a reversible choice while its undo window is open; the card re-opens. */
+export const undoResolution = defineUpdate<CommandAck, [{ escalationId: string }]>(
+  'undoResolution',
+);
+
 /** Parent → task child: hold at the next step boundary, carry on, or stop. */
 export const pauseTask = defineSignal('pauseTask');
 export const resumeTask = defineSignal('resumeTask');

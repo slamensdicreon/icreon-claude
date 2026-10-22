@@ -56,6 +56,8 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
       return `${e.data.key}: ${e.data.value ?? 'not yet measured'}${e.data.total != null ? ` / ${e.data.total}` : ''}`;
     case 'budget.updated':
       return `Spend: $${e.data.spent.usd.toFixed(2)}, ${e.data.spent.tokens.toLocaleString('en-US')} tokens`;
+    case 'control.hold':
+      return `${e.data.held ? 'Paused' : 'Resumed'}: ${e.data.label}`;
     case 'tool.health':
       return `${e.data.server} ${e.data.status}`;
   }
