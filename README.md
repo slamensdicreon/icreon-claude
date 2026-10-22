@@ -51,6 +51,7 @@ The Control Center calls `GET /auth/me` to know who is signed in, sends people t
 | `packages/orchestrator`          | Temporal workflows (project, task), Director commands, stub agent activities            |
 | `packages/tool-gateway`          | Policy enforcement point for every agent tool call: grants, scopes, credentials, audit  |
 | `packages/agent-runtime`         | Agent loop on the Claude Messages API: tools via the gateway, caching, budgets          |
+| `tool-servers/browser`           | Crawl, page snapshots, screenshots at 3 breakpoints, asset fetch; SSRF-guarded          |
 | `packages/playbook-sdk`          | Schema, loader and validator for playbooks                                              |
 | `packages/simulator`             | Scripted engagements for UI work and demos                                              |
 | `playbooks/sitecoreai-migration` | Playbook #1: 11 phases, 2 Director gates, 24 roles, task templates, demo fixtures       |

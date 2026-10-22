@@ -16,6 +16,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The browser tool server's tests drive a real Chromium.
+      - run: pnpm --filter @lw/tool-browser exec playwright-core install --with-deps chromium
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
