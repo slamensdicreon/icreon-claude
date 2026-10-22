@@ -189,11 +189,9 @@ export function registerOriginCheck(app: FastifyInstance, allowedOrigins: string
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
     const origin = req.headers.origin;
     if (origin && !allowed.has(origin)) {
-      return reply
-        .status(403)
-        .send({
-          error: { code: 'bad_origin', message: `Requests from ${origin} are not accepted.` },
-        });
+      return reply.status(403).send({
+        error: { code: 'bad_origin', message: `Requests from ${origin} are not accepted.` },
+      });
     }
   });
 }
