@@ -42,8 +42,8 @@ export class InMemoryEventStore implements EventStore {
     const log = this.logs.get(projectId) ?? [];
     const ts = this.clock.now().toISOString();
     // Validate the whole batch before committing any of it.
-    const stored = events.map((e, i) =>
-      LwEvent.parse({ ...e, id: randomUUID(), projectId, seq: log.length + i + 1, ts }),
+    const stored = events.map(({ at, ...e }, i) =>
+      LwEvent.parse({ ...e, id: randomUUID(), projectId, seq: log.length + i + 1, ts: at ?? ts }),
     ) as LwEvent[];
     log.push(...stored);
     this.logs.set(projectId, log);

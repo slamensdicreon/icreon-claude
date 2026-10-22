@@ -381,10 +381,19 @@ export const EventBody = z.discriminatedUnion('type', [
       verdict: z.enum(['accept', 'reject']),
       subject: z.string(),
       note: z.string().nullable().default(null),
+      /** Model tokens the review took. */
+      tokens: z.number().int().nonnegative().default(0),
     }),
   ),
   /** The Chief of Staff changing the plan ("close pilot slice, open batch 2"). */
-  ev('plan.changed', z.object({ summary: z.string(), taskIds: z.array(z.string()).default([]) })),
+  ev(
+    'plan.changed',
+    z.object({
+      summary: z.string(),
+      taskIds: z.array(z.string()).default([]),
+      tokens: z.number().int().nonnegative().default(0),
+    }),
+  ),
   ev('escalation.raised', EscalationCard),
   ev(
     'escalation.updated',
@@ -485,6 +494,8 @@ export const EventBody = z.discriminatedUnion('type', [
       version: z.number().int().positive(),
       /** Where this version's content lives (`blob://…`); null when only announced. */
       ref: z.string().nullable().default(null),
+      /** Workbench tab label ("Components", "PR 12"); derived from the title when absent. */
+      shortTitle: z.string().nullable().default(null),
       format: z.enum(['markdown', 'json', 'png', 'binary']).nullable().default(null),
     }),
   ),
@@ -599,6 +610,12 @@ export type LwEvent = EventMeta & EventBody;
 
 /** An event before the store assigns id, seq and ts. Defaulted fields may be omitted. */
 export type NewEvent = Omit<EventMeta, 'id' | 'seq' | 'ts' | 'projectId'> &
-  z.input<typeof EventBody>;
+  z.input<typeof EventBody> & {
+    /**
+     * Backdated timestamp. Only for seeding or importing history (the simulator's demo
+     * projects); everything live is stamped by the store.
+     */
+    at?: string;
+  };
 
 export type EventOf<T extends EventType> = EventMeta & Extract<EventBody, { type: T }>;

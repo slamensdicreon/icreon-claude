@@ -122,7 +122,13 @@ function capitalize(s: string) {
 function columns(
   e: LwEvent,
   lookups: Lookups,
-): { tool: string | null; op: string | null; outcome: string | null; agentId: string | null } {
+): {
+  tool: string | null;
+  op: string | null;
+  outcome: string | null;
+  agentId: string | null;
+  tokens?: number;
+} {
   switch (e.type) {
     case 'step.recorded':
       return {
@@ -137,9 +143,16 @@ function columns(
         op: `${e.data.verdict} ${e.data.subject}`,
         outcome: e.data.verdict === 'accept' ? 'ok' : 'reject',
         agentId: e.data.reviewerId,
+        tokens: e.data.tokens,
       };
     case 'plan.changed':
-      return { tool: 'Planner', op: e.data.summary, outcome: 'ok', agentId: e.actor.id };
+      return {
+        tool: 'Planner',
+        op: e.data.summary,
+        outcome: 'ok',
+        agentId: e.actor.id,
+        tokens: e.data.tokens,
+      };
     case 'control.hold':
       return {
         tool: 'Control',
@@ -227,7 +240,7 @@ export function toActivityItem(
     operation: col.op,
     resultCode: step?.resultCode ?? null,
     durationMs: step?.durationMs ?? null,
-    tokens: step?.tokens ?? null,
+    tokens: step?.tokens ?? col.tokens ?? null,
     summary: describe(e, lookups),
     actorId: e.actor.id,
     toolLabel: col.tool,

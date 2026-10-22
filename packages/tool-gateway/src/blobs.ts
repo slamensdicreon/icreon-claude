@@ -33,3 +33,20 @@ export class LocalBlobStore implements BlobStore {
     return join(this.root, projectId, key);
   }
 }
+
+/** Blobs in memory: tests and the demo projects. */
+export class MemoryBlobStore implements BlobStore {
+  private readonly blobs = new Map<string, Uint8Array>();
+
+  async put(projectId: string, key: string, bytes: Uint8Array) {
+    const ref = `blob://${projectId}/${key}`;
+    this.blobs.set(ref, bytes);
+    return ref;
+  }
+
+  async get(ref: string) {
+    const b = this.blobs.get(ref);
+    if (!b) throw new Error(`No blob at ${ref}`);
+    return b;
+  }
+}

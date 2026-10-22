@@ -1,6 +1,6 @@
 import type { Control, SettingKey } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
-import type { Simulation } from '@lw/simulator';
+import type { DemoProject, Simulation } from '@lw/simulator';
 
 /**
  * What the API needs from whatever runs a project: the simulator in M0 demos, the Temporal
@@ -48,5 +48,26 @@ export function simulationCommands(sim: Simulation): ProjectCommands {
     postMessage: (body) => sim.postMessage(body),
     stopDirective: (directiveId) => sim.stopDirective(directiveId),
     control: (cmd) => sim.control(cmd),
+  };
+}
+
+/** The demo projects implement every command the Control Center sends. */
+export function demoCommands(p: DemoProject): ProjectCommands {
+  return {
+    resolve: (escalationId, optionId, notes = null) => p.resolve(escalationId, optionId, notes),
+    defer: (escalationId, until) => p.defer(escalationId, until),
+    undo: (escalationId) => p.undo(escalationId),
+    postMessage: (body, about) => p.postMessage(body, about),
+    stopDirective: (directiveId) => p.stopDirective(directiveId),
+    control: (cmd) => p.control(cmd),
+    resume: (escalationId) => p.resume(escalationId),
+    rerunTask: (taskId, instructions) => p.rerunTask(taskId, instructions),
+    rollbackTask: (taskId) => p.rollbackTask(taskId),
+    rollbackPhase: (phase) => p.rollbackPhase(phase),
+    archive: () => p.archive(),
+    changeSetting: (key, value) => p.changeSetting(key, value),
+    verifyCredential: (credentialId) => p.verifyCredential(credentialId),
+    runScenario: (key) => p.runScenario(key),
+    scenarios: () => p.scenarios(),
   };
 }

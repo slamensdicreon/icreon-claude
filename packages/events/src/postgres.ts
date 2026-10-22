@@ -99,11 +99,12 @@ export class PostgresEventStore implements EventStore {
     if (!events.length) return [];
     const ts = this.clock.now().toISOString();
     // Validate the whole batch against the contract before touching the database.
-    const validated = events.map((e, i) =>
-      LwEvent.parse({ ...e, id: randomUUID(), projectId, seq: i + 1, ts }),
+    const validated = events.map(({ at, ...e }, i) =>
+      LwEvent.parse({ ...e, id: randomUUID(), projectId, seq: i + 1, ts: at ?? ts }),
     ) as LwEvent[];
     const records = validated.map((e, i) => ({
       ord: i + 1,
+      ts: e.ts,
       id: e.id,
       type: e.type,
       severity: e.severity,
@@ -118,12 +119,13 @@ export class PostgresEventStore implements EventStore {
          RETURNING head
        )
        INSERT INTO lw_events (project_id, seq, id, ts, type, severity, actor, subject, data)
-       SELECT $1, (SELECT head FROM h) - $2 + e.ord, e.id, $3::timestamptz, e.type, e.severity,
+       SELECT $1, (SELECT head FROM h) - $2 + e.ord, e.id, e.ts, e.type, e.severity,
               e.actor, e.subject, e.data
-         FROM jsonb_to_recordset($4::jsonb)
-           AS e(ord int, id uuid, type text, severity text, actor jsonb, subject jsonb, data jsonb)
+         FROM jsonb_to_recordset($3::jsonb)
+           AS e(ord int, ts timestamptz, id uuid, type text, severity text, actor jsonb,
+                subject jsonb, data jsonb)
        RETURNING seq`,
-      [projectId, records.length, ts, JSON.stringify(records)],
+      [projectId, records.length, JSON.stringify(records)],
     );
     const seqs = rows.map((r) => Number(r.seq)).sort((a, b) => a - b);
     return validated.map((e, i) => ({ ...e, seq: seqs[i]! }));

@@ -306,6 +306,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     }
     case 'review.recorded': {
       const a = s.agents[e.data.reviewerId];
+      if (a) a.tokensProject += e.data.tokens;
       if (a)
         a.lastSteps = [
           {
@@ -322,8 +323,11 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         ].slice(0, 3);
       break;
     }
-    case 'plan.changed':
+    case 'plan.changed': {
+      const a = s.agents[e.actor.id];
+      if (a) a.tokensProject += e.data.tokens;
       break;
+    }
     case 'escalation.raised': {
       s.escalations[e.data.escalationId] = {
         ...e.data,
@@ -443,13 +447,13 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         artifactId: e.data.artifactId,
         kind: e.data.kind,
         title: e.data.title,
-        shortTitle: shortTitle(e.data.kind, e.data.title, e.data.artifactId),
+        shortTitle: e.data.shortTitle ?? shortTitle(e.data.kind, e.data.title, e.data.artifactId),
         latest: e.data.version,
         versions: [],
         approved: [],
       });
       a.title = e.data.title;
-      a.shortTitle = shortTitle(e.data.kind, e.data.title, e.data.artifactId);
+      a.shortTitle = e.data.shortTitle ?? shortTitle(e.data.kind, e.data.title, e.data.artifactId);
       a.latest = Math.max(a.latest, e.data.version);
       a.versions = [
         {

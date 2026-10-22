@@ -6,15 +6,15 @@ import type { CreateProject } from '@lw/contracts';
 import { openStore, Projections } from '@lw/events';
 import { createWorker, defaultPolicy, ProjectCommandsClient, startProject } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import { Simulation, sitecoreScenario } from '@lw/simulator';
+import { Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import { composeStack } from '@lw/stack';
-import { LocalBlobStore } from '@lw/tool-gateway';
+import { LocalBlobStore, MemoryBlobStore } from '@lw/tool-gateway';
 import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 import { buildApp } from './app';
 import { policyRows } from './policy';
-import { simulationCommands, type ProjectCommands } from './commands';
+import { demoCommands, simulationCommands, type ProjectCommands } from './commands';
 
 /**
  * Control API entry point.
@@ -54,7 +54,8 @@ const env = z
     PUBLIC_URL: z.string().url().optional(),
     APP_URL: z.string().url().optional(),
     SIM_SPEED: z.coerce.number().positive().default(1),
-    SIM_PROJECTS: z.coerce.number().int().min(0).max(10).default(2),
+    /** Scripted engagements to run beside the two demo projects (intake adds more). */
+    SIM_PROJECTS: z.coerce.number().int().min(0).max(10).default(0),
     PLAYBOOK_DIR: z
       .string()
       .default(fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url))),
@@ -95,8 +96,12 @@ const projections = new Projections(store);
 await projections.start();
 const playbook = await loadPlaybook(env.PLAYBOOK_DIR);
 const cleanups: (() => Promise<void>)[] = [];
-// Shared with the worker's tool servers (one folder in dev; object storage when deployed).
-const blobs = new LocalBlobStore(join(env.DATA_DIR, 'blobs'));
+// Shared with the worker's tool servers (one folder in dev; object storage when deployed). The
+// demo projects keep theirs in memory, with the event log.
+const blobs =
+  env.ORCHESTRATOR === 'simulator' && env.STORE === 'memory'
+    ? new MemoryBlobStore()
+    : new LocalBlobStore(join(env.DATA_DIR, 'blobs'));
 
 let commands: (projectId: string) => ProjectCommands | undefined;
 let createProject: (input: CreateProject) => Promise<string>;
@@ -121,6 +126,10 @@ if (env.ORCHESTRATOR === 'simulator') {
       .catch((err) => console.error('simulation failed', projectId, err));
     return projectId;
   };
+  // The prototype's two projects, played through the real API.
+  const demos = await startDemo(store, playbook, blobs, { speed: env.SIM_SPEED });
+  for (const d of demos) sims.set(d.projectId, demoCommands(d));
+  cleanups.push(async () => demos.forEach((d) => d.stop()));
   commands = (id) => sims.get(id);
   createProject = async (input) =>
     startSimulation({ ...input, autopilot: false, speed: env.SIM_SPEED });

@@ -238,6 +238,10 @@ importers:
       '@lw/playbook-sdk':
         specifier: workspace:*
         version: link:../playbook-sdk
+    devDependencies:
+      '@lw/plan':
+        specifier: workspace:*
+        version: link:../plan
 
   packages/stack:
     dependencies:

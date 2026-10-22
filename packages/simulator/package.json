@@ -15,5 +15,8 @@
     "@lw/events": "workspace:*",
     "@lw/domain": "workspace:*",
     "@lw/playbook-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@lw/plan": "workspace:*"
   }
 }

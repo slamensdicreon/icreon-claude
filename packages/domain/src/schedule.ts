@@ -10,6 +10,7 @@ import {
   sameDayAt,
   shortDay,
   workingDays,
+  workingHoursBetween,
 } from './time';
 
 /**
@@ -83,19 +84,24 @@ export function forecast(s: ProjectState, now: number): Map<string, Window> {
   for (const t of ordered(tasks)) {
     if (out.has(t.taskId)) continue;
     const depsEnd = Math.max(0, ...t.dependsOn.map((d) => out.get(d)?.end ?? 0));
-    const earliest = Math.max(
-      now,
-      depsEnd,
-      t.kind === 'checkpoint' ? 0 : (laneFree.get(t.agentId) ?? 0),
-    );
     const pStart = ms(t.plannedStart);
     const pEnd = ms(t.plannedEnd);
     let w: Window;
-    if (pStart !== null && pEnd !== null && pStart >= earliest - 60_000) {
+    // A Lead's window stands while it is still ahead and after its dependencies. Leads may plan
+    // one agent's activities in parallel on purpose, so the agent's lane does not move it.
+    if (pStart !== null && pEnd !== null && pStart >= Math.max(now, depsEnd) - 60_000) {
       w = { start: pStart, end: pEnd, basis: 'planned' };
     } else {
+      const earliest = Math.max(
+        now,
+        depsEnd,
+        t.kind === 'checkpoint' ? 0 : (laneFree.get(t.agentId) ?? 0),
+      );
       const start = t.kind === 'checkpoint' ? earliest : nextWorkingMoment(earliest, tz);
-      const hours = pStart !== null && pEnd !== null ? (pEnd - pStart) / 3_600_000 : hoursOf(t);
+      const hours =
+        pStart !== null && pEnd !== null
+          ? Math.max(0.25, workingHoursBetween(pStart, pEnd, tz))
+          : hoursOf(t);
       w = { start, end: work(start, hours), basis: 'forecast' };
     }
     out.set(t.taskId, w);
@@ -238,6 +244,30 @@ export function nextForAgents(
           ? `${shortDay(start, tz)}, ${clockTime(start, tz)}`
           : `Phase ${t.phase}, ${shortDay(start, tz)}`;
     out.set(t.agentId, { title: t.title, when, taskId: t.taskId });
+  }
+  // Leads without work of their own review what their team hands in next.
+  for (const lead of Object.values(s.agents).filter((a) => a.tier === 'lead')) {
+    if (out.has(lead.agentId)) continue;
+    const reports = new Set(
+      Object.values(s.agents)
+        .filter((a) => a.reportsTo === lead.agentId)
+        .map((a) => a.agentId),
+    );
+    const handIn = Object.values(s.tasks)
+      .filter((t) => reports.has(t.agentId) && (UPCOMING.has(t.state) || t.state === 'running'))
+      .filter((t) => t.kind === 'work')
+      .map((t) => ({ t, end: windows.get(t.taskId)!.end }))
+      .sort((a, b) => a.end - b.end)[0];
+    if (!handIn) continue;
+    const end = handIn.end;
+    out.set(lead.agentId, {
+      title: `Review ${handIn.t.title}`,
+      when:
+        localDate(end, tz) === localDate(now, tz)
+          ? `${clockTime(end, tz)} today`
+          : `${shortDay(end, tz)}, ${clockTime(end, tz)}`,
+      taskId: handIn.t.taskId,
+    });
   }
   return out;
 }
