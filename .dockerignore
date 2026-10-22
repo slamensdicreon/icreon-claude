@@ -1,0 +1,11 @@
+# The backend images build from the repository root; keep local state and build output out.
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+.data
+.git
+.vercel
+.env
+.env.*
+*.log

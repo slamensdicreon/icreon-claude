@@ -127,6 +127,21 @@ class LiveStore {
       for (const f of this.onEvent) f(projectId, e.type);
       this.invalidate(projectId);
     });
+    // The server ends streams on schedule (before a platform time limit): reopen at once, quietly.
+    es.addEventListener('bye', () => {
+      if (this.source !== es) return;
+      this.close();
+      this.open();
+    });
+    // The log was reseeded below what we've seen (a demo restarted): refetch, then follow on.
+    es.addEventListener('reset', (m) => {
+      if (this.source !== es) return;
+      const { head } = JSON.parse((m as MessageEvent<string>).data) as { head: number };
+      this.close();
+      this.lastSeq = head;
+      this.refresh(projectId);
+      this.open();
+    });
     es.addEventListener('error', () => {
       if (this.conn.kind !== 'reconnecting') {
         this.conn = { kind: 'reconnecting' };

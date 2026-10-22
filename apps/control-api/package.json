@@ -7,7 +7,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo-runner": "tsx src/demo-runner.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.1",
@@ -25,6 +26,11 @@
     "@temporalio/testing": "^1.24.0",
     "@temporalio/worker": "^1.24.0",
     "fastify": "^5.12.7",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.15",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
   }
 }

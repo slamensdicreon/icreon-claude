@@ -5,12 +5,14 @@ import { ansell } from './ansell';
 import { DemoProject, type DemoBlobs } from './engine';
 import type { DemoScenario } from './types';
 
-export { DemoProject, type DemoBlobs } from './engine';
+export { DemoProject, scenarioList, type DemoBlobs } from './engine';
 export { DemoClock } from './clock';
 export type * from './types';
 
 /** The prototype's two projects, in switcher order. */
 export const DEMO_SCENARIOS: DemoScenario[] = [ansell, ansco];
+
+export const demoProjectId = (def: DemoScenario) => `prj-${def.id}`;
 
 /** Seeds and starts the demo projects. Each keeps running until `stop()`. */
 export async function startDemo(
@@ -28,7 +30,7 @@ export async function startDemo(
   const projects: DemoProject[] = [];
   for (const def of opts.scenarios ?? DEMO_SCENARIOS) {
     const p = new DemoProject(store, playbook, blobs, def, {
-      projectId: `prj-${def.id}`,
+      projectId: demoProjectId(def),
       speed: opts.speed,
       auto: opts.auto,
       undoWindowMs: opts.undoWindowMs,

@@ -1,0 +1,40 @@
+# The Control API, and the demo runner from the same image.
+#
+# On Vercel (vercel.json): the `api` service runs this image as a Function behind /projects,
+# /auth and /health; the `demo` daemon runs it with `src/demo-runner.ts`. The build context is the
+# repository root, so the pnpm workspace is all here. See docs/deploy/vercel.md.
+FROM node:22-bookworm-slim AS build
+
+ENV CI=true PNPM_HOME=/pnpm PATH=/pnpm:$PATH
+RUN corepack enable
+
+WORKDIR /repo
+# Fetch dependencies from the lockfile alone, so source edits reuse this layer.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+RUN pnpm fetch --prod
+COPY . .
+RUN pnpm install --offline --prod --frozen-lockfile --filter @lw/control-api...
+
+# The runtime image: the workspace and its node_modules, without pnpm's store.
+FROM node:22-bookworm-slim
+COPY --from=build /repo /repo
+WORKDIR /repo/apps/control-api
+
+# Defaults for a request-driven Function: the log is read on demand (no LISTEN socket to go stale
+# between requests), streams end before the 300 s limit and the browser resumes them, the demo
+# plays in the demo daemon, Temporal's worker runs in the worker daemon, blobs live in Blob.
+# Anything here can be overridden with project environment variables.
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=80 \
+    STORE=postgres \
+    LISTEN=false \
+    PROJECTIONS=lazy \
+    STREAM_POLL_MS=1000 \
+    STREAM_MAX_SECONDS=240 \
+    DEMO_RUNNER=separate \
+    INLINE_WORKER=false \
+    BLOB_STORE=vercel
+
+EXPOSE 80
+CMD ["node", "--import", "tsx", "src/main.ts"]

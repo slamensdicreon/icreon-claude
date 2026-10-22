@@ -1,6 +1,13 @@
 import type { Control, SettingKey } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
-import type { DemoProject, Simulation } from '@lw/simulator';
+import type { CommandBus, CommandRequest } from '@lw/events';
+import {
+  DEMO_SCENARIOS,
+  demoProjectId,
+  scenarioList,
+  type DemoProject,
+  type Simulation,
+} from '@lw/simulator';
 
 /**
  * What the API needs from whatever runs a project: the simulator in M0 demos, the Temporal
@@ -70,4 +77,53 @@ export function demoCommands(p: DemoProject): ProjectCommands {
     runScenario: (key) => p.runScenario(key),
     scenarios: () => p.scenarios(),
   };
+}
+
+/** The commands a runner on the bus accepts; `until` travels as an ISO string. */
+const REMOTE = [
+  'resolve',
+  'defer',
+  'undo',
+  'postMessage',
+  'stopDirective',
+  'control',
+  'resume',
+  'rerunTask',
+  'rollbackTask',
+  'rollbackPhase',
+  'archive',
+  'changeSetting',
+  'verifyCredential',
+  'runScenario',
+] as const;
+type RemoteMethod = (typeof REMOTE)[number];
+
+/**
+ * Commands for a project run by another process (the demo runner on a daemon), sent over the
+ * Postgres command bus. Refusals come back as the runner's own CommandError.
+ */
+export function remoteCommands(bus: CommandBus, projectId: string): ProjectCommands {
+  const send =
+    (method: RemoteMethod) =>
+    (...args: unknown[]) =>
+      bus.send(
+        projectId,
+        method,
+        args.map((a) => (a instanceof Date ? a.toISOString() : a)),
+      );
+  const cmds = Object.fromEntries(REMOTE.map((m) => [m, send(m)])) as unknown as ProjectCommands;
+  const def = DEMO_SCENARIOS.find((d) => demoProjectId(d) === projectId);
+  if (def) cmds.scenarios = () => scenarioList(def);
+  return cmds;
+}
+
+/** The runner's side: one command off the bus, run against the project's own commands. */
+export async function dispatch(cmds: ProjectCommands, req: CommandRequest): Promise<unknown> {
+  const method = req.method as RemoteMethod;
+  const fn = REMOTE.includes(method) ? cmds[method] : undefined;
+  if (!fn) {
+    throw new CommandError(501, 'not_supported', `This runner can't ${req.method}.`);
+  }
+  const args = method === 'defer' ? [req.args[0], new Date(req.args[1] as string)] : req.args;
+  return (fn as (...a: unknown[]) => Promise<unknown>).apply(cmds, args);
 }

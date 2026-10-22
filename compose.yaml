@@ -1,0 +1,47 @@
+# The deployed backend, on this machine: the same images Vercel runs, against a local Postgres.
+#
+#   docker compose up --build        Postgres, the Control API (Dockerfile.api) and the demo runner
+#   pnpm --filter @lw/web dev        the Control Center on http://localhost:5173, proxied to :4000
+#
+# Blobs go to a shared volume instead of Vercel Blob. Without sign-in, the API is published on
+# 127.0.0.1 only. See docs/deploy/vercel.md.
+name: launchworks
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: launchworks
+      POSTGRES_DB: launchworks
+    ports: ['127.0.0.1:5432:5432']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres']
+      interval: 2s
+      retries: 30
+
+  api:
+    build: { context: ., dockerfile: Dockerfile.api }
+    depends_on:
+      postgres: { condition: service_healthy }
+      demo: { condition: service_started }
+    environment: &backend
+      DATABASE_URL: postgres://postgres:launchworks@postgres:5432/launchworks
+      BLOB_STORE: local
+      DATA_DIR: /data
+      AUTH: none
+      INSECURE_NO_AUTH: 'true'
+    ports: ['127.0.0.1:4000:80']
+    volumes: [blobs:/data]
+
+  demo:
+    build: { context: ., dockerfile: Dockerfile.api }
+    command: ['node', '--import', 'tsx', 'src/demo-runner.ts']
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment: *backend
+    volumes: [blobs:/data]
+
+volumes:
+  pgdata:
+  blobs:

@@ -22,6 +22,11 @@ export interface EventStore {
   read(projectId: string, opts?: ReadOptions): Promise<LwEvent[]>;
   head(projectId: string): Promise<number>;
   projectIds(): Promise<string[]>;
+  /**
+   * Deletes a project's log. Only the demo runner uses it, to reseed its scripted projects on
+   * start; readers notice the head moving backwards and rebuild.
+   */
+  reset(projectId: string): Promise<void>;
   /** Live tail of every project, in append order. Returns an unsubscribe function. */
   subscribe(listener: Listener): () => void;
 }
@@ -66,6 +71,10 @@ export class InMemoryEventStore implements EventStore {
 
   async projectIds(): Promise<string[]> {
     return [...this.logs.keys()];
+  }
+
+  async reset(projectId: string): Promise<void> {
+    this.logs.delete(projectId);
   }
 
   subscribe(listener: Listener): () => void {

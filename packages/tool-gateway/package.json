@@ -13,6 +13,7 @@
   "dependencies": {
     "@lw/contracts": "workspace:*",
     "@lw/events": "workspace:*",
-    "@lw/playbook-sdk": "workspace:*"
+    "@lw/playbook-sdk": "workspace:*",
+    "@vercel/blob": "2.8.1"
   }
 }

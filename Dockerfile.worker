@@ -1,0 +1,34 @@
+# The orchestration worker: Temporal workflows and activities, the tool servers, and Chromium for
+# the browser and validator servers.
+#
+# On Vercel (vercel.json) it is the `worker` daemon. The build context is the repository root, so
+# the pnpm workspace is all here. See docs/deploy/vercel.md.
+FROM node:22-bookworm-slim AS build
+
+ENV CI=true PNPM_HOME=/pnpm PATH=/pnpm:$PATH
+RUN corepack enable
+
+WORKDIR /repo
+# Fetch dependencies from the lockfile alone, so source edits reuse this layer.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+RUN pnpm fetch --prod
+COPY . .
+RUN pnpm install --offline --prod --frozen-lockfile --filter @lw/worker...
+
+# The runtime image: the workspace and its node_modules, without pnpm's store.
+FROM node:22-bookworm-slim
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+COPY --from=build /repo /repo
+WORKDIR /repo
+
+# Chromium only (not Playwright's other browsers), at the revision this playwright-core expects,
+# with the system libraries it needs.
+RUN node tool-servers/browser/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /repo/apps/worker
+ENV NODE_ENV=production \
+    DATA_DIR=/tmp/launchworks \
+    BLOB_STORE=vercel
+
+CMD ["node", "--import", "tsx", "src/main.ts"]

@@ -15,6 +15,7 @@ import {
   MemoryIdempotencyStore,
   TokenBucketLimiter,
   ToolGateway,
+  type BlobStore,
   type ToolServer,
 } from '@lw/tool-gateway';
 import { ValidatorsToolServer } from '@lw/tool-validators';
@@ -31,8 +32,10 @@ export interface StackOptions {
   projections: Projections;
   playbook: Playbook;
   playbookDir: string;
-  /** Blobs (artifacts, screenshots, assets) go under `${dataDir}/blobs`. */
+  /** Working files (clones, builds). Blobs go under `${dataDir}/blobs` unless `blobs` is given. */
   dataDir: string;
+  /** Where artifacts, screenshots and assets are kept; shared with the Control API. */
+  blobs?: BlobStore;
   /** Claude, when configured. Without it every role runs on stub agents. */
   model?: ModelClient | null;
   /** Extra servers (tests); the browser and workspace servers are always connected. */
@@ -74,7 +77,7 @@ export function liveRoles(playbook: Playbook, servers: ToolServer[]): string[] {
  * blackboard once an agent has written one.
  */
 export async function composeStack(opts: StackOptions): Promise<Stack> {
-  const blobs = new LocalBlobStore(join(opts.dataDir, 'blobs'));
+  const blobs = opts.blobs ?? new LocalBlobStore(join(opts.dataDir, 'blobs'));
   const library = new ArtifactLibrary(opts.store, blobs);
   // One Chromium behind one egress proxy for every browser-driven server.
   const chromium = new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });

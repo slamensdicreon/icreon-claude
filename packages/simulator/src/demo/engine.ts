@@ -1780,10 +1780,7 @@ export class DemoProject {
   }
 
   scenarios() {
-    return [
-      ...this.def.scenarios.map(({ key, label }) => ({ key, label })),
-      { key: 'digest', label: 'Post the daily digest' },
-    ];
+    return scenarioList(this.def);
   }
 
   async runScenario(key: string) {
@@ -1810,4 +1807,12 @@ export class DemoProject {
       }),
     ]);
   }
+}
+
+/** The scenarios a demo project can raise on demand, as the Demo menu lists them. */
+export function scenarioList(def: DemoScenario): { key: string; label: string }[] {
+  return [
+    ...def.scenarios.map(({ key, label }) => ({ key, label })),
+    { key: 'digest', label: 'Post the daily digest' },
+  ];
 }

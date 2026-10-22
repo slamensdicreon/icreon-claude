@@ -43,7 +43,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
-import { streamProject } from './sse';
+import { streamProject, type StreamOptions } from './sse';
 
 export interface AppDeps {
   store: EventStore;
@@ -62,6 +62,10 @@ export interface AppDeps {
   corsOrigin?: string | null;
   /** GitHub sign-in. Without it the API is open, which main.ts only allows on localhost. */
   auth?: GithubAuthOptions;
+  /** More origins allowed to send commands besides the app's (a deployment's own URLs). */
+  extraOrigins?: string[];
+  /** Event stream timing; see StreamOptions. Defaults suit a long-running server. */
+  stream?: Partial<Pick<StreamOptions, 'pollMs' | 'maxMs'>>;
   logger?: boolean;
 }
 
@@ -80,7 +84,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(cors, { origin: corsOrigin ?? false, credentials: Boolean(deps.auth) });
   if (deps.auth) {
     registerGithubAuth(app, deps.auth);
-    registerOriginCheck(app, [deps.auth.appUrl, deps.auth.publicUrl]);
+    registerOriginCheck(app, [deps.auth.appUrl, deps.auth.publicUrl, ...(deps.extraOrigins ?? [])]);
   } else {
     // Local development: no sign-in, one operator on this machine.
     app.get('/auth/me', async () => ({ login: 'local', name: 'Director', avatarUrl: null }));
@@ -105,6 +109,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     );
   });
 
+  // Every project route answers from the head of the log: on a paused or fresh instance the read
+  // model may be behind, or not folded yet.
+  app.addHook('preHandler', async (req) => {
+    const id = (req.params as { id?: unknown } | undefined)?.id;
+    if (typeof id === 'string' && req.url.startsWith('/projects/')) await projections.catchUp(id);
+  });
+
   const project = (id: string): ProjectState | null => projections.get(id) ?? null;
   const orchestrator = (id: string): ProjectCommands => {
     const o = deps.commands(id);
@@ -122,7 +133,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get('/health', async () => ({ ok: true }));
 
-  app.get('/projects', async () => projections.all().map(projectListItem));
+  app.get('/projects', async () => {
+    await projections.catchUpAll();
+    // Oldest first, however the read models were folded (on demand, they come in any order).
+    return projections
+      .all()
+      .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
+      .map(projectListItem);
+  });
 
   app.post('/projects', async (req, reply) => {
     if (!deps.createProject) {
@@ -373,7 +391,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<P & { Querystring: { after?: string } }>('/projects/:id/stream', async (req, reply) => {
     if (!project(req.params.id))
       return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
-    await streamProject(store, req.params.id, req, reply, corsOrigin, Boolean(deps.auth));
+    await streamProject(store, req.params.id, req, reply, {
+      corsOrigin,
+      withCredentials: Boolean(deps.auth),
+      pollMs: deps.stream?.pollMs ?? 2_000,
+      maxMs: deps.stream?.maxMs ?? null,
+    });
   });
 
   // ---- Commands ---------------------------------------------------------------------------

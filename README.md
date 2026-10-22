@@ -4,12 +4,14 @@ Home of **Launchworks**, Icreon's agentic implementation studio for SitecoreAI (
 
 - [Backend, architecture & build plan](docs/architecture/backend-plan.md)
 - [Running the Control Center against the mock backend](docs/mock-backend.md)
+- [Deploying on Vercel](docs/deploy/vercel.md)
 
 ## Quick start
 
 ```bash
 pnpm install
 pnpm dev            # Control API on http://127.0.0.1:4000 with two simulated projects
+pnpm --filter @lw/web dev   # the Control Center on http://localhost:5173 (proxies to :4000)
 pnpm dev:temporal   # the real orchestrator (stub agents), local Temporal + Postgres, data in .data/
 AGENTS=claude ANTHROPIC_API_KEY=... pnpm dev:temporal   # roles with connected tools run on Claude
 pnpm test           # all packages
@@ -17,7 +19,8 @@ pnpm typecheck
 ```
 
 Requires Node 22+ (24 in CI) and pnpm 10. `pnpm dev:temporal` downloads the Temporal dev server on
-first run; delete `.data/` to start from scratch.
+first run; delete `.data/` to start from scratch. `docker compose up --build` runs the backend as it
+is deployed (Postgres, the API image and the demo runner); see [Deploying on Vercel](docs/deploy/vercel.md).
 
 ## Sign-in
 
@@ -43,6 +46,7 @@ The Control Center calls `GET /auth/me` to know who is signed in, sends people t
 
 | Path                             | What it is                                                                              |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
+| `apps/web`                       | The Control Center (React, Vite): the Cypher prototype as a live app                    |
 | `apps/control-api`               | Fastify API: snapshots, commands, SSE stream with replay; simulator or Temporal mode    |
 | `apps/worker`                    | Orchestration worker as its own process (Temporal + shared Postgres event log)          |
 | `packages/contracts`             | zod schemas for every event, snapshot and command (shared with the UI)                  |

@@ -15,18 +15,38 @@ export type Listen = (
 ) => Promise<() => Promise<void>>;
 
 const CHANNEL = 'lw_events';
-const MIGRATIONS = ['001_event_log.sql'];
+const MIGRATIONS = ['001_event_log.sql', '002_commands.sql'];
 
 /**
  * Applies the migrations. They are idempotent, so this runs on every start. Multi-statement SQL
  * goes through `exec` where the client has one (PGlite); node-postgres runs it via `query`.
  */
 export async function migrate(
-  sql: SqlClient & { exec?(text: string): Promise<unknown> },
+  sql: SqlClient & {
+    exec?(text: string): Promise<unknown>;
+    connect?(): Promise<SqlClient & { release(): void }>;
+  },
 ): Promise<void> {
-  for (const file of MIGRATIONS) {
-    const text = await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8');
-    await (sql.exec ? sql.exec(text) : sql.query(text));
+  const texts = await Promise.all(
+    MIGRATIONS.map((file) => readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')),
+  );
+  if (!sql.connect) {
+    for (const text of texts) await (sql.exec ? sql.exec(text) : sql.query(text));
+    return;
+  }
+  // A shared database: processes that start together (cold-starting API instances) take turns,
+  // because concurrent CREATE ... IF NOT EXISTS and CREATE OR REPLACE can still collide.
+  const client = await sql.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('launchworks.migrate'))`);
+    for (const text of texts) await client.query(text);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -161,13 +181,34 @@ export class PostgresEventStore implements EventStore {
     return rows.map((r) => r.project_id);
   }
 
+  async reset(projectId: string): Promise<void> {
+    await this.sql.query(
+      `WITH gone AS (DELETE FROM lw_events WHERE project_id = $1)
+       DELETE FROM lw_project_heads WHERE project_id = $1`,
+      [projectId],
+    );
+    this.cursors.delete(projectId);
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Delivers everything appended since the last notification seen, for every project. Call after
+   * the LISTEN connection drops and comes back: notifications sent in between are gone.
+   */
+  async resync(): Promise<void> {
+    const heads = await this.sql.query<{ project_id: string; head: number }>(
+      'SELECT project_id, head FROM lw_project_heads',
+    );
+    this.onNotify(heads.rows.map((h) => `${h.project_id}:${Number(h.head)}`).join(','));
+  }
+
   private onNotify(payload: string) {
     for (const part of payload.split(',')) {
+      if (!part) continue;
       const i = part.lastIndexOf(':');
       const projectId = part.slice(0, i);
       const upTo = Number(part.slice(i + 1));
@@ -179,7 +220,9 @@ export class PostgresEventStore implements EventStore {
   }
 
   private async deliver(projectId: string, upTo: number) {
-    const from = this.cursors.get(projectId) ?? 0;
+    let from = this.cursors.get(projectId) ?? 0;
+    // A head below the cursor means the log was reset and is being written again from seq 1.
+    if (upTo < from) from = 0;
     if (upTo <= from) return;
     const events = await this.read(projectId, { after: from, before: upTo + 1 });
     for (const e of events) {
