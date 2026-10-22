@@ -1,6 +1,7 @@
 import type {
   ActivityItem,
   AgentDetail,
+  ArtifactView,
   AgentView,
   Budgets,
   ConversationItem,
@@ -26,6 +27,7 @@ import type {
   StepView,
   TaskView,
   TeamSnapshot,
+  WorkbenchSnapshot,
 } from '@lw/contracts';
 import { toActivityItem } from './describe';
 import { compareEscalations, UNRESOLVED } from './escalations';
@@ -56,6 +58,8 @@ export interface ProjectState {
   metrics: Record<MetricKey, MetricView>;
   latest: ActivityItem[];
   holds: Record<string, { kind: ScopeKind; id: string; label: string }>;
+  artifacts: Record<string, ArtifactView>;
+  sourceUrl: string | null;
 }
 
 interface AgentRecord extends AgentView {
@@ -109,6 +113,8 @@ export function createProjectState(projectId: string): ProjectState {
     metrics,
     latest: [],
     holds: {},
+    artifacts: {},
+    sourceUrl: null,
   };
 }
 
@@ -126,6 +132,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       s.name = e.data.name;
       s.client = e.data.client;
       s.budgets = e.data.budgets;
+      s.sourceUrl = e.data.site.sourceUrl;
       for (const p of e.data.phases)
         s.phases[p.number] = { ...p, status: 'future', enteredAt: null };
       for (const r of e.data.roster) s.agents[r.agentId] = newAgent(r);
@@ -270,7 +277,28 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       else delete s.holds[key];
       break;
     }
-    case 'artifact.versioned':
+    case 'artifact.versioned': {
+      const a = (s.artifacts[e.data.artifactId] ??= {
+        artifactId: e.data.artifactId,
+        kind: e.data.kind,
+        title: e.data.title,
+        latest: e.data.version,
+        versions: [],
+      });
+      a.title = e.data.title;
+      a.latest = Math.max(a.latest, e.data.version);
+      a.versions = [
+        {
+          version: e.data.version,
+          ts: e.ts,
+          ref: e.data.ref,
+          format: e.data.format,
+          producer: e.actor.id,
+        },
+        ...a.versions.filter((v) => v.version !== e.data.version),
+      ];
+      break;
+    }
     case 'tool.health':
       break;
   }
@@ -440,4 +468,23 @@ export function conversation(s: ProjectState): ConversationSnapshot {
 
 export function decisions(s: ProjectState): DecisionView[] {
   return s.decisions;
+}
+
+const KIND_ORDER = [
+  'blueprint',
+  'platform_notes',
+  'inventory',
+  'report',
+  'handover_pack',
+  'pull_request',
+  'screenshot',
+  'video',
+];
+
+export function workbench(s: ProjectState): WorkbenchSnapshot {
+  const artifacts = Object.values(s.artifacts).sort(
+    (a, b) =>
+      KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.title.localeCompare(b.title),
+  );
+  return { seq: s.seq, artifacts };
 }

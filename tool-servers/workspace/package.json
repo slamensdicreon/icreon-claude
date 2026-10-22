@@ -1,0 +1,20 @@
+{
+  "name": "@lw/tool-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lw/contracts": "workspace:*",
+    "@lw/events": "workspace:*",
+    "@lw/plan": "workspace:*",
+    "@lw/tool-gateway": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

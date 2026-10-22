@@ -24,6 +24,15 @@ export interface ToolResult {
   summary?: string;
 }
 
+/** What a server learns about a call besides its arguments. Never includes other secrets. */
+export interface ToolCallContext {
+  projectId: string;
+  /** Gateway-minted, short-lived credential for this server. */
+  token: string;
+  role: string;
+  taskId: string;
+}
+
 /** A tool server as the gateway sees it. MCP clients implement this; tests use fakes. */
 export interface ToolServer {
   name: string;
@@ -32,11 +41,7 @@ export interface ToolServer {
    * Credential-scoped call. `token` is minted by the gateway for this run and never leaves it.
    * `target` names the external system instance (e.g. the client's tenant) for rate limiting.
    */
-  call(
-    op: string,
-    args: Record<string, unknown>,
-    ctx: { projectId: string; token: string },
-  ): Promise<ToolResult>;
+  call(op: string, args: Record<string, unknown>, ctx: ToolCallContext): Promise<ToolResult>;
   target(projectId: string): string;
 }
 

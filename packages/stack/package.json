@@ -1,0 +1,29 @@
+{
+  "name": "@lw/stack",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lw/agent-runtime": "workspace:*",
+    "@lw/events": "workspace:*",
+    "@lw/orchestrator": "workspace:*",
+    "@lw/plan": "workspace:*",
+    "@lw/playbook-sdk": "workspace:*",
+    "@lw/tool-browser": "workspace:*",
+    "@lw/tool-gateway": "workspace:*",
+    "@lw/tool-workspace": "workspace:*"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "^1.24.0",
+    "@lw/domain": "workspace:*",
+    "@lw/contracts": "workspace:*",
+    "@anthropic-ai/sdk": "^1.1.0"
+  }
+}

@@ -163,6 +163,8 @@ export const EventBody = z.discriminatedUnion('type', [
       budgets: Budgets,
       phases: z.array(PhaseDef),
       roster: z.array(RosterEntry),
+      /** Site definition from intake: where the source content lives. */
+      site: z.object({ sourceUrl: z.string().url().nullable() }).default({ sourceUrl: null }),
     }),
   ),
   ev('project.status', z.object({ status: ProjectStatus })),
@@ -274,6 +276,9 @@ export const EventBody = z.discriminatedUnion('type', [
       ]),
       title: z.string(),
       version: z.number().int().positive(),
+      /** Where this version's content lives (`blob://…`); null when only announced. */
+      ref: z.string().nullable().default(null),
+      format: z.enum(['markdown', 'json', 'png', 'binary']).nullable().default(null),
     }),
   ),
   ev(

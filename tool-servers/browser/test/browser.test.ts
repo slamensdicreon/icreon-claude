@@ -7,9 +7,14 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { InMemoryEventStore } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import { MemoryIdempotencyStore, TokenBucketLimiter, ToolGateway } from '@lw/tool-gateway';
+import {
+  LocalBlobStore,
+  MemoryIdempotencyStore,
+  TokenBucketLimiter,
+  ToolGateway,
+} from '@lw/tool-gateway';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BrowserToolServer, isBlockedSubresource, isPrivateAddress, LocalBlobStore } from '../src';
+import { BrowserToolServer, isBlockedSubresource, isPrivateAddress } from '../src';
 
 const SITE = fileURLToPath(new URL('./fixture-site', import.meta.url));
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));

@@ -239,3 +239,28 @@ export const ProjectListItem = ProjectSummary.pick({
   currentPhase: true,
 });
 export type ProjectListItem = z.infer<typeof ProjectListItem>;
+
+export const ArtifactVersionView = z.object({
+  version: z.number().int().positive(),
+  ts: z.iso.datetime(),
+  ref: z.string().nullable(),
+  format: z.enum(['markdown', 'json', 'png', 'binary']).nullable(),
+  producer: z.string(),
+});
+export type ArtifactVersionView = z.infer<typeof ArtifactVersionView>;
+
+export const ArtifactView = z.object({
+  artifactId: z.string(),
+  kind: z.string(),
+  title: z.string(),
+  latest: z.number().int().positive(),
+  versions: z.array(ArtifactVersionView),
+});
+export type ArtifactView = z.infer<typeof ArtifactView>;
+
+/** Workbench: every artifact by kind, newest version first within each. */
+export const WorkbenchSnapshot = z.object({
+  seq: z.number().int().nonnegative(),
+  artifacts: z.array(ArtifactView),
+});
+export type WorkbenchSnapshot = z.infer<typeof WorkbenchSnapshot>;

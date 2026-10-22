@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 /**
  * Runs inside the page (serialized by Playwright), so it must be self-contained: no imports,
  * no closures over module scope.

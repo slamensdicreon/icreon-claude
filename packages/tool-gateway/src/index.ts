@@ -1,3 +1,4 @@
+export * from './blobs';
 export * from './gateway';
 export * from './sanitize';
 export * from './scope';

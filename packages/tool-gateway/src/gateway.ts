@@ -88,7 +88,12 @@ export class ToolGateway {
 
     let result: ToolResult;
     try {
-      result = await server.call(call.op, call.args, { projectId: call.projectId, token });
+      result = await server.call(call.op, call.args, {
+        projectId: call.projectId,
+        token,
+        role: call.role,
+        taskId: call.taskId,
+      });
     } catch (err) {
       const message = redactText(err instanceof Error ? err.message : String(err), token);
       await this.record(

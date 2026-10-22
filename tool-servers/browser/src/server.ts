@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import type { OperationCatalog, ToolResult, ToolServer } from '@lw/tool-gateway';
+import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { extractPage, type PageExtract } from './extract';
 import { assertNavigable, BlockedUrlError, isBlockedSubresource, type UrlPolicy } from './ssrf';
@@ -13,24 +11,6 @@ export const BREAKPOINTS = {
   phone: { width: 390, height: 844 },
 } as const;
 type Breakpoint = keyof typeof BREAKPOINTS;
-
-/** Where screenshots and fetched assets go. Local folder now; S3 behind the same interface later. */
-export interface BlobStore {
-  put(projectId: string, key: string, bytes: Uint8Array, contentType: string): Promise<string>;
-}
-
-export class LocalBlobStore implements BlobStore {
-  constructor(private readonly root: string) {}
-  async put(projectId: string, key: string, bytes: Uint8Array) {
-    if ([projectId, ...key.split('/')].some((s) => !s || s === '.' || s === '..')) {
-      throw new Error(`Refusing blob key ${projectId}/${key}`);
-    }
-    const path = join(this.root, projectId, key);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, bytes);
-    return `blob://${projectId}/${key}`;
-  }
-}
 
 export interface BrowserServerOptions {
   /** Source-site hosts per project; the browser goes nowhere else. */

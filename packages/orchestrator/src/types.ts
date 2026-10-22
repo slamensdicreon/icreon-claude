@@ -24,6 +24,8 @@ export interface ProjectInput {
   client: string;
   playbook: Playbook;
   policy: ProjectPolicy;
+  /** Site definition from intake. */
+  site?: { sourceUrl: string | null };
 }
 
 export interface AgentRequest {

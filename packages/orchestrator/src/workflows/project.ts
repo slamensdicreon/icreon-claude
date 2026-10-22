@@ -1408,6 +1408,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         budgets: policy.budgets,
         phases: phaseDefs(playbook),
         roster: rosterEntries,
+        site: { sourceUrl: input.site?.sourceUrl ?? null },
       },
     },
     {

@@ -14,10 +14,16 @@ export interface AgentRunner {
  * stay as given. Outcomes the workflow must act on travel as typed, non-retryable failures that
  * carry what the session spent.
  */
-export function withAgentRunner(base: Activities, runner: AgentRunner): Activities {
+export function withAgentRunner(
+  base: Activities,
+  runner: AgentRunner,
+  /** Roles that run on the real runtime; everyone else keeps the base (stub) agents. */
+  only: (role: string) => boolean = () => true,
+): Activities {
   return {
     ...base,
     async runAgent(req): Promise<AgentResult> {
+      if (!only(req.task.role)) return base.runAgent(req);
       const out = await runner.run(req);
       const spent = { tokens: out.spent.tokens, usd: out.spent.usd };
       switch (out.kind) {
