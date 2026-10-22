@@ -1,5 +1,9 @@
 /** What a tool server declares about each operation. The gateway's policy decisions read this. */
 export interface OperationSpec {
+  /** What the operation does, as the agent will read it in its tool definition. */
+  description?: string;
+  /** JSON Schema for the arguments; defaults to an open object. */
+  inputSchema?: Record<string, unknown>;
   /** Changes state on the target. */
   mutates: boolean;
   /** Deletes, moves across sites, or publishes to production: needs a rollback recipe first. */

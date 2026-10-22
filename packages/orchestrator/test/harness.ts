@@ -14,7 +14,9 @@ import {
   loadFixtures,
   ProjectCommandsClient,
   startProject,
+  withAgentRunner,
   type Activities,
+  type AgentRunner,
   type ProjectPolicy,
   type StubScript,
 } from '../src';
@@ -100,20 +102,23 @@ let counter = 0;
 
 export async function launch(
   h: Harness,
-  opts: { script?: StubScript; policy?: Partial<ProjectPolicy>; blueprint?: Blueprint } = {},
+  opts: {
+    script?: StubScript;
+    policy?: Partial<ProjectPolicy>;
+    blueprint?: Blueprint;
+    runner?: AgentRunner;
+  } = {},
 ) {
   const projectId = `p${++counter}`;
   const { outputs } = await loadFixtures(PLAYBOOK_DIR);
-  h.projects.set(
-    projectId,
-    createStubActivities({
-      store: h.store,
-      playbook: h.playbook,
-      blueprint: opts.blueprint ?? SMALL_BLUEPRINT,
-      outputs,
-      script: opts.script,
-    }),
-  );
+  const stubs = createStubActivities({
+    store: h.store,
+    playbook: h.playbook,
+    blueprint: opts.blueprint ?? SMALL_BLUEPRINT,
+    outputs,
+    script: opts.script,
+  });
+  h.projects.set(projectId, opts.runner ? withAgentRunner(stubs, opts.runner) : stubs);
   const policy = defaultPolicy(h.playbook, {
     budgets: { tokens: 50_000_000, usd: 10_000, hours: 10_000 },
     ...opts.policy,

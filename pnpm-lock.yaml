@@ -25,7 +25,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^5.0.5
-        version: 5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
 
   apps/control-api:
     dependencies:
@@ -84,6 +84,30 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  packages/agent-runtime:
+    dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^1.1.0
+        version: 1.1.0(zod@4.6.7)
+      '@lw/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@lw/events':
+        specifier: workspace:*
+        version: link:../events
+      '@lw/plan':
+        specifier: workspace:*
+        version: link:../plan
+      '@lw/playbook-sdk':
+        specifier: workspace:*
+        version: link:../playbook-sdk
+      '@lw/tool-gateway':
+        specifier: workspace:*
+        version: link:../tool-gateway
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   packages/contracts:
     dependencies:
       zod:
@@ -117,6 +141,9 @@ importers:
 
   packages/orchestrator:
     dependencies:
+      '@lw/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
       '@lw/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -207,6 +234,19 @@ importers:
         version: link:../playbook-sdk
 
 packages:
+
+  '@anthropic-ai/sdk@1.1.0':
+    resolution: {integrity: sha512-Op/fKMsfVwFCfObc87leLOFlORE0RjOvLzRzPCWWLI7Ww6bobpKR6YmYC8ZYgulRh+m2a/3/61VUXoWHFtCXIw==}
+    hasBin: true
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  '@babel/runtime@7.29.10':
+    resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
+    engines: {node: '>=6.9.0'}
 
   '@electric-sql/pglite@0.5.11':
     resolution: {integrity: sha512-SWuqsTjA4DDWqgZ05PC1RJaq8e00p5KACxbqaikDFQ8dIGA0SLRzuPniky7IW+q/c5RDNMdEXwv7mFBWIx9Hxw==}
@@ -539,6 +579,10 @@ packages:
     peerDependencies:
       tslib: '2'
 
+  '@opentelemetry/api@1.10.0':
+    resolution: {integrity: sha512-lMkyes8iHrG+mk6WH7X70MdCLI2RS0FwNBY1PyQ8UemaijE2m5mv5A0Niy3HtbYTFrgkUEQjFMXmSAk2hQDuPQ==}
+    engines: {node: '>=8.0.0'}
+
   '@oxc-project/types@0.155.0':
     resolution: {integrity: sha512-SeE8JPwW1xs1tHeNycjUtUBdhorRa8o4jlvjwk49R7/Z291i+4DQa7JJIgOm/TaYQZx+QrPQbVJ/9c8dMIZN8Q==}
 
@@ -664,6 +708,9 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@stablelib/base64@1.0.1':
+    resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
 
   '@swc/core-darwin-arm64@1.16.20':
     resolution: {integrity: sha512-i7NFSDnuE6tdBvBgmoVKKmburgcwZt/FZK2IusJaVGrjFrMUC1hrgE3RI+Kt9RhYM7vHvQj0W9j53zSxKEMbWQ==}
@@ -1047,6 +1094,9 @@ packages:
   fast-querystring@1.1.2:
     resolution: {integrity: sha512-g6KuKWmFXc0fID8WWH0jit4g0AGBoJhCkJMb1RmbsSEUNvQ+ZC8D6CUZ+GtF8nMzSPXnhiePyyqqipzNNEnHjg==}
 
+  fast-sha256@1.3.0:
+    resolution: {integrity: sha512-n11RGP/lrWEFI/bWdygLxhI+pVeo1ZYIVwvvPkW7azl/rOy+F3HYRZ2K5zeE9mmkhQppyv9sQFx0JM9UabnpPQ==}
+
   fast-uri@3.1.9:
     resolution: {integrity: sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==}
 
@@ -1126,6 +1176,10 @@ packages:
 
   json-schema-ref-resolver@3.0.1:
     resolution: {integrity: sha512-w+HwgljXpVwZ3IidoUR1qPZxSOQ+NRQWuVe6a5pe8XbHsNZE4UAwVPUvzZagn7yBKbJtt6UJnRFYbNTRPZI45Q==}
+
+  json-schema-to-ts@3.1.1:
+    resolution: {integrity: sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==}
+    engines: {node: '>=16'}
 
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
@@ -1482,6 +1536,9 @@ packages:
     resolution: {integrity: sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg==}
     engines: {node: '>= 10.x'}
 
+  standardwebhooks@1.1.1:
+    resolution: {integrity: sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ==}
+
   std-env@4.3.0:
     resolution: {integrity: sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag==}
 
@@ -1543,6 +1600,9 @@ packages:
     engines: {node: '>=10.0'}
     peerDependencies:
       tslib: '2'
+
+  ts-algebra@2.0.0:
+    resolution: {integrity: sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw==}
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
@@ -1713,6 +1773,16 @@ packages:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
+
+  '@anthropic-ai/sdk@1.1.0(zod@4.6.7)':
+    dependencies:
+      '@opentelemetry/api': 1.10.0
+      json-schema-to-ts: 3.1.1
+      standardwebhooks: 1.1.1
+    optionalDependencies:
+      zod: 4.6.7
+
+  '@babel/runtime@7.29.10': {}
 
   '@electric-sql/pglite@0.5.11': {}
 
@@ -1985,6 +2055,8 @@ snapshots:
       '@jsonjoy.com/codegen': 17.67.0(tslib@2.8.1)
       tslib: 2.8.1
 
+  '@opentelemetry/api@1.10.0': {}
+
   '@oxc-project/types@0.155.0': {}
 
   '@pinojs/redact@0.4.0': {}
@@ -2055,6 +2127,8 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@stablelib/base64@1.0.1': {}
 
   '@swc/core-darwin-arm64@1.16.20':
     optional: true
@@ -2508,6 +2582,8 @@ snapshots:
     dependencies:
       fast-decode-uri-component: 1.0.1
 
+  fast-sha256@1.3.0: {}
+
   fast-uri@3.1.9: {}
 
   fast-uri@4.2.3: {}
@@ -2582,6 +2658,11 @@ snapshots:
   json-schema-ref-resolver@3.0.1:
     dependencies:
       dequal: 2.0.3
+
+  json-schema-to-ts@3.1.1:
+    dependencies:
+      '@babel/runtime': 7.29.10
+      ts-algebra: 2.0.0
 
   json-schema-traverse@1.0.0: {}
 
@@ -2875,6 +2956,11 @@ snapshots:
 
   split2@4.2.0: {}
 
+  standardwebhooks@1.1.1:
+    dependencies:
+      '@stablelib/base64': 1.0.1
+      fast-sha256: 1.3.0
+
   std-env@4.3.0: {}
 
   string-width@4.2.3:
@@ -2929,6 +3015,8 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  ts-algebra@2.0.0: {}
+
   tslib@2.8.1: {}
 
   tsx@4.23.15:
@@ -2977,7 +3065,7 @@ snapshots:
       tsx: 4.23.15
       yaml: 2.9.1
 
-  vitest@5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)):
+  vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.5(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
@@ -2994,6 +3082,7 @@ snapshots:
       vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
+      '@opentelemetry/api': 1.10.0
       '@types/node': 22.20.5
     transitivePeerDependencies:
       - msw

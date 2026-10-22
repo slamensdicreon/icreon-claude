@@ -10,6 +10,9 @@ import type { Activities } from '../activities';
 import { cancelTask, pauseTask, resumeTask } from '../definitions';
 import {
   ACCESS_DENIED,
+  AGENT_FAILED,
+  NEEDS_DECISION,
+  type AgentDecision,
   type AgentRequest,
   type AgentResult,
   type TaskInput,
@@ -28,7 +31,10 @@ const { emit } = proxyActivities<Activities>({
 const agents = proxyActivities<Activities>({
   startToCloseTimeout: '2 hours',
   heartbeatTimeout: '5 minutes',
-  retry: { maximumAttempts: 3, nonRetryableErrorTypes: [ACCESS_DENIED] },
+  retry: {
+    maximumAttempts: 3,
+    nonRetryableErrorTypes: [ACCESS_DENIED, NEEDS_DECISION, AGENT_FAILED],
+  },
 });
 
 /**
@@ -92,14 +98,30 @@ export async function taskWorkflow(input: TaskInput): Promise<TaskOutcome> {
     } catch (err) {
       const cause = err instanceof ActivityFailure ? err.cause : err;
       const message = cause instanceof Error ? cause.message : String(cause);
-      if (cause instanceof ApplicationFailure && cause.type === ACCESS_DENIED) {
+      const app = cause instanceof ApplicationFailure ? cause : null;
+      // Agent failures carry what the session spent, so the budget still counts it.
+      const detail = (app?.details?.[0] ?? {}) as { spent?: AgentResult } & Partial<AgentDecision>;
+      if (detail.spent) {
+        spent.tokens += detail.spent.tokens;
+        spent.usd += detail.spent.usd;
+      }
+      if (app?.type === ACCESS_DENIED) {
         return { outcome: 'access_denied', state, attempt, reason: message, spent };
+      }
+      if (app?.type === NEEDS_DECISION && detail.question && detail.options && detail.recommended) {
+        const decision: AgentDecision = {
+          summary: detail.summary ?? message,
+          question: detail.question,
+          options: detail.options,
+          recommended: detail.recommended,
+        };
+        return { outcome: 'needs_decision', state, attempt, decision, spent };
       }
       return {
         outcome: 'escalate',
         state,
         attempt,
-        reason: `Retries exhausted: ${message}`,
+        reason: app?.type === AGENT_FAILED ? message : `Retries exhausted: ${message}`,
         spent,
       };
     }

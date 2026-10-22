@@ -497,6 +497,39 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     } else if (outcome.outcome === 'cancelled') {
       events.push(taskMove(t, 'cancelled', 'Removed from scope'), agentRefresh(t.role));
       await send(...events);
+    } else if (outcome.outcome === 'needs_decision') {
+      // The agent's own decision flag: the Director sees its question, options and recommendation.
+      const d = outcome.decision;
+      events.push(taskMove(t, 'blocked', 'Needs a decision'), agentRefresh(t.role));
+      await send(...events);
+      const options = d.options.map((label, i) => ({
+        id: `opt-${i + 1}`,
+        label,
+        recommended: label === d.recommended,
+      }));
+      const recommended = options.find((o) => o.recommended) ?? options[0]!;
+      recommended.recommended = true;
+      const escalationId = await raise(
+        {
+          type: 'decision',
+          title: clip(d.question),
+          context: `${roles.get(t.role)?.name ?? t.role}: ${d.summary}`,
+          impact: `${t.title} and its dependents wait. Other work continues.`,
+          options,
+          defaultOptionId: recommended.id,
+          evidence: [{ kind: 'log', label: 'Agent session', ref: `task:${t.taskId}` }],
+          sourceTaskId: t.taskId,
+          gate: null,
+        },
+        async (optionId, notes) => {
+          taskEscalation.delete(t.taskId);
+          const chosen = options.find((o) => o.id === optionId)!.label;
+          instructions[t.taskId] =
+            `Decision on "${d.question}": ${chosen}.${notes ? ` ${notes}` : ''}`;
+          retryFromBlocked.add(t.taskId);
+        },
+      );
+      taskEscalation.set(t.taskId, escalationId);
     } else {
       const access = outcome.outcome === 'access_denied';
       events.push(taskMove(t, 'blocked', access ? 'Access denied' : 'Escalated'));

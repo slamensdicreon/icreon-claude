@@ -1,0 +1,22 @@
+{
+  "name": "@lw/agent-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "@lw/contracts": "workspace:*",
+    "@lw/events": "workspace:*",
+    "@lw/plan": "workspace:*",
+    "@lw/playbook-sdk": "workspace:*",
+    "@lw/tool-gateway": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

@@ -21,7 +21,9 @@ Center UI can be built against real event shapes before any agent exists.
 plan compiler with re-plan impact; the Temporal project and task workflows with gates, the pilot
 checkpoint, Lead-review retries, escalations with default-at-deadline and deferral, budget holds,
 pause/resume and directives with a stop window (the M2 core, driven by stub agents); and the
-Postgres event store. Deviation from §8: the event store uses hand-written SQL rather than Drizzle,
+Postgres event store; the tool gateway (§6.1, every check implemented and table-tested against
+the playbook); and the `messages` agent runtime (§5.2), tested against a scripted model until an
+API key and the first tool servers exist. Deviation from §8: the event store uses hand-written SQL rather than Drizzle,
 because its single-statement append is the part that matters. Still open in M2: continue-as-new
 at phase boundaries, phase- and task-level pause, cancel, and the 10-second Undo window.
 

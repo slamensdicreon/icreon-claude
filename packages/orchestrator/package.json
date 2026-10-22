@@ -21,7 +21,8 @@
     "@temporalio/common": "^1.24.0",
     "@temporalio/worker": "^1.24.0",
     "@temporalio/workflow": "^1.24.0",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "@lw/agent-runtime": "workspace:*"
   },
   "devDependencies": {
     "@temporalio/testing": "^1.24.0"

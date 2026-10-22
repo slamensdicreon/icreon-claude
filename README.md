@@ -29,6 +29,8 @@ first run; delete `.data/` to start from scratch.
 | `packages/events`                | Event store: in-memory and Postgres (atomic seqs, LISTEN/NOTIFY live tail), projections |
 | `packages/plan`                  | Plan compiler: playbook + Blueprint → task graph; re-plan diff and impact preview       |
 | `packages/orchestrator`          | Temporal workflows (project, task), Director commands, stub agent activities            |
+| `packages/tool-gateway`          | Policy enforcement point for every agent tool call: grants, scopes, credentials, audit  |
+| `packages/agent-runtime`         | Agent loop on the Claude Messages API: tools via the gateway, caching, budgets          |
 | `packages/playbook-sdk`          | Schema, loader and validator for playbooks                                              |
 | `packages/simulator`             | Scripted engagements for UI work and demos                                              |
 | `playbooks/sitecoreai-migration` | Playbook #1: 11 phases, 2 Director gates, 24 roles, task templates, demo fixtures       |

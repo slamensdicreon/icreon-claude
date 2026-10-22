@@ -5,7 +5,15 @@ import type { Playbook, ToolGrant } from '@lw/playbook-sdk';
 import { heuristicDetector, redact, wrapUntrusted, type InjectionDetector } from './sanitize';
 import { inScope, readArg, ScopeError } from './scope';
 import type { CredentialProvider, IdempotencyStore, RateLimiter, RollbackRegistry } from './stores';
-import type { Bindings, Denial, GatewayResult, ToolCall, ToolResult, ToolServer } from './types';
+import type {
+  Bindings,
+  Denial,
+  GatewayResult,
+  OperationSpec,
+  ToolCall,
+  ToolResult,
+  ToolServer,
+} from './types';
 
 export interface GatewayDeps {
   playbook: Playbook;
@@ -46,6 +54,10 @@ export class ToolGateway {
     return Object.entries(this.grants.get(role) ?? {}).flatMap(([server, grant]) =>
       grant.ops.filter((op) => this.servers.get(server)?.catalog[op]).map((op) => ({ server, op })),
     );
+  }
+
+  operation(server: string, op: string): OperationSpec | undefined {
+    return this.servers.get(server)?.catalog[op];
   }
 
   async call(call: ToolCall): Promise<GatewayResult> {
