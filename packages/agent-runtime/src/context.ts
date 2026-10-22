@@ -27,12 +27,13 @@ export const emptyContext: ContextProvider = {
   },
 };
 
+/** The role's mandate, then its playbook prompt (how it works) when it has one. */
 export function rolePrompt(role: RoleDef, promptFile: string | null): string {
-  if (promptFile) return promptFile;
   return [
     `Your role: ${role.name}.`,
     `Mandate: ${role.mandate}`,
     role.produces.length ? `You produce: ${role.produces.join('; ')}.` : '',
+    promptFile ? `\n${promptFile}` : '',
   ]
     .filter(Boolean)
     .join('\n');

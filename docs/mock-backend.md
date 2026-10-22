@@ -40,7 +40,7 @@ playbook, Gate 1 expands it from the example Blueprint, and directives re-plan f
   `sourceUrl`, writes the page inventory), the Solution Architect (writes the Blueprint that
   Gate 1 expands the plan from), Visual QA (screenshots and pixel diffs), Performance and
   Accessibility QA (axe and Lighthouse) and the Handover Writer (reads the Decision Log, writes
-  the handover pack). QA can only reach the source site's host until preview deployments exist. Every other role stays a stub until its tool servers land. The
+  the handover pack). QA can only reach the source site's host until preview deployments exist. How each live role works (artifact ids, the Blueprint shape, QA thresholds) is in `playbooks/sitecoreai-migration/prompts/`. Every other role stays a stub until its tool servers land. The
   startup log names the live roles.
 
 ## Data shapes

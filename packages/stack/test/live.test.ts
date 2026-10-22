@@ -97,8 +97,9 @@ function scriptedClaude(sourceUrl: () => string): ModelClient & { roles: string[
     async create(params) {
       const role = (params.system as { text: string }[])[1]!.text;
       const turn = params.messages.length; // 1 = brief only; 3 = after one tool round; 5 = after two
-      if (turn === 1) roles.push(role.split('\n')[0]!);
-      if (role.includes('Content Analyst')) {
+      const who = role.split('\n')[0]!;
+      if (turn === 1) roles.push(who);
+      if (who.includes('Content Analyst')) {
         if (turn === 1) return msg([call('browser__crawl', { url: `${sourceUrl()}/` })]);
         if (turn === 3) {
           const crawl = lastResult(params).content as { pages: { url: string; title: string }[] };
@@ -116,7 +117,7 @@ function scriptedClaude(sourceUrl: () => string): ModelClient & { roles: string[
         }
         return msg([submit('Crawled the source site and saved the page inventory.')]);
       }
-      if (role.includes('Solution Architect')) {
+      if (who.includes('Solution Architect')) {
         if (turn === 1) return msg([call('artifacts__read', { artifactId: 'page-inventory' })]);
         if (turn === 3) {
           const inv = JSON.parse(lastResult(params).content.content) as {
@@ -146,7 +147,7 @@ function scriptedClaude(sourceUrl: () => string): ModelClient & { roles: string[
         }
         return msg([submit('Blueprint v1 maps every crawled page to the Content Page template.')]);
       }
-      if (role.includes('Visual QA')) {
+      if (who.includes('Visual QA')) {
         if (turn === 1)
           return msg([
             call('browser__screenshot', { url: `${sourceUrl()}/`, breakpoints: ['desktop'] }),
@@ -158,12 +159,12 @@ function scriptedClaude(sourceUrl: () => string): ModelClient & { roles: string[
         const d = lastResult(params) as { mismatchPercent: number };
         return msg([submit(`Home matches at desktop: ${d.mismatchPercent}% of pixels differ.`)]);
       }
-      if (role.includes('Performance and Accessibility QA')) {
+      if (who.includes('Performance and Accessibility QA')) {
         if (turn === 1) return msg([call('validators__axe_run', { url: `${sourceUrl()}/` })]);
         const v = lastResult(params).content.violations as unknown[];
         return msg([submit(`axe found ${v.length} rule violations on the home page.`)]);
       }
-      if (role.includes('Handover Writer')) {
+      if (who.includes('Handover Writer')) {
         if (turn === 1) return msg([call('decision-log__read', {})]);
         if (turn === 3) {
           const { decisions } = lastResult(params).content as {

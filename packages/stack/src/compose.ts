@@ -8,7 +8,7 @@ import {
   type Activities,
 } from '@lw/orchestrator';
 import { Blueprint } from '@lw/plan';
-import type { Playbook } from '@lw/playbook-sdk';
+import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
 import {
   LocalBlobStore,
@@ -125,6 +125,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   };
 
   const live = opts.model ? liveRoles(opts.playbook, servers) : [];
+  const prompts = await loadRolePrompts(opts.playbookDir, opts.playbook);
   const activities = opts.model
     ? withAgentRunner(
         base,
@@ -134,6 +135,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           playbook: opts.playbook,
           store: opts.store,
           context: projectContext(opts.projections),
+          prompt: (role) => prompts[role.role] ?? null,
         }),
         (role) => live.includes(role),
       )
@@ -153,6 +155,8 @@ function projectContext(projections: Projections): ContextProvider {
       return [
         `Project: ${s?.name ?? projectId} for ${s?.client ?? 'the client'}.`,
         `Source site: ${s?.sourceUrl ?? 'not given at intake'}.`,
+        // The hosting tool server fills this once preview deployments exist.
+        'Migrated preview site: none deployed yet.',
         docs.length
           ? `Documents you can read with artifacts.read:\n${docs.join('\n')}`
           : 'No documents written yet.',
