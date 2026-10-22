@@ -31,7 +31,7 @@ Center UI can be built against real event shapes before any agent exists.
 | A7 | Data | Postgres 16 (Aurora) + pgvector; S3; Secrets Manager + per-client KMS keys; Redis (Valkey) | One operational database; cheap durable artifacts; per-client crypto isolation | Same as doc, adds per-client KMS |
 | A8 | GitHub access | **GitHub App** installed per client org, short-lived installation tokens | No long-lived PATs; fine-grained, revocable, auditable | Doc says "token" |
 | A9 | Models | Opus 5.5 (`claude-opus-5-5`) for Chief of Staff, Architect, Leads; Sonnet 5.5 (`claude-sonnet-5-5`) for specialists; Haiku 5.5 (`claude-haiku-5-5`) for sweeps and classification. All per-role configurable | Matches NFR-12. Current list prices: $4/$20, $2/$10, $0.10/$0.50 per M tokens (in/out) | Concrete IDs |
-| A10 | Identity | Microsoft Entra ID (OIDC) for Icreon staff from day one; add WorkOS only if client Observers need their own IdPs | Icreon is on M365; enterprise SSO (GA requirement) at no extra cost | Pulls SSO earlier |
+| A10 | Identity | **WorkOS** (AuthKit + SSO) behind our own session layer; RBAC stays in our database | IdP-agnostic: works with whatever IdP Icreon staff use, and lets client Observers sign in with their own IdP later without rework. SCIM and SSO are ready for the GA enterprise requirement | Pulls SSO earlier |
 
 ---
 
@@ -496,7 +496,7 @@ and every state (empty, streaming, degraded, completed) against it before any ag
   branches are never pushed to.
 - **Prompt injection:** untrusted-content wrapping + classifier (§6.1), Lead review before downstream
   use, and agents cannot edit their own role, tools or budget (doc §10).
-- **AuthN/Z:** Entra ID OIDC, project-level RBAC (director, reviewer, observer, admin), phone-scope
+- **AuthN/Z:** WorkOS for authentication only (OIDC/SAML, MFA); authorization is ours: project-level RBAC (director, reviewer, observer, admin), phone-scope
   restrictions enforced server-side (no rollback or settings from mobile sessions, per design spec §12).
 - **Audit:** immutable `step` + `event`, S3 Object Lock export, and every human approval stored with the
   user, timestamp and artifact version hash (contractual record, R13).
@@ -614,7 +614,7 @@ Fastify, zod, Temporal TS SDK, `@anthropic-ai/sdk`, `@anthropic-ai/claude-agent-
 | Browser | Playwright + Chromium in our containers | Crawl, screenshots, Page builder QA, video | M3 | Browserbase if we need scale or session recording as a service |
 | QA libraries | Lighthouse, axe-core, odiff/pixelmatch, sanitize-html | Validators | M5 | Applitools (not needed) |
 | Research | Claude server tools `web_search` / `web_fetch` with domain allow-list | Research Agent | M3 | Exa / Tavily |
-| Identity | **Microsoft Entra ID** (OIDC) | Staff SSO | M0 | WorkOS for external Observers (GA) |
+| Identity | **WorkOS** (AuthKit, SSO, SCIM) | Staff sign-in now; client Observers' SSO later | M0 | AWS Cognito (stays in AWS, weaker enterprise SSO) |
 | Notifications | **Slack app** (Bolt), Amazon SES, Web Push | Escalations, digests | M2 | Postmark |
 | Observability | OpenTelemetry → **Grafana Cloud** or **Datadog**; **Langfuse** (self-hosted); **Sentry** | Traces, LLM traces, errors | M0–M2 | Braintrust for evals |
 | IaC / CI | AWS CDK (TS), GitHub Actions | Deploy | M0 | Terraform |
