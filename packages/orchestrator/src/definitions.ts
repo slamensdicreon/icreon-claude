@@ -29,4 +29,5 @@ export const undoResolution = defineUpdate<CommandAck, [{ escalationId: string }
 /** Parent → task child: hold at the next step boundary, carry on, or stop. */
 export const pauseTask = defineSignal('pauseTask');
 export const resumeTask = defineSignal('resumeTask');
-export const cancelTask = defineSignal('cancelTask');
+/** With a task id, cancels that task in a batch; without, the whole child. */
+export const cancelTask = defineSignal<[taskId?: string]>('cancelTask');

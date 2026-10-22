@@ -16,6 +16,7 @@ import {
   type AgentRequest,
   type AgentResult,
   type TaskInput,
+  type TaskItem,
   type TaskOutcome,
   type ValidationResult,
 } from '../types';
@@ -37,19 +38,39 @@ const agents = proxyActivities<Activities>({
   },
 });
 
+interface Control {
+  paused: boolean;
+  cancelAll: boolean;
+  cancelled: Set<string>;
+}
+
+/**
+ * One agent session's worth of tasks: usually one, or a batch of same-template tasks (pages,
+ * media) per the template's dispatch hint, run in order. Each task keeps its own transitions;
+ * the parent's history grows per session, not per page. Pause holds at the next step boundary;
+ * cancel takes one task (by id) or the whole batch.
+ */
+export async function taskWorkflow(input: TaskInput): Promise<TaskOutcome[]> {
+  const ctl: Control = { paused: input.paused, cancelAll: false, cancelled: new Set() };
+  setHandler(pauseTask, () => void (ctl.paused = true));
+  setHandler(resumeTask, () => void (ctl.paused = false));
+  setHandler(cancelTask, (taskId?: string) => {
+    if (taskId) ctl.cancelled.add(taskId);
+    else ctl.cancelAll = true;
+  });
+  const outcomes: TaskOutcome[] = [];
+  for (const item of input.items) outcomes.push(await runTask(input.projectId, item, ctl));
+  return outcomes;
+}
+
 /**
  * One task: agent → validate → done, or rejected back to the agent with the Lead's feedback, at
- * most twice; then the parent escalates. Holds at step boundaries while paused. The parent owns
- * planned/ready/blocked/cancelled/rolled_back; this workflow owns the transitions in between.
+ * most twice; then the parent escalates. The parent owns planned/ready/blocked/cancelled/
+ * rolled_back; this workflow owns the transitions in between.
  */
-export async function taskWorkflow(input: TaskInput): Promise<TaskOutcome> {
-  const { projectId, task } = input;
-  let paused = input.paused;
-  let cancelled = false;
-  setHandler(pauseTask, () => void (paused = true));
-  setHandler(resumeTask, () => void (paused = false));
-  setHandler(cancelTask, () => void (cancelled = true));
-
+async function runTask(projectId: string, input: TaskItem, ctl: Control): Promise<TaskOutcome> {
+  const { task } = input;
+  const cancelled = () => ctl.cancelAll || ctl.cancelled.has(task.taskId);
   let state: TaskState = input.from;
   let attempt = input.attempt;
   const spent: AgentResult = { tokens: 0, usd: 0 };
@@ -68,15 +89,19 @@ export async function taskWorkflow(input: TaskInput): Promise<TaskOutcome> {
 
   /** Step boundary: honour cancel and pause before doing more work. */
   const checkpoint = async (): Promise<boolean> => {
-    if (cancelled) return false;
-    if (paused) {
+    if (cancelled()) return false;
+    if (ctl.paused) {
       if (state === 'running') await move('paused', 'Paused by the Director');
-      await condition(() => !paused || cancelled);
-      if (cancelled) return false;
+      await condition(() => !ctl.paused || cancelled());
+      if (cancelled()) return false;
       if (state === 'paused') await move('running', 'Resumed');
     }
     return true;
   };
+
+  // Queued behind earlier items of a paused batch: wait without starting.
+  await condition(() => !ctl.paused || cancelled());
+  if (cancelled()) return { outcome: 'cancelled', state, attempt, spent };
 
   let feedback: string | null = null;
   let rejections = 0;

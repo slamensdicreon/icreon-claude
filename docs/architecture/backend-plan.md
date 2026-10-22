@@ -25,7 +25,7 @@ Postgres event store; the tool gateway (§6.1, every check implemented and table
 the playbook); and the `messages` agent runtime (§5.2), tested against a scripted model until an
 API key and the first tool servers exist. Deviation from §8: the event store uses hand-written SQL rather than Drizzle,
 because its single-statement append is the part that matters. Since then: GitHub sign-in, the browser tool server, pause and cancel at every level, and the
-10-second Undo. Still open in M2: continue-as-new at phase boundaries.
+10-second Undo. Pages and media dispatch in batches (one child workflow per agent session), which keeps a full-size example site at about 2,200 history events (≈10 per task); continue-as-new is deferred until sites far beyond 2,000 pages and 5,000 media.
 
 ---
 

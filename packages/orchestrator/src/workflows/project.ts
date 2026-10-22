@@ -202,7 +202,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     if (mine.length) {
       const t = task(mine.at(-1)!)!;
       const line =
-        mine.length === 1 ? t.title : `${mine.length} tasks in parallel, latest: ${t.title}`;
+        mine.length === 1 ? t.title : `${mine.length} tasks in progress, latest: ${t.title}`;
       return agent(role, 'active', line, t.taskId);
     }
     const blocked = plan.tasks.find((t) => t.role === role && stateOf(t.taskId) === 'blocked');
@@ -482,40 +482,57 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   // Tasks
   // -------------------------------------------------------------------------------------------
 
-  async function dispatch(t: PlannedTask, from: 'ready' | 'blocked') {
-    if (from === 'ready' && stateOf(t.taskId) === 'planned') await send(taskMove(t, 'ready'));
-    const set = running.get(t.role) ?? new Set<string>();
-    set.add(t.taskId);
-    running.set(t.role, set);
+  /**
+   * Starts one agent session for a batch of same-template tasks (usually one task). The ready
+   * transitions are logged before the child starts, so the log always reads ready → running.
+   */
+  async function dispatch(batch: PlannedTask[], from: 'ready' | 'blocked') {
+    const events: NewEvent[] = [];
+    for (const t of batch) {
+      if (from === 'ready' && stateOf(t.taskId) === 'planned') events.push(taskMove(t, 'ready'));
+      const set = running.get(t.role) ?? new Set<string>();
+      set.add(t.taskId);
+      running.set(t.role, set);
+    }
+    events.push(agentRefresh(batch[0]!.role));
+    await send(...events);
     childRuns += 1;
     const handle = await startChild(taskWorkflow, {
-      workflowId: `${projectId}:task:${t.taskId}:${childRuns}`,
+      workflowId: `${projectId}:task:${batch[0]!.taskId}:${childRuns}`,
       args: [
         {
           projectId,
-          task: t,
-          from,
-          attempt: attempts[t.taskId] ?? 0,
-          instructions: instructions[t.taskId] ?? null,
-          paused: held(t),
+          paused: batch.some(held),
+          items: batch.map((t) => ({
+            task: t,
+            from,
+            attempt: attempts[t.taskId] ?? 0,
+            instructions: instructions[t.taskId] ?? null,
+          })),
         },
       ],
     });
-    children.set(t.taskId, handle);
-    // The child owns the task's transitions from here; the parent only needs to know it is in
-    // flight, so it is never dispatched twice.
-    states[t.taskId] = 'running';
-    await send(agentRefresh(t.role));
+    for (const t of batch) {
+      children.set(t.taskId, handle);
+      // The child owns these tasks' transitions now; marking them in flight means they are
+      // never dispatched twice.
+      states[t.taskId] = 'running';
+    }
     handle.result().then(
-      (outcome) => void onOutcome(t, outcome),
-      (err: unknown) =>
-        void onOutcome(t, {
-          outcome: 'escalate',
-          state: stateOf(t.taskId),
-          attempt: attempts[t.taskId] ?? 0,
-          reason: `Task workflow failed: ${err instanceof Error ? err.message : String(err)}`,
-          spent: { tokens: 0, usd: 0 },
-        }),
+      async (outcomes) => {
+        for (const [i, outcome] of outcomes.entries()) await onOutcome(batch[i]!, outcome);
+      },
+      async (err: unknown) => {
+        for (const t of batch) {
+          await onOutcome(t, {
+            outcome: 'escalate',
+            state: stateOf(t.taskId),
+            attempt: attempts[t.taskId] ?? 0,
+            reason: `Task workflow failed: ${err instanceof Error ? err.message : String(err)}`,
+            spent: { tokens: 0, usd: 0 },
+          });
+        }
+      },
     );
   }
 
@@ -712,9 +729,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     signal: typeof pauseTask | typeof resumeTask,
     predicate: (t: PlannedTask) => boolean = () => true,
   ) {
+    const sent = new Set<unknown>();
     for (const [taskId, handle] of children) {
       const t = task(taskId);
-      if (t && predicate(t)) void handle.signal(signal);
+      if (!t || !predicate(t) || sent.has(handle)) continue;
+      sent.add(handle);
+      void handle.signal(signal);
     }
   }
 
@@ -897,7 +917,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const s = stateOf(t.taskId);
       const esc = taskEscalation.get(t.taskId);
       if (esc) await supersede(esc, cause);
-      if (children.has(t.taskId)) void children.get(t.taskId)!.signal(cancelTask);
+      if (children.has(t.taskId)) void children.get(t.taskId)!.signal(cancelTask, t.taskId);
       else if (s === 'done') {
         await acts.rollbackTask({ projectId, task: t });
         events.push(taskMove(t, 'rolled_back', 'Removed from scope'));
@@ -1202,7 +1222,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       retryFromBlocked.delete(id);
       touched.add(t.role);
       // A running task stops at its next step boundary and reports itself cancelled.
-      if (children.has(id)) void children.get(id)!.signal(cancelTask);
+      if (children.has(id)) void children.get(id)!.signal(cancelTask, id);
       else events.push(taskMove(t, 'cancelled', reason));
     }
     events.push(...[...touched].map((r) => agentRefresh(r)));
@@ -1443,25 +1463,36 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       retryFromBlocked.delete(id);
       const t = task(id);
       if (t && stateOf(id) === 'blocked') {
-        await dispatch(t, 'blocked');
+        await dispatch([t], 'blocked');
         progressed = true;
       }
     }
 
     // New work, under the concurrency limit, unless a budget acknowledgement is pending.
     if (!budgetHold) {
-      const inFlight = () => [...running.values()].reduce((n, s) => n + s.size, 0);
-      for (const t of plan.tasks) {
+      // Concurrency counts agent sessions; a batch of pages is one session.
+      const inFlight = () => new Set(children.values()).size;
+      const eligible = plan.tasks.filter((t) => {
+        const st = stateOf(t.taskId);
+        return (
+          t.kind === 'work' &&
+          active.has(t.phase) &&
+          (st === 'planned' || st === 'ready') &&
+          !children.has(t.taskId) &&
+          !held(t) &&
+          t.dependsOn.every((d) => stateOf(d) === 'done' || stateOf(d) === 'cancelled')
+        );
+      });
+      const taken = new Set<string>();
+      for (const t of eligible) {
         // A pause or budget hold can land while this pass awaits an activity; re-check each time.
         if (projectPaused || budgetHold || inFlight() >= policy.concurrency) break;
-        const s = stateOf(t.taskId);
-        if (t.kind !== 'work' || !active.has(t.phase) || (s !== 'planned' && s !== 'ready'))
-          continue;
-        if (children.has(t.taskId)) continue;
-        if (held(t)) continue;
-        if (!t.dependsOn.every((d) => stateOf(d) === 'done' || stateOf(d) === 'cancelled'))
-          continue;
-        await dispatch(t, 'ready');
+        if (taken.has(t.taskId) || held(t)) continue;
+        const batch = eligible
+          .filter((o) => !taken.has(o.taskId) && o.templateId === t.templateId && !held(o))
+          .slice(0, Math.max(1, t.batchSize));
+        for (const b of batch) taken.add(b.taskId);
+        await dispatch(batch, 'ready');
         progressed = true;
       }
     }

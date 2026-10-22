@@ -57,14 +57,19 @@ export type DirectiveInterpretation =
   | { kind: 'note'; interpretation: string }
   | { kind: 'replan'; interpretation: string; blueprint: Blueprint };
 
-export interface TaskInput {
-  projectId: string;
+export interface TaskItem {
   task: PlannedTask;
-  /** State the task is in when the child starts (ready, blocked, rolled_back). */
+  /** State the task is in when the child starts it. */
   from: 'ready' | 'blocked';
   /** Attempts already made. */
   attempt: number;
   instructions: string | null;
+}
+
+export interface TaskInput {
+  projectId: string;
+  /** One task, or a batch of same-template tasks for one agent session. */
+  items: TaskItem[];
   paused: boolean;
 }
 
