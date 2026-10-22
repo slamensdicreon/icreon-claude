@@ -42,6 +42,16 @@ const env = z
     TEMPORAL_ADDRESS: z.string().optional(),
     TEMPORAL_NAMESPACE: z.string().default('default'),
     INLINE_WORKER: z.enum(['true', 'false']).default('true'),
+    AUTH: z.enum(['none', 'github']).default('none'),
+    GITHUB_CLIENT_ID: z.string().optional(),
+    GITHUB_CLIENT_SECRET: z.string().optional(),
+    /** Comma-separated GitHub logins allowed in. */
+    OPERATORS: z.string().default(''),
+    GITHUB_ORG: z.string().optional(),
+    SESSION_SECRET: z.string().optional(),
+    /** This API's public URL (for the OAuth callback) and the Control Center's URL. */
+    PUBLIC_URL: z.string().url().optional(),
+    APP_URL: z.string().url().optional(),
     SIM_SPEED: z.coerce.number().positive().default(1),
     SIM_PROJECTS: z.coerce.number().int().min(0).max(10).default(2),
     PLAYBOOK_DIR: z
@@ -49,6 +59,34 @@ const env = z
       .default(fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url))),
   })
   .parse(process.env);
+
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+if (env.AUTH === 'none' && !LOCAL_HOSTS.has(env.HOST)) {
+  throw new Error(
+    `Refusing to serve without sign-in on ${env.HOST}. Set AUTH=github, or bind to localhost.`,
+  );
+}
+const auth =
+  env.AUTH === 'github'
+    ? {
+        clientId: required('GITHUB_CLIENT_ID', env.GITHUB_CLIENT_ID),
+        clientSecret: required('GITHUB_CLIENT_SECRET', env.GITHUB_CLIENT_SECRET),
+        sessionSecret: required('SESSION_SECRET', env.SESSION_SECRET),
+        publicUrl: required('PUBLIC_URL', env.PUBLIC_URL),
+        appUrl: required('APP_URL', env.APP_URL),
+        operators: env.OPERATORS.split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        requiredOrg: env.GITHUB_ORG,
+        secureCookies: required('PUBLIC_URL', env.PUBLIC_URL).startsWith('https://'),
+      }
+    : undefined;
+if (auth && !auth.operators.length) throw new Error('AUTH=github needs OPERATORS (GitHub logins).');
+
+function required(name: string, value: string | undefined): string {
+  if (!value) throw new Error(`AUTH=github needs ${name}`);
+  return value;
+}
 
 const opened = await openStore(env.STORE, { dataDir: env.DATA_DIR, databaseUrl: env.DATABASE_URL });
 const { store } = opened;
@@ -144,6 +182,7 @@ const app = await buildApp({
   commands,
   createProject,
   corsOrigin: env.CORS_ORIGIN,
+  auth,
   logger: true,
 });
 

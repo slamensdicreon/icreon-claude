@@ -27,6 +27,7 @@ import { CommandError } from '@lw/domain';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
+import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
 import { streamProject } from './sse';
 
 export interface AppDeps {
@@ -38,6 +39,8 @@ export interface AppDeps {
   createProject?: (input: { name: string; client: string }) => Promise<string>;
   /** Origin allowed to call the API from a browser (the Control Center or the prototype). */
   corsOrigin?: string | null;
+  /** GitHub sign-in. Without it the API is open, which main.ts only allows on localhost. */
+  auth?: GithubAuthOptions;
   logger?: boolean;
 }
 
@@ -50,9 +53,14 @@ function fail(reply: FastifyReply, status: number, code: string, message: string
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { store, projections } = deps;
-  const corsOrigin = deps.corsOrigin ?? null;
+  // With sign-in, browsers send the session cookie: CORS must name the Control Center exactly.
+  const corsOrigin = deps.auth ? new URL(deps.auth.appUrl).origin : (deps.corsOrigin ?? null);
   const app = Fastify({ logger: deps.logger ?? false });
-  await app.register(cors, { origin: corsOrigin ?? false });
+  await app.register(cors, { origin: corsOrigin ?? false, credentials: Boolean(deps.auth) });
+  if (deps.auth) {
+    registerGithubAuth(app, deps.auth);
+    registerOriginCheck(app, [deps.auth.appUrl, deps.auth.publicUrl]);
+  }
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof CommandError) return fail(reply, err.status, err.code, err.message);
@@ -208,7 +216,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<P & { Querystring: { after?: string } }>('/projects/:id/stream', async (req, reply) => {
     if (!project(req.params.id))
       return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
-    await streamProject(store, req.params.id, req, reply, corsOrigin);
+    await streamProject(store, req.params.id, req, reply, corsOrigin, Boolean(deps.auth));
   });
 
   // ---- Commands ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ export async function streamProject(
   req: FastifyRequest<{ Querystring: { after?: string } }>,
   reply: FastifyReply,
   corsOrigin: string | null,
+  withCredentials = false,
 ): Promise<void> {
   const header = req.headers['last-event-id'];
   const after = Number((Array.isArray(header) ? header[0] : header) ?? req.query.after ?? 0) || 0;
@@ -27,6 +28,7 @@ export async function streamProject(
     connection: 'keep-alive',
     'x-accel-buffering': 'no',
     ...(corsOrigin ? { 'access-control-allow-origin': corsOrigin, vary: 'origin' } : {}),
+    ...(withCredentials ? { 'access-control-allow-credentials': 'true' } : {}),
   });
   res.write('retry: 3000\n\n');
 
