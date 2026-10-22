@@ -9,6 +9,11 @@ export const CreateProject = z.object({
   name: z.string().min(1).max(120),
   client: z.string().min(1).max(120),
   sourceUrl: z.url({ protocol: /^https?$/ }).optional(),
+  /** The source repository, "owner/name", when the source is code rather than a live site. */
+  repo: z
+    .string()
+    .regex(/^[\w.-]+\/[\w.-]+$/, 'owner/name')
+    .optional(),
 });
 export type CreateProject = z.infer<typeof CreateProject>;
 

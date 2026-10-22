@@ -774,12 +774,16 @@ export function plan(s: ProjectState): PlanSnapshot {
   return { seq: s.seq, phases: phaseViews(s), tasks: Object.values(s.tasks) };
 }
 
-export function conversation(s: ProjectState): ConversationSnapshot {
+/** The dock: messages, and the queue (open, deferred, and choices still inside their undo window). */
+export function conversation(s: ProjectState, now = Date.now()): ConversationSnapshot {
+  const undoable = Object.values(s.escalations).filter(
+    (x) => !UNRESOLVED.has(x.status) && x.undoUntil && Date.parse(x.undoUntil) > now,
+  );
   return {
     seq: s.seq,
     presence: s.presence,
     items: s.conversation,
-    queue: unresolvedEscalations(s),
+    queue: [...unresolvedEscalations(s), ...undoable],
   };
 }
 

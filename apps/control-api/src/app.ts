@@ -81,6 +81,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   if (deps.auth) {
     registerGithubAuth(app, deps.auth);
     registerOriginCheck(app, [deps.auth.appUrl, deps.auth.publicUrl]);
+  } else {
+    // Local development: no sign-in, one operator on this machine.
+    app.get('/auth/me', async () => ({ login: 'local', name: 'Director', avatarUrl: null }));
   }
 
   app.setErrorHandler((err, _req, reply) => {

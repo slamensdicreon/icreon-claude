@@ -1,0 +1,313 @@
+import type { SettingsSnapshot } from '@lw/contracts';
+import { post, put } from '../lib/api';
+import { stamp, usd } from '../lib/fmt';
+import { TypedConfirm } from '../overlays/Dialogs';
+import { Chip } from '../parts/bits';
+import { TYPE_LABEL } from '../parts/Card';
+import { useApp, useMission, useNow, useProjectResource, useTz } from '../state';
+
+const pct = (v: number) => Math.round(v * 100);
+
+function after(min: number | null, behaviour: string): string {
+  if (min === null) return behaviour;
+  return min >= 60 && min % 60 === 0 ? `${min / 60} h` : `${min} min`;
+}
+
+export function Settings() {
+  const { projectId, run, openOverlay, closeOverlay, toast } = useApp();
+  const s = useProjectResource<SettingsSnapshot>('/settings').data;
+  const mc = useMission().data;
+  const tz = useTz();
+  const now = useNow(60_000);
+  if (!s || !mc) return <p className="quiet-line">Loading settings…</p>;
+  const base = `/projects/${projectId}`;
+  const p = mc.project;
+  const paused = p.status === 'paused';
+  const hours = p.startedAt ? (now - Date.parse(p.startedAt)) / 3_600_000 : 0;
+  const running = mc.phases.reduce((n, x) => n + x.tasksRunning, 0);
+
+  const control = (verb: 'pause' | 'resume') =>
+    run(() => post(`${base}/control`, { verb, scope: { kind: 'project', id: projectId } }));
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1>Settings</h1>
+          <p>
+            Policies and budgets for this project. Secrets never appear here. Conventions are locked
+            after Gate 1.
+          </p>
+        </div>
+      </div>
+      <div className="settings">
+        <section className="panel">
+          <h2>
+            Credentials <small>references only</small>
+          </h2>
+          <table>
+            <thead>
+              <tr>
+                <th>System</th>
+                <th>Scope</th>
+                <th>Verified</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {s.credentials.map((c) => {
+                const days = c.expiresAt
+                  ? Math.max(0, Math.round((Date.parse(c.expiresAt) - now) / 86_400_000))
+                  : null;
+                return (
+                  <tr key={c.credentialId}>
+                    <td>
+                      <b>{c.system}</b>
+                    </td>
+                    <td className="mono">{c.scope}</td>
+                    <td>
+                      {!c.provided ? (
+                        <span className="cred-miss">Not provided</span>
+                      ) : c.ok === false ? (
+                        <span className="cred-miss">Failed: {c.detail}</span>
+                      ) : c.verifiedAt ? (
+                        <span className="cred-ok">{stamp(c.verifiedAt, tz)}</span>
+                      ) : (
+                        <span className="muted">Not yet verified</span>
+                      )}
+                      {days !== null && (
+                        <div className="faint" style={{ fontSize: 12 }}>
+                          expires in {days} days
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div className="btn-row">
+                        <button
+                          className="btn sm"
+                          onClick={() =>
+                            void run(
+                              () => post(`${base}/credentials/${c.credentialId}/verify`),
+                              `Re-verifying ${c.system}`,
+                            )
+                          }
+                        >
+                          Re-verify
+                        </button>
+                        <button
+                          className="btn sm"
+                          onClick={() =>
+                            toast(
+                              `Rotate ${c.system} in the vault. Cypher re-verifies the new reference as soon as it lands.`,
+                            )
+                          }
+                        >
+                          Rotate
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="panel">
+          <h2>Budgets</h2>
+          <div className="budget">
+            <span>Cost</span>
+            <span>
+              {usd(s.spent.usd)} of {usd(s.budgets.usd)} ({pct(s.spent.usd / s.budgets.usd)}%)
+            </span>
+            <span className="bar">
+              <i style={{ width: `${Math.min(100, pct(s.spent.usd / s.budgets.usd))}%` }} />
+            </span>
+            <span>Tokens</span>
+            <span>
+              {(s.spent.tokens / 1e6).toFixed(1)}M of {(s.budgets.tokens / 1e6).toFixed(0)}M (
+              {pct(s.spent.tokens / s.budgets.tokens)}%)
+            </span>
+            <span className="bar">
+              <i style={{ width: `${Math.min(100, pct(s.spent.tokens / s.budgets.tokens))}%` }} />
+            </span>
+            <span>Time</span>
+            <span>
+              {Math.floor(hours)} h of {s.budgets.hours} h ({pct(hours / s.budgets.hours)}%)
+            </span>
+            <span className="bar">
+              <i style={{ width: `${Math.min(100, pct(hours / s.budgets.hours))}%` }} />
+            </span>
+          </div>
+          <p className="quiet-line" style={{ margin: 0 }}>
+            Soft warning at 80%: new tasks keep dispatching, you are told. Hard stop at 100%: no new
+            tasks until you acknowledge.
+          </p>
+        </section>
+
+        <section className="panel">
+          <h2>Gates</h2>
+          {s.gates.map((g) => (
+            <div className="row" key={g.key}>
+              <span className="l">
+                {g.label}
+                {g.kind === 'optional' && <span className="muted"> (optional)</span>}
+              </span>
+              {g.kind === 'director' ? (
+                g.state === 'approved' ? (
+                  <Chip state="done" label={`Approved ${g.at ? stamp(g.at, tz) : ''}`} />
+                ) : g.state === 'waiting' ? (
+                  <Chip state="waiting" label="Waiting on you" />
+                ) : (
+                  <Chip state="idle" label={`Phase ${g.phase}`} />
+                )
+              ) : (
+                <button
+                  className="toggle"
+                  role="switch"
+                  aria-checked={!!g.enabled}
+                  aria-label={g.label}
+                  onClick={() =>
+                    void run(() => put(`${base}/settings/${g.key}`, { value: !g.enabled }))
+                  }
+                />
+              )}
+            </div>
+          ))}
+        </section>
+
+        <section className="panel">
+          <h2>Escalation policy</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Default action after</th>
+                <th>Notifies</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.escalationPolicy.map((r) => (
+                <tr key={r.type}>
+                  <td>
+                    <span className={`type ${r.type}`}>
+                      {r.type === 'gate' ? 'Gate' : TYPE_LABEL[r.type]}
+                    </span>
+                  </td>
+                  <td>{after(r.defaultAfterMinutes, r.behaviour)}</td>
+                  <td>{r.notifies}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="panel">
+          <h2>
+            Conventions <small>locked after Gate 1</small>
+          </h2>
+          {s.conventions.entries.length ? (
+            <div className="kv">
+              {s.conventions.entries.map((c) => (
+                <span key={c.key} style={{ display: 'contents' }}>
+                  <span>{c.key}</span>
+                  <span className="v">{c.value}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="quiet-line">Recorded with the Blueprint in phase 2.</p>
+          )}
+          <span className="lock">
+            {s.conventions.lockedAt
+              ? `Locked by Gate 1 on ${stamp(s.conventions.lockedAt, tz)}. Changes arrive as Director directives and are logged.`
+              : 'Open until Gate 1. After approval, changes arrive as Director directives and are logged.'}
+          </span>
+        </section>
+
+        <section className="panel danger">
+          <h2>Danger zone</h2>
+          <div className="row">
+            <span className="l">Pause the whole project</span>
+            <button
+              className={`btn sm ${paused ? 'primary' : ''}`}
+              onClick={() =>
+                paused
+                  ? void control('resume')
+                  : openOverlay(
+                      <TypedConfirm
+                        title="Pause the whole project?"
+                        body={`${running} running task${running === 1 ? '' : 's'} hold at their next checkpoint. Nothing is rolled back. Resume at any time.`}
+                        confirmLabel="Pause project"
+                        onConfirm={() => {
+                          closeOverlay();
+                          void control('pause');
+                        }}
+                      />,
+                    )
+              }
+            >
+              {paused ? 'Resume project' : 'Pause project'}
+            </button>
+          </div>
+          {s.rollback && (
+            <div className="row">
+              <span className="l">
+                Roll back phase {s.rollback.phase}{' '}
+                <span className="muted">({s.rollback.detail})</span>
+              </span>
+              <button
+                className="btn sm danger"
+                onClick={() =>
+                  openOverlay(
+                    <TypedConfirm
+                      title={`Roll back phase ${s.rollback!.phase}?`}
+                      body={`${s.rollback!.detail} This cannot be undone.`}
+                      confirmLabel={`Roll back phase ${s.rollback!.phase}`}
+                      typed="ROLL BACK"
+                      onConfirm={() => {
+                        closeOverlay();
+                        void run(() =>
+                          post(`${base}/phases/${s.rollback!.phase}/rollback`, {
+                            confirmation: 'ROLL BACK',
+                          }),
+                        );
+                      }}
+                    />,
+                  )
+                }
+              >
+                Roll back phase
+              </button>
+            </div>
+          )}
+          <div className="row">
+            <span className="l">Archive project</span>
+            <button
+              className="btn sm danger"
+              onClick={() =>
+                openOverlay(
+                  <TypedConfirm
+                    title="Archive this project?"
+                    body="The project becomes read-only with its audit trail, artifacts and handover pack. This cannot be undone."
+                    confirmLabel="Archive project"
+                    typed={p.name}
+                    onConfirm={() => {
+                      closeOverlay();
+                      void run(
+                        () => post(`${base}/archive`, { confirmation: p.name }),
+                        `${p.name} archived`,
+                      );
+                    }}
+                  />,
+                )
+              }
+            >
+              Archive
+            </button>
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}

@@ -1,0 +1,36 @@
+/* Additions to the prototype's stylesheet, for real data the prototype's samples didn't carry. */
+
+/* Credential scopes are full repository paths and API scopes; let them wrap inside the panel. */
+.settings td.mono {
+  overflow-wrap: anywhere;
+}
+/* Stack the credential buttons so the scope column keeps its width. */
+.settings td:last-child .btn-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+/* The type label "budget" shares a class name with the Budgets panel grid; keep it a label. */
+.type.budget {
+  display: inline-flex;
+  font-size: 11px;
+  gap: 6px;
+}
+
+/* Brief rows: the prototype's label rule matches the first span anywhere in the row. */
+.em-row > div span:first-child {
+  font-size: inherit;
+  text-transform: none;
+  color: inherit;
+  font-weight: inherit;
+  padding-top: 0;
+}
+
+/* Engagement labels: cap the title at the column so its ellipsis applies. */
+.eg-name.sub span,
+.eg-name.sub small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
