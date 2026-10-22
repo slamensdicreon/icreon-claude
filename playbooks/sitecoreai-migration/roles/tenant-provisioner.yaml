@@ -1,0 +1,43 @@
+role: tenant-provisioner
+name: Tenant Provisioner
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create site collection, site, languages, grid, module folders and the Available Renderings container.
+  Read-only probe in phase 0.
+produces:
+  - site skeleton on the tenant
+  - serialized items
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - site.create
+      - item.create
+      - language.add
+    scope:
+      paths:
+        - /sitecore/content/**
+        - /sitecore/system/Languages/**
+  sitecore-cli:
+    ops:
+      - ser.pull
+      - ser.push
+      - ser.validate
+  github:
+    ops:
+      - branch.commit
+acceptance:
+  - validator:structural.site
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 0
+  - 3

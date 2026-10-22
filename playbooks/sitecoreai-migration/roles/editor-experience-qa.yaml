@@ -1,0 +1,22 @@
+role: editor-experience-qa
+name: Editor Experience QA
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Drive Page builder as a marketer: component enabled, drag and drop, inline edit, save, publish, page
+  variant, A/B/n test. Record video evidence.
+produces:
+  - editor QA pass or defect list
+tools:
+  browser:
+    ops:
+      - page-builder.drive
+      - video.record
+activePhases:
+  - 8
+  - 9

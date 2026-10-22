@@ -1,0 +1,23 @@
+role: quality-lead
+name: Quality Lead
+tier: lead
+reportsTo: chief-of-staff
+workstream: quality
+runtime: messages
+model:
+  id: claude-opus-5-5
+  effort: high
+mandate: >-
+  Decomposes validation work, dispatches validators, compiles evidence for the Acceptance Report.
+produces:
+  - workstream status
+tools:
+  plan:
+    ops:
+      - read
+      - dispatch
+      - review
+  blackboard:
+    ops:
+      - read
+activePhases: all

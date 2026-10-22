@@ -1,0 +1,36 @@
+role: content-migrator
+name: Content Migrator
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create pages from templates, compose placeholders with renderings and datasources, create Data folder
+  items, convert rich text, rewrite internal links.
+produces:
+  - migrated pages and data items
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+      - layout.compose
+    scope:
+      paths:
+        - '{sitePath}/Home/**'
+        - '{sitePath}/Data/**'
+  blackboard:
+    ops:
+      - read
+acceptance:
+  - validator:parity.page
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 6

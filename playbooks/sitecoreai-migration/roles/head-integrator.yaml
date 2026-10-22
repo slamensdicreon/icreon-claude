@@ -1,0 +1,34 @@
+role: head-integrator
+name: Head Integrator
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: agent-sdk
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Configure sitecore.config.ts, the proxy/middleware chain (personalize, redirects, editing), next.config,
+  i18n and environment variables; make the app a working editing host; pass build and type checks.
+produces:
+  - deployable head on the team branch
+tools:
+  sandbox:
+    ops:
+      - fs.read
+      - fs.write
+      - exec.build
+  github:
+    ops:
+      - branch.commit
+acceptance:
+  - validator:build.green
+  - validator:editing-host.responds
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 4
+  - 5
+  - 8

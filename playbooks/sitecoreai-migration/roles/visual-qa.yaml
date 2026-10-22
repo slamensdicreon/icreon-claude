@@ -1,0 +1,22 @@
+role: visual-qa
+name: Visual QA
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: Screenshot-diff source pages against migrated pages at three breakpoints.
+produces:
+  - visual parity report
+tools:
+  browser:
+    ops:
+      - screenshot
+  validators:
+    ops:
+      - visual.diff
+activePhases:
+  - 6
+  - 9

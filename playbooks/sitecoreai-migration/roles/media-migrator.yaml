@@ -1,0 +1,34 @@
+role: media-migrator
+name: Media Migrator
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-haiku-5-5
+  effort: low
+mandate: >-
+  Download, de-duplicate by content hash, and upload media to the Media Library with alt text; rewrite
+  media references.
+produces:
+  - Media Library items
+  - reference map
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - media.upload
+    scope:
+      paths:
+        - /sitecore/media library/Project/**
+  browser:
+    ops:
+      - fetch.asset
+acceptance:
+  - validator:media.alt-text
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 6

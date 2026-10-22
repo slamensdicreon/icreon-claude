@@ -1,0 +1,41 @@
+role: deployment-engineer
+name: Deployment Engineer
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Deploy the head, register the rendering host to the site, configure environment variables, publish to
+  Experience Edge, smoke test. Prepares hosting in phase 3 so phase 8 is a promotion.
+produces:
+  - live editing and delivery hosts
+tools:
+  hosting:
+    ops:
+      - project.create
+      - env.set
+      - deploy.preview
+      - deploy.production
+  sitecore-deploy:
+    ops:
+      - environment.read
+      - editing-host.register
+  sitecore-authoring:
+    ops:
+      - publish
+    scope:
+      paths:
+        - '{sitePath}/**'
+acceptance:
+  - validator:smoke.green
+  - validator:edge.published
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 3
+  - 8

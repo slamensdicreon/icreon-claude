@@ -1,0 +1,30 @@
+role: solution-architect
+name: Solution Architect
+tier: specialist
+reportsTo: discovery-lead
+workstream: discovery
+runtime: messages
+model:
+  id: claude-opus-5-5
+  effort: high
+mandate: >-
+  Turn inventories into the Implementation Blueprint: component-to-rendering mapping, datasource field
+  models, page templates, page and partial designs, placeholder scheme, Data folder structure, naming.
+produces:
+  - Implementation Blueprint
+tools:
+  blackboard:
+    ops:
+      - read
+      - write.blueprint
+  artifacts:
+    ops:
+      - read
+      - write
+acceptance:
+  - validator:blueprint.coverage
+escalateWhen:
+  - decisionNeeded
+  - rejectedTwice
+activePhases:
+  - 2

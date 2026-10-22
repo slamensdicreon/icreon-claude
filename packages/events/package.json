@@ -1,0 +1,17 @@
+{
+  "name": "@lw/events",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@lw/contracts": "workspace:*",
+    "@lw/domain": "workspace:*"
+  }
+}

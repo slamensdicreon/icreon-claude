@@ -1,0 +1,41 @@
+role: layout-engineer
+name: Layout Engineer
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create page templates, standard values, insert options, Data folder templates, partial designs, page
+  designs and template-to-page-design assignments.
+produces:
+  - templates and designs on the tenant
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+      - template.create
+    scope:
+      paths:
+        - /sitecore/templates/Project/{project}/**
+        - '{sitePath}/Presentation/**'
+  sitecore-cli:
+    ops:
+      - ser.pull
+      - ser.push
+      - ser.validate
+  github:
+    ops:
+      - branch.commit
+acceptance:
+  - validator:structural.templates
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 5

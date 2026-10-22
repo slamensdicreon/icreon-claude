@@ -1,0 +1,85 @@
+# Sitecore playbook manifest: phases, gates and defaults. Roles live in roles/*.yaml.
+id: sitecoreai-migration
+version: 0.1.0
+name: SitecoreAI replatform
+description: >-
+  Takes a Next.js repository and SitecoreAI tenant credentials and delivers a Content SDK site, structured
+  per SXA and Click Click Launch, that marketers can build, personalize and test in Page builder.
+defaults:
+  concurrency: 6
+  budgets:
+    tokens: 60000000
+    usd: 1500
+    hours: 40
+  escalationDeadlines:
+    blocker: 4h
+    decision: 2h
+    access: 4h
+    budget: 1h
+    risk: 24h
+    gate: 24h
+phases:
+  - number: 0
+    name: Intake and access verification
+    exitCriteria: >-
+      Every credential verified against its endpoint (GitHub clone, Authoring & Management API, Deploy API,
+      Experience Edge, hosting); tenant facts recorded.
+  - number: 1
+    name: Discovery and analysis
+    exitCriteria: >-
+      Component inventory, page inventory, asset manifest and risk list complete; every sitemap URL crawled
+      or marked excluded.
+  - number: 2
+    name: Blueprint
+    gate: director
+    exitCriteria: >-
+      Every source component mapped to a rendering (or merged, split, dropped), every page to a template;
+      naming and folder scheme fixed; open decisions listed.
+  - number: 3
+    name: Foundation
+    exitCriteria: >-
+      Site collection, site, languages, grid and module folders exist; hosting project and env vars exist;
+      an empty page renders on the editing host; zero critical findings.
+  - number: 4
+    name: Component build and registration
+    optionalGates:
+      - pilot-slice-review
+    exitCriteria: >-
+      Pilot slice first (three components, one page), then 100% of Blueprint components ported, registered
+      and enabled in Page builder on the preview editing host.
+  - number: 5
+    name: Templates, layouts, and designs
+    dependsOn:
+      - 3
+    exitCriteria: >-
+      Every page template has standard values, insert options and an assigned page design; header and footer
+      partial designs render on every template.
+  - number: 6
+    name: Content and media migration
+    dependsOn:
+      - 4
+      - 5
+    exitCriteria: >-
+      Content parity at or above 98%; all media uploaded with alt text; no broken internal links; visual
+      sample within tolerance.
+  - number: 7
+    name: Experience enablement
+    exitCriteria: >-
+      Components datasource-driven; redirects, SEO fields, sitemap, robots, 404/500, dictionary in place;
+      one page variant and one A/B/n test resolve on the preview host.
+  - number: 8
+    name: Deployment and publishing
+    exitCriteria: >-
+      Production editing host registered; delivery host live; content published to Experience Edge; smoke
+      test green.
+  - number: 9
+    name: Validation and acceptance
+    gate: director
+    exitCriteria: >-
+      Acceptance Report compiled against the Definition of Done; every open defect triaged as fix, accept
+      or defer.
+  - number: 10
+    name: Handover
+    exitCriteria: >-
+      Runbook, marketer component catalog and known-gaps register delivered; project archived with full
+      audit trail.

@@ -1,0 +1,26 @@
+role: structural-validator
+name: Structural Validator
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-haiku-5-5
+  effort: low
+mandate: >-
+  Check item structure against SXA and Click Click Launch rules: paths, naming, template inheritance,
+  rendering fields, Available Renderings, placeholder settings, datasource locations.
+produces:
+  - conformance report
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+  validators:
+    ops:
+      - structural.run
+activePhases:
+  - 3
+  - 4
+  - 5
+  - 9

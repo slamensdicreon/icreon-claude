@@ -1,0 +1,39 @@
+role: component-engineer
+name: Component Engineer
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: agent-sdk
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Port each React component to Content SDK conventions: field components for inline editing, rendering
+  parameters, placeholders, Default plus named variants, props types, styles; register in the component
+  map; keep the build green.
+produces:
+  - component source on the team branch
+skills:
+  - port-react-component-to-content-sdk
+tools:
+  sandbox:
+    ops:
+      - fs.read
+      - fs.write
+      - exec.build
+      - exec.content-sdk-cli
+  github:
+    ops:
+      - branch.commit
+acceptance:
+  - validator:build.green
+  - validator:component-map.registered
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+budget:
+  tokens: 600000
+  wallclock: 45m
+activePhases:
+  - 4

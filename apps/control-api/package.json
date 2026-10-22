@@ -1,0 +1,22 @@
+{
+  "name": "@lw/control-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.1",
+    "@lw/contracts": "workspace:*",
+    "@lw/domain": "workspace:*",
+    "@lw/events": "workspace:*",
+    "@lw/playbook-sdk": "workspace:*",
+    "@lw/simulator": "workspace:*",
+    "fastify": "^5.12.7",
+    "zod": "^4.6.7"
+  }
+}

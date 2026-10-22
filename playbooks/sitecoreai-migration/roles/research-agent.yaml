@@ -1,0 +1,27 @@
+role: research-agent
+name: Research Agent
+tier: specialist
+reportsTo: discovery-lead
+workstream: discovery
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Verify current platform facts with citations: Content SDK version and conventions, Click Click Launch
+  module structure, Accelerate recipes, API limits. Read-only. Frozen after phase 2.
+produces:
+  - Platform Notes
+tools:
+  research:
+    ops:
+      - web.search
+      - web.fetch
+  artifacts:
+    ops:
+      - write
+acceptance:
+  - validator:notes.cited
+activePhases:
+  - 1
+  - 2

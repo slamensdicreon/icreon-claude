@@ -1,0 +1,50 @@
+role: rendering-registrar
+name: Rendering Registrar
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create rendering definitions by deriving from Click Click Launch base renderings into the project module,
+  with datasource and rendering-parameter templates, datasource locations, thumbnails and placeholder
+  settings; populate Available Renderings.
+produces:
+  - registered renderings on the tenant
+skills:
+  - register-rendering-from-ccl-base
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+      - rendering.create
+    scope:
+      paths:
+        - /sitecore/layout/Renderings/Project/{module}/**
+        - /sitecore/templates/Project/{project}/**
+        - '{sitePath}/Presentation/Available Renderings/**'
+  sitecore-cli:
+    ops:
+      - ser.pull
+      - ser.push
+      - ser.validate
+  github:
+    ops:
+      - branch.commit
+acceptance:
+  - validator:structural.renderings
+  - validator:editor.component-enabled
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+  - mappingAmbiguous
+budget:
+  tokens: 400000
+  wallclock: 30m
+activePhases:
+  - 4

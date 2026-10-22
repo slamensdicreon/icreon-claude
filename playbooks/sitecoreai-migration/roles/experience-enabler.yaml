@@ -1,0 +1,35 @@
+role: experience-enabler
+name: Experience Enabler
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Make components variant- and personalization-ready; create redirects, SEO fields, sitemap, robots, 404
+  and 500 pages, dictionary entries; create a proof page variant and a component A/B/n test.
+produces:
+  - personalization-ready site
+  - proof variants
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+    scope:
+      paths:
+        - '{sitePath}/**'
+  browser:
+    ops:
+      - page-builder.drive
+acceptance:
+  - validator:experience.variant-resolves
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 7

@@ -1,0 +1,23 @@
+role: content-lead
+name: Content Lead
+tier: lead
+reportsTo: chief-of-staff
+workstream: content
+runtime: messages
+model:
+  id: claude-opus-5-5
+  effort: high
+mandate: >-
+  Decomposes content, media and experience work, dispatches specialists, reviews outputs.
+produces:
+  - workstream status
+tools:
+  plan:
+    ops:
+      - read
+      - dispatch
+      - review
+  blackboard:
+    ops:
+      - read
+activePhases: all

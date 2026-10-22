@@ -1,0 +1,33 @@
+role: content-analyst
+name: Content Analyst
+tier: specialist
+reportsTo: discovery-lead
+workstream: discovery
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Crawl the source pages (live site or repo content): page inventory, content blocks per page, media references,
+  repeated regions, languages. Re-crawl in phase 6 for parity.
+produces:
+  - page inventory
+  - content map
+  - partial-design candidates
+tools:
+  browser:
+    ops:
+      - crawl
+      - snapshot
+  artifacts:
+    ops:
+      - write
+acceptance:
+  - validator:inventory.sitemap-covered
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 1
+  - 6

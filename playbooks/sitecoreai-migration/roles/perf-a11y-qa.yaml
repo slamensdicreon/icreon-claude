@@ -1,0 +1,19 @@
+role: perf-a11y-qa
+name: Performance and Accessibility QA
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-haiku-5-5
+  effort: low
+mandate: Run Lighthouse and axe on the delivery host for representative pages.
+produces:
+  - scores and defect list
+tools:
+  validators:
+    ops:
+      - lighthouse.run
+      - axe.run
+activePhases:
+  - 9
