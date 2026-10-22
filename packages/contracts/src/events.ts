@@ -214,6 +214,8 @@ export const EventBody = z.discriminatedUnion('type', [
       durationMs: z.number().int().nonnegative(),
       tokens: z.number().int().nonnegative().default(0),
       summary: z.string(),
+      /** sha256 of the canonical request, for the audit trail; null for model-only steps. */
+      requestHash: z.string().nullable().default(null),
     }),
   ),
   ev('escalation.raised', EscalationCard),
@@ -309,7 +311,8 @@ export type EventMeta = z.infer<typeof EventMeta>;
 export const LwEvent = z.intersection(EventMeta, EventBody);
 export type LwEvent = EventMeta & EventBody;
 
-/** An event before the store assigns id, seq and ts. */
-export type NewEvent = Omit<EventMeta, 'id' | 'seq' | 'ts' | 'projectId'> & EventBody;
+/** An event before the store assigns id, seq and ts. Defaulted fields may be omitted. */
+export type NewEvent = Omit<EventMeta, 'id' | 'seq' | 'ts' | 'projectId'> &
+  z.input<typeof EventBody>;
 
 export type EventOf<T extends EventType> = EventMeta & Extract<EventBody, { type: T }>;

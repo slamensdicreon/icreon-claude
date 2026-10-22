@@ -1,0 +1,64 @@
+/** What a tool server declares about each operation. The gateway's policy decisions read this. */
+export interface OperationSpec {
+  /** Changes state on the target. */
+  mutates: boolean;
+  /** Deletes, moves across sites, or publishes to production: needs a rollback recipe first. */
+  destructive?: boolean;
+  /** Returns content from outside our control (source site, repo files, web): wrapped as untrusted. */
+  untrusted?: boolean;
+  /** Dotted paths into the arguments that hold resource paths, checked against the role's scope. */
+  pathArgs?: string[];
+}
+
+export type OperationCatalog = Record<string, OperationSpec>;
+
+export interface ToolResult {
+  /** HTTP-like status from the target system. */
+  code: number;
+  body: unknown;
+  /** One plain line for the Activity log. */
+  summary?: string;
+}
+
+/** A tool server as the gateway sees it. MCP clients implement this; tests use fakes. */
+export interface ToolServer {
+  name: string;
+  catalog: OperationCatalog;
+  /**
+   * Credential-scoped call. `token` is minted by the gateway for this run and never leaves it.
+   * `target` names the external system instance (e.g. the client's tenant) for rate limiting.
+   */
+  call(
+    op: string,
+    args: Record<string, unknown>,
+    ctx: { projectId: string; token: string },
+  ): Promise<ToolResult>;
+  target(projectId: string): string;
+}
+
+/** Values bound per project into scope patterns: `{module}`, `{project}`, `{sitePath}`. */
+export type Bindings = Record<string, string>;
+
+export interface ToolCall {
+  projectId: string;
+  taskId: string;
+  /** Position of this call in the task attempt; part of the idempotency key. */
+  stepIndex: number;
+  attempt: number;
+  role: string;
+  server: string;
+  op: string;
+  args: Record<string, unknown>;
+}
+
+export type Denial =
+  | 'unknown_server'
+  | 'unknown_operation'
+  | 'not_allowed'
+  | 'out_of_scope'
+  | 'rollback_recipe_required';
+
+export type GatewayResult =
+  | { ok: true; code: number; body: unknown; replayed: boolean }
+  | { ok: false; denied: Denial; message: string }
+  | { ok: false; code: number; message: string; retryable: boolean };

@@ -194,6 +194,18 @@ importers:
         specifier: workspace:*
         version: link:../playbook-sdk
 
+  packages/tool-gateway:
+    dependencies:
+      '@lw/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@lw/events':
+        specifier: workspace:*
+        version: link:../events
+      '@lw/playbook-sdk':
+        specifier: workspace:*
+        version: link:../playbook-sdk
+
 packages:
 
   '@electric-sql/pglite@0.5.11':
