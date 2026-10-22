@@ -68,3 +68,44 @@ export const PlaybookManifest = z.object({
   phases: z.array(PhaseSpec).min(1),
 });
 export type PlaybookManifest = z.infer<typeof PlaybookManifest>;
+
+/**
+ * A task template in `plan.yaml`. The plan compiler expands it into concrete tasks: once, or once per
+ * item of a Blueprint collection (`forEach`). Ids interpolate `{key}`, titles interpolate `{name}`;
+ * both stay stable across re-plans so task history survives a directive.
+ */
+export const TaskTemplate = z.object({
+  id: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]*(\{key\}[a-z0-9-]*)?$/, 'kebab-case, optionally with {key}'),
+  phase: z.number().int().min(0),
+  role: Kebab,
+  title: z.string(),
+  /** Name of a Blueprint collection. Without it the template yields exactly one task. */
+  forEach: Kebab.optional(),
+  /**
+   * Dispatch hint: up to this many ready tasks from the template may run in one agent session.
+   * Planning stays per item, so dropping one page changes exactly one task.
+   */
+  batchSize: z.number().int().positive().optional(),
+  /**
+   * Task ids this task waits on. `{key}` binds to the same item; a trailing `*` matches every task
+   * whose id starts with the prefix (e.g. `register-*`).
+   */
+  dependsOn: z.array(z.string()).default([]),
+  acceptance: z.array(z.string()).default([]),
+});
+export type TaskTemplate = z.infer<typeof TaskTemplate>;
+
+export const PlanSpec = z.object({
+  templates: z.array(TaskTemplate).min(1),
+  /**
+   * Pilot slice: tasks for the collection's non-pilot items in `phase` wait on a checkpoint that
+   * waits on every pilot item's tasks. With `optionalGate` switched on, the checkpoint is a
+   * Director gate.
+   */
+  pilot: z
+    .object({ phase: z.number().int(), collection: Kebab, optionalGate: z.string().optional() })
+    .optional(),
+});
+export type PlanSpec = z.infer<typeof PlanSpec>;

@@ -75,6 +75,18 @@ importers:
         specifier: workspace:*
         version: link:../domain
 
+  packages/plan:
+    dependencies:
+      '@lw/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@lw/playbook-sdk':
+        specifier: workspace:*
+        version: link:../playbook-sdk
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
   packages/playbook-sdk:
     dependencies:
       '@lw/contracts':

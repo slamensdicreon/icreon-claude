@@ -2,11 +2,12 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PhaseDef, RosterEntry } from '@lw/contracts';
 import { parse } from 'yaml';
-import { PlaybookManifest, RoleDef } from './schema';
+import { PlanSpec, PlaybookManifest, RoleDef } from './schema';
 
 export interface Playbook {
   manifest: PlaybookManifest;
   roles: RoleDef[];
+  plan: PlanSpec;
 }
 
 export class PlaybookError extends Error {
@@ -32,15 +33,20 @@ export async function loadPlaybook(dir: string): Promise<Playbook> {
     else roles.push(r.data);
   }
 
-  if (problems.length || !manifestResult.success) throw new PlaybookError(problems);
-  const playbook = { manifest: manifestResult.data, roles };
+  const planResult = PlanSpec.safeParse(parse(await readFile(join(dir, 'plan.yaml'), 'utf8')));
+  if (!planResult.success) problems.push(`plan.yaml: ${planResult.error.message}`);
+
+  if (problems.length || !manifestResult.success || !planResult.success) {
+    throw new PlaybookError(problems);
+  }
+  const playbook = { manifest: manifestResult.data, roles, plan: planResult.data };
   const crossProblems = validatePlaybook(playbook);
   if (crossProblems.length) throw new PlaybookError(crossProblems);
   return playbook;
 }
 
 /** Bundle-level rules the per-file schemas cannot express. */
-export function validatePlaybook({ manifest, roles }: Playbook): string[] {
+export function validatePlaybook({ manifest, roles, plan }: Playbook): string[] {
   const problems: string[] = [];
   const byId = new Map(roles.map((r) => [r.role, r]));
   const phaseNumbers = new Set(manifest.phases.map((p) => p.number));
@@ -96,6 +102,32 @@ export function validatePlaybook({ manifest, roles }: Playbook): string[] {
       for (const n of r.activePhases) {
         if (!phaseNumbers.has(n)) problems.push(`${r.role}: active in unknown phase ${n}`);
       }
+    }
+  }
+
+  const templateIds = new Set<string>();
+  for (const t of plan.templates) {
+    if (templateIds.has(t.id)) problems.push(`plan: duplicate template id ${t.id}`);
+    templateIds.add(t.id);
+    const role = byId.get(t.role);
+    if (!phaseNumbers.has(t.phase)) problems.push(`plan: ${t.id} is in unknown phase ${t.phase}`);
+    if (!role) problems.push(`plan: ${t.id} uses unknown role ${t.role}`);
+    else if (Array.isArray(role.activePhases) && !role.activePhases.includes(t.phase)) {
+      problems.push(`plan: ${t.id} runs in phase ${t.phase}, where ${t.role} is not active`);
+    }
+    if (t.id.includes('{key}') !== Boolean(t.forEach)) {
+      problems.push(`plan: ${t.id} must use {key} exactly when it has forEach`);
+    }
+    if (t.batchSize && !t.forEach) problems.push(`plan: ${t.id} has batchSize without forEach`);
+  }
+  if (plan.pilot) {
+    if (!phaseNumbers.has(plan.pilot.phase))
+      problems.push(`plan: pilot in unknown phase ${plan.pilot.phase}`);
+    const phase = manifest.phases.find((p) => p.number === plan.pilot!.phase);
+    if (plan.pilot.optionalGate && !phase?.optionalGates.includes(plan.pilot.optionalGate)) {
+      problems.push(
+        `plan: pilot gate ${plan.pilot.optionalGate} is not an optional gate of phase ${plan.pilot.phase}`,
+      );
     }
   }
   return problems;

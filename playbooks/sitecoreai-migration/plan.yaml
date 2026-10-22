@@ -1,0 +1,173 @@
+# Task templates for the SitecoreAI replatform. The plan compiler expands them over the approved
+# Blueprint's collections: components, templates, pages, media. Before Gate 1 each forEach
+# template shows as one placeholder task, so the whole plan is visible from day one.
+
+pilot:
+  phase: 4
+  collection: components
+  optionalGate: pilot-slice-review
+
+templates:
+  # 0 — Intake and access verification
+  - id: verify-access
+    phase: 0
+    role: tenant-provisioner
+    title: Verify credentials and record tenant facts
+    acceptance: [validator:credentials.verified]
+
+  # 1 — Discovery and analysis
+  - id: inventory-repo
+    phase: 1
+    role: repo-analyst
+    title: Inventory components, routes and assets
+  - id: crawl-site
+    phase: 1
+    role: content-analyst
+    title: Crawl the source site and build the page inventory
+  - id: platform-notes
+    phase: 1
+    role: research-agent
+    title: Verify platform facts and write Platform Notes
+
+  # 2 — Blueprint
+  - id: draft-blueprint
+    phase: 2
+    role: solution-architect
+    title: Draft the Implementation Blueprint
+    dependsOn: [inventory-repo, crawl-site, platform-notes]
+    acceptance: [validator:blueprint.coverage]
+
+  # 3 — Foundation
+  - id: create-site
+    phase: 3
+    role: tenant-provisioner
+    title: Create site collection, site, languages and module folders
+  - id: prepare-hosting
+    phase: 3
+    role: deployment-engineer
+    title: Create hosting project and preview environment
+  - id: validate-foundation
+    phase: 3
+    role: structural-validator
+    title: Validate the site skeleton
+    dependsOn: [create-site]
+
+  # 4 — Component build and registration
+  - id: port-{key}
+    phase: 4
+    role: component-engineer
+    forEach: components
+    title: Port {name} to Content SDK
+    acceptance: [validator:build.green, validator:component-map.registered]
+  - id: register-{key}
+    phase: 4
+    role: rendering-registrar
+    forEach: components
+    title: Register {name}
+    dependsOn: ['port-{key}']
+    acceptance: [validator:structural.renderings, validator:editor.component-enabled]
+  - id: integrate-head
+    phase: 4
+    role: head-integrator
+    title: Configure the head as the editing host
+    dependsOn: [port-*]
+  - id: validate-components
+    phase: 4
+    role: structural-validator
+    title: Validate renderings and Available Renderings
+    dependsOn: [register-*]
+
+  # 5 — Templates, layouts and designs
+  - id: partial-designs
+    phase: 5
+    role: layout-engineer
+    title: Create header and footer partial designs
+  - id: template-{key}
+    phase: 5
+    role: layout-engineer
+    forEach: templates
+    title: Create {name} template and page design
+    dependsOn: [partial-designs]
+  - id: validate-templates
+    phase: 5
+    role: structural-validator
+    title: Validate templates and designs
+    dependsOn: [template-*]
+
+  # 6 — Content and media migration
+  - id: migrate-pages-{key}
+    phase: 6
+    role: content-migrator
+    forEach: pages
+    batchSize: 8
+    title: Migrate {name}
+  - id: upload-media-{key}
+    phase: 6
+    role: media-migrator
+    forEach: media
+    batchSize: 20
+    title: Upload {name}
+  - id: recrawl-source
+    phase: 6
+    role: content-analyst
+    title: Re-crawl the source for parity
+  - id: audit-parity
+    phase: 6
+    role: parity-auditor
+    title: Audit content parity
+    dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
+  - id: visual-sample
+    phase: 6
+    role: visual-qa
+    title: Screenshot-diff a page sample
+    dependsOn: [migrate-pages-*]
+
+  # 7 — Experience enablement
+  - id: enable-experience
+    phase: 7
+    role: experience-enabler
+    title: Redirects, SEO, sitemap, error pages, proof variant and A/B/n test
+
+  # 8 — Deployment and publishing
+  - id: finalize-head
+    phase: 8
+    role: head-integrator
+    title: Finalize production configuration
+  - id: deploy-production
+    phase: 8
+    role: deployment-engineer
+    title: Promote to production and publish to Experience Edge
+    dependsOn: [finalize-head]
+  - id: smoke-test
+    phase: 8
+    role: editor-experience-qa
+    title: Smoke test Page builder on production
+    dependsOn: [deploy-production]
+
+  # 9 — Validation and acceptance
+  - id: final-conformance
+    phase: 9
+    role: structural-validator
+    title: Final conformance check
+  - id: editor-checklist
+    phase: 9
+    role: editor-experience-qa
+    title: Run the Definition of Done checklist in Page builder
+  - id: lighthouse
+    phase: 9
+    role: perf-a11y-qa
+    title: Lighthouse and axe on representative pages
+  - id: final-parity
+    phase: 9
+    role: parity-auditor
+    title: Final content parity audit
+  - id: final-visual
+    phase: 9
+    role: visual-qa
+    title: Final visual parity at three breakpoints
+
+  # 10 — Handover
+  - id: handover-pack
+    phase: 10
+    role: handover-writer
+    title: Write runbook, component catalog and known-gaps register
