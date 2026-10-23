@@ -1,8 +1,8 @@
 # Deploying Launchworks on Vercel
 
-_Status: deployed as project `launchworks` (https://launchworks-one.vercel.app). The web app, both
-daemon images, the demo runner, Neon and Blob are verified on Vercel; the API waits on the GitHub
-OAuth app. Services, Daemons and the container runtime are in beta on Vercel._
+_Status: deployed as project `launchworks` (https://launchworks-one.vercel.app), running real
+projects on Temporal Cloud with GitHub sign-in, Neon and Blob. Services, Daemons and the container
+runtime are in beta on Vercel._
 
 Everything runs in one Vercel project, on one domain:
 
@@ -10,7 +10,7 @@ Everything runs in one Vercel project, on one domain:
 | -------- | --------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
 | `web`    | Service: static Vite build on the CDN   | `apps/web`                          | The Control Center. Every path that isn't the API.                          |
 | `api`    | Service: Function from a container image | `Dockerfile.api` → `apps/control-api` | `/projects/*`, `/intake/*`, `/integrations/*`, `/auth/*`, `/health`: snapshots, commands, event streams, intake, the GitHub App, sign-in |
-| `demo`   | Daemon, 1 instance                      | `Dockerfile.api` → `src/demo-runner.ts` | Plays the demo project (Ansell) and runs Director commands for it           |
+| `demo`   | Daemon, not deployed on production       | `Dockerfile.api` → `src/demo-runner.ts` | Plays the scripted demo project (Ansell) and runs Director commands for it  |
 | `worker` | Daemon, 0 instances until real mode     | `Dockerfile.worker` → `apps/worker` | Temporal workflows and activities, tool servers, Chromium                    |
 
 Outside the project: **Neon Postgres** (Vercel Marketplace) holds the event log and the command
@@ -56,10 +56,20 @@ The same images run locally with `docker compose up` (below), which is how this 
 | `worker` instances | 0                                    | 1 or more                                              |
 | Needs              | Neon, Blob, GitHub OAuth             | also Temporal Cloud; `ANTHROPIC_API_KEY` for live agents |
 
-The two run side by side: with `ORCHESTRATOR=temporal` and the `demo` daemon still at 1, the demo
-projects keep playing in the demo runner while projects from the New Project wizard run on Temporal.
-Set `demo` to 0 to retire the demo. The production deployment runs both (`launchworks.dxmpr` on
-Temporal Cloud, `AGENTS=claude`).
+The two can run side by side: with `ORCHESTRATOR=temporal` and a `demo` daemon, the demo project
+plays in the demo runner while projects from the New Project wizard run on Temporal. Production runs
+real projects only (`launchworks.dxmpr` on Temporal Cloud, `AGENTS=claude`): the `demo` daemon was
+removed from `vercel.json` and the demo data deleted. To bring the demo back, add the daemon again:
+
+```json
+"demo": {
+  "root": "./",
+  "entrypoint": "Dockerfile.api",
+  "command": ["node", "--import", "tsx", "src/demo-runner.ts"],
+  "instances": { "iad1": 1 },
+  "resources": { "requests": { "memory": "1Gi" } }
+}
+```
 
 Instance counts live in `vercel.json` (`daemons.*.instances`); you can also override them from the
 dashboard without a deployment. Overrides persist across deployments until cleared.
@@ -114,10 +124,9 @@ origins.
 ## Checking a deployment
 
 1. `https://<domain>/health` answers `{"ok":true}` (no sign-in needed).
-2. Open the domain, sign in with GitHub, and see the demo project in the switcher.
-3. Choose an option on a decision card: it resolves within a second, which shows the command queue
-   and the demo daemon are working. If it answers "The project runner did not pick up the command",
-   check the `demo` daemon's logs.
+2. Open the domain and sign in with GitHub. With no projects yet, the page offers the New Project
+   wizard and the GitHub App panel.
+3. The `worker` daemon's log shows "Temporal: connected to …" and each Claude model as ok.
 4. Leave a page open for five minutes: Activity keeps updating across the stream's scheduled
    reconnects, with no "Reconnecting" note.
 
@@ -165,10 +174,10 @@ over once.
 - **Sign-in on previews.** The OAuth callback is the production domain, and the session cookie
   belongs to it, so sign-in works on production only. For a signed-in preview, alias a branch
   domain, register a second OAuth app for it, and set that preview's `PUBLIC_URL`/`APP_URL`.
-- **The demo restarts on deploy.** Each production deployment rolls out a new `demo` instance,
-  which reseeds the demo project to the prototype's story (and deletes retired demo projects); open pages follow along. A second
-  runner waits on the advisory lock until the old one exits, so two never play at once. Projects
-  started from intake in demo mode stop when the runner restarts.
+- **The demo restarts on deploy** (where the `demo` daemon runs). Each deployment rolls out a new
+  `demo` instance, which reseeds the demo project to the prototype's story and deletes retired demo
+  projects; open pages follow along. A second runner waits on the advisory lock until the old one
+  exits, so two never play at once.
 - **Cold starts.** The API image is about 1 GB, mostly packages only the local inline worker needs
   (`@temporalio/worker`, the tool servers). Splitting the orchestrator's Temporal client from its
   worker would cut the API image to a fraction; that's the next improvement to make.

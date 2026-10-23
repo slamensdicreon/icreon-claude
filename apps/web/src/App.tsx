@@ -4,11 +4,13 @@ import { Dock } from './dock/Dock';
 import { Inspector } from './Inspector';
 import { Sprite } from './lib/icons';
 import { live } from './lib/live';
+import { NewProject } from './overlays/NewProject';
 import { Palette } from './overlays/Palette';
 import { useCardActions } from './parts/Card';
 import { MobileNav, Sidebar, Strip, Toasts, useAwayLine } from './Shell';
 import { AppProvider, useApp, useMission, type Surface } from './state';
 import { Activity } from './surfaces/Activity';
+import { GithubAppPanel } from './surfaces/GithubApp';
 import { Mission } from './surfaces/Mission';
 import { Plan } from './surfaces/Plan';
 import { Preview } from './surfaces/Preview';
@@ -97,17 +99,35 @@ function Frame() {
 }
 
 function Empty({ loaded }: { loaded: boolean }) {
-  return (
-    <div className="page-head">
-      <div>
-        <h1>{loaded ? 'Choose a project' : 'No projects yet'}</h1>
-        <p>
-          {loaded
-            ? 'Pick a project from the switcher at the top of the sidebar.'
-            : 'Start one from the project switcher: name, client, the source site and its repository.'}
-        </p>
+  const { openOverlay } = useApp();
+  if (loaded) {
+    return (
+      <div className="page-head">
+        <div>
+          <h1>Choose a project</h1>
+          <p>Pick a project from the switcher at the top of the sidebar.</p>
+        </div>
       </div>
-    </div>
+    );
+  }
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1>No projects yet</h1>
+          <p>
+            Start one with the New Project wizard: the client&rsquo;s repository, their SitecoreAI
+            environment and its automation client, and budgets.
+          </p>
+        </div>
+        <button className="btn primary" onClick={() => openOverlay(<NewProject />)}>
+          New project
+        </button>
+      </div>
+      <div className="settings">
+        <GithubAppPanel />
+      </div>
+    </>
   );
 }
 
