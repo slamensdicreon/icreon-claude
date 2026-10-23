@@ -326,6 +326,10 @@ for (const { playbook, dir } of catalog.values()) {
     review: env.AGENTS === 'claude' ? (input) => reviewTask(input) : null,
     servers,
     credentials,
+    credential: async (id, credentialId) => {
+      const ref = (await project(id))?.credentials[credentialId]?.reference;
+      return ref && vault ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
+    },
   });
   console.log(`Live agents (${playbook.manifest.id}): ${stack.liveRoles.join(', ') || 'none'}`);
   stacks.push({ id: playbook.manifest.id, stack });

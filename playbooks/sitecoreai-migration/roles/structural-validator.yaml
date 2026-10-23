@@ -21,6 +21,15 @@ tools:
   validators:
     ops:
       - structural.run
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+knowledge:
+  - known-pitfalls
 activePhases:
   - 3
   - 4

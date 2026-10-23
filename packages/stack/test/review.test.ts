@@ -183,4 +183,39 @@ describe('acceptance on live projects', () => {
     expect(r.pass).toBe(true);
     expect((await reviews())[0]!.data.note).toMatch(/no Lead review is connected/);
   });
+
+  it('reads the audit trail: a green build must come after the last change, and be committed', async () => {
+    const { store, validate } = await setup(null);
+    const step = (operation: string, summary: string, code = 200) => ({
+      type: 'step.recorded' as const,
+      actor: { kind: 'agent' as const, id: 'component-engineer' },
+      subject: { kind: 'step' as const, id: operation },
+      severity: 'routine' as const,
+      data: {
+        stepId: crypto.randomUUID(),
+        agentId: 'component-engineer',
+        taskId: 'port-hero',
+        toolServer: 'sandbox',
+        operation,
+        resultCode: code,
+        durationMs: 1,
+        summary,
+      },
+    });
+    const t = task({
+      taskId: 'port-hero',
+      role: 'component-engineer',
+      title: 'Port Hero',
+      acceptance: ['validator:build.green'],
+    });
+    await store.append('p1', [
+      step('exec.build', 'Build green: type-check and build passed'),
+      step('fs.write', 'Wrote 1 file'),
+    ]);
+    expect((await validate(t)).reason).toMatch(/Files changed after the last green build/);
+    await store.append('p1', [step('exec.build', 'Build green: type-check and build passed')]);
+    expect((await validate(t)).reason).toMatch(/not committed/);
+    await store.append('p1', [step('git.commit', 'Committed 1 file to launchworks/port-hero')]);
+    expect((await validate(t)).pass).toBe(true);
+  });
 });

@@ -17,7 +17,7 @@ import {
   type Activities,
 } from '@lw/orchestrator';
 import { Blueprint, releaseApprovalId } from '@lw/plan';
-import type { PlatformPack } from '@lw/platforms';
+import type { PlatformCheck, PlatformPack } from '@lw/platforms';
 import { withReview } from './review';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
@@ -61,6 +61,8 @@ export interface StackOptions {
   servers?: ToolServer[];
   /** Credentials for tool calls (the vault-backed provider in the worker). */
   credentials?: CredentialProvider;
+  /** A project credential's fields from the vault, for acceptance checks (Edge Context IDs). */
+  credential?: (projectId: string, credentialId: string) => Promise<Record<string, string> | null>;
   /** Tests point the browser at a fixture site on 127.0.0.1. */
   allowPrivateNetworks?: boolean;
 }
@@ -123,9 +125,75 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       allowPrivateNetworks: opts.allowPrivateNetworks,
     };
   };
+  // Acceptance checks read the project's systems, never change them.
+  const readOnly = async (
+    projectId: string,
+    server: string,
+    op: string,
+    args: Record<string, unknown>,
+  ) => {
+    const s = servers.find((x) => x.name === server);
+    const spec = s?.catalog[op];
+    if (!s || !spec) return { code: 404, body: { error: `${server}.${op} isn't connected` } };
+    if (spec.mutates) return { code: 403, body: { error: `${server}.${op} changes things` } };
+    const token = await (opts.credentials ?? { tokenFor: async () => '' }).tokenFor(
+      projectId,
+      server,
+    );
+    return s.call(op, args, { projectId, token, role: 'quality-lead', taskId: 'acceptance' });
+  };
+  const credential = async (projectId: string, credentialId: string) =>
+    opts.credential ? opts.credential(projectId, credentialId) : null;
+  /** One of the platform's checks, with the project's target, Blueprint and read access. */
+  const runPlatformCheck = async (projectId: string, check: PlatformCheck) => {
+    await opts.projections.catchUp(projectId);
+    const intake = opts.projections.get(projectId)?.intake;
+    if (!intake) return { status: 'pending' as const, detail: 'The project has no target.' };
+    const doc = await library.read(projectId, 'blueprint');
+    let blueprint = null;
+    try {
+      blueprint = doc ? JSON.parse(doc.content) : null;
+    } catch {
+      /* unreadable: the check sees none */
+    }
+    return check({
+      projectId,
+      target: intake.target,
+      blueprint,
+      read: (server, op, args) => readOnly(projectId, server, op, args),
+      credential: (id) => credential(projectId, id),
+    });
+  };
+  const STRUCTURE = ['site', 'templates', 'renderings'] as const;
   const servers: ToolServer[] = [
     new BrowserToolServer({ blobs, policy, browser: chromium }),
-    new ValidatorsToolServer({ blobs, policy, browser: chromium }),
+    new ValidatorsToolServer({
+      blobs,
+      policy,
+      browser: chromium,
+      structural: opts.platform.checks
+        ? async (projectId, scope) => {
+            const ids = scope === 'all' ? STRUCTURE : [scope];
+            const out = [];
+            for (const id of ids) {
+              const check = opts.platform.checks?.[`structural.${id}`];
+              try {
+                const r = check
+                  ? await runPlatformCheck(projectId, check)
+                  : { status: 'pending' as const, detail: 'No check for this platform.' };
+                out.push({ id: `structural.${id}`, ...r });
+              } catch (err) {
+                out.push({
+                  id: `structural.${id}`,
+                  status: 'pending' as const,
+                  detail: `Could not run: ${(err as Error).message}`,
+                });
+              }
+            }
+            return out;
+          }
+        : undefined,
+    }),
     new ArtifactsToolServer(library),
     new BlackboardToolServer(library),
     new DecisionLogToolServer((id) => opts.projections.get(id)?.decisions ?? []),
@@ -240,6 +308,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     isLive,
     review: opts.review ?? null,
     onAccepted: (projectId, taskId) => locks.release(projectId, taskId),
+    platform: { checks: opts.platform.checks, read: readOnly, credential },
   });
   const activities = withLiveGuard(reviewed, {
     store: opts.store,

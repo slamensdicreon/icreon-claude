@@ -64,6 +64,7 @@ describe('role prompts', () => {
       'repo-analyst',
       'research-agent',
       'solution-architect',
+      'structural-validator',
       'tenant-provisioner',
       'visual-qa',
     ]);

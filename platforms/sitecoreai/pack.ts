@@ -8,6 +8,7 @@ import {
   type VerifyConfig,
 } from '@lw/connectors';
 import type { PlatformPack } from '../src/index';
+import { sitecoreChecks } from './checks';
 import { list, text, type TargetValues } from '../src/values';
 
 /**
@@ -214,6 +215,7 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
           ? { credentialId: 'sitecore-organization', token: clientToken }
           : undefined,
     knowledgeDir: fileURLToPath(new URL('./knowledge', import.meta.url)),
+    checks: sitecoreChecks(cfg),
     // The Content SDK head (examples/basic-nextjs). Our Vercel project is the editing host and
     // the stable preview, so both targets read draft content: the preview Context ID. The live
     // Context ID belongs to the delivery host the client runs after handover.

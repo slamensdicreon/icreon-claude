@@ -73,3 +73,91 @@ describe('platform packs', () => {
     });
   });
 });
+
+describe('SitecoreAI checks', () => {
+  const pack = platforms.get('sitecoreai')!;
+  const target = {
+    cmHost: 'xmc.sitecorecloud.io',
+    siteCollection: 'Brands',
+    site: 'ansco',
+    languages: ['en'],
+  };
+  /** A tenant as item paths, with children and fields. */
+  const tenant = (items: Record<string, { id?: string; fields?: Record<string, string> }>) => {
+    const reads: string[] = [];
+    const read = async (_s: string, _op: string, args: Record<string, unknown>) => {
+      const path = String(args.path);
+      reads.push(path);
+      const it = items[path];
+      if (!it) return { code: 404, body: {} };
+      const children = Object.keys(items)
+        .filter((p) => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes('/'))
+        .map((p) => ({ itemId: items[p]!.id ?? p, name: p.split('/').at(-1)!, path: p }));
+      return {
+        code: 200,
+        body: {
+          itemId: it.id ?? path,
+          name: path.split('/').at(-1),
+          path,
+          children: { nodes: children },
+          fields: {
+            nodes: Object.entries(it.fields ?? {}).map(([name, value]) => ({ name, value })),
+          },
+        },
+      };
+    };
+    return { read, reads };
+  };
+  const ctx = (read: ReturnType<typeof tenant>['read'], blueprint: unknown) => ({
+    projectId: 'p',
+    target,
+    blueprint: blueprint as never,
+    read,
+    credential: async () => null,
+  });
+
+  it('checks renderings exist in the project folder and are offered in Available Renderings', async () => {
+    const r = '/sitecore/layout/Renderings/Project/Brands/ansco';
+    const t = tenant({
+      [r]: {},
+      [`${r}/Hero`]: { id: '{AAAA-1}' },
+      [`${r}/Cards`]: { id: '{BBBB-2}' },
+      '/sitecore/content/Brands/ansco/Presentation/Available Renderings': {},
+      '/sitecore/content/Brands/ansco/Presentation/Available Renderings/Page Content': {
+        fields: { Renderings: '{AAAA-1}' },
+      },
+    });
+    const bp = {
+      collections: {
+        components: [
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero' } },
+          { key: 'cards', name: 'Cards', attrs: { rendering: 'Cards' } },
+          { key: 'old', name: 'Old', status: 'drop' },
+        ],
+      },
+    };
+    const res = await pack.checks!['structural.renderings']!(ctx(t.read, bp));
+    expect(res.status).toBe('fail');
+    expect(res.detail).toBe("Cards isn't in Available Renderings.");
+  });
+
+  it("checks the site, Home and the project's own folders", async () => {
+    const site = '/sitecore/content/Brands/ansco';
+    const t = tenant({
+      [site]: {},
+      [`${site}/Home`]: {},
+      '/sitecore/templates/Project/Brands/ansco': {},
+      '/sitecore/layout/Renderings/Project/Brands/ansco': {},
+    });
+    const res = await pack.checks!['structural.site']!(ctx(t.read, null));
+    expect(res).toEqual({
+      status: 'fail',
+      detail: "/sitecore/media library/Project/Brands/ansco doesn't exist.",
+    });
+  });
+
+  it('leaves Experience Edge checks pending without a live Context ID', async () => {
+    const res = await pack.checks!['routes.resolve']!(ctx(tenant({}).read, null));
+    expect(res.status).toBe('pending');
+  });
+});

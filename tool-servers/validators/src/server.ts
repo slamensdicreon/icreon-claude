@@ -112,7 +112,29 @@ export interface ValidatorsServerOptions {
   /** The hosts a project's pages may be checked on (source site, previews). */
   policy: (projectId: string) => UrlPolicy;
   navigationTimeoutMs?: number;
+  /**
+   * The platform's structural checks (site, templates, renderings), when the stack has them:
+   * read-only looks at the target, judged against the Blueprint.
+   */
+  structural?: (
+    projectId: string,
+    scope: 'site' | 'templates' | 'renderings' | 'all',
+  ) => Promise<{ id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[]>;
 }
+
+const STRUCTURAL: OperationCatalog[string] = {
+  description:
+    "Check the project's structure in the CMS against the approved Blueprint: `site` (site, Home, the project's own folders), `templates` (each template with standard values), `renderings` (each rendering, offered in Available Renderings), or `all`. Read-only.",
+  inputSchema: {
+    type: 'object',
+    properties: { scope: { type: 'string', enum: ['site', 'templates', 'renderings', 'all'] } },
+    additionalProperties: false,
+  },
+  mutates: false,
+};
+const StructuralArgs = z.object({
+  scope: z.enum(['site', 'templates', 'renderings', 'all']).default('all'),
+});
 
 const invalid = (e: z.ZodError): ToolResult => {
   const message = e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
@@ -122,11 +144,13 @@ const invalid = (e: z.ZodError): ToolResult => {
 /** Quality checks the QA roles run: accessibility, visual parity, Lighthouse. */
 export class ValidatorsToolServer implements ToolServer {
   readonly name = 'validators';
-  readonly catalog = CATALOG;
+  readonly catalog: OperationCatalog;
   /** Lighthouse runs a whole browser; one at a time per worker keeps timings comparable. */
   private lighthouseQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly opts: ValidatorsServerOptions) {}
+  constructor(private readonly opts: ValidatorsServerOptions) {
+    this.catalog = opts.structural ? { ...CATALOG, 'structural.run': STRUCTURAL } : CATALOG;
+  }
 
   target(projectId: string): string {
     return this.opts.policy(projectId).allowedHosts[0] ?? projectId;
@@ -149,6 +173,18 @@ export class ValidatorsToolServer implements ToolServer {
           const run = this.lighthouseQueue.then(() => this.lighthouse(ctx.projectId, a.data));
           this.lighthouseQueue = run.catch(() => {});
           return await run;
+        }
+        case 'structural.run': {
+          const a = StructuralArgs.safeParse(args);
+          if (!a.success) return invalid(a.error);
+          if (!this.opts.structural) return { code: 404, body: { error: 'Not connected' } };
+          const results = await this.opts.structural(ctx.projectId, a.data.scope);
+          const count = (k: string) => results.filter((r) => r.status === k).length;
+          return {
+            code: 200,
+            body: { results },
+            summary: `Structure (${a.data.scope}): ${count('pass')} passed, ${count('fail')} failed, ${count('pending')} pending`,
+          };
         }
         default:
           return { code: 400, body: { error: `Unknown operation ${op}` } };

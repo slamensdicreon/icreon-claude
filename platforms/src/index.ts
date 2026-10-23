@@ -55,6 +55,8 @@ export interface PlatformPack {
     | undefined;
   /** Platform knowledge documents roles can list (`knowledge/<id>.md`). */
   knowledgeDir: string;
+  /** Acceptance checks only the platform knows how to run, by validator id. */
+  checks?: Record<string, PlatformCheck>;
   /**
    * The environment variables the head needs on its host, resolved from the project's sealed
    * credentials and the platform's own APIs. Absent for platforms with no head.
@@ -65,6 +67,40 @@ export interface PlatformPack {
     deps: HeadEnvDeps,
   ): Promise<{ vars: HeadEnvVar[]; missing: string[] }>;
 }
+
+/** What a platform check can see and call. Read-only by design: checks never change anything. */
+export interface PlatformCheckContext {
+  projectId: string;
+  target: TargetValues;
+  /** The approved Blueprint, parsed, or null. */
+  blueprint: {
+    collections: Record<
+      string,
+      {
+        key: string;
+        name: string;
+        status?: string;
+        pilot?: boolean;
+        attrs?: Record<string, unknown>;
+      }[]
+    >;
+  } | null;
+  /** A read operation on one of the platform's tool servers, with the project's credential. */
+  read(
+    server: string,
+    op: string,
+    args: Record<string, unknown>,
+  ): Promise<{ code: number; body: unknown }>;
+  /** A project credential's fields, or null when it wasn't given. */
+  credential(credentialId: string): Promise<Record<string, string> | null>;
+}
+
+export interface CheckResult {
+  status: 'pass' | 'fail' | 'pending';
+  detail: string;
+}
+
+export type PlatformCheck = (ctx: PlatformCheckContext) => Promise<CheckResult>;
 
 export interface HeadEnvVar {
   key: string;
