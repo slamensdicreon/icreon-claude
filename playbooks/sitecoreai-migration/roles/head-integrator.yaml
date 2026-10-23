@@ -17,15 +17,31 @@ produces:
 tools:
   sandbox:
     ops:
+      - workspace.open
+      - fs.list
       - fs.read
       - fs.write
       - exec.build
+      - exec.content-sdk-cli
+      - git.commit
   build-repo:
     ops:
       - tree.read
       - repo.read
       - code.search
       - branch.commit
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
 acceptance:
   - validator:build.green
   - validator:editing-host.responds

@@ -45,7 +45,9 @@ export class VaultCredentials implements CredentialProvider {
 
   async tokenFor(projectId: string, server: string): Promise<string> {
     if (server === 'github') return this.github(projectId);
-    if (server === 'build-repo') return this.buildRepo(projectId);
+    // The working copies clone and push the build repository with the same token.
+    if (server === 'build-repo' || server === 'sandbox' || server === 'sitecore-cli')
+      return this.buildRepo(projectId);
     const platform = (await this.deps.project(projectId))?.intake?.platform;
     const tc = platform ? this.deps.toolCredential?.(platform, server) : undefined;
     return tc ? this.platform(projectId, tc) : 'no-external-credential';

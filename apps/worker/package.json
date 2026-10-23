@@ -21,6 +21,7 @@
     "@lw/tool-github": "workspace:*",
     "@lw/tool-hosting": "workspace:*",
     "@lw/tool-research": "workspace:*",
+    "@lw/tool-sandbox": "workspace:*",
     "@lw/tool-sitecore": "workspace:*",
     "@temporalio/worker": "^1.24.0",
     "tsx": "^4.23.15",

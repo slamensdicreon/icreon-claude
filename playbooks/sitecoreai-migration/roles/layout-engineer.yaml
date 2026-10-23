@@ -35,6 +35,13 @@ tools:
       - repo.read
       - code.search
       - branch.commit
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
 acceptance:
   - validator:structural.templates
 escalateWhen:

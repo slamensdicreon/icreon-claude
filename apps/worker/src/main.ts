@@ -11,7 +11,8 @@ import {
 import type { NewEvent } from '@lw/contracts';
 import { createWorker, taskQueueFor } from '@lw/orchestrator';
 import { loadCatalog } from '@lw/playbook-sdk';
-import { createPlatforms, sitecoreTarget, text } from '@lw/platforms';
+import { createPlatforms, ownedPaths, sitecoreTarget, text } from '@lw/platforms';
+import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw/tool-sandbox';
 import { composeStack } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
@@ -53,6 +54,8 @@ const env = z
     /** Our Vercel team, where each project's head is deployed for preview and editing. */
     VERCEL_PREVIEWS_TOKEN: z.string().optional(),
     VERCEL_PREVIEWS_TEAM_ID: z.string().optional(),
+    /** The Vercel project build sandboxes are created under (ours, not a client's). */
+    VERCEL_SANDBOX_PROJECT_ID: z.string().optional(),
     /** Every folder under it holding a playbook.yaml is served, each on its own task queue. */
     PLAYBOOKS_DIR: z
       .string()
@@ -240,6 +243,66 @@ if (env.AGENTS === 'claude' && vault && credentials) {
       }),
     );
   }
+}
+// Working copies of the build repository: builds, the Content SDK CLI and the Sitecore CLI.
+if (
+  env.AGENTS === 'claude' &&
+  vault &&
+  env.VERCEL_PREVIEWS_TOKEN &&
+  env.VERCEL_PREVIEWS_TEAM_ID &&
+  env.VERCEL_SANDBOX_PROJECT_ID
+) {
+  const provider = new VercelBoxProvider({
+    token: env.VERCEL_PREVIEWS_TOKEN,
+    teamId: env.VERCEL_PREVIEWS_TEAM_ID,
+    projectId: env.VERCEL_SANDBOX_PROJECT_ID,
+  });
+  const workspace = async (id: string) => {
+    const s = await project(id);
+    return s?.buildRepo
+      ? { repo: s.buildRepo.repo, branch: s.buildRepo.branch, appPath: s.buildRepo.appPath }
+      : null;
+  };
+  const credential = async (id: string, credentialId: string) => {
+    const ref = (await project(id))?.credentials[credentialId]?.reference;
+    return ref ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
+  };
+  servers.push(
+    new SandboxToolServer({
+      provider,
+      facts: workspace,
+      // What the build reads (site, language, Context ID); never the editing secret.
+      buildEnv: async (id) => {
+        const s = await project(id);
+        const pack = s?.intake ? platforms.get(s.intake.platform) : undefined;
+        if (!s?.intake || !pack?.headEnv) return {};
+        const { vars } = await pack.headEnv(s.intake.target, 'preview', {
+          credential: (c) => credential(id, c),
+          editingSecret: async () => null,
+        });
+        return Object.fromEntries(vars.map((v) => [v.key, v.value]));
+      },
+    }),
+    new SitecoreCliToolServer({
+      provider,
+      facts: async (id) => {
+        const w = await workspace(id);
+        const s = await project(id);
+        if (!w || s?.intake?.platform !== 'sitecoreai') return null;
+        return {
+          ...w,
+          cmHost: sitecoreTarget(s.intake).cmHost,
+          ownedPaths: ownedPaths(s.intake.target),
+        };
+      },
+      client: async (id) => {
+        const c = await credential(id, 'sitecore-environment');
+        return c?.clientId && c.clientSecret
+          ? { clientId: c.clientId, clientSecret: c.clientSecret }
+          : null;
+      },
+    }),
+  );
 }
 console.log(
   `Connected tool servers: ${servers.map((s) => s.name).join(', ') || 'none'}${vault ? '' : ' (CREDENTIALS_KEY not set: no project credentials)'}`,
