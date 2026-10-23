@@ -3,6 +3,7 @@ import {
   ApproveGate,
   ArchiveProject,
   ChangeSetting,
+  ChangeBrief,
   ChangeSourceSite,
   CreateBuildRepo,
   SetCredential,
@@ -589,6 +590,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
     }
     await deps.intake.createBuildRepo(s, CreateBuildRepo.parse(req.body ?? {}).name);
+    const seq = await store.head(s.projectId);
+    await projections.waitFor(s.projectId, seq);
+    const r: CommandResult = { accepted: true, seq };
+    return r;
+  });
+
+  app.put<P>('/projects/:id/brief', async (req, reply) => {
+    const s = known(req.params.id);
+    if (!deps.intake) {
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    }
+    await deps.intake.setBrief(s, ChangeBrief.parse(req.body).answers);
     const seq = await store.head(s.projectId);
     await projections.waitFor(s.projectId, seq);
     const r: CommandResult = { accepted: true, seq };

@@ -82,6 +82,8 @@ export const ProjectIntake = z.object({
   target: TargetValues.default({}),
   /** Keyed by the platform's credential id; values are that credential's fields. */
   credentials: z.record(z.string().max(60), Secret).default({}),
+  /** Answers to the playbook's brief, by question key ("yes"/"no" for yes-no questions). */
+  brief: z.record(z.string().max(60), z.string().trim().max(2000)).default({}),
 });
 export type ProjectIntake = z.infer<typeof ProjectIntake>;
 export type ProjectIntakeInput = z.input<typeof ProjectIntake>;
@@ -121,6 +123,12 @@ export type ResetProject = z.infer<typeof ResetProject>;
  */
 export const SetCredential = z.object({ secret: Secret });
 export type SetCredential = z.infer<typeof SetCredential>;
+
+/** PUT /projects/:id/brief — answer or revise the brief. Features apply from the next start. */
+export const ChangeBrief = z.object({
+  answers: z.record(z.string().max(60), z.string().trim().max(2000)),
+});
+export type ChangeBrief = z.infer<typeof ChangeBrief>;
 
 /** POST /projects/:id/build-repo — create the build repository (a name overrides the default). */
 export const CreateBuildRepo = z.object({

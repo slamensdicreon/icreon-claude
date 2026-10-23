@@ -95,6 +95,11 @@ const intake = (repo: string): ProjectIntakeInput => ({
     languages: ['en'],
     hostingProject: 'globex-website',
   },
+  brief: {
+    personalization: 'no',
+    accessibility: 'WCAG 2.2 AA',
+    codeExtraction: 'Yes',
+  },
   credentials: {
     'sitecore-environment': { clientId: 'env-id', clientSecret: 'env-secret-value-WXYZ' },
   },

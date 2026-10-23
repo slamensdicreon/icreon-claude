@@ -61,6 +61,44 @@ intake:
       credentials:
         - { id: edge-preview }
         - { id: edge-live }
+  brief:
+    - key: personalization
+      label: Is Sitecore Personalize licensed and in scope?
+      kind: yesno
+      required: true
+      feature: personalization
+      hint: >-
+        Installed packages don't prove a licence. Yes adds a proof page variant and an A/B/n test
+        to phase 7.
+    - key: editorialOperations
+      label: What must editors be able to do?
+      kind: text
+      placeholder: Add, remove and reorder cards; create landing pages; share the header and footer
+    - key: integrations
+      label: Search, forms, commerce, analytics and consent
+      kind: text
+      hint: Which are real integrations, and which only look like them on the source site?
+    - key: rights
+      label: Image and copy rights
+      kind: text
+      hint: Which assets and copy may move, and who approves them?
+    - key: accessibility
+      label: Accessibility target
+      kind: choice
+      options: [WCAG 2.2 AA, WCAG 2.1 AA, Other (see notes)]
+      required: true
+    - key: performance
+      label: Performance budgets
+      kind: text
+      placeholder: LCP under 2.5 s on mobile; under 200 KB of JavaScript per route
+    - key: browsers
+      label: Supported browsers and devices
+      kind: text
+    - key: codeExtraction
+      label: May agents read and reuse the source code?
+      kind: choice
+      options: [Yes, Structure only (no copy or assets from code), No]
+      required: true
 defaults:
   concurrency: 6
   budgets:

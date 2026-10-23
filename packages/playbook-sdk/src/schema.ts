@@ -1,4 +1,4 @@
-import { AgentTier, Charter, MetricKey, Presence, Workstream } from '@lw/contracts';
+import { AgentTier, BriefQuestion, Charter, MetricKey, Presence, Workstream } from '@lw/contracts';
 import { z } from 'zod';
 
 const Kebab = z.string().regex(/^[a-z][a-z0-9-]*$/, 'kebab-case');
@@ -86,6 +86,8 @@ export const IntakeDecl = z.object({
       }),
     )
     .default([]),
+  /** What the client wants beyond access: asked in the wizard, shown to every agent. */
+  brief: z.array(BriefQuestion).default([]),
 });
 export type IntakeDecl = z.infer<typeof IntakeDecl>;
 
@@ -101,7 +103,7 @@ export const PlaybookManifest = z.object({
    * acceptance is judged against.
    */
   charter: Charter,
-  intake: IntakeDecl.default({ source: { repo: 'none', url: 'none' }, steps: [] }),
+  intake: IntakeDecl.default({ source: { repo: 'none', url: 'none' }, steps: [], brief: [] }),
   defaults: z.object({
     concurrency: z.number().int().positive(),
     budgets: z.object({

@@ -52,6 +52,23 @@ export type IntakeCredentialSpec = z.infer<typeof IntakeCredentialSpec>;
 
 export const Presence = z.enum(['required', 'optional', 'none']);
 
+/**
+ * A brief question: what the client wants beyond access (rights, editorial needs, integrations,
+ * budgets). Every agent sees the answers; a `feature` question switches plan tasks on.
+ */
+export const BriefQuestion = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: z.enum(['text', 'yesno', 'choice']),
+  options: z.array(z.string()).default([]),
+  required: z.boolean().default(false),
+  hint: z.string().nullable().default(null),
+  placeholder: z.string().nullable().default(null),
+  /** A yes switches this project feature on (plan templates with `when` need it). */
+  feature: z.string().nullable().default(null),
+});
+export type BriefQuestion = z.infer<typeof BriefQuestion>;
+
 export const IntakeSpec = z.object({
   source: z.object({
     repo: Presence,
@@ -66,6 +83,7 @@ export const IntakeSpec = z.object({
       credentials: z.array(IntakeCredentialSpec),
     }),
   ),
+  brief: z.array(BriefQuestion).default([]),
 });
 export type IntakeSpec = z.infer<typeof IntakeSpec>;
 

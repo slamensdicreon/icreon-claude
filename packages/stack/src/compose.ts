@@ -272,6 +272,11 @@ function projectContext(projections: Projections, platform: PlatformPack): Conte
           ? [`Source repository: ${s.intake.repo} (branch ${s.intake.branch ?? 'main'}).`]
           : []),
         ...(s?.intake ? platform.context(s.intake.target) : []),
+        ...(s?.brief.length
+          ? [
+              `The client's brief (agreed at intake; acceptance is measured against it):\n${s.brief.map((b) => `- ${b.label} ${b.answer}`).join('\n')}`,
+            ]
+          : []),
         s?.buildRepo
           ? `Build repository: ${s.buildRepo.repo}, created from ${s.buildRepo.template}; the site's Next.js app is in ${s.buildRepo.appPath}. Read it with build-repo tools and commit only to launchworks/* branches; never commit to the source repository.`
           : 'Build repository: not created yet.',

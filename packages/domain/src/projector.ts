@@ -89,6 +89,8 @@ export interface ProjectState {
   /** live: a real engagement from the wizard. demo: scripted. */
   mode: 'live' | 'demo';
   intake: IntakeFacts | null;
+  /** The client's brief: answers by question. */
+  brief: { key: string; label: string; answer: string }[];
   /** The playbook (and version) the project was created with; it runs on that one. */
   playbook: { id: string; version: string } | null;
   buildRepo: BuildRepo | null;
@@ -158,6 +160,7 @@ export function createProjectState(projectId: string): ProjectState {
     credentials: {},
     mode: 'live',
     intake: null,
+    brief: [],
     playbook: null,
     buildRepo: null,
     hosting: null,
@@ -216,6 +219,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       s.mode = d.mode;
       s.intake = d.intake ? IntakeFacts.parse(d.intake) : null;
       s.playbook = d.playbook;
+      s.brief = d.brief ?? [];
       for (const p of d.phases) s.phases[p.number] = { ...p, status: 'future', enteredAt: null };
       for (const r of d.roster) s.agents[r.agentId] = newAgent(r);
       if (s.source.label || s.source.url)
@@ -233,6 +237,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (d.stats !== undefined) s.statCards = d.stats;
       if (d.timezone !== undefined) s.timezone = d.timezone;
       if (d.buildRepo !== undefined) s.buildRepo = d.buildRepo;
+      if (d.brief !== undefined) s.brief = d.brief;
       // A URL once known stays until a newer one replaces it.
       if (d.hosting !== undefined)
         s.hosting = { ...d.hosting, url: d.hosting.url ?? s.hosting?.url ?? null };
@@ -691,6 +696,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     demo: s.mode === 'demo',
     intake: s.intake,
     playbook: s.playbook,
+    brief: s.brief,
     buildRepo: s.buildRepo,
     hosting: s.hosting,
   };

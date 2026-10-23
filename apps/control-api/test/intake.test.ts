@@ -51,6 +51,11 @@ const intake = (over: ProjectIntakeInput['credentials'] = {}): ProjectIntakeInpu
     languages: ['en'],
     hostingProject: 'globex-website',
   },
+  brief: {
+    personalization: 'no',
+    accessibility: 'WCAG 2.2 AA',
+    codeExtraction: 'Yes',
+  },
   credentials: {
     'sitecore-environment': { clientId: 'env-id', clientSecret: SECRET },
     'edge-preview': { contextId: 'ctx-preview-1234' },
@@ -231,8 +236,54 @@ describe('New Project wizard', () => {
         sourceUrl: 'https://www.globex.example',
         budgets: { usd: 900, tokens: 6_000_000, hours: 200 },
         playbookId: 'sitecoreai-migration',
+        features: [],
       },
     ]);
+  });
+
+  it('records the brief, refuses a missing answer, and switches features on from it', async () => {
+    const { started } = await start({ orchestrator: true });
+    const missing = await post('/projects', { ...intake(), brief: { personalization: 'yes' } });
+    expect(missing.statusCode).toBe(422);
+    expect(missing.json().error.message).toMatch(/Accessibility target/);
+    const wrong = await post('/projects', {
+      ...intake(),
+      brief: { ...intake().brief, accessibility: 'AAA please' },
+    });
+    expect(wrong.json().error.message).toMatch(/takes one of/);
+
+    const r = await post('/projects', {
+      ...intake(),
+      brief: { ...intake().brief, personalization: 'yes', performance: 'LCP under 2.5 s' },
+    });
+    const { projectId } = r.json() as { projectId: string };
+    const mc = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(mc.project.brief).toContainEqual({
+      key: 'performance',
+      label: 'Performance budgets',
+      answer: 'LCP under 2.5 s',
+    });
+    await post(`/projects/${projectId}/start`);
+    expect(started.at(-1)!.features).toEqual(['personalization']);
+  });
+
+  it('answers the brief after intake, for a project created before it was asked', async () => {
+    const { store } = await start();
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    const put = (answers: object) =>
+      app!.inject({ method: 'PUT', url: `/projects/${projectId}/brief`, payload: { answers } });
+    expect((await put({ personalization: 'maybe' })).statusCode).toBe(422);
+    const ok = await put({ ...intake().brief, rights: 'All photography is licensed' });
+    expect(ok.statusCode).toBe(200);
+    const mc = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(mc.project.brief.find((b) => b.key === 'rights')?.answer).toBe(
+      'All photography is licensed',
+    );
+    expect((await store.read(projectId)).at(-1)).toMatchObject({ type: 'project.updated' });
   });
 
   it('sets the source site after intake, for the crawl and the agents', async () => {

@@ -324,7 +324,11 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
       client: input.client,
       site: { sourceUrl: input.sourceUrl },
       playbook: playbookOf(input.playbookId),
-      policy: { ...defaultPolicy(playbookOf(input.playbookId)), budgets: input.budgets },
+      policy: {
+        ...defaultPolicy(playbookOf(input.playbookId)),
+        budgets: input.budgets,
+        features: input.features,
+      },
       registered: true,
     });
   };

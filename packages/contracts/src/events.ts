@@ -356,6 +356,10 @@ export const EventBody = z.discriminatedUnion('type', [
       toolLabels: z.record(z.string(), z.string()).default({}),
       /** live: a real engagement from the wizard. demo: a scripted project; nothing is built. */
       mode: z.enum(['live', 'demo']).default('live'),
+      /** The brief: the client's answers, by question, with each question's label. */
+      brief: z
+        .array(z.object({ key: z.string(), label: z.string(), answer: z.string() }))
+        .default([]),
       intake: IntakeFacts.nullable().default(null),
     }),
   ),
@@ -371,6 +375,10 @@ export const EventBody = z.discriminatedUnion('type', [
       sourceUrl: z.string().url().nullable().optional(),
       buildRepo: BuildRepo.optional(),
       hosting: HostingState.optional(),
+      /** The brief, answered or revised after intake. */
+      brief: z
+        .array(z.object({ key: z.string(), label: z.string(), answer: z.string() }))
+        .optional(),
     }),
   ),
   ev('project.status', z.object({ status: ProjectStatus })),

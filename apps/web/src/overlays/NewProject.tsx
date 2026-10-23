@@ -62,6 +62,7 @@ export function NewProject() {
   });
   const [target, setTarget] = useState<Record<string, string>>({});
   const [secrets, setSecrets] = useState<Record<string, Record<string, string>>>({});
+  const [brief, setBrief] = useState<Record<string, string>>({});
   const [checks, setChecks] = useState<Record<string, Check>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +91,10 @@ export function NewProject() {
     'Project',
     ...(hasSource ? ['Source'] : []),
     ...steps.map((s) => s.title),
+    ...(pb?.intake.brief.length ? ['Brief'] : []),
     'Review',
   ];
+  const questions = pb?.intake.brief ?? [];
 
   const clear = (key: string) => setChecks((c) => ({ ...c, [key]: { state: 'idle' } }));
   const setBase =
@@ -189,6 +192,7 @@ export function NewProject() {
           c.required ? filled(c) && ok(c.credentialId) : !touched(c) || ok(c.credentialId),
         ),
     ),
+    ...(questions.length ? [questions.every((q) => !q.required || brief[q.key]?.trim())] : []),
     true,
   ];
 
@@ -213,6 +217,11 @@ export function NewProject() {
             c.fields.map((fl) => [fl.key, (secrets[c.credentialId]?.[fl.key] ?? '').trim()]),
           ),
         ]),
+    ),
+    brief: Object.fromEntries(
+      Object.entries(brief)
+        .map(([k, v]) => [k, v.trim()])
+        .filter(([, v]) => v),
     ),
   });
 
@@ -498,6 +507,17 @@ export function NewProject() {
             </dd>
           </>
         )}
+        {questions.some((q) => brief[q.key]?.trim()) && (
+          <>
+            <dt>Brief</dt>
+            <dd>
+              {questions
+                .filter((q) => brief[q.key]?.trim())
+                .map((q) => `${q.label} ${brief[q.key]}`)
+                .join(' · ')}
+            </dd>
+          </>
+        )}
         {source?.repo !== 'none' && f.repo && (
           <>
             <dt>Repository access</dt>
@@ -516,11 +536,54 @@ export function NewProject() {
     </>
   );
 
+  const briefPage = (
+    <>
+      <p>
+        What the client wants beyond access. Every agent works with these answers, and acceptance is
+        measured against them.
+      </p>
+      {questions.map((q) => (
+        <div className="wiz-field" key={q.key}>
+          <label className="eyebrow" htmlFor={`np-brief-${q.key}`}>
+            {q.label}
+            {q.required ? '' : ' (optional)'}
+          </label>
+          {q.kind === 'text' ? (
+            <textarea
+              id={`np-brief-${q.key}`}
+              className="input"
+              rows={2}
+              placeholder={q.placeholder ?? ''}
+              value={brief[q.key] ?? ''}
+              onChange={(e) => setBrief((b) => ({ ...b, [q.key]: e.target.value }))}
+            />
+          ) : (
+            <select
+              id={`np-brief-${q.key}`}
+              className="select"
+              value={brief[q.key] ?? ''}
+              onChange={(e) => setBrief((b) => ({ ...b, [q.key]: e.target.value }))}
+            >
+              <option value="">Choose…</option>
+              {(q.kind === 'yesno' ? ['yes', 'no'] : q.options).map((o) => (
+                <option key={o} value={o}>
+                  {q.kind === 'yesno' ? (o === 'yes' ? 'Yes' : 'No') : o}
+                </option>
+              ))}
+            </select>
+          )}
+          {q.hint && <span className="wiz-hint">{q.hint}</span>}
+        </div>
+      ))}
+    </>
+  );
+
   const pages = [
     pickPage,
     projectPage,
     ...(hasSource ? [sourcePage] : []),
     ...stepPages,
+    ...(questions.length ? [briefPage] : []),
     reviewPage,
   ];
   const last = TITLES.length - 1;

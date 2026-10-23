@@ -30,6 +30,8 @@ export interface StartInput {
   budgets: ProjectState['budgets'];
   /** The playbook the project was created with. */
   playbookId: string;
+  /** Features the brief switched on (e.g. personalization). */
+  features: string[];
 }
 
 export interface IntakeDeps {
@@ -100,6 +102,15 @@ export class IntakeService {
       );
     }
     return { entry, pack, spec: intakeSpec(entry.playbook, pack) };
+  }
+
+  /** Features the brief switched on: a yes to a question that names one. */
+  private featuresOf(s: ProjectState): string[] {
+    if (!s.playbook || !this.deps.catalog.has(s.playbook.id)) return [];
+    const questions = this.resolve(s.playbook.id).spec.brief;
+    return questions
+      .filter((q) => q.feature && s.brief.find((b) => b.key === q.key)?.answer === 'yes')
+      .map((q) => q.feature!);
   }
 
   /** The platform pack a project runs on, from its intake. */
@@ -175,6 +186,7 @@ export class IntakeService {
       throw new CommandError(422, 'invalid', 'The source repository is required.');
     if (spec.source.url === 'required' && !url)
       throw new CommandError(422, 'invalid', 'The live site is required.');
+    const brief = briefOf(spec, intake.brief);
     let target: TargetValues;
     try {
       target = pack.normalize(validateTarget(spec, intake.target));
@@ -254,6 +266,7 @@ export class IntakeService {
           phases: phaseDefs(playbook),
           roster: roster(playbook),
           site: { sourceUrl: url },
+          brief,
           subtitle: repo ? `${repo} to ${pack.name}` : `${playbook.manifest.name}`,
           timezone: intake.timezone,
           source: { repo, url, framework: null, label: null },
@@ -324,6 +337,7 @@ export class IntakeService {
       sourceUrl: s.sourceUrl,
       budgets: s.budgets,
       playbookId: s.playbook?.id ?? 'sitecoreai-migration',
+      features: this.featuresOf(s),
     });
   }
 
@@ -484,6 +498,26 @@ export class IntakeService {
     ]);
   }
 
+  /**
+   * Answers or revises the brief. Agents read it from their next task; features it switches on
+   * (personalization) shape the plan from the next start.
+   */
+  async setBrief(s: ProjectState, answers: Record<string, string>): Promise<void> {
+    if (s.mode !== 'live' || !s.playbook) {
+      throw new CommandError(409, 'not_live', 'Only real projects have a brief.');
+    }
+    const brief = briefOf(this.resolve(s.playbook.id).spec, answers);
+    await this.deps.store.append(s.projectId, [
+      {
+        type: 'project.updated',
+        actor: { kind: 'director', id: 'director' },
+        subject: { kind: 'project', id: s.projectId },
+        severity: 'notable',
+        data: { brief },
+      },
+    ]);
+  }
+
   /** Re-checks a stored credential of a live project and records the outcome. */
   async reverify(s: ProjectState, credentialId: string): Promise<void> {
     const c = s.credentials[credentialId];
@@ -520,3 +554,25 @@ export class IntakeService {
 }
 
 const tail = (v: string) => (v.length > 8 ? v.slice(-4) : null);
+
+/** The brief as recorded: the playbook's questions only, required ones answered, choices valid. */
+function briefOf(
+  spec: IntakeSpec,
+  answers: Record<string, string>,
+): { key: string; label: string; answer: string }[] {
+  const out: { key: string; label: string; answer: string }[] = [];
+  for (const q of spec.brief) {
+    const answer = (answers[q.key] ?? '').trim();
+    if (!answer) {
+      if (q.required)
+        throw new CommandError(422, 'invalid', `The brief needs an answer to "${q.label}".`);
+      continue;
+    }
+    if (q.kind === 'yesno' && answer !== 'yes' && answer !== 'no')
+      throw new CommandError(422, 'invalid', `"${q.label}" takes yes or no.`);
+    if (q.kind === 'choice' && !q.options.includes(answer))
+      throw new CommandError(422, 'invalid', `"${q.label}" takes one of: ${q.options.join(', ')}.`);
+    out.push({ key: q.key, label: q.label, answer });
+  }
+  return out;
+}

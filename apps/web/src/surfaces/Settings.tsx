@@ -88,6 +88,12 @@ export function Settings() {
         {!p.demo && p.playbook && (
           <PlaybookPanel id={p.playbook.id} version={p.playbook.version} list={playbooks} />
         )}
+        {!p.demo && p.playbook && (
+          <BriefPanel
+            current={p.brief}
+            questions={playbooks?.find((x) => x.id === p.playbook?.id)?.intake.brief ?? []}
+          />
+        )}
         {!p.demo && p.intake?.repo && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}
         <section className="panel">
           <h2>
@@ -468,6 +474,108 @@ function PlaybookPanel({
             </p>
           )}
         </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The client's brief: what the team works to beyond access. Answered at intake, or here for a
+ * project created before its playbook asked; agents read it from their next task.
+ */
+function BriefPanel({
+  current,
+  questions,
+}: {
+  current: ProjectSummary['brief'];
+  questions: PlaybookSummary['intake']['brief'];
+}) {
+  const { projectId, run } = useApp();
+  const [editing, setEditing] = useState(false);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  if (!questions.length && !current.length) return null;
+  const open = () => {
+    setAnswers(Object.fromEntries(current.map((b) => [b.key, b.answer])));
+    setEditing(true);
+  };
+  const ready = questions.every((q) => !q.required || answers[q.key]?.trim());
+  return (
+    <section className="panel brief">
+      <h2>Brief</h2>
+      <p className="muted">
+        What the client wants beyond access. Every agent works with it, and acceptance is measured
+        against it.
+      </p>
+      {!editing ? (
+        <>
+          {current.length ? (
+            <dl className="contract">
+              {current.map((b) => (
+                <Fragment key={b.key}>
+                  <dt>{b.label}</dt>
+                  <dd>{b.answer}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          ) : (
+            <p className="cred-miss">Not answered yet.</p>
+          )}
+          {questions.length > 0 && (
+            <button className="btn sm" onClick={open}>
+              {current.length ? 'Edit the brief' : 'Answer the brief'}
+            </button>
+          )}
+        </>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!ready) return;
+            void run(() => put(`/projects/${projectId}/brief`, { answers }), 'Brief saved.').then(
+              (ok) => ok && setEditing(false),
+            );
+          }}
+        >
+          {questions.map((q) => (
+            <label key={q.key} className="cred-field" style={{ marginBottom: 10 }}>
+              <span className="eyebrow">
+                {q.label}
+                {q.required ? '' : ' (optional)'}
+              </span>
+              {q.kind === 'text' ? (
+                <textarea
+                  className="input"
+                  rows={2}
+                  placeholder={q.placeholder ?? ''}
+                  value={answers[q.key] ?? ''}
+                  onChange={(e) => setAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
+                />
+              ) : (
+                <select
+                  className="select"
+                  value={answers[q.key] ?? ''}
+                  onChange={(e) => setAnswers((a) => ({ ...a, [q.key]: e.target.value }))}
+                >
+                  <option value="">Choose…</option>
+                  {(q.kind === 'yesno' ? ['yes', 'no'] : q.options).map((o) => (
+                    <option key={o} value={o}>
+                      {q.kind === 'yesno' ? (o === 'yes' ? 'Yes' : 'No') : o}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {q.hint && <span className="wiz-hint">{q.hint}</span>}
+            </label>
+          ))}
+          <div className="btn-row">
+            <button className="btn sm primary" type="submit" disabled={!ready}>
+              Save the brief
+            </button>
+            <button className="btn sm" type="button" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
     </section>
   );
