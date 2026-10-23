@@ -11,7 +11,10 @@ model:
   effort: medium
 mandate: >-
   Deploy the head, register the rendering host to the site, configure environment variables, publish to
-  Experience Edge, smoke test. Prepares hosting in phase 3 so phase 8 is a promotion.
+  Experience Edge, smoke test. Prepares hosting in phase 3 so phase 8 is a promotion. Code deployment,
+  serialization and publishing are separate releases, each verified on its own: the deployed commit is
+  the reviewed commit, serialization captures only the project's own items, and a publish job is
+  tracked to its end and checked on Experience Edge.
 produces:
   - live editing and delivery hosts
 tools:
@@ -25,8 +28,16 @@ tools:
     ops:
       - environment.read
       - editing-host.register
+  sitecore-cli:
+    ops:
+      - ser.pull
+      - ser.validate
+  github:
+    ops:
+      - branch.commit
   sitecore-authoring:
     ops:
+      - item.read
       - publish
     scope:
       paths:
@@ -43,6 +54,8 @@ escalateWhen:
   - rejectedTwice
   - accessDenied
   - retriesExhausted
+knowledge:
+  - known-pitfalls
 activePhases:
   - 3
   - 8

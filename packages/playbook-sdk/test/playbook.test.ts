@@ -42,16 +42,32 @@ describe('role prompts', () => {
   it('loads one per prompted role, naming the artifacts later roles depend on', async () => {
     const pb = await loadPlaybook(DIR);
     const prompts = await loadRolePrompts(DIR, pb);
+    // Prompted roles, and roles that consult a knowledge document (known pitfalls, the DoD).
     expect(Object.keys(prompts).sort()).toEqual([
+      'component-engineer',
       'content-analyst',
+      'content-migrator',
+      'deployment-engineer',
+      'editor-experience-qa',
+      'experience-enabler',
       'handover-writer',
+      'head-integrator',
+      'layout-engineer',
+      'media-migrator',
       'perf-a11y-qa',
+      'quality-lead',
+      'rendering-registrar',
       'repo-analyst',
       'research-agent',
       'solution-architect',
       'tenant-provisioner',
       'visual-qa',
     ]);
+    expect(prompts['tenant-provisioner']).toMatch(
+      /own folders[\s\S]*Reference: known SitecoreAI pitfalls/,
+    );
+    expect(prompts['editor-experience-qa']).toContain('Reference: Definition of Done');
+    expect(prompts['content-analyst']).not.toContain('Reference:');
     expect(prompts['repo-analyst']).toContain('`repo-inventory`');
     expect(prompts['research-agent']).toContain('`platform-notes`');
     expect(prompts['solution-architect']).toContain('`repo-inventory`');
@@ -59,6 +75,15 @@ describe('role prompts', () => {
     expect(prompts['content-analyst']).toContain('`parity-inventory`');
     expect(prompts['solution-architect']).toContain('`page-inventory`');
     expect(prompts['handover-writer']).toContain('`handover-pack`');
+  });
+
+  it('refuses a knowledge document that does not exist', async () => {
+    const pb = await loadPlaybook(DIR);
+    const dir = await mkdtemp(join(tmpdir(), 'lw-pb-'));
+    await mkdir(join(dir, 'prompts'));
+    await expect(loadRolePrompts(dir, pb)).rejects.toThrow(
+      'knowledge/known-pitfalls.md does not exist',
+    );
   });
 
   it('refuses a prompt for a role the playbook does not have', async () => {

@@ -28,5 +28,7 @@ acceptance:
 escalateWhen:
   - decisionNeeded
   - rejectedTwice
+knowledge:
+  - known-pitfalls
 activePhases:
   - 2

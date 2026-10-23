@@ -32,7 +32,6 @@ tools:
   sitecore-cli:
     ops:
       - ser.pull
-      - ser.push
       - ser.validate
   github:
     ops:
@@ -48,5 +47,7 @@ escalateWhen:
 budget:
   tokens: 400000
   wallclock: 30m
+knowledge:
+  - known-pitfalls
 activePhases:
   - 4

@@ -276,6 +276,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         additionalProperties: false,
       },
       mutates: true,
+      releases: true,
       pathArgs: ['paths'],
     },
     'site.create': {

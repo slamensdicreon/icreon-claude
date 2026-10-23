@@ -17,5 +17,7 @@ tools:
     ops:
       - lighthouse.run
       - axe.run
+knowledge:
+  - definition-of-done
 activePhases:
   - 9

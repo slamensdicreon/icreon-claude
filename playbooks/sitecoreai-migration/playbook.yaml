@@ -1,6 +1,6 @@
 # Sitecore playbook manifest: phases, gates and defaults. Roles live in roles/*.yaml.
 id: sitecoreai-migration
-version: 0.1.0
+version: 0.2.0
 name: SitecoreAI replatform
 description: >-
   Takes a Next.js repository and SitecoreAI tenant credentials and delivers a Content SDK site, structured
@@ -59,7 +59,8 @@ phases:
     shortName: Intake
     exitCriteria: >-
       Every credential verified against its endpoint (GitHub clone, Authoring & Management API, Deploy API,
-      Experience Edge, hosting); tenant facts recorded.
+      Experience Edge, hosting); tenant facts recorded; the paths the project owns are fixed, and other
+      sites sharing the collection are left alone.
   - number: 1
     name: Discovery and analysis
     shortName: Discovery
@@ -73,21 +74,27 @@ phases:
     gateLabel: 'Gate 1: Director approves the Blueprint'
     exitCriteria: >-
       Every source component mapped to a rendering (or merged, split, dropped), every page to a template;
-      naming and folder scheme fixed; open decisions listed.
+      the model contract approved: exact rendering names, field names and types, child templates with
+      their limits, datasource locations, shared or per-page content, and the query budget each
+      component must fit; naming and folder scheme fixed; open decisions listed.
   - number: 3
     name: Foundation
     shortName: Foundation
     exitCriteria: >-
-      Site collection, site, languages, grid and module folders exist; hosting project and env vars exist;
-      an empty page renders on the editing host; zero critical findings.
+      Site, languages and the project's own folders exist; design tokens and shared primitives extracted
+      from the source; hosting project and env vars exist; the rendering host key is identical in
+      xmcloud.build.json and the host record; an empty page renders on the editing host; zero critical
+      findings.
   - number: 4
     name: Component build and registration
     shortName: Components
     optionalGates:
       - pilot-slice-review
     exitCriteria: >-
-      Pilot slice first (three components, one page), then 100% of Blueprint components ported, registered
-      and enabled in Page builder on the preview editing host.
+      Pilot slice proven end to end first: its components ported and registered, a page composed, a
+      scoped publish tracked to completion, the layout read back from Experience Edge, and a real Page
+      builder edit (including a new page whose datasource is its own). Then 100% of Blueprint components
+      ported, registered and enabled in Page builder on the preview editing host.
   - number: 5
     name: Templates, layouts, and designs
     shortName: Templates
@@ -110,21 +117,24 @@ phases:
     shortName: Experience
     exitCriteria: >-
       Components datasource-driven; redirects, SEO fields, sitemap, robots, 404/500, dictionary in place;
-      one page variant and one A/B/n test resolve on the preview host.
+      when the brief confirms Personalize is licensed, one page variant and one A/B/n test resolve on
+      the preview host.
   - number: 8
     name: Deployment and publishing
     shortName: Deployment
     exitCriteria: >-
-      Production editing host registered; delivery host live; content published to Experience Edge; smoke
-      test green.
+      Three releases, each verified on its own: the deployed commit is the reviewed commit on the
+      registered editing and delivery hosts; serialization of the project's own items replays cleanly;
+      the publish job finished and every route resolves on Experience Edge. Smoke test green.
   - number: 9
     name: Validation and acceptance
     shortName: Acceptance
     gate: director
     gateLabel: 'Gate 2: Director accepts'
     exitCriteria: >-
-      Acceptance Report compiled against the Definition of Done; every open defect triaged as fix, accept
-      or defer.
+      Acceptance Report compiled against the Definition of Done, with evidence for every row and
+      budgets measured against the brief (a missing test is pending, not passed); every open defect
+      triaged as fix, accept or defer.
   - number: 10
     name: Handover
     shortName: Handover

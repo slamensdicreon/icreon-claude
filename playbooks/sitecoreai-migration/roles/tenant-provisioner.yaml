@@ -49,6 +49,8 @@ escalateWhen:
   - rejectedTwice
   - accessDenied
   - retriesExhausted
+knowledge:
+  - known-pitfalls
 activePhases:
   - 0
   - 3

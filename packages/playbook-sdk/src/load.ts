@@ -40,7 +40,8 @@ export async function loadPlaybook(dir: string): Promise<Playbook> {
 }
 
 /**
- * Role prompts from `prompts/<role>.md`: how a role does its work, on top of its mandate. Loaded
+ * Role prompts from `prompts/<role>.md`: how a role does its work, on top of its mandate, followed
+ * by the `knowledge/<id>.md` documents the role lists. Loaded
  * apart from the playbook because the playbook travels as workflow input and prompts don't need
  * to. A role without a file runs on its mandate alone.
  */
@@ -62,5 +63,23 @@ export async function loadRolePrompts(
   const prompts: Record<string, string> = {};
   for (const f of files)
     prompts[f.slice(0, -3)] = (await readFile(join(dir, 'prompts', f), 'utf8')).trim();
+
+  // Reference documents a role consults (known pitfalls, the Definition of Done) follow its prompt.
+  const knowledge = new Map<string, string>();
+  const missing: string[] = [];
+  for (const r of playbook.roles) {
+    for (const k of r.knowledge) {
+      if (!knowledge.has(k)) {
+        try {
+          knowledge.set(k, (await readFile(join(dir, 'knowledge', `${k}.md`), 'utf8')).trim());
+        } catch {
+          missing.push(`roles/${r.role}.yaml: knowledge/${k}.md does not exist`);
+          continue;
+        }
+      }
+      prompts[r.role] = [prompts[r.role], knowledge.get(k)].filter(Boolean).join('\n\n');
+    }
+  }
+  if (missing.length) throw new PlaybookError(missing);
   return prompts;
 }

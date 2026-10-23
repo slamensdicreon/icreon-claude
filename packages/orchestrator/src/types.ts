@@ -10,6 +10,11 @@ export interface ProjectPolicy {
   budgets: Budgets;
   /** Optional gates switched on in Settings, e.g. `pilot-slice-review`. */
   enabledGates: string[];
+  /**
+   * Features the brief confirms (e.g. `personalization`). Plan templates with `when` need one;
+   * none are assumed, because installed packages don't prove a product is licensed.
+   */
+  features?: string[];
   /** Default-action deadline per escalation type, in ms. Missing type = waits for the Director. */
   escalationDeadlinesMs: Partial<Record<EscalationType, number>>;
   /** Stop window after a directive acknowledgement. Spec: 30 s. */

@@ -28,7 +28,6 @@ tools:
   sitecore-cli:
     ops:
       - ser.pull
-      - ser.push
       - ser.validate
   github:
     ops:
@@ -39,5 +38,7 @@ escalateWhen:
   - rejectedTwice
   - accessDenied
   - retriesExhausted
+knowledge:
+  - known-pitfalls
 activePhases:
   - 5

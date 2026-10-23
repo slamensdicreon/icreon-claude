@@ -43,6 +43,8 @@ export interface Plan {
 export interface CompileOptions {
   /** Optional gates the Director switched on in Settings (e.g. `pilot-slice-review`). */
   enabledGates?: string[];
+  /** Project features from the brief (e.g. `personalization`); templates with `when` need one. */
+  features?: string[];
 }
 
 export class PlanError extends Error {
@@ -70,7 +72,12 @@ export function compilePlan(
 
   // 1. Expand templates.
   const expanded = new Map<string, { template: TaskTemplate; key: string | null }>();
+  const skipped = new Set<string>();
   for (const template of playbook.plan.templates) {
+    if (template.when && !options.features?.includes(template.when)) {
+      skipped.add(template.id.replace(/\{key\}.*$/, ''));
+      continue;
+    }
     const workstream = roles.get(template.role)?.workstream ?? null;
     for (const unit of expand(template, blueprint, problems)) {
       if (expanded.has(unit.taskId)) {
@@ -164,6 +171,8 @@ export function compilePlan(
         }
       } else if (byId.has(bound)) {
         deps.add(bound);
+      } else if ([...skipped].some((s) => bound.startsWith(s))) {
+        // The project doesn't have the feature that template needs.
       } else {
         problems.push(`${t.taskId} depends on unknown task ${bound}`);
       }
@@ -176,9 +185,13 @@ export function compilePlan(
     const inPilotPhase = tasks.filter(
       (t) => t.phase === pilot.phase && t.collection === pilot.collection && t.kind === 'work',
     );
-    checkpoint.dependsOn = inPilotPhase
+    const pilotTasks = inPilotPhase
       .filter((t) => t.itemKeys.every((k) => pilotKeys.has(k)))
       .map((t) => t.taskId);
+    // End-to-end proof of the slice: waits on the pilot work, and the checkpoint waits on it.
+    const verify = tasks.filter((t) => pilot.verify.includes(t.templateId));
+    for (const v of verify) v.dependsOn = [...new Set([...v.dependsOn, ...pilotTasks])];
+    checkpoint.dependsOn = [...pilotTasks, ...verify.map((v) => v.taskId)];
     for (const t of inPilotPhase) {
       const key = t.itemKeys[0]!;
       // Non-pilot work waits on the checkpoint. A task that already waits on another task for the

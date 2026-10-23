@@ -6,6 +6,8 @@ pilot:
   phase: 4
   collection: components
   optionalGate: pilot-slice-review
+  # The rest of the build waits until the slice is proven through publishing and Page builder.
+  verify: [prove-pilot-slice]
 
 templates:
   # 0 — Intake and access verification
@@ -42,6 +44,10 @@ templates:
     phase: 3
     role: tenant-provisioner
     title: Create site collection, site, languages and module folders
+  - id: design-system
+    phase: 3
+    role: component-engineer
+    title: Extract the design system (tokens, type, spacing, primitives)
   - id: prepare-hosting
     phase: 3
     role: deployment-engineer
@@ -58,6 +64,7 @@ templates:
     role: component-engineer
     forEach: components
     title: Port {name} to Content SDK
+    dependsOn: [design-system]
     acceptance: [validator:build.green, validator:component-map.registered]
   - id: register-{key}
     phase: 4
@@ -71,7 +78,18 @@ templates:
     phase: 4
     role: head-integrator
     title: Configure the head as the editing host
-    dependsOn: [port-*]
+    dependsOn: [prepare-hosting]
+  - id: prove-pilot-slice
+    phase: 4
+    role: editor-experience-qa
+    title: Prove the pilot slice end to end (publish, Experience Edge, Page builder)
+    dependsOn: [integrate-head]
+    acceptance:
+      [
+        validator:edge.published,
+        validator:editor.component-enabled,
+        validator:editor.new-datasource,
+      ]
   - id: validate-components
     phase: 4
     role: structural-validator
@@ -129,23 +147,42 @@ templates:
   - id: enable-experience
     phase: 7
     role: experience-enabler
-    title: Redirects, SEO, sitemap, error pages, proof variant and A/B/n test
+    title: Redirects, SEO, sitemap, robots, error pages and dictionary
+  - id: prove-personalization
+    phase: 7
+    role: experience-enabler
+    when: personalization
+    title: Proof page variant and A/B/n test
+    dependsOn: [enable-experience]
 
   # 8 — Deployment and publishing
   - id: finalize-head
     phase: 8
     role: head-integrator
     title: Finalize production configuration
-  - id: deploy-production
+  # Three separate releases: success in one proves nothing about the others.
+  - id: deploy-code
     phase: 8
     role: deployment-engineer
-    title: Promote to production and publish to Experience Edge
+    title: Deploy the reviewed commit to the editing and delivery hosts
     dependsOn: [finalize-head]
+    acceptance: [validator:deploy.commit-matches, validator:editing-host.responds]
+  - id: serialize-items
+    phase: 8
+    role: deployment-engineer
+    title: Serialize the project's own items into the build repository
+    acceptance: [validator:serialization.replays]
+  - id: publish-edge
+    phase: 8
+    role: deployment-engineer
+    title: Publish to Experience Edge and verify every route
+    dependsOn: [deploy-code]
+    acceptance: [validator:edge.published, validator:routes.resolve]
   - id: smoke-test
     phase: 8
     role: editor-experience-qa
     title: Smoke test Page builder on production
-    dependsOn: [deploy-production]
+    dependsOn: [deploy-code, serialize-items, publish-edge]
 
   # 9 — Validation and acceptance
   - id: final-conformance
@@ -155,7 +192,7 @@ templates:
   - id: editor-checklist
     phase: 9
     role: editor-experience-qa
-    title: Run the Definition of Done checklist in Page builder
+    title: Run the Definition of Done in Page builder and on the delivery host
   - id: lighthouse
     phase: 9
     role: perf-a11y-qa

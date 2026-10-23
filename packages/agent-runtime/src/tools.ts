@@ -70,7 +70,14 @@ export function toolsFor(role: string, gateway: ToolGateway): ToolSet {
     route.set(name, { server, op });
     tools.push({
       name,
-      description: spec.description ?? `${op} on ${server}.`,
+      description: [
+        spec.releases
+          ? 'Release-affecting: call it only when your task is to release, and state in your result what was released and how to roll it back.'
+          : '',
+        spec.description ?? `${op} on ${server}.`,
+      ]
+        .filter(Boolean)
+        .join(' '),
       input_schema: (spec.inputSchema as BetaTool['input_schema']) ?? {
         type: 'object',
         additionalProperties: true,

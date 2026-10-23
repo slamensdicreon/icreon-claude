@@ -10,8 +10,11 @@ model:
   id: claude-sonnet-5-5
   effort: medium
 mandate: >-
-  Drive Page builder as a marketer: component enabled, drag and drop, inline edit, save, publish, page
-  variant, A/B/n test. Record video evidence.
+  Drive Page builder as a marketer: component enabled, drag and drop, inline edit, save, publish; add a
+  component to a new page and check its datasource is its own and has useful starter content; empty
+  states; page variant and A/B/n test when the brief includes personalization. Record video evidence.
+  Prove the pilot slice end to end before the rest is built, and judge acceptance against the
+  Definition of Done.
 produces:
   - editor QA pass or defect list
 tools:
@@ -19,6 +22,14 @@ tools:
     ops:
       - page-builder.drive
       - video.record
+  sitecore-authoring:
+    ops:
+      - site.list
+      - item.read
+knowledge:
+  - known-pitfalls
+  - definition-of-done
 activePhases:
+  - 4
   - 8
   - 9

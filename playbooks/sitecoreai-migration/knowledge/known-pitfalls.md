@@ -1,0 +1,38 @@
+## Reference: known SitecoreAI pitfalls
+
+Observed on an earlier SitecoreAI build (the BLDR / New Brand site). They are observations, not
+platform guarantees: if your evidence says otherwise, trust the evidence and say so in your result.
+
+Working rules:
+
+- A successful call means the change was **executed**, not that it is **verified**. Read the item,
+  layout or route back and compare it with what you intended before you report done.
+- After a timeout or an unclear failure on a write, read back first: a create that timed out may have
+  succeeded. Never retry a write before you know its state. Don't retry authorization, schema or
+  scope failures at all.
+- Find existing items by path and template before you create anything. Preserve fields you don't own.
+- Publishing and deploys are tracked jobs: record the job id, wait for its final status, then check
+  the result on Experience Edge or the host.
+
+| Symptom                                                            | Likely cause                                                                                          | What to do                                                                                                                                                             |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A page exists and publishes, but its URL is a 404                  | The page is a sibling of Home, not under the site's start item                                        | Create routes beneath Home. Test the route through the layout query, not just the item                                                                                 |
+| A component is on the page but its datasource doesn't resolve      | Non-canonical datasource ID                                                                           | Use canonical, hyphenated, braced GUIDs in presentation. Check `isContentResolved` after publishing                                                                    |
+| Publish errors or an empty rendered component                      | Hand-written presentation XML missing attributes                                                      | Write full `id`, `ph`, `uid`, `ds`, device `id` and layout `l` attributes; read the saved presentation back                                                            |
+| Header or footer missing although the partial design exists        | Missing partial-design signature, site-level placeholder setting, or unpublished rendering definition | Trace wrapper → placeholder → rendering definition → datasource. Publish the rendering definitions explicitly: publishing related items doesn't reliably include them  |
+| A page or partial design lacks expected fields                     | Created from a generated folder template                                                              | Use the real design-item template; check inheritance and insert options first                                                                                          |
+| Some sections render blank with no error                           | Edge GraphQL query complexity limit                                                                   | Check the GraphQL `errors`, not only HTTP 200. Use `fields(ownFields: true) { name jsonValue }` on wide items. Keep each component inside the Blueprint's query budget |
+| Nested navigation fails as it grows                                | Children × grandchildren × fields cost                                                                | Bound collections (the earlier build held 4 groups × 5 links) and tell editors the limit                                                                               |
+| A newly added component shows "No Text in Field"                   | Blank own values on the branch root override standard values                                          | Populate the branch `$name` root as well as standard values; test with a genuinely new datasource                                                                      |
+| Updating a field says the language version is missing              | The item has no version in that language                                                              | Add the version through the API (with approval) before updating; never invent versions across languages                                                                |
+| Media disappears after a clean sync                                | Media outside the module's includes, or no blob in serialization                                      | Keep media under the project's media folder and check the serialized payload, not just the reference                                                                   |
+| A template field deletion fails, or succeeds but the field remains | Inconsistent field deletion                                                                           | Re-read after each attempt and stop; report the stale field rather than looping                                                                                        |
+| A component vanishes after a build                                 | The generated component map was hand-edited, or names differ                                          | Fix the source export and regenerate with the Content SDK CLI; the map key must equal the rendering's `componentName`                                                  |
+| The wrong language or site resolves                                | Proxy order or multisite config                                                                       | Keep the locale proxy before the multisite proxy; test routes in each language, not only `/`                                                                           |
+| The editing host can't find a workspace package                    | Build context excludes sibling packages                                                               | Build from the repository root with filtered scripts; keep the lockfile and package manager pinned                                                                     |
+| The editing host stays broken after reconnecting                   | Wrong host key, or only one of the two targets reconnected                                            | The rendering host key must be identical in `xmcloud.build.json` and the host record. Never create a suffixed duplicate host                                           |
+| Preview content says "No sitecore context"                         | Wrong context or header spelling                                                                      | Confirm the preview context is the intended one; direct queries use `sitecoreContextId` (camelCase)                                                                    |
+| A menu opens then immediately closes                               | Focus and click handlers racing                                                                       | Review them together; test mouse, keyboard, Escape and editor-chrome focus                                                                                             |
+
+Never: reset or clear a tenant or Experience Edge to recover one component; push serialization
+into a shared collection; change items outside the project's own paths.

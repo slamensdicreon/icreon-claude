@@ -10,7 +10,8 @@ model:
   id: claude-sonnet-5-5
   effort: medium
 mandate: >-
-  Port each React component to Content SDK conventions: field components for inline editing, rendering
+  Extract the source's design system first (tokens, type scale, spacing, breakpoints, shared
+  primitives) so every component builds on it. Then port each React component to Content SDK conventions: field components for inline editing, rendering
   parameters, placeholders, Default plus named variants, props types, styles; register in the component
   map; keep the build green.
 produces:
@@ -37,5 +38,8 @@ escalateWhen:
 budget:
   tokens: 600000
   wallclock: 45m
+knowledge:
+  - known-pitfalls
 activePhases:
+  - 3
   - 4

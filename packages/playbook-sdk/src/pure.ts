@@ -92,6 +92,12 @@ export function validatePlaybook({ manifest, roles, plan }: Playbook): string[] 
         `plan: pilot gate ${plan.pilot.optionalGate} is not an optional gate of phase ${plan.pilot.phase}`,
       );
     }
+    for (const id of plan.pilot.verify) {
+      const t = plan.templates.find((x) => x.id === id);
+      if (!t) problems.push(`plan: pilot verify template ${id} does not exist`);
+      else if (t.forEach || t.phase !== plan.pilot.phase)
+        problems.push(`plan: pilot verify template ${id} must be a single task in the pilot phase`);
+    }
   }
   return problems;
 }

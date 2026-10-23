@@ -32,6 +32,8 @@ export const RoleDef = z.object({
   mandate: z.string(),
   produces: z.array(z.string()).default([]),
   skills: z.array(Kebab).default([]),
+  /** Reference documents from the playbook's `knowledge/` folder, appended to the role's prompt. */
+  knowledge: z.array(Kebab).default([]),
   tools: z.record(Kebab, ToolGrant).default({}),
   acceptance: z.array(z.string()).default([]),
   escalateWhen: z.array(z.string()).default([]),
@@ -106,6 +108,11 @@ export const TaskTemplate = z.object({
   phase: z.number().int().min(0),
   role: Kebab,
   title: z.string(),
+  /**
+   * A project feature the template needs (e.g. `personalization`). Without that feature the
+   * template yields no task, and dependencies on it are dropped.
+   */
+  when: Kebab.optional(),
   /** Name of a Blueprint collection. Without it the template yields exactly one task. */
   forEach: Kebab.optional(),
   /**
@@ -146,7 +153,16 @@ export const PlanSpec = z.object({
    * Director gate.
    */
   pilot: z
-    .object({ phase: z.number().int(), collection: Kebab, optionalGate: z.string().optional() })
+    .object({
+      phase: z.number().int(),
+      collection: Kebab,
+      optionalGate: z.string().optional(),
+      /**
+       * Templates (single-task, in the pilot phase) that prove the pilot slice end to end. They
+       * wait on every pilot task, and the checkpoint waits on them.
+       */
+      verify: z.array(Kebab).default([]),
+    })
     .optional(),
 });
 export type PlanSpec = z.infer<typeof PlanSpec>;

@@ -97,7 +97,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   );
 
   let blueprint: Blueprint | null = null;
-  let plan: Plan = compilePlan(playbook, null, { enabledGates: policy.enabledGates });
+  let plan: Plan = compilePlan(playbook, null, {
+    enabledGates: policy.enabledGates,
+    features: policy.features,
+  });
   const states: Record<string, TaskState> = {};
   const attempts: Record<string, number> = {};
   const instructions: Record<string, string | null> = {};
@@ -875,7 +878,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** First gate approved: the Blueprint expands the plan's placeholders into real tasks. */
   async function adoptBlueprint() {
     const next = await acts.loadBlueprint(projectId);
-    const newPlan = compilePlan(playbook, next, { enabledGates: policy.enabledGates });
+    const newPlan = compilePlan(playbook, next, {
+      enabledGates: policy.enabledGates,
+      features: policy.features,
+    });
     await applyPlan(newPlan, next, `blueprint-v${next.version}`);
     await send(...metricEvents());
   }
@@ -1024,7 +1030,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       return;
     }
     const nextBlueprint: Blueprint = { ...reading.blueprint, version: blueprint.version + 1 };
-    const newPlan = compilePlan(playbook, nextBlueprint, { enabledGates: policy.enabledGates });
+    const newPlan = compilePlan(playbook, nextBlueprint, {
+      enabledGates: policy.enabledGates,
+      features: policy.features,
+    });
     const impact: Impact = impactOf(
       diffPlans(plan, newPlan),
       states,

@@ -22,4 +22,6 @@ tools:
   blackboard:
     ops:
       - read
+knowledge:
+  - definition-of-done
 activePhases: all

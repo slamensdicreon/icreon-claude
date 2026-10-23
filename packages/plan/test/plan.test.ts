@@ -132,13 +132,28 @@ describe('compilePlan', () => {
         'register-hero',
         'register-promo-card',
         'register-rich-text',
+        'prove-pilot-slice',
       ].sort(),
     );
-    expect(byId.get('port-tabs')!.dependsOn).toEqual([PILOT_CHECKPOINT]);
+    expect(byId.get('port-tabs')!.dependsOn).toEqual(['design-system', PILOT_CHECKPOINT]);
     expect(byId.get('register-tabs')!.dependsOn).toEqual(['port-tabs']);
-    expect(byId.get('port-hero')!.dependsOn).toEqual([]);
+    expect(byId.get('port-hero')!.dependsOn).toEqual(['design-system']);
+    // The end-to-end proof waits on the editing host and every pilot task, not on the rest.
+    expect(byId.get('prove-pilot-slice')!.dependsOn.sort()).toEqual(
+      ['integrate-head', ...[...PILOT].flatMap((k) => [`port-${k}`, `register-${k}`])].sort(),
+    );
     // Wildcards never pick up the checkpoint itself.
-    expect(byId.get('integrate-head')!.dependsOn).not.toContain(PILOT_CHECKPOINT);
+    expect(byId.get('validate-components')!.dependsOn).not.toContain(PILOT_CHECKPOINT);
+  });
+
+  it('includes a template with `when` only for projects with that feature', () => {
+    const without = compilePlan(pb, blueprint());
+    expect(without.tasks.map((t) => t.taskId)).not.toContain('prove-personalization');
+    const withIt = compilePlan(pb, blueprint(), { features: ['personalization'] });
+    expect(withIt.tasks.find((t) => t.taskId === 'prove-personalization')).toMatchObject({
+      phase: 7,
+      dependsOn: ['enable-experience'],
+    });
   });
 
   it('turns the checkpoint into a Director gate when the optional gate is on', () => {
@@ -252,11 +267,15 @@ describe('scheduling', () => {
   it('dispatches pilot tasks first, then the rest after the checkpoint', () => {
     const plan = compilePlan(pb, blueprint());
     const active = new Set([4]);
-    const ready = readyTasks(plan, {}, active).map((t) => t.taskId);
-    expect(ready).toEqual(['port-hero', 'port-promo-card', 'port-rich-text']);
-
     const states: Record<string, 'done'> = {};
+    for (const t of plan.tasks.filter((t) => t.phase < 4)) states[t.taskId] = 'done';
+    const ready = readyTasks(plan, states, active).map((t) => t.taskId);
+    expect(ready).toEqual(['port-hero', 'port-promo-card', 'port-rich-text', 'integrate-head']);
+
     for (const k of PILOT) states[`port-${k}`] = states[`register-${k}`] = 'done';
+    states['integrate-head'] = 'done';
+    expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual(['prove-pilot-slice']);
+    states['prove-pilot-slice'] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual([PILOT_CHECKPOINT]);
     states[PILOT_CHECKPOINT] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual(
@@ -272,10 +291,6 @@ describe('scheduling', () => {
       'register-hero',
       'port-hero',
     ]);
-    expect(dependentsOf(plan, 'port-tabs')).toEqual([
-      'register-tabs',
-      'integrate-head',
-      'validate-components',
-    ]);
+    expect(dependentsOf(plan, 'port-tabs')).toEqual(['register-tabs', 'validate-components']);
   });
 });

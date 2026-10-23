@@ -6,7 +6,13 @@ export interface OperationSpec {
   inputSchema?: Record<string, unknown>;
   /** Changes state on the target. */
   mutates: boolean;
-  /** Deletes, moves across sites, or publishes to production: needs a rollback recipe first. */
+  /**
+   * Release-affecting: publishes, deploys, or changes host settings. Risk tiers, from least to
+   * most: read-only (`mutates: false`), scoped reversible write (`mutates`), release-affecting
+   * (`releases`), destructive (`destructive`).
+   */
+  releases?: boolean;
+  /** Deletes, clears Edge content, unlinks or revokes: needs a rollback recipe first. */
   destructive?: boolean;
   /** Returns content from outside our control (source site, repo files, web): wrapped as untrusted. */
   untrusted?: boolean;
