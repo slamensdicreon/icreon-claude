@@ -55,6 +55,29 @@ export interface PlatformPack {
     | undefined;
   /** Platform knowledge documents roles can list (`knowledge/<id>.md`). */
   knowledgeDir: string;
+  /**
+   * The environment variables the head needs on its host, resolved from the project's sealed
+   * credentials and the platform's own APIs. Absent for platforms with no head.
+   */
+  headEnv?(
+    target: TargetValues,
+    which: 'preview' | 'production',
+    deps: HeadEnvDeps,
+  ): Promise<{ vars: HeadEnvVar[]; missing: string[] }>;
+}
+
+export interface HeadEnvVar {
+  key: string;
+  value: string;
+  /** Server-only secret: stored unreadable on the host. */
+  sensitive: boolean;
+}
+
+export interface HeadEnvDeps {
+  /** A project credential's fields, or null when it wasn't given. */
+  credential(credentialId: string): Promise<Record<string, string> | null>;
+  /** The platform's editing secret for the project's environment, or null when unavailable. */
+  editingSecret(): Promise<string | null>;
 }
 
 export interface PlatformConfig {

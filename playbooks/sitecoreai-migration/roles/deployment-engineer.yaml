@@ -21,17 +21,16 @@ tools:
   hosting:
     ops:
       - project.create
+      - project.read
       - env.set
       - deploy.preview
       - deploy.production
+      - deploy.status
   sitecore-deploy:
     ops:
       - environment.read
+      - editing-host.read
       - editing-host.register
-  sitecore-cli:
-    ops:
-      - ser.pull
-      - ser.validate
   build-repo:
     ops:
       - tree.read

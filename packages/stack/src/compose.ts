@@ -249,8 +249,14 @@ function projectContext(projections: Projections, platform: PlatformPack): Conte
         s?.buildRepo
           ? `Build repository: ${s.buildRepo.repo}, created from ${s.buildRepo.template}; the site's Next.js app is in ${s.buildRepo.appPath}. Read it with build-repo tools and commit only to launchworks/* branches; never commit to the source repository.`
           : 'Build repository: not created yet.',
-        // The hosting tool server fills this once preview deployments exist.
-        'Migrated preview site: none deployed yet.',
+        s?.hosting?.url
+          ? `Migrated preview site: ${s.hosting.url} (Vercel project ${s.hosting.project}; also the editing host once registered).`
+          : s?.hosting
+            ? `Migrated preview site: Vercel project ${s.hosting.project} exists; nothing is deployed to production yet.`
+            : 'Migrated preview site: none deployed yet.',
+        ...(s?.preview.target?.url && s.preview.target.url !== s.hosting?.url
+          ? [`Latest preview deployment: ${s.preview.target.url} (${s.preview.target.label}).`]
+          : []),
         docs.length
           ? `Documents you can read with artifacts.read:\n${docs.join('\n')}`
           : 'No documents written yet.',

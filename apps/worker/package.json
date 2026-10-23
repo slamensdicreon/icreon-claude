@@ -10,6 +10,7 @@
   "dependencies": {
     "@lw/agent-runtime": "workspace:*",
     "@lw/connectors": "workspace:*",
+    "@lw/contracts": "workspace:*",
     "@lw/domain": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/orchestrator": "workspace:*",
@@ -18,6 +19,7 @@
     "@lw/stack": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
     "@lw/tool-github": "workspace:*",
+    "@lw/tool-hosting": "workspace:*",
     "@lw/tool-research": "workspace:*",
     "@lw/tool-sitecore": "workspace:*",
     "@temporalio/worker": "^1.24.0",

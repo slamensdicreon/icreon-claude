@@ -8,14 +8,20 @@ import {
   PostgresVault,
   Projections,
 } from '@lw/events';
+import type { NewEvent } from '@lw/contracts';
 import { createWorker, taskQueueFor } from '@lw/orchestrator';
 import { loadCatalog } from '@lw/playbook-sdk';
-import { createPlatforms, sitecoreTarget } from '@lw/platforms';
+import { createPlatforms, sitecoreTarget, text } from '@lw/platforms';
 import { composeStack } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
 import { ResearchToolServer } from '@lw/tool-research';
-import { SitecoreAuthoringToolServer } from '@lw/tool-sitecore';
+import { HostingToolServer } from '@lw/tool-hosting';
+import {
+  DeployClient,
+  SitecoreAuthoringToolServer,
+  SitecoreDeployToolServer,
+} from '@lw/tool-sitecore';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 
@@ -44,6 +50,9 @@ const env = z
     /** Opens the credentials the New Project wizard sealed (same key as the Control API). */
     CREDENTIALS_KEY: z.string().optional(),
     CREDENTIALS_KEY_PREVIOUS: z.string().optional(),
+    /** Our Vercel team, where each project's head is deployed for preview and editing. */
+    VERCEL_PREVIEWS_TOKEN: z.string().optional(),
+    VERCEL_PREVIEWS_TEAM_ID: z.string().optional(),
     /** Every folder under it holding a playbook.yaml is served, each on its own task queue. */
     PLAYBOOKS_DIR: z
       .string()
@@ -88,6 +97,14 @@ const project = async (projectId: string) => {
   await projections.catchUp(projectId);
   return projections.get(projectId);
 };
+const credentials = vault
+  ? new VaultCredentials({
+      project,
+      vault,
+      github,
+      toolCredential: (platform, server) => platforms.get(platform)?.toolCredential(server),
+    })
+  : undefined;
 const servers: ToolServer[] = [];
 if (env.AGENTS === 'claude') {
   servers.push(new ResearchToolServer());
@@ -133,18 +150,101 @@ if (env.AGENTS === 'claude') {
     );
   }
 }
+if (env.AGENTS === 'claude' && vault && credentials) {
+  /** Hosts the project's head is deployed on: the only ones that may become its editing host. */
+  const headHosts = (s: NonNullable<Awaited<ReturnType<typeof project>>>) =>
+    [s.hosting?.url, s.preview.target?.url]
+      .filter((u): u is string => Boolean(u))
+      .map((u) => new URL(u).host);
+  servers.push(
+    new SitecoreDeployToolServer({
+      facts: async (id) => {
+        const s = await project(id);
+        if (s?.intake?.platform !== 'sitecoreai') return null;
+        return { cmHost: sitecoreTarget(s.intake).cmHost, headHosts: headHosts(s) };
+      },
+    }),
+  );
+  if (env.VERCEL_PREVIEWS_TOKEN && env.VERCEL_PREVIEWS_TEAM_ID) {
+    servers.push(
+      new HostingToolServer({
+        token: env.VERCEL_PREVIEWS_TOKEN,
+        teamId: env.VERCEL_PREVIEWS_TEAM_ID,
+        facts: async (id) => {
+          const s = await project(id);
+          const name = s?.intake ? text(s.intake.target, 'hostingProject') : '';
+          return s?.buildRepo && name
+            ? {
+                project: name,
+                repo: s.buildRepo.repo,
+                branch: s.buildRepo.branch,
+                rootDirectory: s.buildRepo.appPath,
+              }
+            : null;
+        },
+        // What the head needs, from the platform pack: values come from the vault and the
+        // platform's APIs, never from the agent.
+        env: async (id, which) => {
+          const s = await project(id);
+          const pack = s?.intake ? platforms.get(s.intake.platform) : undefined;
+          if (!s?.intake || !pack?.headEnv)
+            return { vars: [], missing: ['this platform has no head'] };
+          return pack.headEnv(s.intake.target, which, {
+            credential: async (credentialId) => {
+              const ref = s.credentials[credentialId]?.reference;
+              return ref ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
+            },
+            editingSecret: async () => {
+              try {
+                const deploy = new DeployClient(await credentials.tokenFor(id, 'sitecore-deploy'));
+                const e = await deploy.environmentFor(sitecoreTarget(s.intake!).cmHost);
+                return 'error' in e ? null : await deploy.editingSecret(e.id);
+              } catch {
+                return null;
+              }
+            },
+          });
+        },
+        record: async (id, r) => {
+          const s = await project(id);
+          const name = s?.intake ? text(s.intake.target, 'hostingProject') : '';
+          const actor = { kind: 'system', id: 'hosting' } as const;
+          const subject = { kind: 'project', id } as const;
+          const events: NewEvent[] = [];
+          if (!s?.hosting || (r.url && r.url !== s.hosting.url)) {
+            events.push({
+              type: 'project.updated',
+              actor,
+              subject,
+              severity: r.url ? 'notable' : 'routine',
+              data: { hosting: { provider: 'vercel', project: name, url: r.url } },
+            });
+          }
+          // Once per deployment, however often its status is read.
+          if (r.deployment && s?.preview.target?.deployment !== r.deployment.id) {
+            events.push({
+              type: 'preview.deployed',
+              actor,
+              subject,
+              severity: 'notable',
+              data: {
+                side: 'target',
+                label: `Vercel, ${r.deployment.target === 'production' ? 'production' : r.deployment.ref}`,
+                url: r.deployment.url,
+                deployment: r.deployment.id,
+              },
+            });
+          }
+          if (events.length) await opened.store.append(id, events);
+        },
+      }),
+    );
+  }
+}
 console.log(
   `Connected tool servers: ${servers.map((s) => s.name).join(', ') || 'none'}${vault ? '' : ' (CREDENTIALS_KEY not set: no project credentials)'}`,
 );
 
-const credentials = vault
-  ? new VaultCredentials({
-      project,
-      vault,
-      github,
-      toolCredential: (platform, server) => platforms.get(platform)?.toolCredential(server),
-    })
-  : undefined;
 const blobs = openBlobStore(env.BLOB_STORE, env.DATA_DIR);
 
 // One stack per playbook: its roles, prompts, grants and platform pack.

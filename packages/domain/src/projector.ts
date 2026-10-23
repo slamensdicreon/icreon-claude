@@ -9,6 +9,7 @@ import type {
   CosPresence,
   CredentialView,
   BuildRepo,
+  HostingState,
   DecisionView,
   EscalationView,
   LeadRow,
@@ -91,6 +92,7 @@ export interface ProjectState {
   /** The playbook (and version) the project was created with; it runs on that one. */
   playbook: { id: string; version: string } | null;
   buildRepo: BuildRepo | null;
+  hosting: HostingState | null;
   conventions: { key: string; value: string }[];
 }
 
@@ -158,6 +160,7 @@ export function createProjectState(projectId: string): ProjectState {
     intake: null,
     playbook: null,
     buildRepo: null,
+    hosting: null,
     settings: {},
     conventions: [],
   };
@@ -230,6 +233,9 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (d.stats !== undefined) s.statCards = d.stats;
       if (d.timezone !== undefined) s.timezone = d.timezone;
       if (d.buildRepo !== undefined) s.buildRepo = d.buildRepo;
+      // A URL once known stays until a newer one replaces it.
+      if (d.hosting !== undefined)
+        s.hosting = { ...d.hosting, url: d.hosting.url ?? s.hosting?.url ?? null };
       if (d.sourceUrl !== undefined) {
         s.sourceUrl = d.sourceUrl;
         s.source = { ...s.source, url: d.sourceUrl };
@@ -686,6 +692,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     intake: s.intake,
     playbook: s.playbook,
     buildRepo: s.buildRepo,
+    hosting: s.hosting,
   };
 }
 

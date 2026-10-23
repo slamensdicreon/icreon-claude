@@ -136,6 +136,9 @@ importers:
       '@lw/connectors':
         specifier: workspace:*
         version: link:../../packages/connectors
+      '@lw/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@lw/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -160,6 +163,9 @@ importers:
       '@lw/tool-github':
         specifier: workspace:*
         version: link:../../tool-servers/github
+      '@lw/tool-hosting':
+        specifier: workspace:*
+        version: link:../../tool-servers/hosting
       '@lw/tool-research':
         specifier: workspace:*
         version: link:../../tool-servers/research
@@ -428,6 +434,15 @@ importers:
         version: link:../../packages/playbook-sdk
 
   tool-servers/github:
+    dependencies:
+      '@lw/tool-gateway':
+        specifier: workspace:*
+        version: link:../../packages/tool-gateway
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
+  tool-servers/hosting:
     dependencies:
       '@lw/tool-gateway':
         specifier: workspace:*

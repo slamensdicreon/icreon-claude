@@ -244,6 +244,16 @@ export const BuildRepo = z.object({
 });
 export type BuildRepo = z.infer<typeof BuildRepo>;
 
+/** The project's head on our Vercel team: the stable preview of the site and its editing host. */
+export const HostingState = z.object({
+  provider: z.literal('vercel'),
+  /** The Vercel project's name. */
+  project: z.string(),
+  /** Its production URL, once a production deployment is ready. */
+  url: z.string().nullable(),
+});
+export type HostingState = z.infer<typeof HostingState>;
+
 /** A value the wizard collects for a playbook's target: text, or a list (languages). */
 export const IntakeValue = z.union([z.string(), z.array(z.string())]);
 export type IntakeValue = z.infer<typeof IntakeValue>;
@@ -360,6 +370,7 @@ export const EventBody = z.discriminatedUnion('type', [
       /** The live site being migrated; the crawl and QA tools may only reach its host. */
       sourceUrl: z.string().url().nullable().optional(),
       buildRepo: BuildRepo.optional(),
+      hosting: HostingState.optional(),
     }),
   ),
   ev('project.status', z.object({ status: ProjectStatus })),

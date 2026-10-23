@@ -51,7 +51,8 @@ templates:
   - id: prepare-hosting
     phase: 3
     role: deployment-engineer
-    title: Create hosting project and preview environment
+    title: Deploy the head to Vercel and register it as the editing host
+    acceptance: [validator:editing-host.responds]
   - id: validate-foundation
     phase: 3
     role: structural-validator
@@ -169,7 +170,7 @@ templates:
     acceptance: [validator:deploy.commit-matches, validator:editing-host.responds]
   - id: serialize-items
     phase: 8
-    role: deployment-engineer
+    role: rendering-registrar
     title: Serialize the project's own items into the build repository
     acceptance: [validator:serialization.replays]
   - id: publish-edge

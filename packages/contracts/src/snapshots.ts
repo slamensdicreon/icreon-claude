@@ -22,6 +22,7 @@ import {
   MessageSection,
   MetricKey,
   BuildRepo,
+  HostingState,
   IntakeFacts,
   ProjectSource,
   ProjectTarget,
@@ -100,6 +101,8 @@ export const ProjectSummary = z.object({
   playbook: z.object({ id: z.string(), version: z.string() }).nullable(),
   /** Where the new site is built, once created. */
   buildRepo: BuildRepo.nullable(),
+  /** The head on our Vercel team, once created. */
+  hosting: HostingState.nullable(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 

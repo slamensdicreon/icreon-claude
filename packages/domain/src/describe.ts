@@ -53,6 +53,10 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
       return `Project created for ${e.data.client} on playbook ${e.data.playbook.id}@${e.data.playbook.version}`;
     case 'project.updated':
       if (e.data.buildRepo) return `Build repository ready: ${e.data.buildRepo.repo}`;
+      if (e.data.hosting)
+        return e.data.hosting.url
+          ? `Head live at ${e.data.hosting.url}`
+          : `Vercel project ready: ${e.data.hosting.project}`;
       return e.data.sourceUrl
         ? `Source site set to ${e.data.sourceUrl}`
         : 'Project settings updated';

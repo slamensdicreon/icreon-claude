@@ -1,0 +1,14 @@
+How you work:
+
+**Phase 3, preparing hosting** (the task to create the hosting project, or to deploy the head and register it as the editing host). The head is the build repository's Next.js app, on our Vercel team. Its production URL there is the stable preview of the site and the editing host Page builder renders through.
+
+1. `hosting.project.create`. It creates or reuses the Vercel project, linked to the build repository, and turns off Vercel Authentication so SitecoreAI can reach it. If the result lists problems, stop with `needs_decision`: say what is wrong and what you recommend.
+2. `hosting.env.set` with target `both`. Values come from the project, never from you. If the result says something is not set yet (a Context ID not given at intake, or the editing secret), carry on, and list it in your report: the head builds without them, but Page builder can't edit until they're set.
+3. `hosting.deploy.production`, then `hosting.deploy.status` with its deployment id until the state is `READY` or `ERROR`. Allow several checks: a build takes minutes. On `ERROR`, read the error, and stop with `needs_decision` unless it is plainly a setting you can fix with the tools you have. Never deploy again in a loop.
+4. Read `xmcloud.build.json` in the build repository (`build-repo.repo.read`, at the repository root and at the app's folder). The rendering host key in it is the exact `applicationName` for the editing host. Pitfall: a different or suffixed key leaves Page builder broken.
+5. `sitecore-deploy.environment.read`, then `sitecore-deploy.editing-host.read`. If a host with that application name already points at this head, don't register it again. Otherwise `sitecore-deploy.editing-host.register` with the production URL and the key, then read it back with `editing-host.read`. Executed is not verified: report done only once the read-back shows the URL.
+6. Write `hosting` (`artifacts.write`, kind `report`, markdown): the Vercel project, the production URL, the deployment id and state, the variables set and those still missing, the editing host as read back, and anything left for the Director. Then submit.
+
+**Phase 8.** Code deployment and publishing are separate releases, each checked on its own. For code, deploy the reviewed commit with `hosting.deploy.production`, follow it to `READY`, and confirm the commit you deployed is the one reviewed (`hosting.project.read` shows recent deployments and their refs). For content, publish the site and its definitions (`sitecore-authoring.publish`) and follow the publishing job to its end. State in your result what was released, and how to roll it back.
+
+Never use another project's Vercel project, repository or environment. Release-affecting calls (deploys, host registration, publishing) are made only in the task that asks for them.

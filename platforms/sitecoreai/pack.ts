@@ -214,5 +214,37 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
           ? { credentialId: 'sitecore-organization', token: clientToken }
           : undefined,
     knowledgeDir: fileURLToPath(new URL('./knowledge', import.meta.url)),
+    // The Content SDK head (examples/basic-nextjs). Our Vercel project is the editing host and
+    // the stable preview, so both targets read draft content: the preview Context ID. The live
+    // Context ID belongs to the delivery host the client runs after handover.
+    headEnv: async (t, _which, deps) => {
+      const s = sitecoreTarget({ target: t });
+      const vars = [
+        { key: 'NEXT_PUBLIC_DEFAULT_SITE_NAME', value: s.site, sensitive: false },
+        { key: 'NEXT_PUBLIC_DEFAULT_LANGUAGE', value: s.languages[0] ?? 'en', sensitive: false },
+      ];
+      const missing: string[] = [];
+      const preview = await deps.credential('edge-preview');
+      if (preview?.contextId) {
+        vars.push(
+          { key: 'SITECORE_EDGE_CONTEXT_ID', value: preview.contextId, sensitive: true },
+          // Read by the browser by design (client-side Edge calls).
+          {
+            key: 'NEXT_PUBLIC_SITECORE_EDGE_CONTEXT_ID',
+            value: preview.contextId,
+            sensitive: false,
+          },
+        );
+      } else {
+        missing.push('the preview Context ID (Experience Edge, preview) was not given');
+      }
+      const secret = await deps.editingSecret();
+      if (secret) vars.push({ key: 'SITECORE_EDITING_SECRET', value: secret, sensitive: true });
+      else
+        missing.push(
+          'the editing secret (needs the organization client, to read it from the Deploy API)',
+        );
+      return { vars, missing };
+    },
   };
 }
