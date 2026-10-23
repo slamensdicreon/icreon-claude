@@ -44,6 +44,8 @@ describe('SitecoreAuthoringToolServer', () => {
         body: { exists: true },
       },
     );
+    // No arguments: the project's own site, from intake.
+    expect((await s.call('site.create', {}, ctx)).code).toBe(200);
     expect((await s.call('site.create', { collection: 'Brands', site: 'other' }, ctx)).code).toBe(
       409,
     );
@@ -82,6 +84,6 @@ describe('SitecoreAuthoringToolServer', () => {
       facts: async () => ({ ...facts, cmHost: 'evil.example.com' }),
       fetch: cm.fetch,
     });
-    expect((await evil.call('item.read', {}, ctx)).code).toBe(403);
+    expect((await evil.call('site.list', {}, ctx)).code).toBe(403);
   });
 });

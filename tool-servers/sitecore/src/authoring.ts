@@ -27,7 +27,7 @@ const MAX_MEDIA_BYTES = 25_000_000;
 const Path = z.string().startsWith('/sitecore/').max(500);
 const Field = z.object({ name: z.string().min(1), value: z.string() });
 const ReadArgs = z.object({
-  path: Path.optional(),
+  path: Path,
   language: z.string().optional(),
   children: z.boolean().optional(),
 });
@@ -83,7 +83,11 @@ const PublishArgs = z.object({
   subItems: z.boolean().optional(),
   languages: z.array(z.string()).optional(),
 });
-const SiteArgs = z.object({ collection: z.string().min(1), site: z.string().min(1) });
+/** Defaults to the project's own site and collection, from intake. */
+const SiteArgs = z.object({
+  collection: z.string().min(1).optional(),
+  site: z.string().min(1).optional(),
+});
 const LanguageArgs = z.object({
   /** e.g. "es-US" */
   code: z.string().regex(/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/),
@@ -104,9 +108,14 @@ const gql = (s: string) => JSON.stringify(s);
 export class SitecoreAuthoringToolServer implements ToolServer {
   readonly name = 'sitecore-authoring';
   readonly catalog: OperationCatalog = {
+    'site.list': {
+      description: 'List the sites on the environment: name and root path.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      mutates: false,
+    },
     'item.read': {
       description:
-        'Read an item by absolute path (fields, template, and with children:true its children). Without a path, lists the sites on the environment.',
+        'Read an item by absolute path (fields, template, and with children:true its children).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -114,6 +123,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           language: { type: 'string' },
           children: { type: 'boolean' },
         },
+        required: ['path'],
         additionalProperties: false,
       },
       mutates: false,
@@ -270,11 +280,10 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'site.create': {
       description:
-        'Make sure the site exists in its site collection. Returns the site if it does; if not, says so (sites are created in SitecoreAI Sites).',
+        "Make sure the project's site exists in its site collection (both default to the project's target). Returns the site if it does; if not, says so (sites are created in SitecoreAI Sites).",
       inputSchema: {
         type: 'object',
         properties: { collection: { type: 'string' }, site: { type: 'string' } },
-        required: ['collection', 'site'],
         additionalProperties: false,
       },
       mutates: true,
@@ -315,6 +324,8 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     const lang = (l?: string) => l ?? facts.languages[0] ?? 'en';
     try {
       switch (op) {
+        case 'site.list':
+          return await this.sites(q);
         case 'item.read':
           return await this.read(q, ReadArgs.safeParse(args), lang);
         case 'item.create':
@@ -332,7 +343,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         case 'publish':
           return await this.publish(q, PublishArgs.safeParse(args), facts);
         case 'site.create':
-          return await this.site(q, SiteArgs.safeParse(args));
+          return await this.site(q, SiteArgs.safeParse(args), facts);
         case 'language.add':
           return await this.language(q, LanguageArgs.safeParse(args));
         default:
@@ -344,14 +355,15 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     }
   }
 
+  private async sites(q: Gql): Promise<ToolResult> {
+    const d = await q.run<{ sites: { name: string; rootPath: string }[] }>(
+      'query { sites { name rootPath } }',
+    );
+    return { code: 200, body: d, summary: `Listed ${d.sites.length} sites` };
+  }
+
   private async read(q: Gql, a: Parsed<typeof ReadArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
-    if (!a.data.path) {
-      const d = await q.run<{ sites: { name: string; rootPath: string }[] }>(
-        'query { sites { name rootPath } }',
-      );
-      return { code: 200, body: d, summary: `Listed ${d.sites.length} sites` };
-    }
     const d = await q.run<{ item: unknown }>(
       `query { item(where: { database: "master", path: ${gql(a.data.path)}, language: ${gql(lang(a.data.language))} }) {
         itemId name path template { name templateId }
@@ -551,12 +563,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     };
   }
 
-  private async site(q: Gql, a: Parsed<typeof SiteArgs>): Promise<ToolResult> {
+  private async site(q: Gql, a: Parsed<typeof SiteArgs>, facts: TenantFacts): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
+    const collection = a.data.collection ?? facts.siteCollection;
+    const site = a.data.site ?? facts.site;
     const d = await q.run<{ sites: { name: string; rootPath: string }[] }>(
       'query { sites { name rootPath } }',
     );
-    const want = `/sitecore/content/${a.data.collection}/${a.data.site}`.toLowerCase();
+    const want = `/sitecore/content/${collection}/${site}`.toLowerCase();
     const found = d.sites.find((s) => s.rootPath.toLowerCase() === want);
     if (found)
       return {
@@ -567,7 +581,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     return {
       code: 409,
       body: {
-        error: `There is no site ${a.data.site} in collection ${a.data.collection}. Create it in SitecoreAI Sites (it scaffolds the site from a site template), then retry.`,
+        error: `There is no site ${site} in collection ${collection}. Create it in SitecoreAI Sites (it scaffolds the site from a site template), then retry.`,
         sites: d.sites,
       },
     };

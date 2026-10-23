@@ -243,6 +243,12 @@ function projectContext(projections: Projections): ContextProvider {
       return [
         `Project: ${s?.name ?? projectId} for ${s?.client ?? 'the client'}.`,
         `Source site: ${s?.sourceUrl ?? 'not given at intake'}.`,
+        ...(s?.intake
+          ? [
+              `Source repository: ${s.intake.repo} (branch ${s.intake.branch}).`,
+              `SitecoreAI target: site "${s.intake.site}" in collection "${s.intake.siteCollection}" on ${s.intake.cmHost}, at /sitecore/content/${s.intake.siteCollection}/${s.intake.site}; languages ${s.intake.languages.join(', ')}.`,
+            ]
+          : []),
         // The hosting tool server fills this once preview deployments exist.
         'Migrated preview site: none deployed yet.',
         docs.length

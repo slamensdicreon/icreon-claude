@@ -25,7 +25,11 @@ const TreeArgs = z.object({
   ref: z.string().max(200).optional(),
 });
 const ReadArgs = z.object({
-  paths: z.array(z.string().min(1).max(500)).min(1).max(20),
+  // One path is accepted as a string too.
+  paths: z.preprocess(
+    (v) => (typeof v === 'string' ? [v] : v),
+    z.array(z.string().min(1).max(500)).min(1).max(20),
+  ),
   ref: z.string().max(200).optional(),
 });
 const SearchArgs = z.object({ query: z.string().min(2).max(200) });

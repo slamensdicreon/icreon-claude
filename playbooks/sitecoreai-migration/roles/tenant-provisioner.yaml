@@ -18,6 +18,7 @@ produces:
 tools:
   sitecore-authoring:
     ops:
+      - site.list
       - item.read
       - site.create
       - item.create
@@ -29,6 +30,10 @@ tools:
   github:
     ops:
       - branch.commit
+  artifacts:
+    ops:
+      - read
+      - write
 acceptance:
   - validator:structural.site
 escalateWhen:
