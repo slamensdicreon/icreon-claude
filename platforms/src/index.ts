@@ -93,11 +93,15 @@ export interface PlatformCheckContext {
   ): Promise<{ code: number; body: unknown }>;
   /** A project credential's fields, or null when it wasn't given. */
   credential(credentialId: string): Promise<Record<string, string> | null>;
+  /** A project document's latest JSON content (page-inventory, parity-inventory), or null. */
+  document(artifactId: string): Promise<unknown>;
 }
 
 export interface CheckResult {
   status: 'pass' | 'fail' | 'pending';
   detail: string;
+  /** Measurements behind the verdict, for the report (per-page parity). */
+  data?: unknown;
 }
 
 export type PlatformCheck = (ctx: PlatformCheckContext) => Promise<CheckResult>;

@@ -27,6 +27,12 @@ export interface CheckContext {
   fetch: typeof fetch;
   /** The task's own steps, oldest first: the audit trail checks read. */
   steps: StepEvent[];
+  /** A read operation on one of the project's tool servers (never a write). */
+  read(
+    server: string,
+    op: string,
+    args: Record<string, unknown>,
+  ): Promise<{ code: number; body: unknown }>;
 }
 
 export type Check = (ctx: CheckContext) => Promise<CheckResult>;
@@ -109,6 +115,26 @@ export const CHECKS: Record<string, Check> = {
         : 'Serialization was not validated clean',
     ].filter((x): x is string => Boolean(x));
     return problems.length ? failed(problems) : pass('Pulled and validated by the Sitecore CLI.');
+  },
+
+  // What runs in production is the commit at the head of the build repository's default branch.
+  'deploy.commit-matches': async ({ read }) => {
+    const p = await read('hosting', 'project.read', {});
+    if (p.code !== 200) return failed(['The Vercel project could not be read']);
+    const deployments = (
+      p.body as { deployments: { state: string; target: string; sha: string | null; id: string }[] }
+    ).deployments;
+    const prod = deployments.find((d) => d.target === 'production' && d.state === 'READY');
+    if (!prod?.sha) return failed(['No ready production deployment with a commit']);
+    const t = await read('build-repo', 'tree.read', {});
+    const head = (t.body as { commit?: string | null } | null)?.commit;
+    if (t.code !== 200 || !head)
+      return { status: 'pending', detail: 'The build repository head could not be read.' };
+    return prod.sha === head
+      ? pass(`Production runs ${head.slice(0, 7)}, the head of the default branch.`)
+      : failed([
+          `Production runs ${prod.sha.slice(0, 7)}, but the default branch is at ${head.slice(0, 7)}`,
+        ]);
   },
 
   // Platform Notes cite their sources.
@@ -262,6 +288,10 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
         library: deps.library,
         fetch: deps.fetch ?? ((...a) => fetch(...a)),
         steps,
+        read: (server, op, args) =>
+          deps.platform
+            ? deps.platform.read(req.projectId, server, op, args)
+            : Promise.resolve({ code: 404, body: { error: 'Not connected' } }),
       };
       const platform = deps.platform;
       const platformCheck = async (check: PlatformCheck): Promise<CheckResult> => {
@@ -280,6 +310,14 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
           blueprint,
           read: (server, op, args) => platform.read(req.projectId, server, op, args),
           credential: (id) => platform.credential(req.projectId, id),
+          document: async (id) => {
+            const d = await deps.library.read(req.projectId, id);
+            try {
+              return d ? (JSON.parse(d.content) as unknown) : null;
+            } catch {
+              return null;
+            }
+          },
         });
       };
 

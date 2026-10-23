@@ -120,7 +120,18 @@ export interface ValidatorsServerOptions {
     projectId: string,
     scope: 'site' | 'templates' | 'renderings' | 'all',
   ) => Promise<{ id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[]>;
+  /** The platform's content parity check: the new site against the source re-crawl. */
+  parity?: (
+    projectId: string,
+  ) => Promise<{ status: 'pass' | 'fail' | 'pending'; detail: string; data?: unknown }>;
 }
+
+const PARITY: OperationCatalog[string] = {
+  description:
+    "Content parity: every page the Blueprint keeps, read on Experience Edge (preview), against the source re-crawl (parity-inventory, else the page inventory): the page exists, its title is there, and at least 90% of its words. Returns the parity percentage and each page's result. Read-only.",
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  mutates: false,
+};
 
 const STRUCTURAL: OperationCatalog[string] = {
   description:
@@ -149,7 +160,11 @@ export class ValidatorsToolServer implements ToolServer {
   private lighthouseQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly opts: ValidatorsServerOptions) {
-    this.catalog = opts.structural ? { ...CATALOG, 'structural.run': STRUCTURAL } : CATALOG;
+    this.catalog = {
+      ...CATALOG,
+      ...(opts.structural ? { 'structural.run': STRUCTURAL } : {}),
+      ...(opts.parity ? { 'parity.run': PARITY } : {}),
+    };
   }
 
   target(projectId: string): string {
@@ -173,6 +188,11 @@ export class ValidatorsToolServer implements ToolServer {
           const run = this.lighthouseQueue.then(() => this.lighthouse(ctx.projectId, a.data));
           this.lighthouseQueue = run.catch(() => {});
           return await run;
+        }
+        case 'parity.run': {
+          if (!this.opts.parity) return { code: 404, body: { error: 'Not connected' } };
+          const r = await this.opts.parity(ctx.projectId);
+          return { code: 200, body: r, summary: r.detail };
         }
         case 'structural.run': {
           const a = StructuralArgs.safeParse(args);

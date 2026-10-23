@@ -162,6 +162,14 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       blueprint,
       read: (server, op, args) => readOnly(projectId, server, op, args),
       credential: (id) => credential(projectId, id),
+      document: async (id) => {
+        const d = await library.read(projectId, id);
+        try {
+          return d ? (JSON.parse(d.content) as unknown) : null;
+        } catch {
+          return null;
+        }
+      },
     });
   };
   const STRUCTURE = ['site', 'templates', 'renderings'] as const;
@@ -192,6 +200,9 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
             }
             return out;
           }
+        : undefined,
+      parity: opts.platform.checks?.['parity.page']
+        ? (projectId) => runPlatformCheck(projectId, opts.platform.checks!['parity.page']!)
         : undefined,
     }),
     new ArtifactsToolServer(library),

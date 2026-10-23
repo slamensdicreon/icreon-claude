@@ -19,6 +19,15 @@ tools:
   sitecore-authoring:
     ops:
       - item.read
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+knowledge:
+  - definition-of-done
 activePhases:
   - 6
   - 9

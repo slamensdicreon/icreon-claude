@@ -187,6 +187,8 @@ export class GithubToolServer implements ToolServer {
     const ref = a.data.ref ?? facts.branch;
     const t = await gh('GET', `/git/trees/${encodeURIComponent(ref)}?recursive=1`);
     if (t.status !== 200) return fail(t, `listing ${ref}`);
+    const c = await gh('GET', `/commits/${encodeURIComponent(ref)}`);
+    const commit = c.status === 200 ? (c.body as { sha: string }).sha : null;
     const body = t.body as {
       truncated: boolean;
       tree: { path: string; type: 'blob' | 'tree'; size?: number }[];
@@ -201,6 +203,7 @@ export class GithubToolServer implements ToolServer {
       body: {
         repository: facts.repo,
         ref,
+        commit,
         defaultBranch: repo.default_branch,
         private: repo.private,
         sizeKb: repo.size,

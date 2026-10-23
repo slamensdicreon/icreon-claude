@@ -275,6 +275,7 @@ export class HostingToolServer implements ToolServer {
           target: x.target ?? 'preview',
           url: x.url ? `https://${x.url}` : null,
           ref: x.meta?.githubCommitRef ?? null,
+          sha: x.meta?.githubCommitSha ?? null,
         })),
       },
       summary: `${v.name}: ${deployments.length} recent deployment${deployments.length === 1 ? '' : 's'}`,
@@ -424,7 +425,7 @@ interface Deployment {
   readyState?: string;
   target?: string | null;
   errorMessage?: string;
-  meta?: { githubCommitRef?: string };
+  meta?: { githubCommitRef?: string; githubCommitSha?: string };
   gitSource?: { ref?: string };
 }
 

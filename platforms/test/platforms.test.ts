@@ -114,6 +114,7 @@ describe('SitecoreAI checks', () => {
     blueprint: blueprint as never,
     read,
     credential: async () => null,
+    document: async () => null,
   });
 
   it('checks renderings exist in the project folder and are offered in Available Renderings', async () => {
@@ -159,5 +160,64 @@ describe('SitecoreAI checks', () => {
   it('leaves Experience Edge checks pending without a live Context ID', async () => {
     const res = await pack.checks!['routes.resolve']!(ctx(tenant({}).read, null));
     expect(res.status).toBe('pending');
+  });
+
+  it('measures content parity on Experience Edge against the source re-crawl', async () => {
+    const layouts: Record<string, unknown> = {
+      '/': {
+        sitecore: {
+          route: {
+            fields: { Title: { value: 'Ansco' } },
+            placeholders: {
+              main: [{ fields: { Text: { value: '<p>one two three four five</p>' } } }],
+            },
+          },
+        },
+      },
+      '/about': { sitecore: { route: { fields: { Title: { value: 'Elsewhere' } } } } },
+    };
+    const edge = (async (_u: string | URL | Request, init?: RequestInit) => {
+      const { variables } = JSON.parse(String(init!.body)) as { variables: { path: string } };
+      const rendered = layouts[variables.path];
+      return new Response(
+        JSON.stringify({ data: { layout: rendered ? { item: { rendered } } : null } }),
+      );
+    }) as typeof fetch;
+    const p = createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: edge } }).get(
+      'sitecoreai',
+    )!;
+    const res = await p.checks!['parity.page']!({
+      projectId: 'p',
+      target,
+      blueprint: {
+        collections: {
+          pages: [
+            { key: 'home', name: 'Home', attrs: { path: '/' } },
+            { key: 'about', name: 'About', attrs: { path: '/about' } },
+            { key: 'gone', name: 'Gone', status: 'drop', attrs: { path: '/gone' } },
+          ],
+        },
+      },
+      read: async () => ({ code: 404, body: {} }),
+      credential: async () => ({ contextId: 'ctx-preview' }),
+      document: async (id) =>
+        id === 'parity-inventory'
+          ? {
+              pages: [
+                { path: '/', title: 'Ansco | Home', words: 5 },
+                { path: '/about', title: 'About us', words: 40 },
+                { path: '/gone', title: 'Gone', words: 10 },
+              ],
+            }
+          : null,
+    });
+    expect(res.status).toBe('fail');
+    expect(res.data).toMatchObject({
+      parity: 50,
+      pages: [
+        { path: '/', ok: true, targetWords: 6 },
+        { path: '/about', ok: false, problem: 'title not found' },
+      ],
+    });
   });
 });

@@ -64,11 +64,16 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
   async function routes(ctx: PlatformCheckContext, paths: string[], credentialId: string) {
     const c = await ctx.credential(credentialId);
     if (!c?.contextId)
-      return { missing: null as string[] | null, why: `no ${credentialId} Context ID is stored` };
+      return {
+        missing: null as string[] | null,
+        why: `no ${credentialId} Context ID is stored`,
+        rendered: new Map<string, unknown>(),
+      };
     const t = sitecoreTarget(ctx);
     const url = new URL('/v1/content/api/graphql/v1', cfg.edgeUrl);
     url.searchParams.set('sitecoreContextId', c.contextId);
     const missing: string[] = [];
+    const rendered = new Map<string, unknown>();
     for (const path of paths.slice(0, 60)) {
       const res = await cfg.fetch(url.href, {
         method: 'POST',
@@ -83,8 +88,9 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         data?: { layout?: { item?: { rendered?: unknown } | null } | null };
       };
       if (!b.data?.layout?.item) missing.push(path);
+      else rendered.set(path, b.data.layout.item.rendered);
     }
-    return { missing, why: '' };
+    return { missing, why: '', rendered };
   }
 
   const pagePaths = (ctx: PlatformCheckContext) => {
@@ -174,5 +180,100 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         ? fail(r.missing.map((p) => `${p} doesn't resolve`))
         : pass(`${paths.length} routes resolve on Experience Edge (live).`);
     },
+
+    // Content parity: each kept page, on Experience Edge (preview), against the source re-crawl.
+    'parity.page': async (ctx) => {
+      const inv = ((await ctx.document('parity-inventory')) ??
+        (await ctx.document('page-inventory'))) as {
+        pages?: { path?: string; url?: string; title?: string; words?: number }[];
+      } | null;
+      if (!inv?.pages?.length) return pending('No source inventory to compare with.');
+      const kept = new Set(pagePaths(ctx));
+      const source = inv.pages
+        .map((p) => ({
+          path: (p.path ?? (p.url ? new URL(p.url).pathname : '')).replace(/\/$/, '') || '/',
+          title: (p.title ?? '').split(/\s[|–-]\s/)[0]!.trim(),
+          words: p.words ?? 0,
+        }))
+        .filter((p) => kept.has(p.path));
+      if (!source.length) return pending('No kept page appears in the source inventory.');
+      const r = await routes(
+        ctx,
+        source.map((p) => p.path),
+        'edge-preview',
+      );
+      if (!r.missing) return pending(`Can't read the new site: ${r.why}.`);
+      const pages = source.map((p) => {
+        const text = textOf(r.rendered.get(p.path));
+        const words = text.split(/\s+/).filter(Boolean).length;
+        const titled = !p.title || text.toLowerCase().includes(p.title.toLowerCase());
+        const enough = !p.words || words >= p.words * 0.9;
+        const ok = r.rendered.has(p.path) && titled && enough;
+        return {
+          path: p.path,
+          ok,
+          sourceWords: p.words,
+          targetWords: words,
+          problem: !r.rendered.has(p.path)
+            ? 'missing'
+            : !titled
+              ? 'title not found'
+              : !enough
+                ? `${words} of ${p.words} words`
+                : null,
+        };
+      });
+      const parity = Math.round((pages.filter((p) => p.ok).length / pages.length) * 1000) / 10;
+      const bad = pages.filter((p) => !p.ok).map((p) => `${p.path}: ${p.problem}`);
+      return {
+        ...(parity >= 98
+          ? pass(`Content parity ${parity}% across ${pages.length} pages.`)
+          : fail([`Content parity ${parity}% (98% needed)`, ...bad])),
+        data: { parity, pages },
+      };
+    },
+
+    // Every image in the project's media folder carries alt text.
+    'media.alt-text': async (ctx) => {
+      const root = `/sitecore/media library/Project/${sitecoreBindings(ctx.target).project}`;
+      const without: string[] = [];
+      let images = 0;
+      let level = [root];
+      for (let depth = 0; depth < 4 && level.length; depth++) {
+        const next: string[] = [];
+        for (const path of level.slice(0, 60)) {
+          const it = await item(ctx, path, true);
+          if (!it) continue;
+          const alt = it.fields?.nodes.find((f) => f.name.toLowerCase() === 'alt');
+          if (alt) {
+            images++;
+            if (!alt.value.trim()) without.push(it.path);
+          }
+          next.push(...(it.children?.nodes ?? []).map((c) => c.path));
+        }
+        level = next;
+      }
+      if (!images) return pending(`No images under ${root} yet.`);
+      return without.length
+        ? fail(without.map((p) => `${p} has no alt text`))
+        : pass(`${images} images, each with alt text.`);
+    },
   };
+}
+
+/** The text a rendered Content SDK layout shows: every field value, in its placeholders. */
+export function textOf(rendered: unknown): string {
+  const out: string[] = [];
+  const walk = (v: unknown, inField: boolean) => {
+    if (typeof v === 'string') {
+      if (inField) out.push(v.replace(/<[^>]+>/g, ' '));
+      return;
+    }
+    if (Array.isArray(v)) return v.forEach((x) => walk(x, inField));
+    if (v && typeof v === 'object')
+      for (const [k, x] of Object.entries(v as Record<string, unknown>))
+        walk(x, inField || k === 'fields' || k === 'value');
+  };
+  walk(rendered, false);
+  return out.join(' ').replace(/\s+/g, ' ').trim();
 }

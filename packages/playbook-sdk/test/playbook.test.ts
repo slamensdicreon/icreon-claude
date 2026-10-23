@@ -58,6 +58,7 @@ describe('role prompts', () => {
       'head-integrator',
       'layout-engineer',
       'media-migrator',
+      'parity-auditor',
       'perf-a11y-qa',
       'quality-lead',
       'rendering-registrar',
