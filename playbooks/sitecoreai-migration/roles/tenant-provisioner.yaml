@@ -20,7 +20,7 @@ tools:
     ops:
       - site.list
       - item.read
-      - site.create
+      - site.verify
       - item.create
       - language.add
     scope:

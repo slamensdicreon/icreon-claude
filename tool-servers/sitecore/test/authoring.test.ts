@@ -81,17 +81,20 @@ describe('SitecoreAuthoringToolServer', () => {
   it('confirms an existing site and lists sites', async () => {
     const cm = fakeCm({});
     const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
-    expect(await s.call('site.create', { collection: 'Brands', site: 'ansco' }, ctx)).toMatchObject(
+    expect(await s.call('site.verify', { collection: 'Brands', site: 'ansco' }, ctx)).toMatchObject(
       {
         code: 200,
         body: { exists: true },
       },
     );
     // No arguments: the project's own site, from intake.
-    expect((await s.call('site.create', {}, ctx)).code).toBe(200);
-    expect((await s.call('site.create', { collection: 'Brands', site: 'other' }, ctx)).code).toBe(
+    expect((await s.call('site.verify', {}, ctx)).code).toBe(200);
+    expect((await s.call('site.verify', { collection: 'Brands', site: 'other' }, ctx)).code).toBe(
       409,
     );
+    // A read under both names: audit entries from before the rename mustn't look like writes.
+    expect(s.catalog['site.verify']!.mutates).toBe(false);
+    expect(s.catalog['site.create']!.mutates).toBe(false);
   });
 
   it('resolves parent and template by path before creating an item', async () => {

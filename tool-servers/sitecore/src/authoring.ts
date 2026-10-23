@@ -282,15 +282,21 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       releases: true,
       pathArgs: ['paths'],
     },
-    'site.create': {
+    'site.verify': {
       description:
-        "Make sure the project's site exists in its site collection (both default to the project's target). Returns the site if it does; if not, says so (sites are created in SitecoreAI Sites).",
+        "Check the project's site exists in its site collection (both default to the project's target). Returns the site if it does; if not, says so (sites are created in SitecoreAI Sites). Changes nothing.",
       inputSchema: {
         type: 'object',
         properties: { collection: { type: 'string' }, site: { type: 'string' } },
         additionalProperties: false,
       },
-      mutates: true,
+      mutates: false,
+    },
+    // The same read under its first name, so audit trails recorded before the rename read
+    // correctly. No role is granted it.
+    'site.create': {
+      description: 'Old name of site.verify.',
+      mutates: false,
     },
     'language.add': {
       description:
@@ -346,6 +352,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           return await this.media(q, MediaArgs.safeParse(args), facts, ctx.token, lang);
         case 'publish':
           return await this.publish(q, PublishArgs.safeParse(args), facts);
+        case 'site.verify':
         case 'site.create':
           return await this.site(q, SiteArgs.safeParse(args), facts);
         case 'language.add':

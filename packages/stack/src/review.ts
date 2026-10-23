@@ -246,6 +246,8 @@ export interface ReviewDeps {
   library: ArtifactLibrary;
   playbook: Playbook;
   isLive(projectId: string): Promise<boolean>;
+  /** Whether a tool operation reads, writes or releases, from its server's own definition. */
+  effect?(server: string, op: string): 'read' | 'write' | 'release' | null;
   /** The Lead's review with Claude; without it only the checks decide. */
   review: ((input: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null;
   checks?: Record<string, Check>;
@@ -268,6 +270,11 @@ export interface ReviewDeps {
 export function withReview(base: Activities, deps: ReviewDeps): Activities {
   const checks = deps.checks ?? CHECKS;
   const roles = new Map(deps.playbook.roles.map((r) => [r.role, r]));
+  // Marked from the tool's definition, so the Lead judges what a call did, not what it's called.
+  const effect = (e: StepEvent) => {
+    const kind = deps.effect?.(e.data.toolServer, e.data.operation);
+    return kind ? `[${kind}] ` : '';
+  };
   return {
     ...base,
     async validate(req) {
@@ -373,7 +380,7 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
           .slice(-120)
           .map(
             (e) =>
-              `${e.ts.slice(11, 19)} ${e.data.toolServer}.${e.data.operation} → ${e.data.outcome ?? e.data.resultCode}: ${e.data.summary}`,
+              `${e.ts.slice(11, 19)} ${effect(e)}${e.data.toolServer}.${e.data.operation} → ${e.data.outcome ?? e.data.resultCode}: ${e.data.summary}`,
           );
         const artifacts = log
           .filter(

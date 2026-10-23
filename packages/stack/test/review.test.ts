@@ -66,6 +66,7 @@ async function setup(
     playbook: await loadPlaybook(PLAYBOOK),
     isLive: async () => true,
     review,
+    effect: (_server, op) => (op === 'publish' ? 'release' : null),
   });
   const write = (artifactId: string, content: unknown) =>
     library.write('p1', {
@@ -164,7 +165,7 @@ describe('acceptance on live projects', () => {
     expect(r).toEqual({ pass: false, reason: 'The steps show no read-back after the publish.' });
     expect(seen[0]!.lead.name).toBe('Engineering Lead');
     expect(seen[0]!.steps).toEqual([
-      expect.stringMatching(/sitecore-authoring\.publish → 200: Published 12 items$/),
+      expect.stringMatching(/ \[release\] sitecore-authoring\.publish → 200: Published 12 items$/),
     ]);
     expect(seen[0]!.checks.map((c) => c.status)).toEqual(['pending', 'pending']);
     expect(seen[0]!.charter?.outcomes.length).toBeGreaterThan(0);

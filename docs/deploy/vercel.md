@@ -185,7 +185,7 @@ code), `sitecore-cli` (serialization, needs .NET in the worker), `hosting` (the 
 project needs its own token) and `sitecore-deploy` (the Deploy API). The worker logs
 `Connected tool servers: …` and `Live agents: …` at start.
 
-`site.create` confirms the project's site exists; sites themselves are created in SitecoreAI Sites.
+`site.verify` confirms the project's site exists (a read); sites themselves are created in SitecoreAI Sites.
 
 ## Resetting a project
 

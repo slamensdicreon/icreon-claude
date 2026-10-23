@@ -318,6 +318,10 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     playbook: opts.playbook,
     isLive,
     review: opts.review ?? null,
+    effect: (server, op) => {
+      const spec = servers.find((x) => x.name === server)?.catalog[op];
+      return !spec ? null : spec.releases ? 'release' : spec.mutates ? 'write' : 'read';
+    },
     onAccepted: (projectId, taskId) => locks.release(projectId, taskId),
     platform: { checks: opts.platform.checks, read: readOnly, credential },
   });
