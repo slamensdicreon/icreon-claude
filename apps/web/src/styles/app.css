@@ -1,5 +1,12 @@
 /* Additions to the prototype's stylesheet, for real data the prototype's samples didn't carry. */
 
+/* React mounts the app in #root, between body and .app. The prototype's layout sizes .app to 100%
+   of its parent, so #root has to fill the viewport too; otherwise the page grows with the content
+   and the canvas and the Cypher conversation never scroll on their own. */
+#root {
+  height: 100%;
+}
+
 /* Credential scopes are full repository paths and API scopes; let them wrap inside the panel. */
 .settings td.mono {
   overflow-wrap: anywhere;
