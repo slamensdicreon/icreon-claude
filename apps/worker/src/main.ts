@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient } from '@lw/agent-runtime';
+import { anthropicModelClient, checkModels } from '@lw/agent-runtime';
 import { openStore, Projections } from '@lw/events';
 import { createWorker } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
@@ -56,18 +56,29 @@ const stack = await composeStack({
   model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
 });
 console.log(`Live agents: ${stack.liveRoles.join(', ') || 'none'}`);
+if (env.AGENTS === 'claude') {
+  for (const m of await checkModels(playbook.roles.map((r) => r.model.id))) {
+    console.log(`Claude ${m.id}: ${m.ok ? `ok (${m.detail})` : `NOT AVAILABLE, ${m.detail}`}`);
+  }
+}
+
+const connection = await NativeConnection.connect({
+  address: env.TEMPORAL_ADDRESS,
+  ...(env.TEMPORAL_API_KEY
+    ? {
+        tls: true,
+        apiKey: env.TEMPORAL_API_KEY,
+        metadata: { 'temporal-namespace': env.TEMPORAL_NAMESPACE },
+      }
+    : {}),
+}).catch((err: unknown) => {
+  console.error(`Temporal: could not connect to ${env.TEMPORAL_ADDRESS}`, err);
+  throw err;
+});
+console.log(`Temporal: connected to ${env.TEMPORAL_ADDRESS}, namespace ${env.TEMPORAL_NAMESPACE}`);
 
 const worker = await createWorker({
-  connection: await NativeConnection.connect({
-    address: env.TEMPORAL_ADDRESS,
-    ...(env.TEMPORAL_API_KEY
-      ? {
-          tls: true,
-          apiKey: env.TEMPORAL_API_KEY,
-          metadata: { 'temporal-namespace': env.TEMPORAL_NAMESPACE },
-        }
-      : {}),
-  }),
+  connection,
   namespace: env.TEMPORAL_NAMESPACE,
   activities: stack.activities,
 });

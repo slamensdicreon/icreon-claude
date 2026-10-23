@@ -238,10 +238,23 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
         metadata: { 'temporal-namespace': env.TEMPORAL_NAMESPACE },
       }
     : {};
+  // Lazy: an unreachable Temporal must not stop the API answering. Commands and Start fail with
+  // the cause instead; the check below puts it in the log at once.
   const client = new Client({
-    connection: await Connection.connect({ address, ...cloud }),
+    connection: Connection.lazy({ address, ...cloud }),
     namespace: env.TEMPORAL_NAMESPACE,
   });
+  void client.workflowService
+    .describeNamespace({ namespace: env.TEMPORAL_NAMESPACE })
+    .then(() =>
+      console.log(`Temporal: namespace ${env.TEMPORAL_NAMESPACE} reachable at ${address}`),
+    )
+    .catch((err: unknown) =>
+      console.error(
+        `Temporal: namespace ${env.TEMPORAL_NAMESPACE} not reachable at ${address}`,
+        err,
+      ),
+    );
 
   if (env.INLINE_WORKER === 'true') {
     const stack = await composeStack({
@@ -271,7 +284,14 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
     });
   }
 
-  commands = (id) => (projections.get(id) ? new ProjectCommandsClient(client, id) : undefined);
+  // Demo projects still play in the demo runner beside real ones, when there is one.
+  const demo = env.DEMO_RUNNER === 'separate' && opened.sql ? new CommandBus(opened.sql) : null;
+  commands = (id) => {
+    const s = projections.get(id);
+    if (!s) return undefined;
+    if (s.mode === 'demo') return demo ? remoteCommands(demo, id) : undefined;
+    return new ProjectCommandsClient(client, id);
+  };
   start = async (input) => {
     await startProject(client, {
       projectId: input.projectId,

@@ -52,9 +52,14 @@ The same images run locally with `docker compose up` (below), which is how this 
 |                    | Demo (default)                       | Real                                                   |
 | ------------------ | ------------------------------------ | ------------------------------------------------------ |
 | `ORCHESTRATOR`     | `simulator`                          | `temporal`                                             |
-| `demo` instances   | 1                                    | 0                                                      |
+| `demo` instances   | 1                                    | 0, or 1 to keep the demo beside real projects          |
 | `worker` instances | 0                                    | 1 or more                                              |
 | Needs              | Neon, Blob, GitHub OAuth             | also Temporal Cloud; `ANTHROPIC_API_KEY` for live agents |
+
+The two run side by side: with `ORCHESTRATOR=temporal` and the `demo` daemon still at 1, the demo
+projects keep playing in the demo runner while projects from the New Project wizard run on Temporal.
+Set `demo` to 0 to retire the demo. The production deployment runs both (`launchworks.dxmpr` on
+Temporal Cloud, `AGENTS=claude`).
 
 Instance counts live in `vercel.json` (`daemons.*.instances`); you can also override them from the
 dashboard without a deployment. Overrides persist across deployments until cleared.

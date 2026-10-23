@@ -10,6 +10,7 @@ import {
   startProject,
 } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
+import { phaseDefs, roster } from '@lw/playbook-sdk/pure';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -22,13 +23,16 @@ let env: TestWorkflowEnvironment;
 let app: FastifyInstance;
 let stopWorker: () => Promise<void>;
 let projections: Projections;
+let store: InMemoryEventStore;
+let playbookRef: Awaited<ReturnType<typeof loadPlaybook>>;
 
 beforeAll(async () => {
   env = await TestWorkflowEnvironment.createTimeSkipping();
-  const store = new InMemoryEventStore();
+  store = new InMemoryEventStore();
   projections = new Projections(store);
   await projections.start();
   const playbook = await loadPlaybook(PLAYBOOK);
+  playbookRef = playbook;
   const { blueprint, outputs } = await loadFixtures(PLAYBOOK);
   const worker = await createWorker({
     connection: env.nativeConnection,
@@ -126,5 +130,53 @@ describe('control-api on the Temporal orchestrator', () => {
     const again = await app.inject({ method: 'POST', url: '/projects/p1/control', payload: pause });
     expect(again.statusCode).toBe(409);
     expect(again.json().error.message).toBe('The project is already paused.');
+  }, 60_000);
+});
+
+describe('a project registered by the New Project wizard', () => {
+  it('starts on the orchestrator without being created twice', async () => {
+    const playbook = playbookRef;
+    await store.append('p2', [
+      {
+        type: 'project.created',
+        actor: { kind: 'system', id: 'intake' },
+        subject: { kind: 'project', id: 'p2' },
+        severity: 'notable',
+        data: {
+          name: 'Globex site',
+          client: 'Globex',
+          playbook: { id: playbook.manifest.id, version: playbook.manifest.version },
+          budgets: { tokens: 1e9, usd: 1e6, hours: 1e6 },
+          phases: phaseDefs(playbook),
+          roster: roster(playbook),
+          site: { sourceUrl: null },
+          mode: 'live',
+        },
+      },
+    ]);
+    await projections.catchUp('p2');
+    expect(projections.get('p2')?.status).toBe('intake');
+
+    await startProject(
+      env.client,
+      {
+        projectId: 'p2',
+        name: 'Globex site',
+        client: 'Globex',
+        playbook,
+        policy: defaultPolicy(playbook, { budgets: { tokens: 1e9, usd: 1e6, hours: 1e6 } }),
+        registered: true,
+      },
+      'api-test',
+    );
+    for (let i = 0; i < 2000 && projections.get('p2')?.status !== 'running'; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const s = projections.get('p2')!;
+    expect(s.status).toBe('running');
+    expect(s.name).toBe('Globex site');
+    expect(s.mode).toBe('live');
+    const created = (await store.read('p2')).filter((e) => e.type === 'project.created');
+    expect(created).toHaveLength(1);
   }, 60_000);
 });

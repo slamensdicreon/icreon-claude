@@ -86,7 +86,7 @@
       "root": "./",
       "entrypoint": "Dockerfile.worker",
       "instances": {
-        "iad1": 0
+        "iad1": 1
       },
       "resources": {
         "requests": {
