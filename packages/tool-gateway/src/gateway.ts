@@ -22,6 +22,11 @@ export interface GatewayDeps {
   credentials: CredentialProvider;
   idempotency: IdempotencyStore;
   rollback: RollbackRegistry;
+  /**
+   * Whether the Director approved this task's release. Release-affecting operations run only in
+   * an approved release task; without this, they are refused.
+   */
+  releases?: { approved(projectId: string, taskId: string): Promise<boolean> };
   limiter: RateLimiter;
   store: EventStore;
   detector?: InjectionDetector;
@@ -187,6 +192,12 @@ export class ToolGateway {
           }
         }
       }
+    }
+    if (spec.releases && !(await this.deps.releases?.approved(call.projectId, call.taskId))) {
+      return deny(
+        'release_not_approved',
+        `${call.op} is release-affecting, and this task isn't an approved release. Releases happen only in the plan's release tasks, after the Director approves them. Don't retry it here: finish the rest of the task and say what is left to release.`,
+      );
     }
     if (spec.destructive && !(await this.deps.rollback.hasRecipe(call.projectId, call.taskId))) {
       return deny(

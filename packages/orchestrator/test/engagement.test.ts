@@ -49,7 +49,18 @@ describe('project workflow', () => {
     const types = Object.values(s.escalations)
       .map((x) => x.type)
       .sort();
-    expect(types).toEqual(['access', 'decision', 'gate', 'gate']);
+    // Both phase gates, and the approval of each release (hosting, code deploy, publish).
+    expect(types).toEqual(['access', 'decision', 'gate', 'gate', 'gate', 'gate', 'gate']);
+    expect(
+      Object.values(s.escalations)
+        .filter((x) => x.title.startsWith('Approve release'))
+        .map((x) => x.context.split('. ')[0])
+        .sort(),
+    ).toEqual([
+      'Deploy the head to Vercel and register it as the editing host',
+      'Deploy the reviewed commit to the editing and delivery hosts',
+      'Publish to Experience Edge and verify every route',
+    ]);
     expect(s.decisions.filter((d) => d.decidedBy === 'director').length).toBeGreaterThanOrEqual(3);
 
     const events = await h.store.read(p.projectId);

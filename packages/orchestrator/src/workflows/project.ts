@@ -19,6 +19,7 @@ import {
   impactOf,
   phaseComplete,
   phasePercent,
+  RELEASE_GATE,
   rollbackOrder,
   startablePhases,
   type Blueprint,
@@ -826,40 +827,61 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     };
     const final = !checkpoint && phase === lastDirectorGate;
     const doneCount = coveredTasks.filter((id) => stateOf(id) === 'done').length;
+    const release = checkpoint?.gate === RELEASE_GATE;
     gate.escalationId = await raise(
-      {
-        type: 'gate',
-        title: clip(
-          checkpoint
-            ? `Review the pilot slice`
-            : final
-              ? `Accept ${input.name}`
-              : `Approve ${artifact.title} v${artifact.version}`,
-        ),
-        context: `${doneCount} of ${coveredTasks.length} tasks done. Exit criteria: ${info.exitCriteria}`,
-        impact: final
-          ? 'Accepting closes the engagement and starts the handover.'
-          : 'The next phases start when you approve.',
-        options: [
-          { id: 'approve', label: final ? 'Accept' : 'Approve', recommended: true },
-          { id: 'send_back', label: 'Send back with notes', recommended: false },
-        ],
-        defaultOptionId: null,
-        evidence: [
-          {
-            kind: 'artifact',
-            label: `${artifact.title} v${artifact.version}`,
-            ref: `artifact:${artifact.artifactId}`,
+      release
+        ? {
+            type: 'gate',
+            title: clip(checkpoint!.title),
+            context: `${checkpoint!.contract?.inputs ?? checkpoint!.title}. Release-affecting: it changes what the client or Page builder sees. Rollback: ${checkpoint!.contract?.rollback ?? 'not recorded'}`,
+            impact: 'The release task runs when you approve; nothing is released before.',
+            options: [
+              { id: 'approve', label: 'Approve release', recommended: true },
+              { id: 'send_back', label: 'Send back with notes', recommended: false },
+            ],
+            defaultOptionId: null,
+            evidence: [],
+            sourceTaskId: checkpoint!.taskId,
+            gate: {
+              phase,
+              artifactId: artifact.artifactId,
+              artifactVersion: artifact.version,
+              requiresConfirmation: false,
+            },
+          }
+        : {
+            type: 'gate',
+            title: clip(
+              checkpoint
+                ? `Review the pilot slice`
+                : final
+                  ? `Accept ${input.name}`
+                  : `Approve ${artifact.title} v${artifact.version}`,
+            ),
+            context: `${doneCount} of ${coveredTasks.length} tasks done. Exit criteria: ${info.exitCriteria}`,
+            impact: final
+              ? 'Accepting closes the engagement and starts the handover.'
+              : 'The next phases start when you approve.',
+            options: [
+              { id: 'approve', label: final ? 'Accept' : 'Approve', recommended: true },
+              { id: 'send_back', label: 'Send back with notes', recommended: false },
+            ],
+            defaultOptionId: null,
+            evidence: [
+              {
+                kind: 'artifact',
+                label: `${artifact.title} v${artifact.version}`,
+                ref: `artifact:${artifact.artifactId}`,
+              },
+            ],
+            sourceTaskId: checkpoint?.taskId ?? null,
+            gate: {
+              phase,
+              artifactId: artifact.artifactId,
+              artifactVersion: artifact.version,
+              requiresConfirmation: final,
+            },
           },
-        ],
-        sourceTaskId: checkpoint?.taskId ?? null,
-        gate: {
-          phase,
-          artifactId: artifact.artifactId,
-          artifactVersion: artifact.version,
-          requiresConfirmation: final,
-        },
-      },
       async (optionId, notes) => {
         if (optionId === 'approve') {
           gate.status = 'approved';

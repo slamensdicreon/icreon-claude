@@ -99,8 +99,8 @@ export class HostingToolServer implements ToolServer {
         properties: { ref: { type: 'string' } },
         additionalProperties: false,
       },
+      // An agent branch's preview changes nothing the client or Page builder sees.
       mutates: true,
-      releases: true,
     },
     'deploy.production': {
       description:

@@ -80,6 +80,7 @@ function setup(
   opts: {
     servers?: ToolServer[];
     recipe?: boolean;
+    approved?: boolean;
     onInjection?: (c: ToolCall, r: string) => Promise<void>;
   } = {},
 ) {
@@ -92,6 +93,7 @@ function setup(
     credentials: { tokenFor: async () => TOKEN },
     idempotency: new MemoryIdempotencyStore(),
     rollback: { hasRecipe: async () => opts.recipe ?? false },
+    releases: { approved: async () => opts.approved ?? true },
     limiter: new TokenBucketLimiter(1000, 1000),
     store,
     onInjection: opts.onInjection,
@@ -234,6 +236,19 @@ describe('call handling', () => {
       denied: 'rollback_recipe_required',
     });
     expect((await setup({ recipe: true }).gateway.call({ ...publish })).ok).toBe(true);
+  });
+
+  it('runs release-affecting operations only in an approved release task', async () => {
+    const release = fakeServer('hosting', {
+      'deploy.production': { mutates: true, releases: true },
+    });
+    const c = call('deployment-engineer', 'hosting', 'deploy.production');
+    expect(await setup({ servers: [release], approved: false }).gateway.call(c)).toMatchObject({
+      denied: 'release_not_approved',
+    });
+    expect((await setup({ servers: [release], approved: true }).gateway.call({ ...c })).ok).toBe(
+      true,
+    );
   });
 
   it('replays an identical call within an attempt instead of executing it twice', async () => {

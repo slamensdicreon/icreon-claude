@@ -67,6 +67,7 @@ export interface ToolCall {
 }
 
 export type Denial =
+  | 'release_not_approved'
   | 'unknown_server'
   | 'unknown_operation'
   | 'not_allowed'

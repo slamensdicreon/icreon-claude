@@ -1,3 +1,4 @@
+import { Client } from '@temporalio/client';
 import { fileURLToPath } from 'node:url';
 import type { LwEvent } from '@lw/contracts';
 import { canTransition, CommandError, type ProjectState } from '@lw/domain';
@@ -125,12 +126,15 @@ export async function launch(
     undoWindowMs: 0,
     ...opts.policy,
   });
+  // A plain client: the time-skipping one skips virtual time while a test awaits the result,
+  // which races the Director bot (activity timeouts fire before it answers).
+  const client = new Client({ connection: h.env.connection, namespace: h.env.namespace });
   const handle = await startProject(
-    h.env.client,
+    client,
     { projectId, name: `Project ${projectId}`, client: 'Acme Corp', playbook: h.playbook, policy },
     TASK_QUEUE,
   );
-  const commands = new ProjectCommandsClient(h.env.client, projectId);
+  const commands = new ProjectCommandsClient(client, projectId);
   const state = () => h.projections.get(projectId);
   return { projectId, name: `Project ${projectId}`, handle, commands, state };
 }

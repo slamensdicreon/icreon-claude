@@ -146,6 +146,19 @@ describe('compilePlan', () => {
     expect(byId.get('validate-components')!.dependsOn).not.toContain(PILOT_CHECKPOINT);
   });
 
+  it('puts a Director approval in front of every release, carrying its rollback plan', () => {
+    const plan = compilePlan(pb, blueprint());
+    const byId = new Map(plan.tasks.map((t) => [t.taskId, t]));
+    const approval = byId.get('approve-publish-edge')!;
+    expect(approval).toMatchObject({ kind: 'checkpoint', gate: 'release', phase: 8 });
+    expect(approval.dependsOn).toEqual(['deploy-code']);
+    expect(approval.contract?.rollback).toMatch(/Republish the previous item versions/);
+    expect(byId.get('publish-edge')!.dependsOn).toEqual(['approve-publish-edge']);
+    expect(byId.get('approve-deploy-code')!.dependsOn).toEqual(['finalize-head']);
+    const ids = plan.tasks.map((t) => t.taskId);
+    expect(ids.indexOf('approve-prepare-hosting')).toBe(ids.indexOf('prepare-hosting') - 1);
+  });
+
   it('includes a template with `when` only for projects with that feature', () => {
     const without = compilePlan(pb, blueprint());
     expect(without.tasks.map((t) => t.taskId)).not.toContain('prove-personalization');

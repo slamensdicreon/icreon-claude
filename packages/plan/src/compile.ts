@@ -54,6 +54,10 @@ export class PlanError extends Error {
 }
 
 export const PILOT_CHECKPOINT = 'pilot-checkpoint';
+/** The gate of a release's approval checkpoint. */
+export const RELEASE_GATE = 'release';
+/** The approval checkpoint in front of a release task. */
+export const releaseApprovalId = (taskId: string) => `approve-${taskId}`;
 const PLACEHOLDER_KEY = 'all';
 
 /**
@@ -199,6 +203,39 @@ export function compilePlan(
       const waitsOnSameItem = t.dependsOn.some((d) => byId.get(d)?.itemKeys[0] === key);
       if (!pilotKeys.has(key) && !waitsOnSameItem) t.dependsOn.push(PILOT_CHECKPOINT);
     }
+  }
+
+  // 4. Releases wait for the Director: an approval checkpoint takes over the release's
+  // dependencies, and the release waits on it.
+  const chief = playbook.roles.find((r) => r.tier === 'chief_of_staff')!.role;
+  for (const t of [...tasks]) {
+    const release = expanded.get(t.taskId)?.template.release;
+    if (!release || t.kind !== 'work') continue;
+    const approval: PlannedTask = {
+      ...t,
+      taskId: releaseApprovalId(t.taskId),
+      templateId: releaseApprovalId(t.templateId),
+      role: chief,
+      workstream: null,
+      title: `Approve release: ${t.title}`,
+      kind: 'checkpoint',
+      dependsOn: t.dependsOn,
+      acceptance: [],
+      gate: RELEASE_GATE,
+      batchSize: 1,
+      metric: null,
+      estimateHours: null,
+      contract: {
+        inputs: t.title,
+        outputs: 'The Director’s approval',
+        acceptance: 'Approved by the Director',
+        rollback: release.rollback,
+        maxAttempts: 1,
+      },
+    };
+    tasks.splice(tasks.indexOf(t), 0, approval);
+    byId.set(approval.taskId, approval);
+    t.dependsOn = [approval.taskId];
   }
 
   for (const t of tasks) {

@@ -16,7 +16,7 @@ import {
   withLiveGuard,
   type Activities,
 } from '@lw/orchestrator';
-import { Blueprint } from '@lw/plan';
+import { Blueprint, releaseApprovalId } from '@lw/plan';
 import type { PlatformPack } from '@lw/platforms';
 import { withReview } from './review';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
@@ -141,6 +141,13 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     credentials: opts.credentials ?? { tokenFor: async () => 'no-external-credential' },
     idempotency: new MemoryIdempotencyStore(),
     rollback: { hasRecipe: async () => false },
+    // A release runs only after the Director approved its checkpoint.
+    releases: {
+      approved: async (projectId, taskId) => {
+        await opts.projections.catchUp(projectId);
+        return opts.projections.get(projectId)?.tasks[releaseApprovalId(taskId)]?.state === 'done';
+      },
+    },
     limiter: new TokenBucketLimiter(10, 5),
     store: opts.store,
   });

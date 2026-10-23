@@ -149,6 +149,11 @@ export const TaskTemplate = z.object({
    * template yields no task, and dependencies on it are dropped.
    */
   when: Kebab.optional(),
+  /**
+   * A release (deploy, publish, register a host): it waits for the Director's approval, which
+   * shows the rollback plan, and only release tasks may call release-affecting operations.
+   */
+  release: z.object({ rollback: z.string() }).optional(),
   /** Name of a Blueprint collection. Without it the template yields exactly one task. */
   forEach: Kebab.optional(),
   /**
