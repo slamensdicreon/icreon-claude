@@ -132,6 +132,7 @@ export function intakeSpec(playbook: Playbook, pack: PlatformPack): IntakeSpec {
       intro: intake.source.intro ?? null,
     },
     steps,
+    brief: intake.brief,
   };
 }
 
