@@ -9,7 +9,7 @@ Everything runs in one Vercel project, on one domain:
 | Unit     | Vercel primitive                        | Source                              | What it does                                                                 |
 | -------- | --------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
 | `web`    | Service: static Vite build on the CDN   | `apps/web`                          | The Control Center. Every path that isn't the API.                          |
-| `api`    | Service: Function from a container image | `Dockerfile.api` → `apps/control-api` | `/projects/*`, `/auth/*`, `/health`: snapshots, commands, event streams, sign-in |
+| `api`    | Service: Function from a container image | `Dockerfile.api` → `apps/control-api` | `/projects/*`, `/intake/*`, `/auth/*`, `/health`: snapshots, commands, event streams, intake, sign-in |
 | `demo`   | Daemon, 1 instance                      | `Dockerfile.api` → `src/demo-runner.ts` | Plays the two prototype projects and runs Director commands for them         |
 | `worker` | Daemon, 0 instances until real mode     | `Dockerfile.worker` → `apps/worker` | Temporal workflows and activities, tool servers, Chromium                    |
 
@@ -91,6 +91,8 @@ Set them in the project's settings. Variables the images already default are in
 | `OPERATORS`                                | api               | Comma-separated GitHub logins allowed in                               |
 | `GITHUB_ORG`                               | api               | Optional: also require active membership of this org                   |
 | `SESSION_SECRET`                           | api               | 32+ random characters (`openssl rand -hex 32`)                         |
+| `CREDENTIALS_KEY`                          | api, worker       | 32 random bytes, base64 (`openssl rand -base64 32`). Seals project credentials (Sitecore clients, Edge Context IDs) in Postgres. Without it the wizard checks credentials but won't store them |
+| `CREDENTIALS_KEY_PREVIOUS`                 | api, worker       | Optional: the old key during a rotation, so secrets it sealed still open |
 | `PUBLIC_URL`, `APP_URL`                    | api               | Optional: default to `https://$VERCEL_PROJECT_PRODUCTION_URL`. Set both to the custom domain if the project has several |
 | `ORCHESTRATOR`                             | api               | `simulator` (default) or `temporal`                                    |
 | `SIM_SPEED`                                | demo              | Optional: demo clock multiplier (default 1)                            |
@@ -112,6 +114,20 @@ origins.
    check the `demo` daemon's logs.
 4. Leave a page open for five minutes: Activity keeps updating across the stream's scheduled
    reconnects, with no "Reconnecting" note.
+
+## Project credentials
+
+The New Project wizard collects each project's SitecoreAI environment automation client (required),
+an organization client (optional, for the Deploy API) and Experience Edge Context IDs. Each is
+tested against Sitecore before anything is stored: a token from `auth.sitecorecloud.io`, the
+Authoring API's site list on the CM host, a site query through Edge. The API then seals them with
+AES-256-GCM under `CREDENTIALS_KEY` in the `lw_secrets` table. The event log, Activity and Settings
+only ever see a reference and the last four characters. The API calls only `https://` CM hosts
+under `.sitecorecloud.io`.
+
+Keep `CREDENTIALS_KEY` only in Vercel (Sensitive). Losing it makes the stored secrets unreadable;
+the fix is to re-enter them. To rotate it, set the new key, move the old one to
+`CREDENTIALS_KEY_PREVIOUS`, redeploy, and re-enter credentials when convenient.
 
 ## Behaviour to know about
 

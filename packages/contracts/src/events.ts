@@ -226,6 +226,18 @@ export const ProjectTarget = z.object({
 });
 export type ProjectTarget = z.infer<typeof ProjectTarget>;
 
+/** What intake recorded about a live project, beyond the source and target labels. */
+export const IntakeFacts = z.object({
+  repo: z.string(),
+  branch: z.string(),
+  cmHost: z.string(),
+  siteCollection: z.string(),
+  site: z.string(),
+  languages: z.array(z.string()),
+  hosting: z.object({ provider: z.literal('vercel'), project: z.string() }),
+});
+export type IntakeFacts = z.infer<typeof IntakeFacts>;
+
 export const StatCard = z.object({
   metric: MetricKey,
   label: z.string(),
@@ -284,6 +296,9 @@ export const EventBody = z.discriminatedUnion('type', [
       stats: z.array(StatCard).default([]),
       /** Display names for tool servers in Activity ("sitecore-authoring" → "Authoring API"). */
       toolLabels: z.record(z.string(), z.string()).default({}),
+      /** live: a real engagement from the wizard. demo: a scripted project; nothing is built. */
+      mode: z.enum(['live', 'demo']).default('live'),
+      intake: IntakeFacts.nullable().default(null),
     }),
   ),
   /** Settings changed after intake: subtitle, target, stats, time zone. */
@@ -562,6 +577,8 @@ export const EventBody = z.discriminatedUnion('type', [
       scope: z.string(),
       /** Vault path; null when the client has not provided it yet. */
       reference: z.string().nullable(),
+      /** The value's last four characters, so people can tell which one is stored. */
+      hint: z.string().nullable().default(null),
       expiresAt: z.iso.datetime().nullable().default(null),
     }),
   ),

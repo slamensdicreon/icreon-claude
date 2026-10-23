@@ -64,7 +64,10 @@ export function Settings() {
                     <td>
                       <b>{c.system}</b>
                     </td>
-                    <td className="mono">{c.scope}</td>
+                    <td className="mono">
+                      {c.scope}
+                      {c.hint && <div className="faint">ends in {c.hint}</div>}
+                    </td>
                     <td>
                       {!c.provided ? (
                         <span className="cred-miss">Not provided</span>
@@ -85,6 +88,7 @@ export function Settings() {
                       <div className="btn-row">
                         <button
                           className="btn sm"
+                          disabled={!c.provided}
                           onClick={() =>
                             void run(
                               () => post(`${base}/credentials/${c.credentialId}/verify`),

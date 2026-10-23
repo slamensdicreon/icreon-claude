@@ -290,6 +290,7 @@ export class DemoProject {
           target: d.target,
           stats: d.stats,
           toolLabels: { ...this.playbook.manifest.defaults.toolLabels, ...EXTRA_TOOLS },
+          mode: 'demo',
         },
         'system',
         project,

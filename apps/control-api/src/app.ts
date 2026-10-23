@@ -4,7 +4,8 @@ import {
   ArchiveProject,
   ChangeSetting,
   Control,
-  CreateProject,
+  ProjectIntake,
+  VerifyIntakeCredential,
   DeferEscalation,
   PostMessage,
   RerunTask,
@@ -43,6 +44,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
+import type { IntakeService } from './intake';
 import { streamProject, type StreamOptions } from './sse';
 
 export interface AppDeps {
@@ -50,8 +52,8 @@ export interface AppDeps {
   projections: Projections;
   /** Command handlers for a project, or undefined if no such project runs here. */
   commands: (projectId: string) => ProjectCommands | undefined;
-  /** Intake: starts a new project and returns its id. Absent where intake isn't wired. */
-  createProject?: (input: CreateProject) => Promise<string>;
+  /** The New Project wizard: credential checks, intake, start. Absent where intake isn't wired. */
+  intake?: IntakeService;
   /** Stored content of an artifact version, or null if none is stored. */
   artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
   /** The playbook's escalation policy table, for Settings. */
@@ -118,6 +120,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const project = (id: string): ProjectState | null => projections.get(id) ?? null;
   const orchestrator = (id: string): ProjectCommands => {
+    const s = project(id);
+    if (s?.mode === 'live' && s.status === 'intake') {
+      throw new CommandError(
+        409,
+        'not_started',
+        `${s.name} hasn't started yet. Start it from Mission Control first.`,
+      );
+    }
     const o = deps.commands(id);
     if (!o) throw new CommandError(404, 'unknown_project', `No project "${id}".`);
     return o;
@@ -142,12 +152,31 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .map(projectListItem);
   });
 
-  app.post('/projects', async (req, reply) => {
-    if (!deps.createProject) {
+  app.post('/intake/verify', async (req, reply) => {
+    if (!deps.intake) {
       return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
     }
-    const projectId = await deps.createProject(CreateProject.parse(req.body));
-    return reply.status(201).send({ projectId });
+    return deps.intake.verify(VerifyIntakeCredential.parse(req.body));
+  });
+
+  app.post('/projects', async (req, reply) => {
+    if (!deps.intake) {
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    }
+    const projectId = await deps.intake.create(ProjectIntake.parse(req.body));
+    await projections.catchUp(projectId);
+    return reply.status(201).send({ projectId, canStart: deps.intake.canStart });
+  });
+
+  app.post<P>('/projects/:id/start', async (req, reply) => {
+    const s = known(req.params.id);
+    if (!deps.intake) {
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    }
+    await deps.intake.start(s);
+    const seq = await store.head(s.projectId);
+    const r: CommandResult = { accepted: true, seq };
+    return r;
   });
 
   // ---- Snapshots --------------------------------------------------------------------------
@@ -466,8 +495,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.post<{ Params: { id: string; credentialId: string } }>(
     '/projects/:id/credentials/:credentialId/verify',
-    async (req) =>
-      command(req.params.id, (o) => supported(o, 'verifyCredential')(req.params.credentialId)),
+    async (req) => {
+      const s = known(req.params.id);
+      // A live project's credentials are in the vault: the API checks them itself.
+      if (s.mode === 'live' && deps.intake) {
+        await deps.intake.reverify(s, req.params.credentialId);
+        const seq = await store.head(s.projectId);
+        await projections.waitFor(s.projectId, seq);
+        const r: CommandResult = { accepted: true, seq };
+        return r;
+      }
+      return command(req.params.id, (o) =>
+        supported(o, 'verifyCredential')(req.params.credentialId),
+      );
+    },
   );
 
   app.get<P>('/projects/:id/scenarios', async (req) => {

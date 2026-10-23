@@ -61,7 +61,7 @@ export function settingsView(s: ProjectState, policyDefaults: PolicyRow[]): Sett
   return {
     seq: s.seq,
     timezone: s.timezone,
-    credentials: Object.values(s.credentials),
+    credentials: Object.values(s.credentials).map(({ reference: _ref, ...view }) => view),
     budgets: s.budgets,
     spent: s.spent,
     gates: [...directorGates, ...optional],

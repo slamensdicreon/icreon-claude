@@ -1404,22 +1404,27 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const rosterEntries = roster(playbook);
   for (const r of rosterEntries)
     agentStates.set(r.agentId, r.tier === 'specialist' ? 'inactive' : 'idle');
+  const created: NewEvent[] = input.registered
+    ? []
+    : [
+        {
+          type: 'project.created',
+          actor: SYSTEM,
+          subject: { kind: 'project', id: projectId },
+          severity: 'notable',
+          data: {
+            name: input.name,
+            client: input.client,
+            playbook: { id: playbook.manifest.id, version: playbook.manifest.version },
+            budgets: policy.budgets,
+            phases: phaseDefs(playbook),
+            roster: rosterEntries,
+            site: { sourceUrl: input.site?.sourceUrl ?? null },
+          },
+        },
+      ];
   await send(
-    {
-      type: 'project.created',
-      actor: SYSTEM,
-      subject: { kind: 'project', id: projectId },
-      severity: 'notable',
-      data: {
-        name: input.name,
-        client: input.client,
-        playbook: { id: playbook.manifest.id, version: playbook.manifest.version },
-        budgets: policy.budgets,
-        phases: phaseDefs(playbook),
-        roster: rosterEntries,
-        site: { sourceUrl: input.site?.sourceUrl ?? null },
-      },
-    },
+    ...created,
     {
       type: 'project.status',
       actor: SYSTEM,

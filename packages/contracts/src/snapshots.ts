@@ -21,6 +21,7 @@ import {
   MessageLink,
   MessageSection,
   MetricKey,
+  IntakeFacts,
   ProjectSource,
   ProjectTarget,
   Resolution,
@@ -90,6 +91,10 @@ export const ProjectSummary = z.object({
   timezone: z.string(),
   source: ProjectSource,
   target: ProjectTarget.nullable(),
+  /** A scripted demo project: nothing it shows is real work. */
+  demo: z.boolean(),
+  /** What intake recorded (live projects only). */
+  intake: IntakeFacts.nullable(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 
@@ -313,6 +318,7 @@ export const ProjectListItem = ProjectSummary.pick({
   currentPhase: true,
   initials: true,
   subtitle: true,
+  demo: true,
 });
 export type ProjectListItem = z.infer<typeof ProjectListItem>;
 
@@ -457,6 +463,8 @@ export const CredentialView = z.object({
   system: z.string(),
   scope: z.string(),
   provided: z.boolean(),
+  /** Last four characters of the stored value. */
+  hint: z.string().nullable().default(null),
   verifiedAt: z.iso.datetime().nullable(),
   ok: z.boolean().nullable(),
   detail: z.string().nullable(),

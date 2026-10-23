@@ -1,20 +1,12 @@
-import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import type { CreateProject } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
 import { CommandBus, openStore, verifiedTls } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import {
-  DEMO_SCENARIOS,
-  demoProjectId,
-  Simulation,
-  sitecoreScenario,
-  startDemo,
-} from '@lw/simulator';
+import { DEMO_SCENARIOS, demoProjectId, startDemo } from '@lw/simulator';
 import { openBlobStore } from '@lw/tool-gateway';
 import pg from 'pg';
 import { z } from 'zod';
-import { demoCommands, dispatch, simulationCommands, type ProjectCommands } from './commands';
+import { demoCommands, dispatch, type ProjectCommands } from './commands';
 
 /**
  * The demo runner: plays the prototype's two projects into the shared Postgres log and runs the
@@ -68,37 +60,18 @@ const blobs = openBlobStore(env.BLOB_STORE, env.DATA_DIR);
 for (const def of DEMO_SCENARIOS) await store.reset(demoProjectId(def));
 const demos = await startDemo(store, playbook, blobs, { speed: env.SIM_SPEED });
 const projects = new Map<string, ProjectCommands>(demos.map((d) => [d.projectId, demoCommands(d)]));
-const sims: Simulation[] = [];
 console.log(`Demo projects running: ${demos.map((d) => d.projectId).join(', ')}`);
-
-const createProject = (input: CreateProject): string => {
-  const projectId = `prj-${randomUUID().slice(0, 8)}`;
-  const sim = new Simulation(store, playbook, {
-    projectId,
-    name: input.name,
-    client: input.client,
-    sourceUrl: input.sourceUrl,
-    autopilot: false,
-    speed: env.SIM_SPEED,
-    seed: sims.length + 1,
-  });
-  sims.push(sim);
-  projects.set(projectId, simulationCommands(sim));
-  void sim.run(sitecoreScenario).catch((err) => console.error('simulation failed', projectId, err));
-  return projectId;
-};
 
 const stop = new AbortController();
 const bus = new CommandBus(opened.sql!);
 const serving = bus.serve(
   async (req) => {
-    if (req.method === 'createProject') return createProject(req.args[0] as CreateProject);
     const cmds = projects.get(req.projectId);
     if (!cmds) {
       throw new CommandError(
         409,
         'project_stopped',
-        'This simulated project stopped when the demo runner restarted. Start a new one from the project switcher.',
+        'This simulated project stopped when the demo runner restarted. It is a leftover from the old intake and can no longer take commands.',
       );
     }
     return dispatch(cmds, req);
@@ -111,7 +84,6 @@ const shutdown = async () => {
   stop.abort();
   await serving;
   for (const d of demos) d.stop();
-  for (const s of sims) s.stop();
   await opened.close();
   await lock.end();
   process.exit(0);

@@ -8,6 +8,7 @@ import type {
   ConversationSnapshot,
   CosPresence,
   CredentialView,
+  IntakeFacts,
   DecisionView,
   EscalationView,
   LeadRow,
@@ -80,8 +81,12 @@ export interface ProjectState {
   sourceUrl: string | null;
   pages: Record<string, PreviewPage>;
   preview: Pick<PreviewSnapshot, 'source' | 'target'>;
-  credentials: Record<string, CredentialView>;
+  /** The vault reference stays in the read model for re-verification; views never show it. */
+  credentials: Record<string, CredentialView & { reference: string | null }>;
   settings: Partial<Record<SettingKey, unknown>>;
+  /** live: a real engagement from the wizard. demo: scripted. */
+  mode: 'live' | 'demo';
+  intake: IntakeFacts | null;
   conventions: { key: string; value: string }[];
 }
 
@@ -145,6 +150,8 @@ export function createProjectState(projectId: string): ProjectState {
     pages: {},
     preview: { source: null, target: null },
     credentials: {},
+    mode: 'live',
+    intake: null,
     settings: {},
     conventions: [],
   };
@@ -197,6 +204,8 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       s.target = d.target;
       s.statCards = d.stats;
       s.toolLabels = d.toolLabels;
+      s.mode = d.mode;
+      s.intake = d.intake;
       for (const p of d.phases) s.phases[p.number] = { ...p, status: 'future', enteredAt: null };
       for (const r of d.roster) s.agents[r.agentId] = newAgent(r);
       if (s.source.label || s.source.url)
@@ -511,6 +520,8 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         system: e.data.system,
         scope: e.data.scope,
         provided: e.data.reference !== null,
+        reference: e.data.reference,
+        hint: e.data.hint,
         verifiedAt: null,
         ok: null,
         detail: e.data.reference === null ? 'Not provided' : null,
@@ -659,6 +670,8 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     timezone: s.timezone,
     source: s.source,
     target: s.target,
+    demo: s.mode === 'demo',
+    intake: s.intake,
   };
 }
 
@@ -675,6 +688,7 @@ export function projectListItem(s: ProjectState): ProjectListItem {
     currentPhase: p.currentPhase,
     initials: p.initials,
     subtitle: p.subtitle,
+    demo: p.demo,
   };
 }
 

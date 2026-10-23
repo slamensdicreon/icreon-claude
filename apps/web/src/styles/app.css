@@ -41,3 +41,135 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* New Project wizard: the prototype's dialog, wider, with a step rail and grouped fields. */
+.dialog.wiz {
+  width: 680px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.wiz-steps {
+  list-style: none;
+  margin: 4px 0 16px;
+  padding: 0;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--web-fg-2);
+}
+.wiz-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--web-border);
+  border-radius: 999px;
+}
+.wiz-steps li span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--web-surface-2);
+  font-size: 11.5px;
+}
+.wiz-steps li[aria-current='step'] {
+  border-color: var(--web-accent);
+  color: var(--web-accent-text);
+}
+.wiz-steps li[aria-current='step'] span {
+  background: var(--web-accent);
+  color: var(--web-fg-on-accent);
+}
+.wiz-steps li.done span {
+  background: var(--web-fg);
+  color: var(--web-bg);
+}
+.wiz-body {
+  overflow: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+.wiz-body > p {
+  margin: 0 0 14px;
+}
+.wiz-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.wiz-field .input,
+.wiz-field .select {
+  width: 100%;
+}
+.wiz-field .input[aria-invalid] {
+  border-color: var(--danger);
+}
+.wiz-hint {
+  font-size: 12.5px;
+  color: var(--web-fg-2);
+}
+.wiz-row {
+  display: flex;
+  gap: 12px;
+}
+.wiz-group {
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  padding: 12px 14px 4px;
+  margin-bottom: 12px;
+}
+.wiz-group h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+}
+.wiz-group .toggle-row {
+  margin-bottom: 10px;
+}
+.wiz-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.wiz-check .btn {
+  flex: none;
+}
+.wiz-review {
+  margin: 0 0 12px;
+}
+@media (max-width: 640px) {
+  .wiz-row {
+    flex-direction: column;
+    gap: 0;
+  }
+}
+
+/* Scripted demo projects are labelled wherever projects are listed. */
+.pm-demo {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--web-border-strong);
+  border-radius: var(--web-radius-1);
+  font-size: 10.5px;
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  color: var(--web-fg-2);
+  vertical-align: 2px;
+}
+.pm-demo.first {
+  margin: 0 6px 0 0;
+}
+.page-head .demo-note {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--warning-text, var(--web-fg-2));
+}

@@ -26,6 +26,11 @@ export interface ProjectInput {
   policy: ProjectPolicy;
   /** Site definition from intake. */
   site?: { sourceUrl: string | null };
+  /**
+   * The project was recorded by the New Project wizard (project.created, credentials), so the
+   * workflow starts it rather than creating it.
+   */
+  registered?: boolean;
 }
 
 export interface AgentRequest {

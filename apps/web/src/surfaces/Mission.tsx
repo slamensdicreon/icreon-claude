@@ -1,4 +1,5 @@
-import type { PreviewSnapshot } from '@lw/contracts';
+import type { PreviewSnapshot, SettingsSnapshot } from '@lw/contracts';
+import { post } from '../lib/api';
 import { clock } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { Card } from '../parts/Card';
@@ -47,9 +48,15 @@ export function Mission() {
           <div>
             <h1>Mission Control</h1>
             <p>{mc.subtitle}</p>
+            {p.demo && (
+              <p className="demo-note">
+                Demo project: scripted data for showing the Control Center. Nothing is being built.
+              </p>
+            )}
           </div>
         </div>
       )}
+      {p.status === 'intake' && !p.demo && <ReadyToStart />}
       <section className="panel hide-present" style={{ marginBottom: 16 }}>
         <div className="panel-head">
           <h2>Waiting on you{open.length > 0 && <small>{open.length}</small>}</h2>
@@ -227,5 +234,60 @@ export function Mission() {
         </section>
       </div>
     </>
+  );
+}
+
+/** A project the wizard recorded: what it will work on, its credentials, and Start. */
+function ReadyToStart() {
+  const { projectId, run } = useApp();
+  const mc = useMission().data!;
+  const settings = useProjectResource<SettingsSnapshot>('/settings').data;
+  const i = mc.project.intake;
+  const creds = settings?.credentials ?? [];
+  return (
+    <section className="panel hide-present" style={{ marginBottom: 16 }}>
+      <div className="panel-head">
+        <h2>Ready to start</h2>
+      </div>
+      <p style={{ marginTop: 0 }}>
+        Intake is recorded and its credentials are verified and sealed. Nothing has run yet: no
+        agent has touched the repository or the SitecoreAI environment.
+      </p>
+      {i && (
+        <div className="kv" style={{ marginBottom: 12 }}>
+          <span>Source</span>
+          <span className="v">
+            {i.repo} ({i.branch})
+          </span>
+          <span>Target</span>
+          <span className="v">
+            {i.cmHost}: {i.siteCollection} / {i.site}, {i.languages.join(', ')}
+          </span>
+          <span>Hosting</span>
+          <span className="v">Vercel, {i.hosting.project}</span>
+          <span>Credentials</span>
+          <span className="v">
+            {creds.length
+              ? creds
+                  .map(
+                    (c) =>
+                      `${c.system} ${c.provided ? (c.ok ? '\u2713' : '\u2717') : '(not connected)'}`,
+                  )
+                  .join(', ')
+              : '\u2026'}
+          </span>
+        </div>
+      )}
+      <div className="btn-row">
+        <button
+          className="btn primary"
+          onClick={() =>
+            void run(() => post(`/projects/${projectId}/start`), `Starting ${mc.project.name}`)
+          }
+        >
+          Start project
+        </button>
+      </div>
+    </section>
   );
 }

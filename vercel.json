@@ -7,11 +7,21 @@
       "installCommand": "pnpm install --frozen-lockfile --filter @lw/web...",
       "buildCommand": "pnpm build",
       "outputDirectory": "dist",
-      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ],
       "headers": [
         {
           "source": "/assets/(.*)",
-          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
         }
       ]
     },
@@ -21,25 +31,68 @@
     }
   },
   "rewrites": [
-    { "source": "/projects", "destination": { "service": "api" } },
-    { "source": "/projects/(.*)", "destination": { "service": "api" } },
-    { "source": "/auth/(.*)", "destination": { "service": "api" } },
-    { "source": "/health", "destination": { "service": "api" } },
-    { "source": "/(.*)", "destination": { "service": "web" } }
+    {
+      "source": "/projects",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/projects/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/auth/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/intake/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/health",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
   ],
   "daemons": {
     "demo": {
       "root": "./",
       "entrypoint": "Dockerfile.api",
       "command": ["node", "--import", "tsx", "src/demo-runner.ts"],
-      "instances": { "iad1": 1 },
-      "resources": { "requests": { "memory": "1Gi" } }
+      "instances": {
+        "iad1": 1
+      },
+      "resources": {
+        "requests": {
+          "memory": "1Gi"
+        }
+      }
     },
     "worker": {
       "root": "./",
       "entrypoint": "Dockerfile.worker",
-      "instances": { "iad1": 0 },
-      "resources": { "requests": { "memory": "4Gi" } },
+      "instances": {
+        "iad1": 0
+      },
+      "resources": {
+        "requests": {
+          "memory": "4Gi"
+        }
+      },
       "terminationGracePeriodSeconds": 300
     }
   }

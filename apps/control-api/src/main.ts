@@ -2,8 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { anthropicModelClient } from '@lw/agent-runtime';
-import type { CreateProject } from '@lw/contracts';
-import { CommandBus, openStore, Projections } from '@lw/events';
+import {
+  CommandBus,
+  masterKey,
+  MemoryVault,
+  openStore,
+  PostgresVault,
+  Projections,
+  type SecretVault,
+} from '@lw/events';
+import { CommandError } from '@lw/domain';
 import { createWorker, defaultPolicy, ProjectCommandsClient, startProject } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
@@ -13,6 +21,8 @@ import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 import { buildApp } from './app';
+import { IntakeService, type StartInput } from './intake';
+import { SITECORE_DEFAULTS } from './verify';
 import { policyRows } from './policy';
 import { demoCommands, remoteCommands, simulationCommands, type ProjectCommands } from './commands';
 
@@ -61,6 +71,9 @@ const env = z
     TEMPORAL_NAMESPACE: z.string().default('default'),
     /** Temporal Cloud API key; connects over TLS. */
     TEMPORAL_API_KEY: z.string().optional(),
+    /** Seals project credentials (32 bytes, base64). The previous key stays readable after rotation. */
+    CREDENTIALS_KEY: z.string().optional(),
+    CREDENTIALS_KEY_PREVIOUS: z.string().optional(),
     INLINE_WORKER: z.enum(['true', 'false']).default('true'),
     AGENTS: z.enum(['stub', 'claude']).default('stub'),
     AUTH: z.enum(['none', 'github']).default('none'),
@@ -150,15 +163,15 @@ const blobs = openBlobStore(
 );
 
 let commands: (projectId: string) => ProjectCommands | undefined;
-let createProject: (input: CreateProject) => Promise<string>;
-const seeds: CreateProject[] = [];
+/** Starts a project the New Project wizard recorded; only a real orchestrator can. */
+let start: ((input: StartInput) => Promise<void>) | undefined;
+let seedSample: (() => Promise<void>) | null = null;
 
 if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
   // The demo plays in the demo runner; this process only sends it commands.
   if (!opened.sql) throw new Error('DEMO_RUNNER=separate needs STORE=postgres');
   const bus = new CommandBus(opened.sql);
   commands = (id) => (projections.get(id) ? remoteCommands(bus, id) : undefined);
-  createProject = async (input) => (await bus.send('*', 'createProject', [input])) as string;
 } else if (env.ORCHESTRATOR === 'simulator') {
   const sims = new Map<string, ProjectCommands>();
   const running: Simulation[] = [];
@@ -183,8 +196,6 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
   for (const d of demos) sims.set(d.projectId, demoCommands(d));
   cleanups.push(async () => demos.forEach((d) => d.stop()));
   commands = (id) => sims.get(id);
-  createProject = async (input) =>
-    startSimulation({ ...input, autopilot: false, speed: env.SIM_SPEED });
   const SEEDS = [
     {
       name: 'Acme corporate site',
@@ -261,29 +272,66 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
   }
 
   commands = (id) => (projections.get(id) ? new ProjectCommandsClient(client, id) : undefined);
-  createProject = async ({ name, client: clientName, sourceUrl }) => {
-    const projectId = `prj-${randomUUID().slice(0, 8)}`;
+  start = async (input) => {
     await startProject(client, {
-      projectId,
-      name,
-      client: clientName,
-      site: sourceUrl ? { sourceUrl } : undefined,
+      projectId: input.projectId,
+      name: input.name,
+      client: input.client,
+      site: { sourceUrl: input.sourceUrl },
       playbook,
-      policy: defaultPolicy(playbook),
+      policy: { ...defaultPolicy(playbook), budgets: input.budgets },
+      registered: true,
     });
-    return projectId;
   };
   // A sample project for local runs only: deployed instances start cold and in parallel.
   if (env.INLINE_WORKER === 'true' && !(await store.projectIds()).length) {
-    seeds.push({ name: 'Acme corporate site', client: 'Acme Corp' });
+    seedSample = async () => {
+      await startProject(client, {
+        projectId: `prj-${randomUUID().slice(0, 8)}`,
+        name: 'Acme corporate site',
+        client: 'Acme Corp',
+        playbook,
+        policy: defaultPolicy(playbook),
+      });
+    };
   }
+}
+
+/**
+ * Where project credentials are sealed. A shared database needs CREDENTIALS_KEY (32 bytes,
+ * base64); without it, intake still checks credentials but refuses to store them. The in-memory
+ * store gets an in-memory vault, lost on restart like the store.
+ */
+function openVault(): SecretVault {
+  if (env.CREDENTIALS_KEY && opened.sql) {
+    const keys = [
+      env.CREDENTIALS_KEY,
+      ...(env.CREDENTIALS_KEY_PREVIOUS ? [env.CREDENTIALS_KEY_PREVIOUS] : []),
+    ];
+    return new PostgresVault(opened.sql, keys.map(masterKey));
+  }
+  if (env.STORE === 'memory') return new MemoryVault();
+  const refuse = async (): Promise<never> => {
+    throw new CommandError(
+      503,
+      'vault_unconfigured',
+      'Credentials can be checked but not stored: CREDENTIALS_KEY is not set on the server.',
+    );
+  };
+  return { seal: refuse, open: refuse };
 }
 
 const app = await buildApp({
   store,
   projections,
   commands,
-  createProject,
+  intake: new IntakeService({
+    store,
+    playbook,
+    vault: openVault(),
+    verify: SITECORE_DEFAULTS,
+    start,
+  }),
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
   policyDefaults: () => policyRows(playbook),
   corsOrigin: env.CORS_ORIGIN,
@@ -296,7 +344,7 @@ const app = await buildApp({
   logger: true,
 });
 
-for (const s of seeds) await createProject(s);
+await seedSample?.();
 
 const shutdown = async () => {
   await app.close();

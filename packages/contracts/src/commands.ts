@@ -17,6 +17,83 @@ export const CreateProject = z.object({
 });
 export type CreateProject = z.infer<typeof CreateProject>;
 
+const ClientCredentials = z.object({
+  clientId: z.string().trim().min(1).max(200),
+  clientSecret: z.string().trim().min(1).max(500),
+});
+const ContextId = z.string().trim().min(1).max(200);
+
+/**
+ * POST /intake/verify — checks one credential against the live service before anything is stored.
+ * The environment client is checked together with its CM host.
+ */
+export const VerifyIntakeCredential = z.discriminatedUnion('kind', [
+  ClientCredentials.extend({
+    kind: z.literal('sitecore.environment'),
+    cmHost: z.string().trim().min(1).max(300),
+  }),
+  ClientCredentials.extend({ kind: z.literal('sitecore.organization') }),
+  z.object({ kind: z.literal('edge.preview'), contextId: ContextId }),
+  z.object({ kind: z.literal('edge.live'), contextId: ContextId }),
+]);
+export type VerifyIntakeCredential = z.infer<typeof VerifyIntakeCredential>;
+
+export const VerifyIntakeResult = z.object({
+  ok: z.boolean(),
+  detail: z.string(),
+  sites: z.array(z.string()).default([]),
+  expiresAt: z.iso.datetime().nullable().default(null),
+});
+export type VerifyIntakeResult = z.infer<typeof VerifyIntakeResult>;
+
+/**
+ * POST /projects — the New Project wizard. Everything a real engagement needs before it starts:
+ * the source, the SitecoreAI target and its credentials, hosting, budgets. Secrets are sealed in
+ * the vault on arrival; the event log only ever records references.
+ */
+export const ProjectIntake = z.object({
+  name: z.string().trim().min(1).max(120),
+  client: z.string().trim().min(1).max(120),
+  timezone: z.string().min(1).max(64).default('America/New_York'),
+  budgets: z.object({
+    usd: z.number().positive().max(1_000_000),
+    tokens: z.number().int().positive(),
+    hours: z.number().positive().max(10_000),
+  }),
+  source: z.object({
+    repo: z
+      .string()
+      .trim()
+      .regex(/^[\w.-]+\/[\w.-]+$/, 'owner/name'),
+    branch: z.string().trim().min(1).max(200).default('main'),
+    url: z
+      .url({ protocol: /^https?$/ })
+      .nullable()
+      .default(null),
+  }),
+  target: z.object({
+    cmHost: z.string().trim().min(1).max(300),
+    siteCollection: z.string().trim().min(1).max(100),
+    site: z.string().trim().min(1).max(100),
+    languages: z.array(z.string().trim().min(2).max(20)).min(1).default(['en']),
+  }),
+  hosting: z.object({
+    provider: z.literal('vercel'),
+    project: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9][a-z0-9-]{0,99}$/, 'lowercase letters, digits and dashes'),
+  }),
+  credentials: z.object({
+    environment: ClientCredentials,
+    organization: ClientCredentials.nullable().default(null),
+    edgePreviewContextId: ContextId.nullable().default(null),
+    edgeLiveContextId: ContextId.nullable().default(null),
+  }),
+});
+export type ProjectIntake = z.infer<typeof ProjectIntake>;
+export type ProjectIntakeInput = z.input<typeof ProjectIntake>;
+
 /** POST /projects/:id/messages — a directive or a question for Cypher. */
 export const PostMessage = z.object({
   body: z.string().min(1).max(8000),

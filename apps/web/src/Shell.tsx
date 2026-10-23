@@ -46,7 +46,10 @@ export function Sidebar() {
         </span>
         <span className="pm">
           <div className="pn">{p?.name ?? 'Loading projects'}</div>
-          <div className="ps">{p?.subtitle ?? p?.client ?? ''}</div>
+          <div className="ps">
+            {p?.demo && <span className="pm-demo first">Demo</span>}
+            {p?.subtitle ?? p?.client ?? ''}
+          </div>
         </span>
       </button>
       <div className="side-nav">

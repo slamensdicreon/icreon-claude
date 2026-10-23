@@ -142,6 +142,7 @@ export class Simulation {
           phases: phaseDefs(this.playbook),
           roster: roster(this.playbook),
           site: { sourceUrl: this.opts.sourceUrl ?? null },
+          mode: 'demo',
         },
       },
       this.projectStatus('running'),

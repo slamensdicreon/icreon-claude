@@ -24,11 +24,16 @@ export function ProjectMenu() {
           >
             <span className="ini">{p.initials}</span>
             <span className="pm-t">
-              <b>{p.name}</b>
+              <b>
+                {p.name}
+                {p.demo && <span className="pm-demo">Demo</span>}
+              </b>
               <small>
                 {p.currentPhase
                   ? `Phase ${p.currentPhase.number}, ${p.currentPhase.name}`
-                  : p.status}{' '}
+                  : p.status === 'intake'
+                    ? 'Ready to start'
+                    : p.status}{' '}
                 · {p.subtitle ?? p.client}
               </small>
             </span>
