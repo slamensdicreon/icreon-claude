@@ -25,8 +25,11 @@ tools:
       - fs.write
       - exec.build
       - exec.content-sdk-cli
-  github:
+  build-repo:
     ops:
+      - tree.read
+      - repo.read
+      - code.search
       - branch.commit
 acceptance:
   - validator:build.green

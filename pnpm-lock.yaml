@@ -196,6 +196,9 @@ importers:
 
   packages/connectors:
     dependencies:
+      '@lw/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@lw/domain':
         specifier: workspace:*
         version: link:../domain

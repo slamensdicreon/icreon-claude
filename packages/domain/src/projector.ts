@@ -8,6 +8,7 @@ import type {
   ConversationSnapshot,
   CosPresence,
   CredentialView,
+  BuildRepo,
   IntakeFacts,
   DecisionView,
   EscalationView,
@@ -87,6 +88,7 @@ export interface ProjectState {
   /** live: a real engagement from the wizard. demo: scripted. */
   mode: 'live' | 'demo';
   intake: IntakeFacts | null;
+  buildRepo: BuildRepo | null;
   conventions: { key: string; value: string }[];
 }
 
@@ -152,6 +154,7 @@ export function createProjectState(projectId: string): ProjectState {
     credentials: {},
     mode: 'live',
     intake: null,
+    buildRepo: null,
     settings: {},
     conventions: [],
   };
@@ -222,6 +225,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (d.target !== undefined) s.target = d.target;
       if (d.stats !== undefined) s.statCards = d.stats;
       if (d.timezone !== undefined) s.timezone = d.timezone;
+      if (d.buildRepo !== undefined) s.buildRepo = d.buildRepo;
       if (d.sourceUrl !== undefined) {
         s.sourceUrl = d.sourceUrl;
         s.source = { ...s.source, url: d.sourceUrl };
@@ -676,6 +680,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     target: s.target,
     demo: s.mode === 'demo',
     intake: s.intake,
+    buildRepo: s.buildRepo,
   };
 }
 

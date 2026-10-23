@@ -1,4 +1,4 @@
-import type { SettingsSnapshot } from '@lw/contracts';
+import type { ProjectSummary, SettingsSnapshot } from '@lw/contracts';
 import { useEffect, useState } from 'react';
 import { post, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';
@@ -44,6 +44,7 @@ export function Settings() {
       </div>
       <div className="settings">
         {!p.demo && <SourceSitePanel current={p.sourceUrl} />}
+        {!p.demo && p.intake && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}
         <section className="panel">
           <h2>
             Credentials <small>references only</small>
@@ -353,6 +354,50 @@ export function Settings() {
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * Where the new site is built: a private repository in our GitHub organization, created from
+ * Sitecore's starter, that moves to the client at handover. Created when the project starts; a
+ * project started earlier, or one whose creation failed, creates it here.
+ */
+function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; source: string }) {
+  const { projectId, run } = useApp();
+  return (
+    <section className="panel build-repo">
+      <h2>Build repository</h2>
+      <p className="muted">
+        The new site is built here, in our GitHub organization, from Sitecore’s starter. Agents read{' '}
+        {source} but commit only to this repository, on launchworks/* branches. It moves to the
+        client at handover.
+      </p>
+      {repo ? (
+        <p>
+          <a href={repo.url} target="_blank" rel="noopener noreferrer">
+            {repo.repo}
+          </a>{' '}
+          <span className="muted">
+            · from {repo.template} · app in <span className="mono">{repo.appPath}</span>
+          </span>
+        </p>
+      ) : (
+        <>
+          <p className="cred-miss">Not created yet: building can’t start until it is.</p>
+          <button
+            className="btn sm primary"
+            onClick={() =>
+              void run(
+                () => post(`/projects/${projectId}/build-repo`, {}),
+                'Build repository created.',
+              )
+            }
+          >
+            Create build repository
+          </button>
+        </>
+      )}
+    </section>
   );
 }
 

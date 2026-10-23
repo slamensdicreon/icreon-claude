@@ -346,17 +346,17 @@ describe('call handling', () => {
   it('records every call, allowed or denied, with its request hash', async () => {
     const { gateway, store } = setup();
     await gateway.call(call('repo-analyst', 'github', 'repo.read', { ref: 'main' }));
-    await gateway.call(call('research-agent', 'github', 'branch.commit'));
+    await gateway.call(call('research-agent', 'github', 'tree.read'));
     const steps = (await store.read('p1')).filter(
       (e): e is Extract<LwEvent, { type: 'step.recorded' }> => e.type === 'step.recorded',
     );
     expect(steps.map((s) => [s.data.operation, s.data.resultCode])).toEqual([
       ['repo.read', 200],
-      ['branch.commit', 403],
+      ['tree.read', 403],
     ]);
     expect(steps[0]!.data.requestHash).toMatch(/^[0-9a-f]{64}$/);
     expect(steps[1]!.data.summary).toBe(
-      'Denied (not_allowed): research-agent may not call github.branch.commit.',
+      'Denied (not_allowed): research-agent may not call github.tree.read.',
     );
   });
 });

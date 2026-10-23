@@ -95,4 +95,30 @@ describe('GithubToolServer', () => {
     expect(gh.refs.get('launchworks/foundation')).toBe('c1');
     expect(gh.refs.get('main')).toBe('c0');
   });
+
+  it('offers no commits on the source repository, and names a missing build repository', async () => {
+    const gh = fakeGithub();
+    const source = new GithubToolServer({
+      facts: async () => ({ repo: 'acme/site', branch: 'main' }),
+      commits: false,
+      fetch: gh.fetch,
+    });
+    expect(Object.keys(source.catalog)).not.toContain('branch.commit');
+    expect(
+      await source.call('branch.commit', { branch: 'launchworks/x', message: 'm', files: [] }, ctx),
+    ).toMatchObject({ code: 404 });
+
+    const build = new GithubToolServer({
+      name: 'build-repo',
+      facts: async () => null,
+      missing: 'No build repository yet.',
+      fetch: gh.fetch,
+    });
+    expect(build.name).toBe('build-repo');
+    expect(build.catalog).toHaveProperty('branch.commit');
+    expect(await build.call('tree.read', {}, ctx)).toMatchObject({
+      code: 409,
+      body: { error: 'No build repository yet.' },
+    });
+  });
 });

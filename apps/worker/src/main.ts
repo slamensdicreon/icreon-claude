@@ -95,6 +95,16 @@ if (env.AGENTS === 'claude') {
           const i = (await project(id))?.intake;
           return i ? { repo: i.repo, branch: i.branch } : null;
         },
+        commits: false,
+      }),
+      new GithubToolServer({
+        name: 'build-repo',
+        facts: async (id) => {
+          const b = (await project(id))?.buildRepo;
+          return b ? { repo: b.repo, branch: b.branch } : null;
+        },
+        missing:
+          'This project has no build repository yet. Create it in Settings, under Build repository.',
       }),
     );
   }

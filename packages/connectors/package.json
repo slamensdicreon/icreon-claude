@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lw/contracts": "workspace:*",
     "@lw/domain": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/tool-gateway": "workspace:*"

@@ -21,6 +21,7 @@ import {
   MessageLink,
   MessageSection,
   MetricKey,
+  BuildRepo,
   IntakeFacts,
   ProjectSource,
   ProjectTarget,
@@ -95,6 +96,8 @@ export const ProjectSummary = z.object({
   demo: z.boolean(),
   /** What intake recorded (live projects only). */
   intake: IntakeFacts.nullable(),
+  /** Where the new site is built, once created. */
+  buildRepo: BuildRepo.nullable(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 

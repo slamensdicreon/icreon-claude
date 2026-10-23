@@ -226,6 +226,24 @@ export const ProjectTarget = z.object({
 });
 export type ProjectTarget = z.infer<typeof ProjectTarget>;
 
+/**
+ * The repository the new site is built in: in our GitHub organization while we build, moved to the
+ * client's at handover. Created from Sitecore's starter; agents work on `launchworks/*` branches.
+ */
+export const BuildRepo = z.object({
+  /** "owner/name" */
+  repo: z.string(),
+  branch: z.string(),
+  /** The GitHub App installation on the organization that holds it. */
+  installationId: z.number().int(),
+  url: z.string().url(),
+  /** The template it was created from ("Sitecore/xmcloud-starter-js"). */
+  template: z.string(),
+  /** Where the Next.js app lives in it ("examples/basic-nextjs"). */
+  appPath: z.string(),
+});
+export type BuildRepo = z.infer<typeof BuildRepo>;
+
 /** What intake recorded about a live project, beyond the source and target labels. */
 export const IntakeFacts = z.object({
   repo: z.string(),
@@ -311,6 +329,7 @@ export const EventBody = z.discriminatedUnion('type', [
       timezone: z.string().optional(),
       /** The live site being migrated; the crawl and QA tools may only reach its host. */
       sourceUrl: z.string().url().nullable().optional(),
+      buildRepo: BuildRepo.optional(),
     }),
   ),
   ev('project.status', z.object({ status: ProjectStatus })),

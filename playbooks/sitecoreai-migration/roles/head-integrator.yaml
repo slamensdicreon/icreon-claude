@@ -20,8 +20,11 @@ tools:
       - fs.read
       - fs.write
       - exec.build
-  github:
+  build-repo:
     ops:
+      - tree.read
+      - repo.read
+      - code.search
       - branch.commit
 acceptance:
   - validator:build.green

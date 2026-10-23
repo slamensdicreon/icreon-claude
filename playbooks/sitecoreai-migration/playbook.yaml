@@ -50,6 +50,7 @@ defaults:
     sitecore-cli: Sitecore CLI
     sitecore-deploy: Deploy API
     github: GitHub
+    build-repo: Build repo
     sandbox: Sandbox
     hosting: Vercel
     research: Docs

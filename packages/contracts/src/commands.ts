@@ -126,6 +126,15 @@ export type ChangeSourceSite = z.infer<typeof ChangeSourceSite>;
 export const ResetProject = z.object({ confirmation: z.string() });
 export type ResetProject = z.infer<typeof ResetProject>;
 
+/** POST /projects/:id/build-repo — create the build repository (a name overrides the default). */
+export const CreateBuildRepo = z.object({
+  name: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]{1,100}$/, 'letters, digits, dot, dash and underscore')
+    .optional(),
+});
+export type CreateBuildRepo = z.infer<typeof CreateBuildRepo>;
+
 /** POST /projects/:id/escalations/:escalationId/defer */
 export const DeferEscalation = z.object({ until: z.iso.datetime() });
 export type DeferEscalation = z.infer<typeof DeferEscalation>;

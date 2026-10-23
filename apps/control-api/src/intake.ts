@@ -40,6 +40,8 @@ export interface IntakeDeps {
   stop?: (projectId: string) => Promise<void>;
   /** Where the project's documents and screenshots are kept, emptied by a reset. */
   blobs?: { deleteProject(projectId: string): Promise<void> };
+  /** Our GitHub organization, where each project's build repository is created. */
+  buildOrg?: string;
 }
 
 const INTAKE = { kind: 'system', id: 'intake' } as const;
@@ -335,6 +337,13 @@ export class IntakeService {
         'No orchestrator is connected, so nothing can run yet. Connect Temporal Cloud and set ORCHESTRATOR=temporal, then start the project.',
       );
     }
+    // The build repository is needed from phase 3; a failure here shows in Settings, where it
+    // can be retried, and doesn't hold up discovery.
+    if (!s.buildRepo && this.deps.buildOrg && this.deps.github) {
+      await this.createBuildRepo(s).catch((e: unknown) => {
+        console.warn(`Build repository for ${s.projectId} not created: ${(e as Error).message}`);
+      });
+    }
     await this.deps.start({
       projectId: s.projectId,
       name: s.name,
@@ -342,6 +351,42 @@ export class IntakeService {
       sourceUrl: s.sourceUrl,
       budgets: s.budgets,
     });
+  }
+
+  /**
+   * Creates the project's build repository in our organization from Sitecore's starter, or
+   * checks and reuses one of that name. Named after the source repository unless told otherwise.
+   */
+  async createBuildRepo(s: ProjectState, name?: string): Promise<void> {
+    if (s.mode !== 'live' || !s.intake) {
+      throw new CommandError(409, 'not_live', 'Only real projects have a build repository.');
+    }
+    if (s.buildRepo) {
+      throw new CommandError(409, 'exists', `${s.name} already builds in ${s.buildRepo.repo}.`);
+    }
+    const { github, buildOrg } = this.deps;
+    if (!github || !buildOrg) {
+      throw new CommandError(
+        503,
+        'build_org_unavailable',
+        'No build organization is configured. Set GITHUB_BUILD_ORG and set up the GitHub App.',
+      );
+    }
+    const repoName = name ?? `${s.intake.repo.split('/')[1]}-sitecoreai`;
+    const buildRepo = await github.createBuildRepo(
+      buildOrg,
+      repoName,
+      `${s.name}: SitecoreAI site built by Launchworks from ${s.intake.repo}.`,
+    );
+    await this.deps.store.append(s.projectId, [
+      {
+        type: 'project.updated',
+        actor: INTAKE,
+        subject: { kind: 'project', id: s.projectId },
+        severity: 'notable',
+        data: { buildRepo },
+      },
+    ]);
   }
 
   /**

@@ -102,6 +102,8 @@ const env = z
     APP_URL: z.string().url().optional(),
     /** Create the GitHub App under this organization instead of the signed-in operator's account. */
     GITHUB_APP_ORG: z.string().optional(),
+    /** Our GitHub organization, where projects' build repositories are created. */
+    GITHUB_BUILD_ORG: z.string().optional(),
     /** Set by Vercel: the production domain and this deployment's own hosts. */
     VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
     VERCEL_URL: z.string().optional(),
@@ -388,6 +390,7 @@ const app = await buildApp({
     stop,
     blobs,
     github,
+    buildOrg: env.GITHUB_BUILD_ORG,
   }),
   github,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),

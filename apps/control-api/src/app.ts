@@ -4,6 +4,7 @@ import {
   ArchiveProject,
   ChangeSetting,
   ChangeSourceSite,
+  CreateBuildRepo,
   ResetProject,
   Control,
   ProjectIntake,
@@ -567,6 +568,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     await deps.intake.reset(s, ResetProject.parse(req.body).confirmation);
     const seq = await store.head(s.projectId);
     await projections.catchUp(s.projectId);
+    const r: CommandResult = { accepted: true, seq };
+    return r;
+  });
+
+  // The repository the new site is built in, for a project started before it was created
+  // automatically, or after fixing the GitHub App's access to the organization.
+  app.post<P>('/projects/:id/build-repo', async (req, reply) => {
+    const s = known(req.params.id);
+    if (!deps.intake) {
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    }
+    await deps.intake.createBuildRepo(s, CreateBuildRepo.parse(req.body ?? {}).name);
+    const seq = await store.head(s.projectId);
+    await projections.waitFor(s.projectId, seq);
     const r: CommandResult = { accepted: true, seq };
     return r;
   });

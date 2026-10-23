@@ -33,8 +33,11 @@ tools:
     ops:
       - ser.pull
       - ser.validate
-  github:
+  build-repo:
     ops:
+      - tree.read
+      - repo.read
+      - code.search
       - branch.commit
 acceptance:
   - validator:structural.renderings

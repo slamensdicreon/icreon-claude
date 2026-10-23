@@ -10,7 +10,13 @@ export interface RepoFacts {
 }
 
 export interface GithubServerOptions {
+  /** `github` for the client's source repository; `build-repo` for the one we build in. */
+  name?: string;
   facts(projectId: string): Promise<RepoFacts | null>;
+  /** Offer branch.commit. Off for the source repository: the site is built in the build repo. */
+  commits?: boolean;
+  /** What a call says when the project has no such repository yet. */
+  missing?: string;
   fetch?: typeof fetch;
   api?: string;
 }
@@ -62,8 +68,9 @@ const bad = (message: string): ToolResult => ({
  * only to `launchworks/*` branches, created from the project's branch on first commit.
  */
 export class GithubToolServer implements ToolServer {
-  readonly name = 'github';
-  readonly catalog: OperationCatalog = {
+  readonly name: string;
+  readonly catalog: OperationCatalog;
+  private static readonly CATALOG: OperationCatalog = {
     'tree.read': {
       description:
         'List the repository: default branch, size, and every file path with its size (directories as "dir"). Optional `path` limits it to a folder; `ref` reads another branch or commit.',
@@ -131,17 +138,27 @@ export class GithubToolServer implements ToolServer {
   private readonly api: string;
 
   constructor(private readonly opts: GithubServerOptions) {
+    this.name = opts.name ?? 'github';
+    this.catalog = Object.fromEntries(
+      Object.entries(GithubToolServer.CATALOG).filter(
+        ([op]) => op !== 'branch.commit' || opts.commits !== false,
+      ),
+    );
     this.fetch = opts.fetch ?? ((...a) => fetch(...a));
     this.api = opts.api ?? 'https://api.github.com';
   }
 
   target(projectId: string) {
-    return `github:${projectId}`;
+    return `${this.name}:${projectId}`;
   }
 
   async call(op: string, args: Record<string, unknown>, ctx: ToolCallContext): Promise<ToolResult> {
     const facts = await this.opts.facts(ctx.projectId);
-    if (!facts) return { code: 409, body: { error: 'This project has no source repository.' } };
+    if (!facts) {
+      const error = this.opts.missing ?? 'This project has no source repository.';
+      return { code: 409, body: { error }, summary: error };
+    }
+    if (!(op in this.catalog)) return { code: 404, body: { error: `Unknown operation ${op}` } };
     const gh = (method: string, path: string, body?: unknown) =>
       this.request(method, `/repos/${facts.repo}${path}`, ctx.token, body);
     switch (op) {

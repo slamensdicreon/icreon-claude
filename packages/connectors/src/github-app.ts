@@ -1,7 +1,15 @@
 import { createSign, randomBytes } from 'node:crypto';
 import { CommandError } from '@lw/domain';
 import type { IntegrationStore, SecretVault } from '@lw/events';
+import type { BuildRepo } from '@lw/contracts';
 import type { VerifyResult } from './sitecore';
+
+/** Sitecore's starter, and the Next.js app inside it that becomes the site. */
+export const STARTER = {
+  owner: 'Sitecore',
+  repo: 'xmcloud-starter-js',
+  appPath: 'examples/basic-nextjs',
+};
 
 /**
  * The Launchworks GitHub App: how agents reach client repositories. It is created with GitHub's
@@ -53,9 +61,12 @@ export interface GithubDeps {
 
 /**
  * What agents may do in a client repository: read the code, push to their own branch, open pull
- * requests, and read CI results. Nothing else (no issues, no workflow files, no admin).
+ * requests, and read CI results. Administration is used only in our own organization, to create
+ * each project's build repository; clients install the app on single repositories, where it
+ * changes no settings. Nothing else (no issues, no workflow files).
  */
 export const APP_PERMISSIONS: Record<string, 'read' | 'write'> = {
+  administration: 'write',
   metadata: 'read',
   contents: 'write',
   pull_requests: 'write',
@@ -274,14 +285,140 @@ export class GithubApp {
     };
   }
 
+  /**
+   * The project's build repository in our organization, created from Sitecore's starter. Safe to
+   * repeat: an existing repository of that name is checked and reused, never overwritten. GitHub
+   * fills a generated repository in the background, so it counts as ready only once the starter's
+   * app can be read back.
+   */
+  async createBuildRepo(org: string, name: string, description: string): Promise<BuildRepo> {
+    const c = await this.config();
+    if (!c) {
+      throw new CommandError(
+        409,
+        'github_not_connected',
+        'Set up the GitHub App in Settings first.',
+      );
+    }
+    const inst = await this.call(
+      'GET',
+      `/orgs/${encodeURIComponent(org)}/installation`,
+      await this.jwt(c),
+    );
+    if (inst.status === 404) {
+      throw new CommandError(
+        409,
+        'not_installed',
+        `The GitHub App isn't installed on the ${org} organization. Install it there with "All repositories": ${this.installUrl(c)}`,
+      );
+    }
+    if (inst.status !== 200) {
+      throw new CommandError(
+        503,
+        'github_error',
+        `GitHub answered ${inst.status} looking up the app on ${org}.`,
+      );
+    }
+    const i = inst.body as {
+      id: number;
+      repository_selection: 'all' | 'selected';
+      permissions: Record<string, string>;
+    };
+    if (i.permissions.administration !== 'write') {
+      throw new CommandError(
+        409,
+        'missing_permission',
+        `The app needs Administration: Read and write to create repositories in ${org}. Add it in the app's settings, then accept the new permission on the ${org} installation.`,
+      );
+    }
+    if (i.repository_selection !== 'all') {
+      throw new CommandError(
+        409,
+        'selected_repositories',
+        `The app is installed on ${org} for selected repositories only, so new repositories won't be reachable. Change the installation to "All repositories".`,
+      );
+    }
+    const token = `token ${await this.installationToken(i.id)}`;
+    const full = `${org}/${name}`;
+    let repo = await this.call('GET', `/repos/${full}`, token);
+    let created = false;
+    if (repo.status === 404) {
+      const gen = await this.call(
+        'POST',
+        `/repos/${STARTER.owner}/${STARTER.repo}/generate`,
+        token,
+        {
+          owner: org,
+          name,
+          description,
+          private: true,
+          include_all_branches: false,
+        },
+      );
+      if (gen.status !== 201) {
+        const message = (gen.body as { message?: string } | null)?.message;
+        throw new CommandError(
+          503,
+          'github_error',
+          `GitHub answered ${gen.status} creating ${full} from ${STARTER.owner}/${STARTER.repo}${message ? `: ${message}` : ''}.`,
+        );
+      }
+      repo = gen;
+      created = true;
+    } else if (repo.status !== 200) {
+      throw new CommandError(
+        503,
+        'github_error',
+        `GitHub answered ${repo.status} reading ${full}.`,
+      );
+    }
+    const info = repo.body as { default_branch?: string; html_url: string; private: boolean };
+    if (!created && !info.private) {
+      throw new CommandError(
+        409,
+        'repo_public',
+        `${full} exists and is public. Choose another name.`,
+      );
+    }
+    // Executed is not verified: wait until the starter's app is really there.
+    const probe = `/repos/${full}/contents/${STARTER.appPath}/package.json`;
+    for (let attempt = 0; ; attempt++) {
+      const r = await this.call('GET', probe, token);
+      if (r.status === 200) break;
+      if (!created) {
+        throw new CommandError(
+          409,
+          'not_a_starter',
+          `${full} already exists and isn't built from ${STARTER.owner}/${STARTER.repo} (no ${STARTER.appPath}). Choose another name.`,
+        );
+      }
+      if (attempt >= 14) {
+        throw new CommandError(
+          503,
+          'not_ready',
+          `${full} was created, but GitHub hasn't filled it yet. Try again in a minute.`,
+        );
+      }
+      await new Promise((res) => setTimeout(res, 2000));
+    }
+    return {
+      repo: full,
+      branch: info.default_branch ?? 'main',
+      installationId: i.id,
+      url: info.html_url,
+      template: `${STARTER.owner}/${STARTER.repo}`,
+      appPath: STARTER.appPath,
+    };
+  }
+
   private readonly tokens = new Map<string, { token: string; expiresAt: number }>();
 
   /**
    * An installation token limited to the given repositories of that installation, valid about an
    * hour. Reused until five minutes before it expires. This is what agents' tool calls carry.
    */
-  async installationToken(installationId: number, repositories: string[]): Promise<string> {
-    const key = `${installationId}:${[...repositories].sort().join(',')}`;
+  async installationToken(installationId: number, repositories?: string[]): Promise<string> {
+    const key = `${installationId}:${repositories ? [...repositories].sort().join(',') : '*'}`;
     const cached = this.tokens.get(key);
     if (cached && cached.expiresAt - Date.now() > 5 * 60_000) return cached.token;
     const c = await this.config();
@@ -290,11 +427,11 @@ export class GithubApp {
       'POST',
       `/app/installations/${installationId}/access_tokens`,
       await this.jwt(c),
-      { repositories },
+      repositories ? { repositories } : {},
     );
     if (r.status !== 201) {
       throw new Error(
-        `GitHub refused a token for installation ${installationId} (${r.status}). Check the app is still installed on ${repositories.join(', ')}.`,
+        `GitHub refused a token for installation ${installationId} (${r.status}). Check the app is still installed${repositories ? ` on ${repositories.join(', ')}` : ''}.`,
       );
     }
     const body = r.body as { token: string; expires_at: string };

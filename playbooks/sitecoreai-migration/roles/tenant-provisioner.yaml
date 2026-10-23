@@ -36,8 +36,11 @@ tools:
         - /sitecore/layout/Renderings/Project/{collection}
         - /sitecore/media library/Project/{collection}
         - /sitecore/system/Languages/**
-  github:
+  build-repo:
     ops:
+      - tree.read
+      - repo.read
+      - code.search
       - branch.commit
   artifacts:
     ops:

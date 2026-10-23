@@ -27,7 +27,8 @@ const SITECORE: Record<string, string> = {
  * from anything recorded.
  *
  * - github: an installation token of the Launchworks GitHub App, limited to the project's one
- *   repository, valid an hour.
+ *   source repository, valid an hour.
+ * - build-repo: the same, on our organization's installation, limited to the build repository.
  * - sitecore-authoring / sitecore-deploy: an OAuth token for the project's environment or
  *   organization automation client.
  * - Everything else needs no external credential.
@@ -39,6 +40,7 @@ export class VaultCredentials implements CredentialProvider {
 
   async tokenFor(projectId: string, server: string): Promise<string> {
     if (server === 'github') return this.github(projectId);
+    if (server === 'build-repo') return this.buildRepo(projectId);
     if (SITECORE[server]) return this.sitecore(projectId, SITECORE[server]);
     return 'no-external-credential';
   }
@@ -55,6 +57,18 @@ export class VaultCredentials implements CredentialProvider {
       );
     }
     return this.deps.github.installationToken(Number(m[1]), [repo.split('/')[1]!]);
+  }
+
+  /** An installation token on our organization, limited to the project's build repository. */
+  private async buildRepo(projectId: string): Promise<string> {
+    const b = (await this.deps.project(projectId))?.buildRepo;
+    if (!b) {
+      throw new CredentialError(
+        'This project has no build repository yet. Create it in Settings, under Build repository.',
+      );
+    }
+    if (!this.deps.github) throw new CredentialError('The Launchworks GitHub App is not set up.');
+    return this.deps.github.installationToken(b.installationId, [b.repo.split('/')[1]!]);
   }
 
   private async sitecore(projectId: string, credentialId: string): Promise<string> {

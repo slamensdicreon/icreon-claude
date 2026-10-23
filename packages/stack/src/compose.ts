@@ -273,6 +273,9 @@ function projectContext(projections: Projections): ContextProvider {
               `This project owns only these paths; other sites in the collection belong to other teams, so never change anything outside them: ${ownedPaths(s.intake).join('; ')}.`,
             ]
           : []),
+        s?.buildRepo
+          ? `Build repository: ${s.buildRepo.repo}, created from ${s.buildRepo.template}; the site's Next.js app is in ${s.buildRepo.appPath}. Read it with build-repo tools and commit only to launchworks/* branches; never commit to the source repository.`
+          : 'Build repository: not created yet.',
         // The hosting tool server fills this once preview deployments exist.
         'Migrated preview site: none deployed yet.',
         docs.length
