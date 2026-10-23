@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import type { WriteLocks } from './locks';
 import type { NewEvent, Severity } from '@lw/contracts';
 import type { EventStore } from '@lw/events';
 import type { Playbook, ToolGrant } from '@lw/playbook-sdk';
@@ -27,6 +28,8 @@ export interface GatewayDeps {
    * an approved release task; without this, they are refused.
    */
   releases?: { approved(projectId: string, taskId: string): Promise<boolean> };
+  /** One writer per item across tasks; without it, writes aren't locked. */
+  locks?: WriteLocks;
   limiter: RateLimiter;
   store: EventStore;
   detector?: InjectionDetector;
@@ -204,6 +207,20 @@ export class ToolGateway {
         'rollback_recipe_required',
         `${call.op} is destructive; record the task's rollback recipe first.`,
       );
+    }
+    if (spec.mutates && this.deps.locks) {
+      const paths = spec.lockPaths
+        ? spec.lockPaths(call.args)
+        : (spec.pathArgs ?? []).flatMap((a) => readArg(call.args, a).map(String));
+      if (paths.length) {
+        const lock = await this.deps.locks.acquire(call.projectId, call.taskId, paths);
+        if (!lock.ok) {
+          return deny(
+            'locked',
+            `${lock.path} is being changed by another task (${lock.heldBy}). Work on something else, or finish and say this is waiting for it; don't retry it in a loop.`,
+          );
+        }
+      }
     }
     return null;
   }

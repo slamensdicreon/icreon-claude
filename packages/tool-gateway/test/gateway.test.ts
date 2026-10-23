@@ -7,6 +7,7 @@ import {
   bindPattern,
   inScope,
   MemoryIdempotencyStore,
+  MemoryWriteLocks,
   REDACTED,
   TokenBucketLimiter,
   ToolGateway,
@@ -249,6 +250,33 @@ describe('call handling', () => {
     expect((await setup({ servers: [release], approved: true }).gateway.call({ ...c })).ok).toBe(
       true,
     );
+  });
+
+  it('lets one task at a time change an item, until its locks are released', async () => {
+    const locks = new MemoryWriteLocks();
+    const server = fakeServer('sitecore-authoring', {
+      'item.update': { mutates: true, pathArgs: ['path'] },
+    });
+    const g = new ToolGateway({
+      playbook: pb,
+      servers: [server],
+      bindings: () => BINDINGS,
+      credentials: { tokenFor: async () => TOKEN },
+      idempotency: new MemoryIdempotencyStore(),
+      rollback: { hasRecipe: async () => false },
+      locks,
+      limiter: new TokenBucketLimiter(1000, 1000),
+      store: new InMemoryEventStore(),
+    });
+    const path = '/sitecore/content/Acme/Corporate/Home';
+    const update = (taskId: string) =>
+      call('content-migrator', 'sitecore-authoring', 'item.update', { path }, { taskId });
+    expect((await g.call(update('migrate-pages-home'))).ok).toBe(true);
+    expect(await g.call(update('migrate-pages-about'))).toMatchObject({ denied: 'locked' });
+    // The holder may keep writing; others may once its result is accepted.
+    expect((await g.call(update('migrate-pages-home'))).ok).toBe(true);
+    await locks.release('p1', 'migrate-pages-home');
+    expect((await g.call(update('migrate-pages-about'))).ok).toBe(true);
   });
 
   it('replays an identical call within an attempt instead of executing it twice', async () => {

@@ -18,6 +18,11 @@ export interface OperationSpec {
   untrusted?: boolean;
   /** Dotted paths into the arguments that hold resource paths, checked against the role's scope. */
   pathArgs?: string[];
+  /**
+   * The items a write changes, for write locks, when they aren't simply the path arguments (a
+   * create changes `parentPath/name`, not the parent).
+   */
+  lockPaths?: (args: Record<string, unknown>) => string[];
 }
 
 export type OperationCatalog = Record<string, OperationSpec>;
@@ -67,6 +72,7 @@ export interface ToolCall {
 }
 
 export type Denial =
+  | 'locked'
   | 'release_not_approved'
   | 'unknown_server'
   | 'unknown_operation'

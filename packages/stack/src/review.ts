@@ -141,6 +141,8 @@ export interface ReviewDeps {
   review: ((input: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null;
   checks?: Record<string, Check>;
   fetch?: typeof fetch;
+  /** Called when a task's result is accepted (its write locks go). */
+  onAccepted?: (projectId: string, taskId: string) => Promise<void>;
 }
 
 export function withReview(base: Activities, deps: ReviewDeps): Activities {
@@ -276,6 +278,7 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
         },
       });
       await deps.store.append(req.projectId, events);
+      if (verdict.verdict === 'accept') await deps.onAccepted?.(req.projectId, task.taskId);
       return verdict.verdict === 'accept'
         ? { pass: true, reason: null }
         : { pass: false, reason: verdict.reason };

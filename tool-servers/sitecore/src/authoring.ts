@@ -154,6 +154,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       },
       mutates: true,
       pathArgs: ['parentPath'],
+      lockPaths: (a) => [`${String(a.parentPath).replace(/\/$/, '')}/${String(a.name)}`],
     },
     'item.update': {
       description: 'Set field values on an item (by absolute path) in one language.',
@@ -209,6 +210,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       },
       mutates: true,
       pathArgs: ['parentPath'],
+      lockPaths: (a) => [`${String(a.parentPath).replace(/\/$/, '')}/${String(a.name)}`],
     },
     'rendering.create': {
       description:
@@ -228,6 +230,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       },
       mutates: true,
       pathArgs: ['parentPath'],
+      lockPaths: (a) => [`${String(a.parentPath).replace(/\/$/, '')}/${String(a.name)}`],
     },
     'layout.compose': {
       description:
@@ -378,33 +381,97 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
   private async create(q: Gql, a: Parsed<typeof CreateArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
+    const path = `${a.data.parentPath.replace(/\/$/, '')}/${a.data.name}`;
+    const language = lang(a.data.language);
+    const fields = a.data.fields ?? [];
+    // Find before create: an item already there is reported, never duplicated or overwritten.
+    const existing = await readBack(q, path, language);
+    if (existing) {
+      return {
+        code: 200,
+        body: { itemId: existing.itemId, path, existed: true },
+        summary: `${path} already exists; not created again`,
+      };
+    }
     const parent = await this.idOf(q, a.data.parentPath);
     const templateId = a.data.templateId ?? (await this.idOf(q, a.data.templatePath!));
-    const d = await q.run<{ createItem: { item: { itemId: string; path: string } } }>(
-      `mutation { createItem(input: {
-        name: ${gql(a.data.name)}, templateId: ${gql(templateId)}, parent: ${gql(parent)},
-        language: ${gql(lang(a.data.language))}, fields: ${fieldsOf(a.data.fields ?? [])}
-      }) { item { itemId path } } }`,
-    );
+    let reconciled = false;
+    try {
+      await q.run<{ createItem: { item: { itemId: string; path: string } } }>(
+        `mutation { createItem(input: {
+          name: ${gql(a.data.name)}, templateId: ${gql(templateId)}, parent: ${gql(parent)},
+          language: ${gql(language)}, fields: ${fieldsOf(fields)}
+        }) { item { itemId path } } }`,
+      );
+    } catch (err) {
+      if (err instanceof GqlError) throw err;
+      // The request timed out or the connection dropped: the create may have happened.
+      reconciled = true;
+    }
+    // Executed is not verified: read it back.
+    const back = await readBack(q, path, language);
+    if (!back) {
+      return {
+        code: 503,
+        body: { error: `Creating ${path} didn't complete, and nothing is there. Safe to retry.` },
+        summary: `Create of ${path} didn't complete`,
+      };
+    }
+    const mismatches = compare(fields, back.fields);
     return {
-      code: 200,
-      body: d.createItem.item,
-      summary: `Created ${d.createItem.item.path}`,
+      code: mismatches.length ? 409 : 200,
+      body: {
+        itemId: back.itemId,
+        path: back.path,
+        verified: !mismatches.length,
+        mismatches,
+        reconciled,
+      },
+      summary: mismatches.length
+        ? `Created ${back.path}, but ${mismatches.length} field${mismatches.length === 1 ? '' : 's'} read back differently: ${mismatches.join(', ')}`
+        : `Created ${back.path}${reconciled ? ' (confirmed by read-back after a dropped request)' : ''}, read back`,
     };
   }
 
   private async update(q: Gql, a: Parsed<typeof UpdateArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
-    const d = await q.run<{ updateItem: { item: { itemId: string; name: string } } }>(
-      `mutation { updateItem(input: {
-        database: "master", path: ${gql(a.data.path)}, language: ${gql(lang(a.data.language))},
-        fields: ${fieldsOf(a.data.fields)}
-      }) { item { itemId name } } }`,
-    );
+    const language = lang(a.data.language);
+    let reconciled = false;
+    try {
+      await q.run<{ updateItem: { item: { itemId: string; name: string } } }>(
+        `mutation { updateItem(input: {
+          database: "master", path: ${gql(a.data.path)}, language: ${gql(language)},
+          fields: ${fieldsOf(a.data.fields)}
+        }) { item { itemId name } } }`,
+      );
+    } catch (err) {
+      if (err instanceof GqlError) throw err;
+      reconciled = true;
+    }
+    const back = await readBack(q, a.data.path, language);
+    if (!back) return { code: 404, body: { error: `No item at ${a.data.path}` } };
+    const mismatches = compare(a.data.fields, back.fields);
+    if (reconciled && mismatches.length) {
+      return {
+        code: 503,
+        body: {
+          error: `Updating ${a.data.path} didn't complete; the read-back shows the old values. Safe to retry.`,
+        },
+        summary: `Update of ${a.data.path} didn't complete`,
+      };
+    }
     return {
-      code: 200,
-      body: { ...d.updateItem.item, fields: a.data.fields.map((f) => f.name) },
-      summary: `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}`,
+      code: mismatches.length ? 409 : 200,
+      body: {
+        itemId: back.itemId,
+        fields: a.data.fields.map((f) => f.name),
+        verified: !mismatches.length,
+        mismatches,
+        reconciled,
+      },
+      summary: mismatches.length
+        ? `Updated ${a.data.path}, but ${mismatches.join(', ')} read back differently`
+        : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back`,
     };
   }
 
@@ -628,6 +695,41 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 }
 
 type Lang = (l?: string) => string;
+
+/** An item's own field values, or null when there is no item at the path. */
+async function readBack(
+  q: Gql,
+  path: string,
+  language: string,
+): Promise<{ itemId: string; path: string; fields: Map<string, string> } | null> {
+  const d = await q.run<{
+    item: {
+      itemId: string;
+      path: string;
+      fields: { nodes: { name: string; value: string }[] };
+    } | null;
+  }>(
+    `query { item(where: { database: "master", path: ${gql(path)}, language: ${gql(language)} }) {
+      itemId path fields(ownFields: true, excludeStandardFields: false) { nodes { name value } }
+    } }`,
+  );
+  if (!d.item) return null;
+  return {
+    itemId: d.item.itemId,
+    path: d.item.path,
+    fields: new Map(d.item.fields.nodes.map((f) => [f.name.toLowerCase(), f.value])),
+  };
+}
+
+/** Fields whose stored value isn't what was written. */
+function compare(
+  written: { name: string; value: string }[],
+  stored: Map<string, string>,
+): string[] {
+  return written
+    .filter((f) => (stored.get(f.name.toLowerCase()) ?? '').trim() !== f.value.trim())
+    .map((f) => f.name);
+}
 type Parsed<S extends z.ZodType> = z.ZodSafeParseResult<z.infer<S>>;
 
 const fieldsOf = (fields: { name: string; value: string }[]) =>

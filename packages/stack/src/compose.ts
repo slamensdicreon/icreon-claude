@@ -24,6 +24,7 @@ import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-brow
 import {
   LocalBlobStore,
   MemoryIdempotencyStore,
+  MemoryWriteLocks,
   TokenBucketLimiter,
   ToolGateway,
   type BlobStore,
@@ -130,6 +131,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     new DecisionLogToolServer((id) => opts.projections.get(id)?.decisions ?? []),
     ...(opts.servers ?? []),
   ];
+  // One writer per item; a task's locks go when its result is accepted.
+  const locks = new MemoryWriteLocks();
   const gateway = new ToolGateway({
     playbook: opts.playbook,
     servers,
@@ -141,6 +144,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     credentials: opts.credentials ?? { tokenFor: async () => 'no-external-credential' },
     idempotency: new MemoryIdempotencyStore(),
     rollback: { hasRecipe: async () => false },
+    locks,
     // A release runs only after the Director approved its checkpoint.
     releases: {
       approved: async (projectId, taskId) => {
@@ -235,6 +239,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     playbook: opts.playbook,
     isLive,
     review: opts.review ?? null,
+    onAccepted: (projectId, taskId) => locks.release(projectId, taskId),
   });
   const activities = withLiveGuard(reviewed, {
     store: opts.store,
