@@ -83,8 +83,10 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   const chromium = new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });
   const policy = (projectId: string): UrlPolicy => {
     const url = opts.projections.get(projectId)?.sourceUrl;
+    const host = url ? new URL(url).hostname : null;
     return {
-      allowedHosts: url ? [new URL(url).hostname] : [],
+      // The site and its www form: one usually redirects to the other.
+      allowedHosts: host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : [],
       allowPrivateNetworks: opts.allowPrivateNetworks,
     };
   };

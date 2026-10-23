@@ -52,7 +52,9 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
     case 'project.created':
       return `Project created for ${e.data.client} on playbook ${e.data.playbook.id}@${e.data.playbook.version}`;
     case 'project.updated':
-      return 'Project settings updated';
+      return e.data.sourceUrl
+        ? `Source site set to ${e.data.sourceUrl}`
+        : 'Project settings updated';
     case 'project.status':
       return `Project ${e.data.status}`;
     case 'phase.entered':

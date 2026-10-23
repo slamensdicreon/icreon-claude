@@ -3,6 +3,7 @@ import {
   ApproveGate,
   ArchiveProject,
   ChangeSetting,
+  ChangeSourceSite,
   Control,
   ProjectIntake,
   VerifyIntakeCredential,
@@ -557,6 +558,29 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return command(req.params.id, (o) => supported(o, 'changeSetting')(key, value));
   });
 
+  // The source site, set or corrected after intake. A live project's API records it itself: the
+  // worker's tools and the agents' context read it from the log.
+  app.put<P>('/projects/:id/source', async (req) => {
+    const s = known(req.params.id);
+    const { url } = ChangeSourceSite.parse(req.body);
+    if (s.mode !== 'live') {
+      throw new CommandError(409, 'demo_project', 'A demo project’s source site is scripted.');
+    }
+    await store.append(s.projectId, [
+      {
+        type: 'project.updated',
+        actor: { kind: 'director', id: 'director' },
+        subject: { kind: 'project', id: s.projectId },
+        severity: 'notable',
+        data: { sourceUrl: url },
+      },
+    ]);
+    const seq = await store.head(s.projectId);
+    await projections.waitFor(s.projectId, seq);
+    const r: CommandResult = { accepted: true, seq };
+    return r;
+  });
+
   app.post<{ Params: { id: string; credentialId: string } }>(
     '/projects/:id/credentials/:credentialId/verify',
     async (req) => {
@@ -587,7 +611,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post<{ Params: { id: string; escalationId: string } }>(
     '/projects/:id/escalations/:escalationId/resolve',
     async (req) => {
-      const { optionId } = ResolveEscalation.parse(req.body);
+      const { optionId, notes } = ResolveEscalation.parse(req.body);
       const x = project(req.params.id)?.escalations[req.params.escalationId];
       if (x?.type === 'gate')
         throw new CommandError(
@@ -595,7 +619,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           'use_gate_endpoint',
           'This is a gate: use approve or send-back.',
         );
-      return command(req.params.id, (o) => o.resolve(req.params.escalationId, optionId));
+      return command(req.params.id, (o) =>
+        o.resolve(req.params.escalationId, optionId, notes || null),
+      );
     },
   );
 

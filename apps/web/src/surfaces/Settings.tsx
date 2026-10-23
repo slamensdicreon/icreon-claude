@@ -1,4 +1,5 @@
 import type { SettingsSnapshot } from '@lw/contracts';
+import { useEffect, useState } from 'react';
 import { post, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';
 import { TypedConfirm } from '../overlays/Dialogs';
@@ -42,6 +43,7 @@ export function Settings() {
         </div>
       </div>
       <div className="settings">
+        {!p.demo && <SourceSitePanel current={p.sourceUrl} />}
         <section className="panel">
           <h2>
             Credentials <small>references only</small>
@@ -321,5 +323,52 @@ export function Settings() {
         </section>
       </div>
     </>
+  );
+}
+
+/** The live site being migrated: agents crawl it, and the crawl may only reach its host. */
+function SourceSitePanel({ current }: { current: string | null }) {
+  const { projectId, run } = useApp();
+  const [url, setUrl] = useState(current ?? '');
+  useEffect(() => setUrl(current ?? ''), [current]);
+  const valid = /^https?:\/\/[^\s/]+\.[^\s]+$/.test(url.trim());
+  const changed = url.trim() !== (current ?? '');
+  return (
+    <section className="panel source-site">
+      <h2>Source site</h2>
+      <p className="muted">
+        The live site being migrated. Agents crawl it for the page inventory, parity checks and
+        screenshots, and the crawler may only reach this host.
+      </p>
+      <form
+        className="row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid && changed)
+            void run(
+              () => put(`/projects/${projectId}/source`, { url: url.trim() }),
+              'Source site saved. Agents use it from their next attempt.',
+            );
+        }}
+      >
+        <label className="sr-only" htmlFor="source-site-url">
+          Source site URL
+        </label>
+        <input
+          id="source-site-url"
+          className="input l"
+          type="url"
+          inputMode="url"
+          placeholder="https://www.example.com"
+          aria-invalid={url.trim() && !valid ? true : undefined}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <button className="btn sm primary" type="submit" disabled={!valid || !changed}>
+          Save
+        </button>
+      </form>
+      {!current && <p className="cred-miss">Not set: the crawl can’t start until it is.</p>}
+    </section>
   );
 }

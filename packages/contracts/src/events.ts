@@ -309,6 +309,8 @@ export const EventBody = z.discriminatedUnion('type', [
       target: ProjectTarget.nullable().optional(),
       stats: z.array(StatCard).optional(),
       timezone: z.string().optional(),
+      /** The live site being migrated; the crawl and QA tools may only reach its host. */
+      sourceUrl: z.string().url().nullable().optional(),
     }),
   ),
   ev('project.status', z.object({ status: ProjectStatus })),

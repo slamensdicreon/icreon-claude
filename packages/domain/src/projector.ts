@@ -222,6 +222,10 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (d.target !== undefined) s.target = d.target;
       if (d.stats !== undefined) s.statCards = d.stats;
       if (d.timezone !== undefined) s.timezone = d.timezone;
+      if (d.sourceUrl !== undefined) {
+        s.sourceUrl = d.sourceUrl;
+        s.source = { ...s.source, url: d.sourceUrl };
+      }
       break;
     }
     case 'project.status':

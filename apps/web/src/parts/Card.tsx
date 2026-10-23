@@ -37,8 +37,13 @@ export function useCardActions(x: EscalationView) {
       setUi({ expanded: x.escalationId, queueCollapsed: false });
       setLayout({ dockOpen: true });
     },
-    choose: (optionId: string) =>
-      run(() => post(`${base}/escalations/${x.escalationId}/resolve`, { optionId })),
+    choose: (optionId: string, notes?: string) =>
+      run(() =>
+        post(`${base}/escalations/${x.escalationId}/resolve`, {
+          optionId,
+          ...(notes?.trim() ? { notes: notes.trim() } : {}),
+        }),
+      ),
     defer: () =>
       run(() =>
         post(`${base}/escalations/${x.escalationId}/defer`, {
@@ -197,11 +202,22 @@ export function Card({
       </div>
       {x.type !== 'gate' && (
         <div className="opts">
+          <label className="opt-note-label" htmlFor={`note-${x.escalationId}`}>
+            Details for the team (optional)
+          </label>
+          <textarea
+            id={`note-${x.escalationId}`}
+            className="notes opt-note"
+            rows={2}
+            placeholder="A URL, a name, a correction. Sent with the option you choose."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
           {x.options.map((o, i) => (
             <button
               key={o.id}
               className={`opt ${o.recommended ? 'recommended' : ''}`}
-              onClick={() => act.choose(o.id)}
+              onClick={() => act.choose(o.id, notes)}
             >
               <span className="key">{keyOf(x, i)}</span>
               <span className="otext">{o.label}</span>

@@ -170,6 +170,22 @@ describe('New Project wizard', () => {
     ]);
   });
 
+  it('sets the source site after intake, for the crawl and the agents', async () => {
+    const { store } = await start();
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    const put = (url: unknown) =>
+      app!.inject({ method: 'PUT', url: `/projects/${projectId}/source`, payload: { url } });
+    expect((await put('anscollc.com')).statusCode).toBe(400);
+    expect((await put('https://anscollc.com/')).statusCode).toBe(200);
+    const mc = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(mc.project.sourceUrl).toBe('https://anscollc.com/');
+    expect(mc.project.source.url).toBe('https://anscollc.com/');
+    const last = (await store.read(projectId)).at(-1)!;
+    expect(last).toMatchObject({ type: 'project.updated', actor: { kind: 'director' } });
+  });
+
   it('re-verifies a stored credential from the vault', async () => {
     await start();
     const { projectId } = (await post('/projects', intake())).json() as { projectId: string };

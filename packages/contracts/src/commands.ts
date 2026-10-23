@@ -106,8 +106,21 @@ export const PostMessage = z.object({
 export type PostMessage = z.infer<typeof PostMessage>;
 
 /** POST /projects/:id/escalations/:escalationId/resolve */
-export const ResolveEscalation = z.object({ optionId: z.string() });
+export const ResolveEscalation = z.object({
+  optionId: z.string(),
+  /** What the agent needs beyond the option: a URL, a name, a correction. */
+  notes: z.string().trim().max(2000).optional(),
+});
 export type ResolveEscalation = z.infer<typeof ResolveEscalation>;
+
+/**
+ * PUT /projects/:id/source — the live site being migrated, set after intake. Agents read it and the
+ * crawl may only reach its host.
+ */
+export const ChangeSourceSite = z.object({
+  url: z.url({ protocol: /^https?$/ }).max(500),
+});
+export type ChangeSourceSite = z.infer<typeof ChangeSourceSite>;
 
 /** POST /projects/:id/escalations/:escalationId/defer */
 export const DeferEscalation = z.object({ until: z.iso.datetime() });
