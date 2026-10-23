@@ -4,6 +4,7 @@ import {
   ArchiveProject,
   ChangeSetting,
   ChangeSourceSite,
+  ResetProject,
   Control,
   ProjectIntake,
   VerifyIntakeCredential,
@@ -45,7 +46,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
-import type { GithubApp } from './github';
+import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
 import { streamProject, type StreamOptions } from './sse';
 
@@ -556,6 +557,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const key = SettingKey.parse(req.params.key);
     const { value } = ChangeSetting.parse(req.body);
     return command(req.params.id, (o) => supported(o, 'changeSetting')(key, value));
+  });
+
+  app.post<P>('/projects/:id/reset', async (req, reply) => {
+    const s = known(req.params.id);
+    if (!deps.intake) {
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    }
+    await deps.intake.reset(s, ResetProject.parse(req.body).confirmation);
+    const seq = await store.head(s.projectId);
+    await projections.catchUp(s.projectId);
+    const r: CommandResult = { accepted: true, seq };
+    return r;
   });
 
   // The source site, set or corrected after intake. A live project's API records it itself: the

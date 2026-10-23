@@ -6,9 +6,9 @@ import { loadPlaybook } from '@lw/playbook-sdk';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
-import { GithubApp } from '../src/github';
+import { GithubApp } from '@lw/connectors';
 import { IntakeService } from '../src/intake';
-import { SITECORE_DEFAULTS } from '../src/verify';
+import { SITECORE_DEFAULTS } from '@lw/connectors';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });

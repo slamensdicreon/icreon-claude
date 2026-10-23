@@ -1,7 +1,7 @@
 import { createSign, randomBytes } from 'node:crypto';
 import { CommandError } from '@lw/domain';
 import type { IntegrationStore, SecretVault } from '@lw/events';
-import type { VerifyResult } from './verify';
+import type { VerifyResult } from './sitecore';
 
 /**
  * The Launchworks GitHub App: how agents reach client repositories. It is created with GitHub's
@@ -272,6 +272,34 @@ export class GithubApp {
       detail: `Access to ${repo} (${info.private ? 'private' : 'public'}) through the GitHub App. Branch ${branch} found.`,
       installationId,
     };
+  }
+
+  private readonly tokens = new Map<string, { token: string; expiresAt: number }>();
+
+  /**
+   * An installation token limited to the given repositories of that installation, valid about an
+   * hour. Reused until five minutes before it expires. This is what agents' tool calls carry.
+   */
+  async installationToken(installationId: number, repositories: string[]): Promise<string> {
+    const key = `${installationId}:${[...repositories].sort().join(',')}`;
+    const cached = this.tokens.get(key);
+    if (cached && cached.expiresAt - Date.now() > 5 * 60_000) return cached.token;
+    const c = await this.config();
+    if (!c) throw new Error('The Launchworks GitHub App is not set up. Create it in Settings.');
+    const r = await this.call(
+      'POST',
+      `/app/installations/${installationId}/access_tokens`,
+      await this.jwt(c),
+      { repositories },
+    );
+    if (r.status !== 201) {
+      throw new Error(
+        `GitHub refused a token for installation ${installationId} (${r.status}). Check the app is still installed on ${repositories.join(', ')}.`,
+      );
+    }
+    const body = r.body as { token: string; expires_at: string };
+    this.tokens.set(key, { token: body.token, expiresAt: Date.parse(body.expires_at) });
+    return body.token;
   }
 
   /** A JWT for the app itself, valid ten minutes (backdated a minute for clock drift). */

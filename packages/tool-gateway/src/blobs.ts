@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { get as getBlob, put as putBlob } from '@vercel/blob';
+import { del as delBlobs, get as getBlob, list as listBlobs, put as putBlob } from '@vercel/blob';
 
 /**
  * Binary and document storage for tool servers (screenshots, assets, artifacts), addressed as
@@ -9,6 +9,8 @@ import { get as getBlob, put as putBlob } from '@vercel/blob';
 export interface BlobStore {
   put(projectId: string, key: string, bytes: Uint8Array, contentType: string): Promise<string>;
   get(ref: string): Promise<Uint8Array>;
+  /** Deletes everything stored for a project (a project reset). */
+  deleteProject(projectId: string): Promise<void>;
 }
 
 export class LocalBlobStore implements BlobStore {
@@ -25,6 +27,11 @@ export class LocalBlobStore implements BlobStore {
     const m = /^blob:\/\/([^/]+)\/(.+)$/.exec(ref);
     if (!m) throw new Error(`Not a blob reference: ${ref}`);
     return new Uint8Array(await readFile(this.path(m[1]!, m[2]!)));
+  }
+
+  async deleteProject(projectId: string) {
+    // path() refuses an empty or relative project id, so this stays inside the root.
+    await rm(dirname(this.path(projectId, 'x')), { recursive: true, force: true });
   }
 
   private path(projectId: string, key: string) {
@@ -49,6 +56,12 @@ export class MemoryBlobStore implements BlobStore {
     const b = this.blobs.get(ref);
     if (!b) throw new Error(`No blob at ${ref}`);
     return b;
+  }
+
+  async deleteProject(projectId: string) {
+    for (const ref of [...this.blobs.keys()]) {
+      if (ref.startsWith(`blob://${projectId}/`)) this.blobs.delete(ref);
+    }
   }
 }
 
@@ -84,6 +97,25 @@ export class VercelBlobStore implements BlobStore {
     });
     if (res?.statusCode !== 200) throw new Error(`No blob at ${ref}`);
     return new Uint8Array(await new Response(res.stream).arrayBuffer());
+  }
+
+  async deleteProject(projectId: string) {
+    this.pathname(projectId, 'x');
+    let cursor: string | undefined;
+    do {
+      const page = await listBlobs({
+        prefix: `${projectId}/`,
+        cursor,
+        limit: 1000,
+        ...(await this.auth()),
+      });
+      if (page.blobs.length)
+        await delBlobs(
+          page.blobs.map((b) => b.url),
+          await this.auth(),
+        );
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
   }
 
   private pathname(projectId: string, key: string) {

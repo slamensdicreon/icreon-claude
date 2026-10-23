@@ -26,11 +26,6 @@ tools:
       paths:
         - /sitecore/content/**
         - /sitecore/system/Languages/**
-  sitecore-cli:
-    ops:
-      - ser.pull
-      - ser.push
-      - ser.validate
   github:
     ops:
       - branch.commit

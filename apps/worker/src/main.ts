@@ -1,10 +1,20 @@
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient, checkModels } from '@lw/agent-runtime';
-import { openStore, Projections } from '@lw/events';
+import { anthropicModelClient, checkModels, readDirective } from '@lw/agent-runtime';
+import { GithubApp, SITECORE_DEFAULTS, VaultCredentials } from '@lw/connectors';
+import {
+  masterKey,
+  openStore,
+  PostgresIntegrationStore,
+  PostgresVault,
+  Projections,
+} from '@lw/events';
 import { createWorker } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { composeStack } from '@lw/stack';
-import { openBlobStore } from '@lw/tool-gateway';
+import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
+import { GithubToolServer } from '@lw/tool-github';
+import { ResearchToolServer } from '@lw/tool-research';
+import { SitecoreAuthoringToolServer } from '@lw/tool-sitecore';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 
@@ -30,6 +40,9 @@ const env = z
     /** Artifacts and screenshots, shared with the Control API: `local` under DATA_DIR, or Blob. */
     BLOB_STORE: z.enum(['local', 'vercel']).default('local'),
     AGENTS: z.enum(['stub', 'claude']).default('stub'),
+    /** Opens the credentials the New Project wizard sealed (same key as the Control API). */
+    CREDENTIALS_KEY: z.string().optional(),
+    CREDENTIALS_KEY_PREVIOUS: z.string().optional(),
     PLAYBOOK_DIR: z
       .string()
       .default(fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url))),
@@ -46,6 +59,70 @@ const projections = new Projections(opened.store);
 await projections.start();
 const playbook = await loadPlaybook(env.PLAYBOOK_DIR);
 
+// Real connections, from the secrets the project and the app hold. Without the vault key nothing
+// that needs a project credential connects, and those roles block on live projects.
+const vault =
+  env.CREDENTIALS_KEY && opened.sql
+    ? new PostgresVault(
+        opened.sql,
+        [env.CREDENTIALS_KEY, env.CREDENTIALS_KEY_PREVIOUS]
+          .filter(Boolean)
+          .map((k) => masterKey(k!)),
+      )
+    : null;
+const github =
+  vault && opened.sql
+    ? new GithubApp({
+        integrations: new PostgresIntegrationStore(opened.sql),
+        vault,
+        // Only the Control API runs the setup flow; the worker mints installation tokens.
+        publicUrl: '',
+        appUrl: '',
+        owner: { kind: 'user' },
+      })
+    : null;
+const project = async (projectId: string) => {
+  await projections.catchUp(projectId);
+  return projections.get(projectId);
+};
+const servers: ToolServer[] = [];
+if (env.AGENTS === 'claude') {
+  servers.push(new ResearchToolServer());
+  if (github) {
+    servers.push(
+      new GithubToolServer({
+        facts: async (id) => {
+          const i = (await project(id))?.intake;
+          return i ? { repo: i.repo, branch: i.branch } : null;
+        },
+      }),
+    );
+  }
+  if (vault) {
+    servers.push(
+      new SitecoreAuthoringToolServer({
+        facts: async (id) => {
+          const s = await project(id);
+          if (!s?.intake) return null;
+          const host = s.sourceUrl ? new URL(s.sourceUrl).hostname : null;
+          return {
+            cmHost: s.intake.cmHost,
+            siteCollection: s.intake.siteCollection,
+            site: s.intake.site,
+            languages: s.intake.languages,
+            sourceHosts: host
+              ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`]
+              : [],
+          };
+        },
+      }),
+    );
+  }
+}
+console.log(
+  `Connected tool servers: ${servers.map((s) => s.name).join(', ') || 'none'}${vault ? '' : ' (CREDENTIALS_KEY not set: no project credentials)'}`,
+);
+
 const stack = await composeStack({
   store: opened.store,
   projections,
@@ -54,6 +131,11 @@ const stack = await composeStack({
   dataDir: env.DATA_DIR,
   blobs: openBlobStore(env.BLOB_STORE, env.DATA_DIR),
   model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
+  directives: env.AGENTS === 'claude' ? (input) => readDirective(input) : null,
+  servers,
+  credentials: vault
+    ? new VaultCredentials({ project, vault, github, sitecore: SITECORE_DEFAULTS })
+    : undefined,
 });
 console.log(`Live agents: ${stack.liveRoles.join(', ') || 'none'}`);
 if (env.AGENTS === 'claude') {

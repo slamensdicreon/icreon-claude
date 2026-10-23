@@ -84,13 +84,21 @@ export interface TaskInput {
 export type TaskOutcome = { state: TaskState; attempt: number } & (
   | { outcome: 'done'; result: AgentResult }
   | { outcome: 'escalate'; reason: string; spent: AgentResult }
-  | { outcome: 'access_denied'; reason: string; spent: AgentResult }
+  | {
+      outcome: 'access_denied';
+      reason: string;
+      spent: AgentResult;
+      /** The role's tools aren't connected at all, so nothing ran (rather than a refusal). */
+      notConnected?: boolean;
+    }
   | { outcome: 'needs_decision'; decision: AgentDecision; spent: AgentResult }
   | { outcome: 'cancelled'; spent: AgentResult }
 );
 
 /** Error type an agent activity throws when a target system refuses its credential. */
 export const ACCESS_DENIED = 'AccessDenied';
+/** Error type for a live project's task whose role has no connected tools: nothing was run. */
+export const NOT_CONNECTED = 'NotConnected';
 /** Error type for an agent that cannot continue without a Director decision. Details: AgentDecision. */
 export const NEEDS_DECISION = 'NeedsDecision';
 /** Error type for an agent session that ended without finishing (refusal, budget, turn limit). */

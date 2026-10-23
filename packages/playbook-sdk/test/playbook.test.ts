@@ -46,9 +46,15 @@ describe('role prompts', () => {
       'content-analyst',
       'handover-writer',
       'perf-a11y-qa',
+      'repo-analyst',
+      'research-agent',
       'solution-architect',
+      'tenant-provisioner',
       'visual-qa',
     ]);
+    expect(prompts['repo-analyst']).toContain('`repo-inventory`');
+    expect(prompts['research-agent']).toContain('`platform-notes`');
+    expect(prompts['solution-architect']).toContain('`repo-inventory`');
     expect(prompts['content-analyst']).toContain('`page-inventory`');
     expect(prompts['content-analyst']).toContain('`parity-inventory`');
     expect(prompts['solution-architect']).toContain('`page-inventory`');

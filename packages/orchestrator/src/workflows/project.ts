@@ -621,38 +621,64 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       taskEscalation.set(t.taskId, escalationId);
     } else {
       const access = outcome.outcome === 'access_denied';
-      events.push(taskMove(t, 'blocked', access ? 'Access denied' : 'Escalated'));
+      const unconnected = outcome.outcome === 'access_denied' && outcome.notConnected;
+      events.push(
+        taskMove(
+          t,
+          'blocked',
+          unconnected ? 'Not connected' : access ? 'Access denied' : 'Escalated',
+        ),
+      );
       events.push(agentRefresh(t.role));
       await send(...events);
       const escalationId = await raise(
-        access
+        unconnected
           ? {
               type: 'access',
-              title: clip(`Access denied: ${t.title}`),
-              context: `${roles.get(t.role)?.name ?? t.role} was refused by a target system. ${outcome.reason}`,
+              title: clip(`Not connected: ${t.title}`),
+              context: `${roles.get(t.role)?.name ?? t.role} did not run: ${outcome.reason}`,
               impact: `${t.title} and the tasks that depend on it wait. Other work continues.`,
               options: [
-                { id: 'retry', label: 'I fixed access; re-verify and retry', recommended: true },
+                { id: 'retry', label: 'The tools are connected now; retry', recommended: true },
+                {
+                  id: 'accept',
+                  label: 'Skip it: mark the task done without output',
+                  recommended: false,
+                },
               ],
               defaultOptionId: null,
-              evidence: [{ kind: 'log', label: 'Failed call', ref: `task:${t.taskId}` }],
+              evidence: [{ kind: 'log', label: 'Task', ref: `task:${t.taskId}` }],
               sourceTaskId: t.taskId,
               gate: null,
             }
-          : {
-              type: 'decision',
-              title: clip(`${t.title}: needs a decision`),
-              context: `The Lead rejected this output and retries did not fix it. ${outcome.reason}`,
-              impact: `${t.title} and its dependents wait. Other work continues.`,
-              options: [
-                { id: 'retry', label: 'Retry with the Lead feedback', recommended: true },
-                { id: 'accept', label: 'Accept the current output', recommended: false },
-              ],
-              defaultOptionId: 'retry',
-              evidence: [{ kind: 'log', label: 'Rejections', ref: `task:${t.taskId}` }],
-              sourceTaskId: t.taskId,
-              gate: null,
-            },
+          : access
+            ? {
+                type: 'access',
+                title: clip(`Access denied: ${t.title}`),
+                context: `${roles.get(t.role)?.name ?? t.role} was refused by a target system. ${outcome.reason}`,
+                impact: `${t.title} and the tasks that depend on it wait. Other work continues.`,
+                options: [
+                  { id: 'retry', label: 'I fixed access; re-verify and retry', recommended: true },
+                ],
+                defaultOptionId: null,
+                evidence: [{ kind: 'log', label: 'Failed call', ref: `task:${t.taskId}` }],
+                sourceTaskId: t.taskId,
+                gate: null,
+              }
+            : {
+                type: 'decision',
+                title: clip(`${t.title}: needs a decision`),
+                context: `The Lead rejected this output and retries did not fix it. ${outcome.reason}`,
+                impact: `${t.title} and its dependents wait. Other work continues.`,
+                options: [
+                  { id: 'retry', label: 'Retry with the Lead feedback', recommended: true },
+                  { id: 'accept', label: 'Accept the current output', recommended: false },
+                ],
+                defaultOptionId: 'retry',
+                evidence: [{ kind: 'log', label: 'Rejections', ref: `task:${t.taskId}` }],
+                sourceTaskId: t.taskId,
+                gate: null,
+              },
         async (optionId, notes) => {
           taskEscalation.delete(t.taskId);
           if (optionId === 'accept') {

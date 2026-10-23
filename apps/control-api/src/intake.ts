@@ -8,7 +8,7 @@ import type {
 import { CommandError, type ProjectState } from '@lw/domain';
 import type { EventStore, SecretVault } from '@lw/events';
 import type { Playbook } from '@lw/playbook-sdk';
-import type { GithubApp } from './github';
+import type { GithubApp } from '@lw/connectors';
 import { phaseDefs, roster } from '@lw/playbook-sdk/pure';
 import {
   verifyContextId,
@@ -16,7 +16,7 @@ import {
   verifyOrganizationClient,
   type VerifyConfig,
   type VerifyResult,
-} from './verify';
+} from '@lw/connectors';
 
 /** What the orchestrator needs to start a project the wizard registered. */
 export interface StartInput {
@@ -36,6 +36,10 @@ export interface IntakeDeps {
   start?: (input: StartInput) => Promise<void>;
   /** The Launchworks GitHub App, which gives agents the source repository. */
   github?: GithubApp;
+  /** Stops a project's run for good (Temporal terminate), for a reset. */
+  stop?: (projectId: string) => Promise<void>;
+  /** Where the project's documents and screenshots are kept, emptied by a reset. */
+  blobs?: { deleteProject(projectId: string): Promise<void> };
 }
 
 const INTAKE = { kind: 'system', id: 'intake' } as const;
@@ -338,6 +342,65 @@ export class IntakeService {
       sourceUrl: s.sourceUrl,
       budgets: s.budgets,
     });
+  }
+
+  /**
+   * Takes a live project back to intake: stops its run, deletes everything it produced (events,
+   * documents, screenshots) and keeps what the Director gave it (intake facts, credentials and
+   * their checks, the source site). Start runs it again from the beginning.
+   */
+  async reset(s: ProjectState, confirmation: string): Promise<void> {
+    if (s.mode !== 'live') {
+      throw new CommandError(409, 'demo_project', 'Only real projects can be reset.');
+    }
+    if (confirmation !== s.name) {
+      throw new CommandError(422, 'confirmation', `Type the project name, ${s.name}, to confirm.`);
+    }
+    if (s.status !== 'intake' && !this.deps.stop) {
+      throw new CommandError(
+        503,
+        'orchestrator_unavailable',
+        'No orchestrator is connected, so the running project cannot be stopped for a reset.',
+      );
+    }
+    const { store } = this.deps;
+    await this.deps.stop?.(s.projectId);
+    const log = await store.read(s.projectId);
+    const started = log.find((e) => e.type === 'project.status')?.seq ?? Infinity;
+    const keep = log.filter(
+      (e) =>
+        e.seq < started ||
+        e.type === 'credential.registered' ||
+        e.type === 'credential.verified' ||
+        e.type === 'project.updated',
+    );
+    await store.reset(s.projectId);
+    await this.deps.blobs?.deleteProject(s.projectId);
+    await store.append(s.projectId, [
+      ...keep.map(
+        (e) =>
+          ({
+            type: e.type,
+            actor: e.actor,
+            subject: e.subject,
+            severity: e.severity,
+            data: e.data,
+            at: e.ts,
+          }) as NewEvent,
+      ),
+      {
+        type: 'cos.message',
+        actor: { kind: 'chief_of_staff', id: 'chief-of-staff' },
+        subject: { kind: 'project', id: s.projectId },
+        severity: 'notable',
+        data: {
+          messageId: randomUUID(),
+          kind: 'text',
+          title: 'Reset to intake',
+          body: 'The Director reset this project. The run so far, its decisions and its documents were removed; the intake facts, credentials and source site are kept. Press Start to run it again from the beginning.',
+        },
+      },
+    ]);
   }
 
   /** Re-checks a stored credential of a live project and records the outcome. */

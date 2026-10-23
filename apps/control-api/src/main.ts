@@ -14,7 +14,13 @@ import {
   type SecretVault,
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
-import { createWorker, defaultPolicy, ProjectCommandsClient, startProject } from '@lw/orchestrator';
+import {
+  createWorker,
+  defaultPolicy,
+  ProjectCommandsClient,
+  startProject,
+  stopProject,
+} from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import { composeStack } from '@lw/stack';
@@ -23,9 +29,9 @@ import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 import { buildApp } from './app';
-import { GithubApp } from './github';
+import { GithubApp } from '@lw/connectors';
 import { IntakeService, type StartInput } from './intake';
-import { SITECORE_DEFAULTS } from './verify';
+import { SITECORE_DEFAULTS } from '@lw/connectors';
 import { policyRows } from './policy';
 import { demoCommands, remoteCommands, simulationCommands, type ProjectCommands } from './commands';
 
@@ -170,6 +176,8 @@ const blobs = openBlobStore(
 let commands: (projectId: string) => ProjectCommands | undefined;
 /** Starts a project the New Project wizard recorded; only a real orchestrator can. */
 let start: ((input: StartInput) => Promise<void>) | undefined;
+/** Stops a project's run for good, for a reset; only a real orchestrator has one. */
+let stop: ((projectId: string) => Promise<void>) | undefined;
 let seedSample: (() => Promise<void>) | null = null;
 
 if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
@@ -309,6 +317,7 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
       registered: true,
     });
   };
+  stop = (projectId) => stopProject(client, projectId, 'Reset by the Director');
   // A sample project for local runs only: deployed instances start cold and in parallel.
   if (env.INLINE_WORKER === 'true' && !(await store.projectIds()).length) {
     seedSample = async () => {
@@ -376,6 +385,8 @@ const app = await buildApp({
     vault,
     verify: SITECORE_DEFAULTS,
     start,
+    stop,
+    blobs,
     github,
   }),
   github,

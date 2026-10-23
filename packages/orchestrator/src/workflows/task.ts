@@ -12,6 +12,7 @@ import {
   ACCESS_DENIED,
   AGENT_FAILED,
   NEEDS_DECISION,
+  NOT_CONNECTED,
   type AgentDecision,
   type AgentRequest,
   type AgentResult,
@@ -34,7 +35,7 @@ const agents = proxyActivities<Activities>({
   heartbeatTimeout: '5 minutes',
   retry: {
     maximumAttempts: 3,
-    nonRetryableErrorTypes: [ACCESS_DENIED, NEEDS_DECISION, AGENT_FAILED],
+    nonRetryableErrorTypes: [ACCESS_DENIED, NEEDS_DECISION, AGENT_FAILED, NOT_CONNECTED],
   },
 });
 
@@ -132,6 +133,16 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
       }
       if (app?.type === ACCESS_DENIED) {
         return { outcome: 'access_denied', state, attempt, reason: message, spent };
+      }
+      if (app?.type === NOT_CONNECTED) {
+        return {
+          outcome: 'access_denied',
+          state,
+          attempt,
+          reason: message,
+          spent,
+          notConnected: true,
+        };
       }
       if (app?.type === NEEDS_DECISION && detail.question && detail.options && detail.recommended) {
         const decision: AgentDecision = {

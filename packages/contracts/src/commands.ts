@@ -122,6 +122,10 @@ export const ChangeSourceSite = z.object({
 });
 export type ChangeSourceSite = z.infer<typeof ChangeSourceSite>;
 
+/** POST /projects/:id/reset — back to intake. `confirmation` is the project name. */
+export const ResetProject = z.object({ confirmation: z.string() });
+export type ResetProject = z.infer<typeof ResetProject>;
+
 /** POST /projects/:id/escalations/:escalationId/defer */
 export const DeferEscalation = z.object({ until: z.iso.datetime() });
 export type DeferEscalation = z.infer<typeof DeferEscalation>;

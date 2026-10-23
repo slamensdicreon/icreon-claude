@@ -106,7 +106,7 @@ Set them in the project's settings. Variables the images already default are in
 | `OPERATORS`                                | api               | Comma-separated GitHub logins allowed in                               |
 | `GITHUB_ORG`                               | api               | Optional: also require active membership of this org                   |
 | `SESSION_SECRET`                           | api               | 32+ random characters (`openssl rand -hex 32`)                         |
-| `CREDENTIALS_KEY`                          | api, worker       | 32 random bytes, base64 (`openssl rand -base64 32`). Seals project credentials (Sitecore clients, Edge Context IDs) in Postgres. Without it the wizard checks credentials but won't store them |
+| `CREDENTIALS_KEY`                          | api, worker       | 32 random bytes, base64 (`openssl rand -base64 32`). Seals project credentials (Sitecore clients, Edge Context IDs, the GitHub App's keys) in Postgres. The worker opens them for tool calls; without it no tool that needs a project credential connects |
 | `CREDENTIALS_KEY_PREVIOUS`                 | api, worker       | Optional: the old key during a rotation, so secrets it sealed still open |
 | `PUBLIC_URL`, `APP_URL`                    | api               | Optional: default to `https://$VERCEL_PROJECT_PRODUCTION_URL`. Set both to the custom domain if the project has several |
 | `GITHUB_APP_ORG`                           | api               | Optional: create the GitHub App under this organization instead of the operator's own account |
@@ -165,6 +165,34 @@ records the outcome as the project's `github` credential (`github-app:installati
 reason it isn't reachable yet); **Check again** in the project's Settings picks up a later
 installation. The app is only offered where `CREDENTIALS_KEY` is set, since GitHub hands its keys
 over once.
+
+## What agents are connected to
+
+Real projects never run on stand-in agents. Each specialist role runs on Claude only when every
+operation it is granted is served by a connected tool server; otherwise its tasks block with a
+"Not connected" card naming what is missing, and nothing is recorded as done.
+
+| Tool server          | Backed by                                                         | Roles it completes (with the rest) |
+| -------------------- | ----------------------------------------------------------------- | ---------------------------------- |
+| `browser`, `validators` | Chromium in the worker, limited to the project's source host (and its www form) | Content Analyst, QA roles |
+| `artifacts`, `blackboard`, `decision-log` | The event log and Blob                     | Everyone who writes documents       |
+| `github`             | The Launchworks GitHub App: an installation token for the project's one repository; commits only to `launchworks/*` branches | Repo Analyst, Tenant Provisioner |
+| `sitecore-authoring` | The project's environment automation client, on its CM host's Authoring and Management GraphQL API | Tenant Provisioner, Content Migrator, Media Migrator, Experience Enabler |
+| `research`           | Claude's server-side web search and web fetch (`ANTHROPIC_API_KEY`) | Research Agent |
+
+Not connected yet, so the roles that need them block: `sandbox` (building and running the client's
+code), `sitecore-cli` (serialization, needs .NET in the worker), `hosting` (the client's Vercel
+project needs its own token) and `sitecore-deploy` (the Deploy API). The worker logs
+`Connected tool servers: …` and `Live agents: …` at start.
+
+`site.create` confirms the project's site exists; sites themselves are created in SitecoreAI Sites.
+
+## Resetting a project
+
+**Settings → Danger zone → Reset** (type the project name) takes a real project back to intake: the
+API terminates its Temporal workflow, deletes its events after intake and its Blob files, and keeps
+the intake facts, credentials (and their checks) and the source site. **Start** on Mission Control
+runs it again from phase 0.
 
 ## Behaviour to know about
 

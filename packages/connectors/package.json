@@ -1,0 +1,18 @@
+{
+  "name": "@lw/connectors",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lw/domain": "workspace:*",
+    "@lw/events": "workspace:*",
+    "@lw/tool-gateway": "workspace:*"
+  }
+}

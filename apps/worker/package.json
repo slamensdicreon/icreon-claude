@@ -9,11 +9,16 @@
   },
   "dependencies": {
     "@lw/agent-runtime": "workspace:*",
+    "@lw/connectors": "workspace:*",
+    "@lw/domain": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/orchestrator": "workspace:*",
     "@lw/playbook-sdk": "workspace:*",
     "@lw/stack": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
+    "@lw/tool-github": "workspace:*",
+    "@lw/tool-research": "workspace:*",
+    "@lw/tool-sitecore": "workspace:*",
     "@temporalio/worker": "^1.24.0",
     "tsx": "^4.23.15",
     "zod": "^4.6.7"

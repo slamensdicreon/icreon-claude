@@ -2,7 +2,7 @@ import type { Control, EscalationType } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
 import type { Playbook } from '@lw/playbook-sdk';
 import { ApplicationFailure } from '@temporalio/common';
-import { WorkflowUpdateFailedError, type Client } from '@temporalio/client';
+import { WorkflowNotFoundError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import {
   control,
   deferEscalation,
@@ -48,6 +48,19 @@ export async function startProject(client: Client, input: ProjectInput, taskQueu
     workflowId: projectWorkflowId(input.projectId),
     args: [input],
   });
+}
+
+/**
+ * Stops a project's workflow and its running tasks for good (a reset). A workflow that already
+ * ended, or never started, is fine.
+ */
+export async function stopProject(client: Client, projectId: string, reason: string) {
+  try {
+    await client.workflow.getHandle(projectWorkflowId(projectId)).terminate(reason);
+  } catch (err) {
+    if (err instanceof WorkflowNotFoundError) return;
+    throw err;
+  }
 }
 
 const STATUS: Record<string, 404 | 409 | 422> = {

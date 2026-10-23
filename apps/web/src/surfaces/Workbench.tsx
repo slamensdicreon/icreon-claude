@@ -14,6 +14,8 @@ import { useEffect, useState } from 'react';
 import { API, blobUrl } from '../lib/api';
 import { clock, shortDay, stamp } from '../lib/fmt';
 import { Chip } from '../parts/bits';
+import { DataDoc } from '../parts/DataDoc';
+import { MarkdownDoc } from '../parts/Doc';
 import { useApp, useMission, useProjectResource, useRoster, useTz } from '../state';
 
 const DECISIONS = 'decisions';
@@ -312,9 +314,9 @@ function ArtifactViewer({ a }: { a: ArtifactView }) {
         {versions}
       </div>
       {typeof content.body === 'string' ? (
-        <Markdown text={content.body} />
+        <MarkdownDoc text={content.body} projectId={projectId!} />
       ) : (
-        <pre className="mono">{JSON.stringify(content.body, null, 2)}</pre>
+        <DataDoc value={content.body} />
       )}
     </>
   );
@@ -500,43 +502,6 @@ function PullRequest({ pr }: { pr: PullRequestDocument }) {
           </a>
         </div>
       )}
-    </>
-  );
-}
-
-/** Enough Markdown for agent-written documents: headings, lists, paragraphs, code. */
-function Markdown({ text }: { text: string }) {
-  const blocks = text.split(/\n{2,}/);
-  return (
-    <>
-      {blocks.map((b, i) => {
-        const h = /^(#{1,3})\s+(.*)$/.exec(b);
-        if (h)
-          return h[1]!.length === 1 ? (
-            <h2 key={i} style={{ fontSize: 18, margin: '16px 0 8px' }}>
-              {h[2]}
-            </h2>
-          ) : (
-            <h3 key={i} style={{ fontSize: 15, margin: '14px 0 6px' }}>
-              {h[2]}
-            </h3>
-          );
-        if (/^[-*] /m.test(b))
-          return (
-            <ul key={i} style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 14 }}>
-              {b.split('\n').map((l, j) => (
-                <li key={j}>{l.replace(/^[-*]\s+/, '')}</li>
-              ))}
-            </ul>
-          );
-        if (b.startsWith('```'))
-          return (
-            <pre key={i} className="mono">
-              {b.replace(/```\w*\n?/g, '')}
-            </pre>
-          );
-        return <p key={i}>{b}</p>;
-      })}
     </>
   );
 }

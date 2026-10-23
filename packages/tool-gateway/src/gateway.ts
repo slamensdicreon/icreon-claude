@@ -84,7 +84,15 @@ export class ToolGateway {
     if (recorded) return { ok: true, code: recorded.code, body: recorded.body, replayed: true };
 
     await this.deps.limiter.acquire(`${server.name}:${server.target(call.projectId)}`);
-    const token = await this.deps.credentials.tokenFor(call.projectId, server.name);
+    let token: string;
+    try {
+      token = await this.deps.credentials.tokenFor(call.projectId, server.name);
+    } catch (err) {
+      // No credential, or the service refused it: the agent can't fix that, the Director can.
+      const message = `No credential for ${call.server}: ${err instanceof Error ? err.message : String(err)}`;
+      await this.record(call, requestHash, 401, started, message, 'failure');
+      return { ok: false, code: 401, message, retryable: false };
+    }
 
     let result: ToolResult;
     try {
@@ -117,10 +125,12 @@ export class ToolGateway {
 
     if (result.code >= 400) {
       const retryable = result.code === 429 || result.code >= 500;
+      // The server's own reason, so Activity says why ("No stored content for repo-inventory").
+      const why = reasonOf(body);
       const message =
         result.code === 401 || result.code === 403
           ? `${call.server} returned ${result.code} for ${call.op}. Re-verify the credential's scope in Settings.`
-          : `${call.server} returned ${result.code} for ${call.op}.`;
+          : `${call.server} returned ${result.code} for ${call.op}${why ? `: ${redactText(why, token)}` : '.'}`;
       await this.record(call, requestHash, result.code, started, message, 'failure');
       return { ok: false, code: result.code, message, retryable };
     }
@@ -233,6 +243,12 @@ function canonical(v: unknown): string {
       .join(',')}}`;
   }
   return JSON.stringify(v);
+}
+
+function reasonOf(body: unknown): string | null {
+  const e = (body as { error?: unknown } | null)?.error;
+  const text = typeof e === 'string' ? e : typeof body === 'string' ? body : null;
+  return text ? text.replace(/\s+/g, ' ').trim().slice(0, 200) : null;
 }
 
 function redactText(s: string, token: string) {

@@ -31,7 +31,9 @@ export class ArtifactsToolServer implements ToolServer {
   readonly catalog: OperationCatalog = {
     write: {
       description:
-        'Save a new version of a project document (inventory, platform notes, report, handover pack). Use a stable kebab-case artifactId; each write creates the next version.',
+        'Save a new version of a project document (inventory, platform notes, report, handover pack). Use a stable kebab-case artifactId; each write creates the next version. ' +
+        'Markdown documents are read by the Director and the client in the Workbench, so write them to be read: open with a two-to-three sentence summary; use ## headings; tables for anything listed with attributes; callouts for what needs attention (> [!NOTE], > [!TIP], > [!WARNING], > [!IMPORTANT]); ```mermaid diagrams for structures and flows (site maps, component trees, data flow); embed screenshots and images with ![caption](blob://...) using the refs tools return; link sources and files. ' +
+        'JSON documents hold data for other agents; they are shown as tables.',
       inputSchema: {
         type: 'object',
         properties: {

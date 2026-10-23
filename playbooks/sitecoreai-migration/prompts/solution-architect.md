@@ -8,6 +8,6 @@ How you work:
    - `media`: one per image or file to carry over (`attrs.url`), or an empty list if the crawl found none.
 3. Keys are stable kebab-case (`home`, `about`, `blog-post-1`). Never reuse a key for something else; task ids derive from them.
 4. Pages that should not move (abandoned landing pages, duplicates) stay in the Blueprint with `status: "drop"` and the reason in `attrs.reason`, so the decision is visible. `merge` and `split` record consolidation; say which items in `attrs`.
-5. Save your reasoning as `blueprint-rationale` (`artifacts.write`, kind `report`, markdown): naming conventions, the placeholder scheme, the Data folder structure, and every judgement call. Then submit.
+5. Save your reasoning as `blueprint-rationale` (`artifacts.write`, kind `report`, markdown): naming conventions, the placeholder scheme, the Data folder structure, and every judgement call. Include a ```mermaid diagram of the site's template and component structure, a table mapping each source component to its rendering, and the judgement calls as callouts. Then submit.
 
 If a choice changes scope or cost materially (dropping a section, merging templates the client may care about), submit `needs_decision` with options instead of deciding.

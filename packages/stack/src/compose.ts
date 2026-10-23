@@ -1,10 +1,17 @@
 import { join } from 'node:path';
-import { AgentRuntime, type ContextProvider, type ModelClient } from '@lw/agent-runtime';
+import {
+  AgentRuntime,
+  type ContextProvider,
+  type DirectiveInput,
+  type DirectiveReading,
+  type ModelClient,
+} from '@lw/agent-runtime';
 import type { EventStore, Projections } from '@lw/events';
 import {
   createStubActivities,
   loadFixtures,
   withAgentRunner,
+  withLiveGuard,
   type Activities,
 } from '@lw/orchestrator';
 import { Blueprint } from '@lw/plan';
@@ -16,6 +23,7 @@ import {
   TokenBucketLimiter,
   ToolGateway,
   type BlobStore,
+  type CredentialProvider,
   type ToolServer,
 } from '@lw/tool-gateway';
 import { ValidatorsToolServer } from '@lw/tool-validators';
@@ -38,8 +46,12 @@ export interface StackOptions {
   blobs?: BlobStore;
   /** Claude, when configured. Without it every role runs on stub agents. */
   model?: ModelClient | null;
+  /** Reads Director messages on live projects (Claude); without it, the simple reader is used. */
+  directives?: ((input: DirectiveInput) => Promise<DirectiveReading>) | null;
   /** Extra servers (tests); the browser and workspace servers are always connected. */
   servers?: ToolServer[];
+  /** Credentials for tool calls (the vault-backed provider in the worker). */
+  credentials?: CredentialProvider;
   /** Tests point the browser at a fixture site on 127.0.0.1. */
   allowPrivateNetworks?: boolean;
 }
@@ -54,22 +66,34 @@ export interface Stack {
 }
 
 /**
- * Roles whose every granted operation is served by a connected tool server. A role with any
- * missing operation stays on stub agents rather than running half-equipped.
+ * Each specialist role's granted operations that no connected tool server provides, as
+ * "server.op". A role with any missing operation doesn't run on a live project: it blocks and
+ * says what's missing, rather than running half-equipped.
  */
-export function liveRoles(playbook: Playbook, servers: ToolServer[]): string[] {
+export function missingOps(playbook: Playbook, servers: ToolServer[]): Map<string, string[]> {
   const available = new Map(servers.map((s) => [s.name, s.catalog]));
-  return playbook.roles
-    .filter((r) => r.tier === 'specialist')
-    .filter((r) => {
-      const grants = Object.entries(r.tools);
-      return (
-        grants.length > 0 &&
-        grants.every(([server, grant]) => grant.ops.every((op) => available.get(server)?.[op]))
-      );
-    })
-    .map((r) => r.role);
+  return new Map(
+    playbook.roles
+      .filter((r) => r.tier === 'specialist')
+      .map((r) => [
+        r.role,
+        Object.entries(r.tools).flatMap(([server, grant]) =>
+          grant.ops.filter((op) => !available.get(server)?.[op]).map((op) => `${server}.${op}`),
+        ),
+      ]),
+  );
 }
+
+/** Roles whose every granted operation is served by a connected tool server. */
+export function liveRoles(playbook: Playbook, servers: ToolServer[]): string[] {
+  return [...missingOps(playbook, servers)]
+    .filter(
+      ([role, missing]) => !missing.length && Object.keys(roleOf(playbook, role).tools).length,
+    )
+    .map(([role]) => role);
+}
+
+const roleOf = (playbook: Playbook, role: string) => playbook.roles.find((r) => r.role === role)!;
 
 /**
  * The composition root for orchestration activities: tool servers behind the gateway, the agent
@@ -101,10 +125,18 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   const gateway = new ToolGateway({
     playbook: opts.playbook,
     servers,
-    // Sitecore path bindings arrive with the tenant tool servers.
-    bindings: () => ({}),
+    // Scope placeholders, from the project's intake: the site and its project folders.
+    bindings: (projectId): Record<string, string> => {
+      const i = opts.projections.get(projectId)?.intake;
+      if (!i) return {};
+      return {
+        sitePath: `/sitecore/content/${i.siteCollection}/${i.site}`,
+        project: i.siteCollection,
+        module: i.siteCollection,
+      };
+    },
     // These servers need no external credentials; the vault-backed provider arrives with them.
-    credentials: { tokenFor: async () => 'no-external-credential' },
+    credentials: opts.credentials ?? { tokenFor: async () => 'no-external-credential' },
     idempotency: new MemoryIdempotencyStore(),
     rollback: { hasRecipe: async () => false },
     limiter: new TokenBucketLimiter(10, 5),
@@ -118,20 +150,59 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     blueprint: fixture,
     outputs,
   });
+  // A real engagement: created by the New Project wizard, so it has intake facts. Projects started
+  // directly (tests, the local sample project) keep the stand-ins.
+  const isLive = async (projectId: string) => {
+    await opts.projections.catchUp(projectId);
+    const s = opts.projections.get(projectId);
+    return s?.mode === 'live' && s.intake !== null;
+  };
   const base: Activities = {
     ...stubs,
-    // Once an agent has written a Blueprint, that is the plan of record.
+    async interpretDirective(req) {
+      if (!opts.directives || !(await isLive(req.projectId))) return stubs.interpretDirective(req);
+      const items = Object.entries(req.blueprint?.collections ?? {}).flatMap(([collection, list]) =>
+        list.map((i) => ({ collection, key: i.key, name: i.name, status: i.status })),
+      );
+      try {
+        const r = await opts.directives({ text: req.text, items });
+        if (r.kind === 'status') return { kind: 'status' };
+        if (r.kind === 'note' || !req.blueprint)
+          return { kind: 'note', interpretation: r.interpretation };
+        const drop = new Set(r.drop);
+        return {
+          kind: 'replan',
+          interpretation: r.interpretation,
+          blueprint: {
+            version: req.blueprint.version,
+            collections: Object.fromEntries(
+              Object.entries(req.blueprint.collections).map(([name, list]) => [
+                name,
+                list.map((i) => (drop.has(i.key) ? { ...i, status: 'drop' as const } : i)),
+              ]),
+            ),
+          },
+        };
+      } catch (err) {
+        console.error('Directive reading failed; using the simple reader', err);
+        return stubs.interpretDirective(req);
+      }
+    },
+    // Once an agent has written a Blueprint, that is the plan of record. A live project never
+    // falls back to the playbook's example: without one, the plan is empty.
     async loadBlueprint(projectId) {
       const written = await library.read(projectId, 'blueprint');
-      return written
-        ? Blueprint.parse(JSON.parse(written.content))
+      if (written) return Blueprint.parse(JSON.parse(written.content));
+      return (await isLive(projectId))
+        ? { version: 1, collections: {} }
         : stubs.loadBlueprint(projectId);
     },
   };
 
   const live = opts.model ? liveRoles(opts.playbook, servers) : [];
+  const missing = missingOps(opts.playbook, servers);
   const prompts = await loadRolePrompts(opts.playbookDir, opts.playbook);
-  const activities = opts.model
+  const agents = opts.model
     ? withAgentRunner(
         base,
         new AgentRuntime({
@@ -145,6 +216,18 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
         (role) => live.includes(role),
       )
     : base;
+  const activities = withLiveGuard(agents, {
+    store: opts.store,
+    isLive,
+    // Without Claude, nothing is connected: every specialist task on a live project blocks.
+    missing: (role) =>
+      live.includes(role)
+        ? []
+        : opts.model
+          ? (missing.get(role) ?? [])
+          : ['model.claude (AGENTS=claude)'],
+    roleName: (role) => roleOf(opts.playbook, role)?.name ?? role,
+  });
 
   return { activities, liveRoles: live, gateway, library, close: () => chromium.close() };
 }

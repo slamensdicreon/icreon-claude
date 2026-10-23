@@ -23,6 +23,8 @@ export interface ProjectionOptions {
  */
 export class Projections {
   private readonly states = new Map<string, ProjectState>();
+  /** Id of each project's seq-1 event: a different one means the log was reset and rewritten. */
+  private readonly firstIds = new Map<string, string>();
   private readonly chains = new Map<string, Promise<void>>();
   private unsubscribe: (() => void) | null = null;
 
@@ -91,6 +93,14 @@ export class Projections {
       s = undefined;
     }
     if (!head || (s && s.seq >= head)) return;
+    if (s) {
+      // A log reset and rewritten past where this read model stopped: start over from seq 1.
+      const [first] = await this.store.read(projectId, { after: 0, before: 2 });
+      if (first && first.id !== this.firstIds.get(projectId)) {
+        this.states.delete(projectId);
+        s = undefined;
+      }
+    }
     for (const e of await this.store.read(projectId, { after: s?.seq ?? 0 })) this.apply(e);
   }
 
@@ -102,10 +112,15 @@ export class Projections {
   /** Applies the next event in sequence. False when `e` is ahead of a gap. */
   private apply(e: LwEvent): boolean {
     let s = this.states.get(e.projectId);
+    if (s && e.seq === 1 && this.firstIds.get(e.projectId) !== e.id) {
+      this.states.delete(e.projectId);
+      s = undefined;
+    }
     if (!s) {
       if (e.seq !== 1) return false;
       s = createProjectState(e.projectId);
       this.states.set(e.projectId, s);
+      this.firstIds.set(e.projectId, e.id);
     }
     if (e.seq <= s.seq) return true; // already applied
     if (e.seq !== s.seq + 1) return false;

@@ -295,6 +295,36 @@ export function Settings() {
               </button>
             </div>
           )}
+          {!p.demo && p.status !== 'intake' && (
+            <div className="row">
+              <span className="l">
+                Reset to intake{' '}
+                <span className="muted">(stop the run, delete its history and documents)</span>
+              </span>
+              <button
+                className="btn sm danger"
+                onClick={() =>
+                  openOverlay(
+                    <TypedConfirm
+                      title="Reset this project to intake?"
+                      body="The run stops now. Its activity, decisions, plan and Workbench documents are deleted. The intake facts, credentials and source site are kept, and Start runs the project again from the beginning. This cannot be undone."
+                      confirmLabel="Reset project"
+                      typed={p.name}
+                      onConfirm={() => {
+                        closeOverlay();
+                        void run(
+                          () => post(`${base}/reset`, { confirmation: p.name }),
+                          `${p.name} reset to intake`,
+                        );
+                      }}
+                    />,
+                  )
+                }
+              >
+                Reset
+              </button>
+            </div>
+          )}
           <div className="row">
             <span className="l">Archive project</span>
             <button

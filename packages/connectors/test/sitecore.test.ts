@@ -6,7 +6,7 @@ import {
   verifyEnvironmentClient,
   verifyOrganizationClient,
   type VerifyConfig,
-} from '../src/verify';
+} from '../src';
 
 /** A fake Sitecore: one valid client, one CM host with two sites, one valid Context ID. */
 function fakeSitecore(opts: { cmStatus?: number; hang?: boolean } = {}) {

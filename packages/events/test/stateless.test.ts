@@ -38,6 +38,29 @@ describe('Projections without a live tail', () => {
     expect(projections.get('p')?.status).toBe('running');
   });
 
+  it('starts over when a log is reset and rewritten past where it stopped', async () => {
+    const store = new InMemoryEventStore();
+    const at = (s: 'running' | 'paused', ts: string) => ({ ...status(s), at: ts });
+    await store.append('p', [
+      at('running', '2026-01-01T00:00:00.000Z'),
+      at('paused', '2026-01-02T00:00:00.000Z'),
+    ]);
+    const projections = new Projections(withoutTail(store));
+    await projections.start({ eager: false });
+    await projections.catchUp('p');
+    expect(projections.get('p')?.startedAt).toBe('2026-01-01T00:00:00.000Z');
+
+    await store.reset('p');
+    await store.append('p', [
+      at('paused', '2026-02-01T00:00:00.000Z'),
+      at('paused', '2026-02-02T00:00:00.000Z'),
+      at('running', '2026-02-03T00:00:00.000Z'),
+    ]);
+    await projections.catchUp('p');
+    // Folding only seq 3 onto the old state would keep the old start date.
+    expect(projections.get('p')).toMatchObject({ seq: 3, startedAt: '2026-02-03T00:00:00.000Z' });
+  });
+
   it('drops a project whose log was deleted from the list', async () => {
     const store = new InMemoryEventStore();
     await store.append('p', [status('running')]);

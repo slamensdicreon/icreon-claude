@@ -6,12 +6,13 @@ import {
   type ProjectListItem,
 } from '@lw/contracts';
 import { InMemoryEventStore, MemoryVault, Projections } from '@lw/events';
+import { MemoryBlobStore } from '@lw/tool-gateway';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import { IntakeService, type StartInput } from '../src/intake';
-import { SITECORE_DEFAULTS, type VerifyConfig } from '../src/verify';
+import { SITECORE_DEFAULTS, type VerifyConfig } from '@lw/connectors';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 const SECRET = 'env-secret-value-WXYZ';
@@ -65,6 +66,8 @@ async function start(opts: { orchestrator?: boolean } = {}) {
   const projections = new Projections(store);
   await projections.start();
   const started: StartInput[] = [];
+  const stopped: string[] = [];
+  const blobs = new MemoryBlobStore();
   const verify: VerifyConfig = { ...SITECORE_DEFAULTS, fetch: fakeSitecore };
   app = await buildApp({
     store,
@@ -76,9 +79,11 @@ async function start(opts: { orchestrator?: boolean } = {}) {
       vault: new MemoryVault(),
       verify,
       start: opts.orchestrator ? async (input) => void started.push(input) : undefined,
+      stop: opts.orchestrator ? async (id) => void stopped.push(id) : undefined,
+      blobs,
     }),
   });
-  return { app, store, started };
+  return { app, store, started, stopped, blobs };
 }
 
 const post = (url: string, payload: unknown = {}) =>
@@ -184,6 +189,49 @@ describe('New Project wizard', () => {
     expect(mc.project.source.url).toBe('https://anscollc.com/');
     const last = (await store.read(projectId)).at(-1)!;
     expect(last).toMatchObject({ type: 'project.updated', actor: { kind: 'director' } });
+  });
+
+  it('resets a started project to intake, keeping what the Director gave it', async () => {
+    const { store, stopped, blobs } = await start({ orchestrator: true });
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    await post(`/projects/${projectId}/start`);
+    // What a run leaves behind: a status change, a step, a stored document.
+    await store.append(projectId, [
+      {
+        type: 'project.status',
+        actor: { kind: 'system', id: 'orchestrator' },
+        subject: { kind: 'project', id: projectId },
+        severity: 'routine',
+        data: { status: 'running' },
+      },
+    ]);
+    await blobs.put(projectId, 'artifacts/page-inventory/v1.json', new Uint8Array([1]));
+    await app!.inject({
+      method: 'PUT',
+      url: `/projects/${projectId}/source`,
+      payload: { url: 'https://anscollc.com/' },
+    });
+
+    expect((await post(`/projects/${projectId}/reset`, { confirmation: 'nope' })).statusCode).toBe(
+      422,
+    );
+    expect(
+      (await post(`/projects/${projectId}/reset`, { confirmation: 'Globex site' })).statusCode,
+    ).toBe(200);
+
+    expect(stopped).toEqual([projectId]);
+    const types = (await store.read(projectId)).map((e) => e.type);
+    expect(types).not.toContain('project.status');
+    expect(types[0]).toBe('project.created');
+    expect(types).toContain('project.updated');
+    expect(types.at(-1)).toBe('cos.message');
+    await expect(
+      blobs.get(`blob://${projectId}/artifacts/page-inventory/v1.json`),
+    ).rejects.toThrow();
+    const mc = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(mc.project).toMatchObject({ status: 'intake', sourceUrl: 'https://anscollc.com/' });
   });
 
   it('re-verifies a stored credential from the vault', async () => {
