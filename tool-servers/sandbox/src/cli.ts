@@ -109,8 +109,8 @@ export class SitecoreCliToolServer implements ToolServer {
         (o, v) => o.split(v).join('[redacted]'),
         s,
       );
+    // The machine's own PATH stays (git lives in /opt/git/bin); .NET is called by its full path.
     const env = {
-      PATH: `${DOTNET}:${DOTNET}/tools:/usr/local/bin:/usr/bin:/bin`,
       DOTNET_ROOT: DOTNET,
       DOTNET_CLI_TELEMETRY_OPTOUT: '1',
     };
