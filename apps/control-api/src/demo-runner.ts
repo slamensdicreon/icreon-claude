@@ -2,15 +2,15 @@ import { fileURLToPath } from 'node:url';
 import { CommandError } from '@lw/domain';
 import { CommandBus, openStore, verifiedTls } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import { DEMO_SCENARIOS, demoProjectId, startDemo } from '@lw/simulator';
+import { DEMO_SCENARIOS, demoProjectId, RETIRED_DEMO_PROJECTS, startDemo } from '@lw/simulator';
 import { openBlobStore } from '@lw/tool-gateway';
 import pg from 'pg';
 import { z } from 'zod';
 import { demoCommands, dispatch, type ProjectCommands } from './commands';
 
 /**
- * The demo runner: plays the prototype's two projects into the shared Postgres log and runs the
- * Director's commands for them off the command bus. It is the long-running half of
+ * The demo runner: plays the demo project into the shared Postgres log and runs the
+ * Director's commands for it off the command bus. It is the long-running half of
  * ORCHESTRATOR=simulator when the API runs on request-driven instances (DEMO_RUNNER=separate):
  * on Vercel, a Daemon with exactly one instance.
  *
@@ -58,6 +58,7 @@ const playbook = await loadPlaybook(env.PLAYBOOK_DIR);
 const blobs = openBlobStore(env.BLOB_STORE, env.DATA_DIR);
 
 for (const def of DEMO_SCENARIOS) await store.reset(demoProjectId(def));
+for (const id of RETIRED_DEMO_PROJECTS) await store.reset(id);
 const demos = await startDemo(store, playbook, blobs, { speed: env.SIM_SPEED });
 const projects = new Map<string, ProjectCommands>(demos.map((d) => [d.projectId, demoCommands(d)]));
 console.log(`Demo projects running: ${demos.map((d) => d.projectId).join(', ')}`);

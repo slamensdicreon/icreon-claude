@@ -38,6 +38,25 @@ describe('Projections without a live tail', () => {
     expect(projections.get('p')?.status).toBe('running');
   });
 
+  it('drops a project whose log was deleted from the list', async () => {
+    const store = new InMemoryEventStore();
+    await store.append('p', [status('running')]);
+    await store.append('q', [status('running')]);
+    const projections = new Projections(withoutTail(store));
+    await projections.start({ eager: false });
+    await projections.catchUpAll();
+    expect(
+      projections
+        .all()
+        .map((s) => s.projectId)
+        .sort(),
+    ).toEqual(['p', 'q']);
+
+    await store.reset('q');
+    await projections.catchUpAll();
+    expect(projections.all().map((s) => s.projectId)).toEqual(['p']);
+  });
+
   it('discovers projects created elsewhere', async () => {
     const store = new InMemoryEventStore();
     const projections = new Projections(withoutTail(store));

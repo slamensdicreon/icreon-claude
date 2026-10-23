@@ -16,7 +16,7 @@ import {
 import { CommandError } from '@lw/domain';
 import { createWorker, defaultPolicy, ProjectCommandsClient, startProject } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import { Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
+import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import { composeStack } from '@lw/stack';
 import { openBlobStore } from '@lw/tool-gateway';
 import { Client, Connection } from '@temporalio/client';
@@ -101,7 +101,7 @@ const env = z
     VERCEL_URL: z.string().optional(),
     VERCEL_BRANCH_URL: z.string().optional(),
     SIM_SPEED: z.coerce.number().positive().default(1),
-    /** Scripted engagements to run beside the two demo projects (intake adds more). */
+    /** Scripted engagements to run beside the demo project (intake adds more). */
     SIM_PROJECTS: z.coerce.number().int().min(0).max(10).default(0),
     PLAYBOOK_DIR: z
       .string()
@@ -196,7 +196,8 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
       .catch((err) => console.error('simulation failed', projectId, err));
     return projectId;
   };
-  // The prototype's two projects, played through the real API.
+  // The demo project, played through the real API.
+  for (const id of RETIRED_DEMO_PROJECTS) await store.reset(id);
   const demos = await startDemo(store, playbook, blobs, { speed: env.SIM_SPEED });
   for (const d of demos) sims.set(d.projectId, demoCommands(d));
   cleanups.push(async () => demos.forEach((d) => d.stop()));

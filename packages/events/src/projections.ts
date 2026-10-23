@@ -54,6 +54,9 @@ export class Projections {
   /** Catches up every project the store knows, including ones created elsewhere. */
   async catchUpAll(): Promise<void> {
     const ids = await this.store.projectIds();
+    // A project whose log was deleted (a retired demo) leaves every instance's list too.
+    const live = new Set(ids);
+    for (const id of this.states.keys()) if (!live.has(id)) this.states.delete(id);
     await Promise.all(ids.map((id) => this.catchUp(id)));
   }
 

@@ -17,7 +17,6 @@ import { startDemo, type DemoProject } from '../src';
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 const blobs = new Map<string, Uint8Array>();
 let ansell: DemoProject;
-let ansco: DemoProject;
 
 const until = async (fn: () => boolean, ms = 5000) => {
   const end = Date.now() + ms;
@@ -47,7 +46,7 @@ const blueprintOf = (p: DemoProject) => {
 };
 
 beforeAll(async () => {
-  [ansell, ansco] = (await startDemo(
+  [ansell] = (await startDemo(
     new InMemoryEventStore(),
     await loadPlaybook(PLAYBOOK),
     {
@@ -57,12 +56,11 @@ beforeAll(async () => {
       },
     },
     { auto: false, speed: 50, undoWindowMs: 50, directiveWindowMs: 100 },
-  )) as [DemoProject, DemoProject];
+  )) as [DemoProject];
 });
 
 afterAll(() => {
   ansell?.stop();
-  ansco?.stop();
 });
 
 describe('Ansell, mid-build', () => {
@@ -189,25 +187,5 @@ describe('Ansell, mid-build', () => {
     expect(
       ansell.state.decisions.some((d) => d.question === 'Sample kit request destination'),
     ).toBe(false);
-  });
-});
-
-describe('Ansco, at Gate 1', () => {
-  it('waits on Gate 1, then starts foundation when it is approved', async () => {
-    expect(missionControl(ansco.state).subtitle).toBe(
-      'Phase 2, Blueprint. Gate 1 waits on your approval.',
-    );
-    expect(
-      settingsView(ansco.state, []).credentials.find((c) => c.system === 'Postgres (forms)'),
-    ).toMatchObject({ provided: false });
-    await ansco.resolve('E-11', 'approve');
-    await until(() => ansco.state.phases[3]!.status === 'current');
-    expect(ansco.state.phases[2]!.status).toBe('done');
-    expect(ansco.state.tasks.e2!.state).toBe('running');
-    expect(settingsView(ansco.state, []).conventions.lockedAt).not.toBeNull();
-    expect(blueprintOf(ansco).approvedVersion).toBe(1);
-    expect(missionControl(ansco.state).subtitle).toBe(
-      'Phase 3, Foundation. Next gate: Acceptance.',
-    );
   });
 });

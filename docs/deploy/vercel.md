@@ -10,7 +10,7 @@ Everything runs in one Vercel project, on one domain:
 | -------- | --------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
 | `web`    | Service: static Vite build on the CDN   | `apps/web`                          | The Control Center. Every path that isn't the API.                          |
 | `api`    | Service: Function from a container image | `Dockerfile.api` → `apps/control-api` | `/projects/*`, `/intake/*`, `/integrations/*`, `/auth/*`, `/health`: snapshots, commands, event streams, intake, the GitHub App, sign-in |
-| `demo`   | Daemon, 1 instance                      | `Dockerfile.api` → `src/demo-runner.ts` | Plays the two prototype projects and runs Director commands for them         |
+| `demo`   | Daemon, 1 instance                      | `Dockerfile.api` → `src/demo-runner.ts` | Plays the demo project (Ansell) and runs Director commands for it           |
 | `worker` | Daemon, 0 instances until real mode     | `Dockerfile.worker` → `apps/worker` | Temporal workflows and activities, tool servers, Chromium                    |
 
 Outside the project: **Neon Postgres** (Vercel Marketplace) holds the event log and the command
@@ -114,7 +114,7 @@ origins.
 ## Checking a deployment
 
 1. `https://<domain>/health` answers `{"ok":true}` (no sign-in needed).
-2. Open the domain, sign in with GitHub, and see both demo projects in the switcher.
+2. Open the domain, sign in with GitHub, and see the demo project in the switcher.
 3. Choose an option on a decision card: it resolves within a second, which shows the command queue
    and the demo daemon are working. If it answers "The project runner did not pick up the command",
    check the `demo` daemon's logs.
@@ -166,7 +166,7 @@ over once.
   belongs to it, so sign-in works on production only. For a signed-in preview, alias a branch
   domain, register a second OAuth app for it, and set that preview's `PUBLIC_URL`/`APP_URL`.
 - **The demo restarts on deploy.** Each production deployment rolls out a new `demo` instance,
-  which reseeds the two demo projects to the prototype's story; open pages follow along. A second
+  which reseeds the demo project to the prototype's story (and deletes retired demo projects); open pages follow along. A second
   runner waits on the advisory lock until the old one exits, so two never play at once. Projects
   started from intake in demo mode stop when the runner restarts.
 - **Cold starts.** The API image is about 1 GB, mostly packages only the local inline worker needs
