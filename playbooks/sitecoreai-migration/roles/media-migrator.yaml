@@ -22,7 +22,7 @@ tools:
       - media.upload
     scope:
       paths:
-        - /sitecore/media library/Project/**
+        - /sitecore/media library/Project/{project}/**
   browser:
     ops:
       - fetch.asset

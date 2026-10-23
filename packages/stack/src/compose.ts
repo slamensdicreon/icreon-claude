@@ -84,6 +84,35 @@ export function missingOps(playbook: Playbook, servers: ToolServer[]): Map<strin
   );
 }
 
+/**
+ * Scope placeholders for a project. A collection can hold other teams' sites (a shared tenant),
+ * so `{project}` and `{module}` name a folder of this site's own inside the collection's
+ * Project folders, never the collection's folder itself.
+ */
+export function projectBindings(i: {
+  siteCollection: string;
+  site: string;
+}): Record<string, string> {
+  const own = `${i.siteCollection}/${i.site}`;
+  return {
+    sitePath: `/sitecore/content/${i.siteCollection}/${i.site}`,
+    collection: i.siteCollection,
+    project: own,
+    module: own,
+  };
+}
+
+/** The paths a project may write in, for the agents' context. */
+export function ownedPaths(i: { siteCollection: string; site: string }): string[] {
+  const b = projectBindings(i);
+  return [
+    b.sitePath!,
+    `/sitecore/templates/Project/${b.project}`,
+    `/sitecore/layout/Renderings/Project/${b.module}`,
+    `/sitecore/media library/Project/${b.project}`,
+  ];
+}
+
 /** Roles whose every granted operation is served by a connected tool server. */
 export function liveRoles(playbook: Playbook, servers: ToolServer[]): string[] {
   return [...missingOps(playbook, servers)]
@@ -125,17 +154,11 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   const gateway = new ToolGateway({
     playbook: opts.playbook,
     servers,
-    // Scope placeholders, from the project's intake: the site and its project folders.
+    // Scope placeholders, from the project's intake: what this project owns.
     bindings: (projectId): Record<string, string> => {
       const i = opts.projections.get(projectId)?.intake;
-      if (!i) return {};
-      return {
-        sitePath: `/sitecore/content/${i.siteCollection}/${i.site}`,
-        project: i.siteCollection,
-        module: i.siteCollection,
-      };
+      return i ? projectBindings(i) : {};
     },
-    // These servers need no external credentials; the vault-backed provider arrives with them.
     credentials: opts.credentials ?? { tokenFor: async () => 'no-external-credential' },
     idempotency: new MemoryIdempotencyStore(),
     rollback: { hasRecipe: async () => false },
@@ -247,6 +270,7 @@ function projectContext(projections: Projections): ContextProvider {
           ? [
               `Source repository: ${s.intake.repo} (branch ${s.intake.branch}).`,
               `SitecoreAI target: site "${s.intake.site}" in collection "${s.intake.siteCollection}" on ${s.intake.cmHost}, at /sitecore/content/${s.intake.siteCollection}/${s.intake.site}; languages ${s.intake.languages.join(', ')}.`,
+              `This project owns only these paths; other sites in the collection belong to other teams, so never change anything outside them: ${ownedPaths(s.intake).join('; ')}.`,
             ]
           : []),
         // The hosting tool server fills this once preview deployments exist.

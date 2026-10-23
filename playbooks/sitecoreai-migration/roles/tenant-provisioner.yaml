@@ -25,7 +25,16 @@ tools:
       - language.add
     scope:
       paths:
-        - /sitecore/content/**
+        # Only what this project owns: its site, its own template, rendering and media folders,
+        # and the shared parents those folders are created in. Other sites in the collection
+        # (a shared tenant) are out of reach.
+        - '{sitePath}/**'
+        - /sitecore/templates/Project/{project}/**
+        - /sitecore/layout/Renderings/Project/{module}/**
+        - /sitecore/media library/Project/{project}/**
+        - /sitecore/templates/Project/{collection}
+        - /sitecore/layout/Renderings/Project/{collection}
+        - /sitecore/media library/Project/{collection}
         - /sitecore/system/Languages/**
   github:
     ops:
