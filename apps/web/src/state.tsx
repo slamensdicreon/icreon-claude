@@ -246,6 +246,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  // Back from GitHub after creating the app: say how it went, on Settings, where the app lives.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    const outcome = q.get('github');
+    if (!outcome) return;
+    setSurface('settings');
+    toast(
+      outcome === 'connected'
+        ? 'The GitHub App is set up. Send clients its install link from Settings.'
+        : `The GitHub App was not set up: ${q.get('reason') ?? 'GitHub did not finish.'}`,
+    );
+    history.replaceState(null, '', location.pathname);
+  }, [toast]);
+
   const value: AppValue = {
     me,
     projects,

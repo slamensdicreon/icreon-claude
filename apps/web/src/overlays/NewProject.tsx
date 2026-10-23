@@ -12,7 +12,7 @@ import { Scrim } from './Dialogs';
  */
 
 type Check = { state: 'idle' } | { state: 'busy' } | ({ state: 'done' } & VerifyIntakeResult);
-type CheckKey = 'environment' | 'organization' | 'edgePreview' | 'edgeLive';
+type CheckKey = 'environment' | 'organization' | 'edgePreview' | 'edgeLive' | 'github';
 
 const STEPS = ['Project', 'Source', 'SitecoreAI', 'Edge and hosting', 'Review'] as const;
 
@@ -65,6 +65,7 @@ export function NewProject() {
     organization: { state: 'idle' },
     edgePreview: { state: 'idle' },
     edgeLive: { state: 'idle' },
+    github: { state: 'idle' },
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +79,8 @@ export function NewProject() {
     orgClientSecret: 'organization',
     previewContextId: 'edgePreview',
     liveContextId: 'edgeLive',
+    repo: 'github',
+    branch: 'github',
   };
   const set =
     <K extends keyof typeof f>(k: K) =>
@@ -253,10 +256,19 @@ export function NewProject() {
     <>
       <p>The code being migrated. Agents read it and open pull requests on a branch.</p>
       {text('Repository', 'repo', 'cablecom/website', {
-        hint: 'owner/name on GitHub. Agents reach it through the Icreon GitHub App once that is connected.',
+        hint: 'owner/name on GitHub. Agents reach it through the Launchworks GitHub App, which the client installs on this repository.',
         bad: Boolean(f.repo) && !repoOk,
       })}
       {text('Branch', 'branch', 'main')}
+      {checkRow('github', 'access', Boolean(repoOk && f.branch.trim()), () => ({
+        kind: 'github.repo',
+        repo: f.repo.trim(),
+        branch: f.branch.trim(),
+      }))}
+      <p className="wiz-hint">
+        Optional now: if the client hasn’t installed the app yet, the project records it and you can
+        check again from Settings.
+      </p>
       {text('Live site', 'sourceUrl', 'https://www.cablecom.com', {
         hint: 'Optional. Used for crawling, parity checks and screenshots.',
         bad: !urlOk,
@@ -386,8 +398,12 @@ export function NewProject() {
         </dd>
         <dt>Hosting</dt>
         <dd>Vercel, {hosting}</dd>
-        <dt>Not connected yet</dt>
-        <dd>GitHub access (the Icreon GitHub App). The project records it as needed.</dd>
+        <dt>Repository access</dt>
+        <dd>
+          {ok('github')
+            ? 'GitHub App ✓'
+            : 'Not confirmed yet. Creating the project checks it again and records the outcome; re-check it in Settings once the client installs the app.'}
+        </dd>
       </dl>
       <p className="muted" style={{ fontSize: 13 }}>
         The project is created ready to start. Nothing runs until you press Start on Mission

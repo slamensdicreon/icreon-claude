@@ -35,7 +35,8 @@ declare module 'fastify' {
 const SESSION = 'lw_session';
 const STATE = 'lw_oauth_state';
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-const OPEN_PATHS = ['/health', '/auth/'];
+// The app's post-install page is open: it lands client repository owners, who aren't operators.
+const OPEN_PATHS = ['/health', '/auth/', '/integrations/github/installed'];
 
 /**
  * Sign-in with GitHub for the one or two operators who run Launchworks. Only identity is kept:

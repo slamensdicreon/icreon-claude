@@ -15,7 +15,12 @@ export type Listen = (
 ) => Promise<() => Promise<void>>;
 
 const CHANNEL = 'lw_events';
-const MIGRATIONS = ['001_event_log.sql', '002_commands.sql', '003_secrets.sql'];
+const MIGRATIONS = [
+  '001_event_log.sql',
+  '002_commands.sql',
+  '003_secrets.sql',
+  '004_integrations.sql',
+];
 
 /**
  * Applies the migrations. They are idempotent, so this runs on every start. Multi-statement SQL

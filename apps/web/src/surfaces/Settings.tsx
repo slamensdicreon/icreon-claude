@@ -2,6 +2,7 @@ import type { SettingsSnapshot } from '@lw/contracts';
 import { post, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';
 import { TypedConfirm } from '../overlays/Dialogs';
+import { GithubAppPanel } from './GithubApp';
 import { Chip } from '../parts/bits';
 import { TYPE_LABEL } from '../parts/Card';
 import { useApp, useMission, useNow, useProjectResource, useTz } from '../state';
@@ -56,6 +57,9 @@ export function Settings() {
             </thead>
             <tbody>
               {s.credentials.map((c) => {
+                // Repository access can be re-checked before it's provided: that's how a fresh
+                // installation of the GitHub App is picked up.
+                const recheck = c.provided || (c.credentialId === 'github' && !p.demo);
                 const days = c.expiresAt
                   ? Math.max(0, Math.round((Date.parse(c.expiresAt) - now) / 86_400_000))
                   : null;
@@ -70,7 +74,9 @@ export function Settings() {
                     </td>
                     <td>
                       {!c.provided ? (
-                        <span className="cred-miss">Not provided</span>
+                        <span className="cred-miss">
+                          {c.ok === false && c.detail ? c.detail : 'Not provided'}
+                        </span>
                       ) : c.ok === false ? (
                         <span className="cred-miss">Failed: {c.detail}</span>
                       ) : c.verifiedAt ? (
@@ -88,7 +94,7 @@ export function Settings() {
                       <div className="btn-row">
                         <button
                           className="btn sm"
-                          disabled={!c.provided}
+                          disabled={!recheck}
                           onClick={() =>
                             void run(
                               () => post(`${base}/credentials/${c.credentialId}/verify`),
@@ -96,7 +102,7 @@ export function Settings() {
                             )
                           }
                         >
-                          Re-verify
+                          {c.provided ? 'Re-verify' : 'Check again'}
                         </button>
                         <button
                           className="btn sm"
@@ -116,6 +122,8 @@ export function Settings() {
             </tbody>
           </table>
         </section>
+
+        <GithubAppPanel />
 
         <section className="panel">
           <h2>Budgets</h2>

@@ -8,6 +8,7 @@ import type {
 import { CommandError, type ProjectState } from '@lw/domain';
 import type { EventStore, SecretVault } from '@lw/events';
 import type { Playbook } from '@lw/playbook-sdk';
+import type { GithubApp } from './github';
 import { phaseDefs, roster } from '@lw/playbook-sdk/pure';
 import {
   verifyContextId,
@@ -33,6 +34,8 @@ export interface IntakeDeps {
   verify: VerifyConfig;
   /** Starts the real orchestrator for a project. Absent where none is connected. */
   start?: (input: StartInput) => Promise<void>;
+  /** The Launchworks GitHub App, which gives agents the source repository. */
+  github?: GithubApp;
 }
 
 const INTAKE = { kind: 'system', id: 'intake' } as const;
@@ -121,7 +124,54 @@ export class IntakeService {
         return result(await verifyContextId(cfg, { contextId: input.contextId, label: 'preview' }));
       case 'edge.live':
         return result(await verifyContextId(cfg, { contextId: input.contextId, label: 'live' }));
+      case 'github.repo':
+        return result(await this.checkRepo(input.repo, input.branch));
     }
+  }
+
+  private async checkRepo(repo: string, branch: string) {
+    if (!this.deps.github) {
+      return { ok: false, detail: 'The GitHub App is not wired in this mode.' };
+    }
+    try {
+      return await this.deps.github.checkRepo(repo, branch);
+    } catch (err) {
+      return { ok: false, detail: `Could not reach GitHub: ${(err as Error).message}` };
+    }
+  }
+
+  /** Repository access: the app's installation when it reaches the repo, else the reason why not. */
+  private async githubEvents(
+    repo: string,
+    branch: string,
+    actor: NewEvent['actor'],
+  ): Promise<NewEvent[]> {
+    const r = await this.checkRepo(repo, branch);
+    const reference =
+      r.ok && r.installationId ? `github-app:installation/${r.installationId}` : null;
+    return [
+      {
+        type: 'credential.registered',
+        actor,
+        subject: { kind: 'tool', id: 'github' },
+        severity: 'routine',
+        data: {
+          credentialId: 'github',
+          system: 'GitHub App',
+          scope: `${repo} (read, branch, pull requests)`,
+          reference,
+          hint: null,
+          expiresAt: null,
+        },
+      },
+      {
+        type: 'credential.verified',
+        actor,
+        subject: { kind: 'tool', id: 'github' },
+        severity: r.ok ? 'routine' : 'warning',
+        data: { credentialId: 'github', ok: r.ok, detail: r.detail, expiresAt: null },
+      },
+    ];
   }
 
   /** Records a new project in intake. Every credential given must pass its check first. */
@@ -188,22 +238,11 @@ export class IntakeService {
         },
       );
     }
-    // Repository access comes from the Icreon GitHub App, which isn't connected yet: record the
-    // need, unprovided, so Settings shows it.
-    credentialEvents.push({
-      type: 'credential.registered',
-      actor: INTAKE,
-      subject: { kind: 'tool', id: 'github' },
-      severity: 'routine',
-      data: {
-        credentialId: 'github',
-        system: 'GitHub',
-        scope: `${intake.source.repo} (read, branch, pull requests)`,
-        reference: null,
-        hint: null,
-        expiresAt: null,
-      },
-    });
+    // Repository access comes from the GitHub App. A repo it can't reach yet doesn't stop intake:
+    // Settings shows why, and a re-check picks up the installation once the client adds it.
+    credentialEvents.push(
+      ...(await this.githubEvents(intake.source.repo, intake.source.branch, INTAKE)),
+    );
 
     const environmentSites = checks.find((c) => c.key === 'environment')?.r.sites ?? [];
     await store.append(projectId, [
@@ -305,6 +344,17 @@ export class IntakeService {
   async reverify(s: ProjectState, credentialId: string): Promise<void> {
     const c = s.credentials[credentialId];
     if (!c) throw new CommandError(404, 'unknown_credential', `No credential "${credentialId}".`);
+    if (credentialId === 'github' && s.intake) {
+      // Re-finds the installation, so a repo the client installed the app on since is picked up.
+      await this.deps.store.append(
+        s.projectId,
+        await this.githubEvents(s.intake.repo, s.intake.branch, {
+          kind: 'director',
+          id: 'director',
+        }),
+      );
+      return;
+    }
     if (!c.reference) {
       throw new CommandError(409, 'not_provided', `${c.system} hasn't been provided yet.`);
     }

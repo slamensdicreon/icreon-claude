@@ -44,6 +44,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
+import type { GithubApp } from './github';
 import type { IntakeService } from './intake';
 import { streamProject, type StreamOptions } from './sse';
 
@@ -54,6 +55,8 @@ export interface AppDeps {
   commands: (projectId: string) => ProjectCommands | undefined;
   /** The New Project wizard: credential checks, intake, start. Absent where intake isn't wired. */
   intake?: IntakeService;
+  /** The Launchworks GitHub App (one for all projects). Absent where nothing can store its keys. */
+  github?: GithubApp;
   /** Stored content of an artifact version, or null if none is stored. */
   artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
   /** The playbook's escalation policy table, for Settings. */
@@ -72,6 +75,14 @@ export interface AppDeps {
 }
 
 type P = { Params: { id: string } };
+
+const INSTALLED_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Launchworks installed</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;
+background:#f6f5f2;color:#1d1c1a}main{max-width:28rem;padding:2rem}h1{font-size:1.25rem}
+@media (prefers-color-scheme:dark){body{background:#161614;color:#ecebe7}}</style></head>
+<body><main><h1>The Launchworks app is installed</h1><p>Thank you. The team can now reach the
+repositories you selected. You can close this page; nothing else is needed from you.</p></main></body></html>`;
 
 function fail(reply: FastifyReply, status: number, code: string, message: string) {
   const body: ApiError = { error: { code, message } };
@@ -142,6 +153,59 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
 
   app.get('/health', async () => ({ ok: true }));
+
+  const github = (reply: FastifyReply) => {
+    if (!deps.github) {
+      fail(
+        reply,
+        501,
+        'github_unavailable',
+        'The GitHub App needs the credential vault (CREDENTIALS_KEY).',
+      );
+      return null;
+    }
+    return deps.github;
+  };
+  app.get('/integrations/github', async (_req, reply) => {
+    const gh = github(reply);
+    return gh ? gh.status() : reply;
+  });
+  app.post('/integrations/github/manifest', async (req, reply) => {
+    const gh = github(reply);
+    if (!gh) return reply;
+    const { name } = z.object({ name: z.string().max(34).default('') }).parse(req.body ?? {});
+    return gh.manifest(name);
+  });
+  // GitHub sends the operator back here after they confirm the app (signed in, so it's them).
+  app.get<{ Querystring: { code?: string; state?: string } }>(
+    '/integrations/github/callback',
+    async (req, reply) => {
+      const gh = github(reply);
+      if (!gh) return reply;
+      // Back to the Control Center, which reads the outcome from the query and opens Settings.
+      const back = new URL(gh.appUrl);
+      try {
+        if (!req.query.code || !req.query.state) {
+          throw new CommandError(400, 'bad_request', 'GitHub did not send a code back.');
+        }
+        await gh.complete(req.query.code, req.query.state);
+        back.searchParams.set('github', 'connected');
+      } catch (err) {
+        if (!(err instanceof CommandError)) app.log.error(err);
+        back.searchParams.set('github', 'failed');
+        back.searchParams.set(
+          'reason',
+          err instanceof CommandError
+            ? err.message
+            : 'Launchworks could not reach GitHub to finish. Start again from Settings.',
+        );
+      }
+      return reply.redirect(back.toString());
+    },
+  );
+  app.get('/integrations/github/installed', async (_req, reply) =>
+    reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(INSTALLED_PAGE),
+  );
 
   app.get('/projects', async () => {
     await projections.catchUpAll();

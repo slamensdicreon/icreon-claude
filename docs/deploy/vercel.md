@@ -9,7 +9,7 @@ Everything runs in one Vercel project, on one domain:
 | Unit     | Vercel primitive                        | Source                              | What it does                                                                 |
 | -------- | --------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------- |
 | `web`    | Service: static Vite build on the CDN   | `apps/web`                          | The Control Center. Every path that isn't the API.                          |
-| `api`    | Service: Function from a container image | `Dockerfile.api` → `apps/control-api` | `/projects/*`, `/intake/*`, `/auth/*`, `/health`: snapshots, commands, event streams, intake, sign-in |
+| `api`    | Service: Function from a container image | `Dockerfile.api` → `apps/control-api` | `/projects/*`, `/intake/*`, `/integrations/*`, `/auth/*`, `/health`: snapshots, commands, event streams, intake, the GitHub App, sign-in |
 | `demo`   | Daemon, 1 instance                      | `Dockerfile.api` → `src/demo-runner.ts` | Plays the two prototype projects and runs Director commands for them         |
 | `worker` | Daemon, 0 instances until real mode     | `Dockerfile.worker` → `apps/worker` | Temporal workflows and activities, tool servers, Chromium                    |
 
@@ -99,6 +99,7 @@ Set them in the project's settings. Variables the images already default are in
 | `CREDENTIALS_KEY`                          | api, worker       | 32 random bytes, base64 (`openssl rand -base64 32`). Seals project credentials (Sitecore clients, Edge Context IDs) in Postgres. Without it the wizard checks credentials but won't store them |
 | `CREDENTIALS_KEY_PREVIOUS`                 | api, worker       | Optional: the old key during a rotation, so secrets it sealed still open |
 | `PUBLIC_URL`, `APP_URL`                    | api               | Optional: default to `https://$VERCEL_PROJECT_PRODUCTION_URL`. Set both to the custom domain if the project has several |
+| `GITHUB_APP_ORG`                           | api               | Optional: create the GitHub App under this organization instead of the operator's own account |
 | `ORCHESTRATOR`                             | api               | `simulator` (default) or `temporal`                                    |
 | `SIM_SPEED`                                | demo              | Optional: demo clock multiplier (default 1)                            |
 | `TEMPORAL_ADDRESS`                         | api, worker       | Real mode: e.g. `us-east-1.aws.api.temporal.io:7233`                   |
@@ -133,6 +134,28 @@ under `.sitecorecloud.io`.
 Keep `CREDENTIALS_KEY` only in Vercel (Sensitive). Losing it makes the stored secrets unreadable;
 the fix is to re-enter them. To rotate it, set the new key, move the old one to
 `CREDENTIALS_KEY_PREVIOUS`, redeploy, and re-enter credentials when convenient.
+
+## Repository access: the GitHub App
+
+Agents reach client repositories through one Launchworks GitHub App, shared by every project. It
+is created from **Settings → GitHub App → Create on GitHub** with GitHub's manifest flow: the
+browser posts the app's definition to GitHub, the operator confirms it there, and GitHub sends a
+one-time code back to `/integrations/github/callback`. The API trades the code for the app's
+private key, client secret and webhook secret, seals them in the vault (project `__system__`) and
+keeps the app's details in `lw_integrations`. Nothing is pasted by hand, and the callback only
+works for a signed-in operator with the state the API issued an hour or less earlier.
+
+The app is public (installable by any account, listed nowhere) and asks for: contents and pull
+requests (write); checks, statuses, Actions and metadata (read). It has no webhook. Each client
+installs it from the install link in Settings, choosing only the repository being migrated;
+GitHub then shows them `/integrations/github/installed`, the one page that needs no sign-in.
+
+The wizard's Source step checks access: it finds the installation on the repository, takes an
+installation token limited to that one repository, and reads the repository and branch. Intake
+records the outcome as the project's `github` credential (`github-app:installation/<id>`, or the
+reason it isn't reachable yet); **Check again** in the project's Settings picks up a later
+installation. The app is only offered where `CREDENTIALS_KEY` is set, since GitHub hands its keys
+over once.
 
 ## Behaviour to know about
 

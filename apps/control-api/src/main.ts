@@ -5,8 +5,10 @@ import { anthropicModelClient } from '@lw/agent-runtime';
 import {
   CommandBus,
   masterKey,
+  MemoryIntegrationStore,
   MemoryVault,
   openStore,
+  PostgresIntegrationStore,
   PostgresVault,
   Projections,
   type SecretVault,
@@ -21,6 +23,7 @@ import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 import { buildApp } from './app';
+import { GithubApp } from './github';
 import { IntakeService, type StartInput } from './intake';
 import { SITECORE_DEFAULTS } from './verify';
 import { policyRows } from './policy';
@@ -91,6 +94,8 @@ const env = z
     /** This API's public URL (for the OAuth callback) and the Control Center's URL. */
     PUBLIC_URL: z.string().url().optional(),
     APP_URL: z.string().url().optional(),
+    /** Create the GitHub App under this organization instead of the signed-in operator's account. */
+    GITHUB_APP_ORG: z.string().optional(),
     /** Set by Vercel: the production domain and this deployment's own hosts. */
     VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
     VERCEL_URL: z.string().optional(),
@@ -341,6 +346,25 @@ function openVault(): SecretVault {
   return { seal: refuse, open: refuse };
 }
 
+const vault = openVault();
+// The GitHub App's keys are sealed in the vault, so it is offered only where the vault can keep
+// them: GitHub hands the keys over exactly once.
+const integrations =
+  opened.sql && env.CREDENTIALS_KEY
+    ? new PostgresIntegrationStore(opened.sql)
+    : env.STORE === 'memory'
+      ? new MemoryIntegrationStore()
+      : null;
+const github = integrations
+  ? new GithubApp({
+      integrations,
+      vault,
+      publicUrl: publicUrl ?? `http://localhost:${env.PORT}`,
+      appUrl: appUrl ?? 'http://localhost:5173',
+      owner: env.GITHUB_APP_ORG ? { kind: 'org', org: env.GITHUB_APP_ORG } : { kind: 'user' },
+    })
+  : undefined;
+
 const app = await buildApp({
   store,
   projections,
@@ -348,10 +372,12 @@ const app = await buildApp({
   intake: new IntakeService({
     store,
     playbook,
-    vault: openVault(),
+    vault,
     verify: SITECORE_DEFAULTS,
     start,
+    github,
   }),
+  github,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
   policyDefaults: () => policyRows(playbook),
   corsOrigin: env.CORS_ORIGIN,

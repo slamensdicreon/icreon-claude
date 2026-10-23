@@ -128,7 +128,7 @@ describe('New Project wizard', () => {
     expect(settings.credentials.map((c) => [c.credentialId, c.provided, c.ok, c.hint])).toEqual([
       ['sitecore-environment', true, true, 'WXYZ'],
       ['edge-preview', true, true, '1234'],
-      ['github', false, null, null],
+      ['github', false, false, null],
     ]);
     expect(JSON.stringify(settings)).not.toContain('vault:');
   });
@@ -182,7 +182,7 @@ describe('New Project wizard', () => {
       ok: true,
       detail: expect.stringContaining('globex'),
     });
-    const missing = await post(`/projects/${projectId}/credentials/github/verify`);
-    expect(missing.statusCode).toBe(409);
+    const missing = await post(`/projects/${projectId}/credentials/sitecore-organization/verify`);
+    expect(missing.statusCode).toBe(404);
   });
 });

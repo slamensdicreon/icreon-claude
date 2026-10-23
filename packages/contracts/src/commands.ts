@@ -22,6 +22,11 @@ const ClientCredentials = z.object({
   clientSecret: z.string().trim().min(1).max(500),
 });
 const ContextId = z.string().trim().min(1).max(200);
+const Repo = z
+  .string()
+  .trim()
+  .regex(/^[\w.-]+\/[\w.-]+$/, 'owner/name');
+const Branch = z.string().trim().min(1).max(200);
 
 /**
  * POST /intake/verify — checks one credential against the live service before anything is stored.
@@ -35,6 +40,7 @@ export const VerifyIntakeCredential = z.discriminatedUnion('kind', [
   ClientCredentials.extend({ kind: z.literal('sitecore.organization') }),
   z.object({ kind: z.literal('edge.preview'), contextId: ContextId }),
   z.object({ kind: z.literal('edge.live'), contextId: ContextId }),
+  z.object({ kind: z.literal('github.repo'), repo: Repo, branch: Branch.default('main') }),
 ]);
 export type VerifyIntakeCredential = z.infer<typeof VerifyIntakeCredential>;
 
@@ -61,11 +67,8 @@ export const ProjectIntake = z.object({
     hours: z.number().positive().max(10_000),
   }),
   source: z.object({
-    repo: z
-      .string()
-      .trim()
-      .regex(/^[\w.-]+\/[\w.-]+$/, 'owner/name'),
-    branch: z.string().trim().min(1).max(200).default('main'),
+    repo: Repo,
+    branch: Branch.default('main'),
     url: z
       .url({ protocol: /^https?$/ })
       .nullable()
