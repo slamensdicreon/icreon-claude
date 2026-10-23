@@ -294,6 +294,39 @@ describe('New Project wizard', () => {
     expect(mc.project).toMatchObject({ status: 'intake', sourceUrl: 'https://anscollc.com/' });
   });
 
+  it('adds a credential intake did not have, and replaces one, only once it checks out', async () => {
+    const { store } = await start();
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    const put = (id: string, secret: object) =>
+      app!.inject({
+        method: 'PUT',
+        url: `/projects/${projectId}/credentials/${id}`,
+        payload: { secret },
+      });
+    const before = (await store.read(projectId)).length;
+    const bad = await put('sitecore-environment', { clientId: 'env-id', clientSecret: 'wrong' });
+    expect(bad.statusCode).toBe(422);
+    expect(bad.json().error.message).toMatch(/^SitecoreAI environment client:/);
+    expect((await put('jira', { token: 'x' })).statusCode).toBe(404);
+    expect((await put('edge-live', {})).statusCode).toBe(422);
+    expect((await store.read(projectId)).length).toBe(before);
+
+    const ok = await put('sitecore-environment', { clientId: 'env-id', clientSecret: SECRET });
+    expect(ok.statusCode).toBe(200);
+    const log = JSON.stringify(await store.read(projectId));
+    expect(log).not.toContain(SECRET);
+    const settings = SettingsSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/settings`)).json(),
+    );
+    expect(
+      settings.credentials.find((c) => c.credentialId === 'sitecore-environment'),
+    ).toMatchObject({
+      provided: true,
+      ok: true,
+      hint: 'WXYZ',
+    });
+  });
+
   it('re-verifies a stored credential from the vault', async () => {
     await start();
     const { projectId } = (await post('/projects', intake())).json() as { projectId: string };

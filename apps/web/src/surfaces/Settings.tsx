@@ -1,5 +1,10 @@
-import type { PlaybookSummary, ProjectSummary, SettingsSnapshot } from '@lw/contracts';
-import { useEffect, useState } from 'react';
+import type {
+  IntakeCredentialSpec,
+  PlaybookSummary,
+  ProjectSummary,
+  SettingsSnapshot,
+} from '@lw/contracts';
+import { Fragment, useEffect, useState } from 'react';
 import { get, post, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';
 import { TypedConfirm } from '../overlays/Dialogs';
@@ -15,18 +20,54 @@ function after(min: number | null, behaviour: string): string {
   return min >= 60 && min % 60 === 0 ? `${min / 60} h` : `${min} min`;
 }
 
+/** The playbook catalog, for what a project's playbook declares (its charter, its credentials). */
+function usePlaybooks(): PlaybookSummary[] | null {
+  const [list, setList] = useState<PlaybookSummary[] | null>(null);
+  useEffect(() => {
+    get<PlaybookSummary[]>('/playbooks')
+      .then(setList)
+      .catch(() => setList([]));
+  }, []);
+  return list;
+}
+
+type CredentialRow = SettingsSnapshot['credentials'][number];
+
 export function Settings() {
-  const { projectId, run, openOverlay, closeOverlay, toast } = useApp();
+  const { projectId, run, openOverlay, closeOverlay } = useApp();
   const s = useProjectResource<SettingsSnapshot>('/settings').data;
   const mc = useMission().data;
   const tz = useTz();
   const now = useNow(60_000);
+  const playbooks = usePlaybooks();
+  const [editing, setEditing] = useState<string | null>(null);
   if (!s || !mc) return <p className="quiet-line">Loading settings…</p>;
   const base = `/projects/${projectId}`;
   const p = mc.project;
   const paused = p.status === 'paused';
   const hours = p.startedAt ? (now - Date.parse(p.startedAt)) / 3_600_000 : 0;
   const running = mc.phases.reduce((n, x) => n + x.tasksRunning, 0);
+
+  // Every credential the playbook takes, given at intake or not, so a missing one can be added.
+  const declared =
+    playbooks?.find((x) => x.id === p.playbook?.id)?.intake.steps.flatMap((st) => st.credentials) ??
+    [];
+  const rows: CredentialRow[] = [
+    ...s.credentials,
+    ...declared
+      .filter((d) => !s.credentials.some((c) => c.credentialId === d.credentialId))
+      .map((d) => ({
+        credentialId: d.credentialId,
+        system: d.system,
+        scope: d.description ?? '',
+        provided: false,
+        hint: null,
+        verifiedAt: null,
+        ok: null,
+        detail: null,
+        expiresAt: null,
+      })),
+  ];
 
   const control = (verb: 'pause' | 'resume') =>
     run(() => post(`${base}/control`, { verb, scope: { kind: 'project', id: projectId } }));
@@ -44,7 +85,9 @@ export function Settings() {
       </div>
       <div className="settings">
         {!p.demo && <SourceSitePanel current={p.sourceUrl} />}
-        {!p.demo && p.playbook && <PlaybookPanel id={p.playbook.id} version={p.playbook.version} />}
+        {!p.demo && p.playbook && (
+          <PlaybookPanel id={p.playbook.id} version={p.playbook.version} list={playbooks} />
+        )}
         {!p.demo && p.intake?.repo && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}
         <section className="panel">
           <h2>
@@ -60,7 +103,10 @@ export function Settings() {
               </tr>
             </thead>
             <tbody>
-              {s.credentials.map((c) => {
+              {rows.map((c) => {
+                const spec = p.demo
+                  ? undefined
+                  : declared.find((d) => d.credentialId === c.credentialId);
                 // Repository access can be re-checked before it's provided: that's how a fresh
                 // installation of the GitHub App is picked up.
                 const recheck = c.provided || (c.credentialId === 'github' && !p.demo);
@@ -68,59 +114,80 @@ export function Settings() {
                   ? Math.max(0, Math.round((Date.parse(c.expiresAt) - now) / 86_400_000))
                   : null;
                 return (
-                  <tr key={c.credentialId}>
-                    <td>
-                      <b>{c.system}</b>
-                    </td>
-                    <td className="mono">
-                      {c.scope}
-                      {c.hint && <div className="faint">ends in {c.hint}</div>}
-                    </td>
-                    <td>
-                      {!c.provided ? (
-                        <span className="cred-miss">
-                          {c.ok === false && c.detail ? c.detail : 'Not provided'}
-                        </span>
-                      ) : c.ok === false ? (
-                        <span className="cred-miss">Failed: {c.detail}</span>
-                      ) : c.verifiedAt ? (
-                        <span className="cred-ok">{stamp(c.verifiedAt, tz)}</span>
-                      ) : (
-                        <span className="muted">Not yet verified</span>
-                      )}
-                      {days !== null && (
-                        <div className="faint" style={{ fontSize: 12 }}>
-                          expires in {days} days
+                  <Fragment key={c.credentialId}>
+                    <tr>
+                      <td>
+                        <b>{c.system}</b>
+                      </td>
+                      <td className="mono">
+                        {c.scope}
+                        {c.hint && <div className="faint">ends in {c.hint}</div>}
+                      </td>
+                      <td>
+                        {!c.provided ? (
+                          <span className="cred-miss">
+                            {c.ok === false && c.detail ? c.detail : 'Not provided'}
+                          </span>
+                        ) : c.ok === false ? (
+                          <span className="cred-miss">Failed: {c.detail}</span>
+                        ) : c.verifiedAt ? (
+                          <span className="cred-ok">{stamp(c.verifiedAt, tz)}</span>
+                        ) : (
+                          <span className="muted">Not yet verified</span>
+                        )}
+                        {days !== null && (
+                          <div className="faint" style={{ fontSize: 12 }}>
+                            expires in {days} days
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div className="btn-row">
+                          {(recheck || !spec) && (
+                            <button
+                              className="btn sm"
+                              disabled={!recheck}
+                              onClick={() =>
+                                void run(
+                                  () => post(`${base}/credentials/${c.credentialId}/verify`),
+                                  `Re-verifying ${c.system}`,
+                                )
+                              }
+                            >
+                              {c.provided ? 'Re-verify' : 'Check again'}
+                            </button>
+                          )}
+                          {spec && (
+                            <button
+                              className="btn sm"
+                              aria-expanded={editing === c.credentialId}
+                              onClick={() =>
+                                setEditing(editing === c.credentialId ? null : c.credentialId)
+                              }
+                            >
+                              {c.provided ? 'Replace' : 'Add'}
+                            </button>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <div className="btn-row">
-                        <button
-                          className="btn sm"
-                          disabled={!recheck}
-                          onClick={() =>
-                            void run(
-                              () => post(`${base}/credentials/${c.credentialId}/verify`),
-                              `Re-verifying ${c.system}`,
-                            )
-                          }
-                        >
-                          {c.provided ? 'Re-verify' : 'Check again'}
-                        </button>
-                        <button
-                          className="btn sm"
-                          onClick={() =>
-                            toast(
-                              `Rotate ${c.system} in the vault. Cypher re-verifies the new reference as soon as it lands.`,
-                            )
-                          }
-                        >
-                          Rotate
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                    {spec && editing === c.credentialId && (
+                      <tr>
+                        <td colSpan={4}>
+                          <CredentialForm
+                            spec={spec}
+                            onSave={async (secret) => {
+                              const ok = await run(
+                                () => put(`${base}/credentials/${c.credentialId}`, { secret }),
+                                `${c.system} checked and saved.`,
+                              );
+                              if (ok) setEditing(null);
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -362,13 +429,15 @@ export function Settings() {
  * The playbook the project runs, pinned at creation: what the team owes the client. Agents work
  * with these outcomes in view, and acceptance is judged against them.
  */
-function PlaybookPanel({ id, version }: { id: string; version: string }) {
-  const [list, setList] = useState<PlaybookSummary[] | null>(null);
-  useEffect(() => {
-    get<PlaybookSummary[]>('/playbooks')
-      .then(setList)
-      .catch(() => setList([]));
-  }, []);
+function PlaybookPanel({
+  id,
+  version,
+  list,
+}: {
+  id: string;
+  version: string;
+  list: PlaybookSummary[] | null;
+}) {
   const pb = list?.find((p) => p.id === id);
   return (
     <section className="panel playbook">
@@ -401,6 +470,53 @@ function PlaybookPanel({ id, version }: { id: string; version: string }) {
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * A credential's fields, sent once to be checked against its service and sealed. Nothing typed
+ * here is kept in the page after saving, and nothing stored is ever shown.
+ */
+function CredentialForm({
+  spec,
+  onSave,
+}: {
+  spec: IntakeCredentialSpec;
+  onSave: (secret: Record<string, string>) => Promise<void>;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const ready = spec.fields.every((f) => values[f.key]?.trim());
+  return (
+    <form
+      className="cred-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!ready) return;
+        setBusy(true);
+        void onSave(values).finally(() => setBusy(false));
+      }}
+    >
+      {spec.description && <p className="muted">{spec.description}</p>}
+      <div className="row">
+        {spec.fields.map((f) => (
+          <label key={f.key} className="cred-field">
+            <span className="eyebrow">{f.label}</span>
+            <input
+              className="input"
+              type={f.secret ? 'password' : 'text'}
+              autoComplete={f.secret ? 'new-password' : 'off'}
+              spellCheck={false}
+              value={values[f.key] ?? ''}
+              onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+            />
+          </label>
+        ))}
+        <button className="btn sm primary" type="submit" disabled={!ready || busy}>
+          {busy ? 'Checking…' : 'Check and save'}
+        </button>
+      </div>
+    </form>
   );
 }
 

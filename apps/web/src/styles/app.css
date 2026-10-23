@@ -562,3 +562,18 @@
     border-radius: var(--web-radius-2);
   }
 }
+.cred-form {
+  padding: 4px 0 8px;
+}
+.cred-form .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+.cred-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 200px;
+}

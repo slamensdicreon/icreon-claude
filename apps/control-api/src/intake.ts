@@ -426,6 +426,64 @@ export class IntakeService {
     ]);
   }
 
+  /**
+   * Adds or replaces one of the credentials the project's playbook takes. It is checked against
+   * its service first; on success it is sealed and recorded by reference, replacing the old one.
+   */
+  async setCredential(
+    s: ProjectState,
+    credentialId: string,
+    secret: Record<string, string>,
+  ): Promise<void> {
+    if (s.mode !== 'live' || !s.intake) {
+      throw new CommandError(409, 'not_live', 'Only real projects keep credentials.');
+    }
+    const declared = s.playbook
+      ? this.resolve(s.playbook.id).spec.steps.flatMap((st) => st.credentials)
+      : [];
+    const spec = declared.find((c) => c.credentialId === credentialId);
+    const pack = this.packOf(s);
+    const c = pack?.credentials[credentialId];
+    if (!spec || !c) {
+      throw new CommandError(
+        404,
+        'unknown_credential',
+        `This project's playbook takes no "${credentialId}".`,
+      );
+    }
+    const missing = spec.fields.filter((f) => !secret[f.key]?.trim()).map((f) => f.label);
+    if (missing.length)
+      throw new CommandError(422, 'invalid', `${missing.join(' and ')} required.`);
+    const clean = Object.fromEntries(spec.fields.map((f) => [f.key, secret[f.key]!.trim()]));
+    const r = await c.check(clean, s.intake.target);
+    if (!r.ok) throw new CommandError(422, 'credential_failed', `${c.system}: ${r.detail}`);
+    const sealed = await this.deps.vault.seal(s.projectId, credentialId, JSON.stringify(clean));
+    const actor = { kind: 'director', id: 'director' } as const;
+    await this.deps.store.append(s.projectId, [
+      {
+        type: 'credential.registered',
+        actor,
+        subject: { kind: 'tool', id: credentialId },
+        severity: 'notable',
+        data: {
+          credentialId,
+          system: c.system,
+          scope: c.scope(s.intake.target),
+          reference: sealed.reference,
+          hint: tail(clean[c.hintField] ?? ''),
+          expiresAt: null,
+        },
+      },
+      {
+        type: 'credential.verified',
+        actor,
+        subject: { kind: 'tool', id: credentialId },
+        severity: 'routine',
+        data: { credentialId, ok: true, detail: r.detail, expiresAt: null },
+      },
+    ]);
+  }
+
   /** Re-checks a stored credential of a live project and records the outcome. */
   async reverify(s: ProjectState, credentialId: string): Promise<void> {
     const c = s.credentials[credentialId];

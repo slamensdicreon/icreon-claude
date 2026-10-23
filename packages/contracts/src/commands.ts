@@ -115,6 +115,13 @@ export type ChangeSourceSite = z.infer<typeof ChangeSourceSite>;
 export const ResetProject = z.object({ confirmation: z.string() });
 export type ResetProject = z.infer<typeof ResetProject>;
 
+/**
+ * PUT /projects/:id/credentials/:credentialId — add a credential intake didn't have, or replace
+ * one. Checked against its service first; nothing is stored on a failure.
+ */
+export const SetCredential = z.object({ secret: Secret });
+export type SetCredential = z.infer<typeof SetCredential>;
+
 /** POST /projects/:id/build-repo — create the build repository (a name overrides the default). */
 export const CreateBuildRepo = z.object({
   name: z
