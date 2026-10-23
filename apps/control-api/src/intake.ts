@@ -1,22 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  IntakeSpec,
   NewEvent,
+  PlaybookSummary,
   ProjectIntake,
   VerifyIntakeCredential,
   VerifyIntakeResult,
 } from '@lw/contracts';
 import { CommandError, type ProjectState } from '@lw/domain';
 import type { EventStore, SecretVault } from '@lw/events';
-import type { Playbook } from '@lw/playbook-sdk';
-import type { GithubApp } from '@lw/connectors';
+import type { CatalogEntry } from '@lw/playbook-sdk';
+import type { GithubApp, VerifyResult } from '@lw/connectors';
 import { phaseDefs, roster } from '@lw/playbook-sdk/pure';
 import {
-  verifyContextId,
-  verifyEnvironmentClient,
-  verifyOrganizationClient,
-  type VerifyConfig,
-  type VerifyResult,
-} from '@lw/connectors';
+  IntakeError,
+  intakeSpec,
+  playbookSummary,
+  validateTarget,
+  type PlatformPack,
+  type TargetValues,
+} from '@lw/platforms';
 
 /** What the orchestrator needs to start a project the wizard registered. */
 export interface StartInput {
@@ -25,13 +28,17 @@ export interface StartInput {
   client: string;
   sourceUrl: string | null;
   budgets: ProjectState['budgets'];
+  /** The playbook the project was created with. */
+  playbookId: string;
 }
 
 export interface IntakeDeps {
   store: EventStore;
-  playbook: Playbook;
+  /** Every playbook a project can run, by id. */
+  catalog: Map<string, CatalogEntry>;
+  /** Platform packs, by id: what each playbook's intake fields and credentials are. */
+  platforms: Map<string, PlatformPack>;
   vault: SecretVault;
-  verify: VerifyConfig;
   /** Starts the real orchestrator for a project. Absent where none is connected. */
   start?: (input: StartInput) => Promise<void>;
   /** The Launchworks GitHub App, which gives agents the source repository. */
@@ -46,59 +53,6 @@ export interface IntakeDeps {
 
 const INTAKE = { kind: 'system', id: 'intake' } as const;
 
-/** One credential the wizard collects: what Settings calls it, and how it is checked. */
-interface CredentialSpec {
-  credentialId: string;
-  system: string;
-  scope: (s: { cmHost: string }) => string;
-  check: (
-    cfg: VerifyConfig,
-    secret: Record<string, string>,
-    ctx: { cmHost: string },
-  ) => Promise<VerifyResult>;
-}
-
-const SPECS: Record<'environment' | 'organization' | 'edgePreview' | 'edgeLive', CredentialSpec> = {
-  environment: {
-    credentialId: 'sitecore-environment',
-    system: 'SitecoreAI environment client',
-    scope: ({ cmHost }) => `Authoring API, ${hostOf(cmHost)}`,
-    check: (cfg, s, { cmHost }) =>
-      verifyEnvironmentClient(cfg, {
-        cmHost,
-        clientId: s.clientId!,
-        clientSecret: s.clientSecret!,
-      }),
-  },
-  organization: {
-    credentialId: 'sitecore-organization',
-    system: 'SitecoreAI organization client',
-    scope: () => 'Deploy API, all environments',
-    check: (cfg, s) =>
-      verifyOrganizationClient(cfg, { clientId: s.clientId!, clientSecret: s.clientSecret! }),
-  },
-  edgePreview: {
-    credentialId: 'edge-preview',
-    system: 'Experience Edge, preview',
-    scope: () => 'Context ID (preview)',
-    check: (cfg, s) => verifyContextId(cfg, { contextId: s.contextId!, label: 'preview' }),
-  },
-  edgeLive: {
-    credentialId: 'edge-live',
-    system: 'Experience Edge, live',
-    scope: () => 'Context ID (live)',
-    check: (cfg, s) => verifyContextId(cfg, { contextId: s.contextId!, label: 'live' }),
-  },
-};
-
-function hostOf(cmHost: string): string {
-  try {
-    return new URL(/^https?:\/\//.test(cmHost) ? cmHost : `https://${cmHost}`).host;
-  } catch {
-    return cmHost;
-  }
-}
-
 const result = (r: VerifyResult): VerifyIntakeResult => ({
   ok: r.ok,
   detail: r.detail,
@@ -107,32 +61,60 @@ const result = (r: VerifyResult): VerifyIntakeResult => ({
 });
 
 /**
- * The New Project wizard's back end. Credentials are checked against the live services, sealed in
- * the vault, and recorded by reference; the project is recorded in `intake` and starts when the
- * Director presses Start and an orchestrator is connected.
+ * The New Project wizard's back end. The chosen playbook decides what intake collects; its
+ * platform pack says what each value and credential is and how it is checked. Credentials are
+ * checked against the live services, sealed in the vault, and recorded by reference; the project
+ * is recorded in `intake` and starts when the Director presses Start and an orchestrator is
+ * connected.
  */
 export class IntakeService {
-  constructor(private readonly deps: IntakeDeps) {}
+  constructor(private readonly deps: IntakeDeps) {
+    // Fail at startup, not in the wizard, if a playbook names a field its pack lacks.
+    for (const id of deps.catalog.keys()) this.resolve(id);
+  }
 
   get canStart(): boolean {
     return Boolean(this.deps.start);
   }
 
+  /** The playbooks a new project can run, as the wizard shows them. */
+  playbooks(): PlaybookSummary[] {
+    return [...this.deps.catalog.values()].map((e) =>
+      playbookSummary(e.playbook, this.resolve(e.playbook.manifest.id).pack),
+    );
+  }
+
+  private resolve(playbookId: string): {
+    entry: CatalogEntry;
+    pack: PlatformPack;
+    spec: IntakeSpec;
+  } {
+    const entry = this.deps.catalog.get(playbookId);
+    if (!entry) throw new CommandError(404, 'unknown_playbook', `No playbook "${playbookId}".`);
+    const pack = this.deps.platforms.get(entry.playbook.manifest.platform);
+    if (!pack) {
+      throw new CommandError(
+        501,
+        'unknown_platform',
+        `${entry.playbook.manifest.name} runs on "${entry.playbook.manifest.platform}", which has no platform pack.`,
+      );
+    }
+    return { entry, pack, spec: intakeSpec(entry.playbook, pack) };
+  }
+
+  /** The platform pack a project runs on, from its intake. */
+  private packOf(s: ProjectState): PlatformPack | undefined {
+    return s.intake ? this.deps.platforms.get(s.intake.platform) : undefined;
+  }
+
   /** Checks one credential before anything is stored. */
   async verify(input: VerifyIntakeCredential): Promise<VerifyIntakeResult> {
-    const cfg = this.deps.verify;
-    switch (input.kind) {
-      case 'sitecore.environment':
-        return result(await verifyEnvironmentClient(cfg, input));
-      case 'sitecore.organization':
-        return result(await verifyOrganizationClient(cfg, input));
-      case 'edge.preview':
-        return result(await verifyContextId(cfg, { contextId: input.contextId, label: 'preview' }));
-      case 'edge.live':
-        return result(await verifyContextId(cfg, { contextId: input.contextId, label: 'live' }));
-      case 'github.repo':
-        return result(await this.checkRepo(input.repo, input.branch));
-    }
+    if (input.kind === 'github.repo') return result(await this.checkRepo(input.repo, input.branch));
+    const { pack, spec } = this.resolve(input.playbookId);
+    if (!spec.steps.some((st) => st.credentials.some((c) => c.credentialId === input.credentialId)))
+      throw new CommandError(404, 'unknown_credential', `No credential "${input.credentialId}".`);
+    const c = pack.credentials[input.credentialId]!;
+    return result(await c.check(input.secret, pack.normalize(input.target as TargetValues)));
   }
 
   private async checkRepo(repo: string, branch: string) {
@@ -182,75 +164,82 @@ export class IntakeService {
 
   /** Records a new project in intake. Every credential given must pass its check first. */
   async create(intake: ProjectIntake): Promise<string> {
-    const { store, playbook, vault } = this.deps;
+    const { store, vault } = this.deps;
+    const { entry, pack, spec } = this.resolve(intake.playbookId);
+    const { playbook } = entry;
     const projectId = `prj-${randomUUID().slice(0, 8)}`;
-    const ctx = { cmHost: intake.target.cmHost };
-    const given: [keyof typeof SPECS, Record<string, string>][] = [
-      ['environment', intake.credentials.environment],
-    ];
-    if (intake.credentials.organization)
-      given.push(['organization', intake.credentials.organization]);
-    if (intake.credentials.edgePreviewContextId)
-      given.push(['edgePreview', { contextId: intake.credentials.edgePreviewContextId }]);
-    if (intake.credentials.edgeLiveContextId)
-      given.push(['edgeLive', { contextId: intake.credentials.edgeLiveContextId }]);
 
-    // Check everything server-side, whatever the wizard showed: nothing is stored on a failure.
-    const checks = await Promise.all(
-      given.map(async ([key, secret]) => ({
-        key,
-        secret,
-        r: await SPECS[key].check(this.deps.verify, secret, ctx),
-      })),
-    );
-    const failed = checks.find((c) => !c.r.ok);
-    if (failed) {
-      throw new CommandError(
-        422,
-        'credential_failed',
-        `${SPECS[failed.key].system}: ${failed.r.detail}`,
-      );
+    const repo = spec.source.repo === 'none' ? null : intake.source.repo;
+    const url = spec.source.url === 'none' ? null : intake.source.url;
+    if (spec.source.repo === 'required' && !repo)
+      throw new CommandError(422, 'invalid', 'The source repository is required.');
+    if (spec.source.url === 'required' && !url)
+      throw new CommandError(422, 'invalid', 'The live site is required.');
+    let target: TargetValues;
+    try {
+      target = pack.normalize(validateTarget(spec, intake.target));
+    } catch (err) {
+      if (err instanceof IntakeError) throw new CommandError(422, 'invalid', err.message);
+      throw err;
     }
 
+    // The credentials this playbook takes: required ones must be given, and every one given
+    // is checked server-side, whatever the wizard showed. Nothing is stored on a failure.
+    const declared = spec.steps.flatMap((st) => st.credentials);
+    const unknown = Object.keys(intake.credentials).filter(
+      (id) => !declared.some((c) => c.credentialId === id),
+    );
+    if (unknown.length)
+      throw new CommandError(422, 'invalid', `${playbook.manifest.name} takes no "${unknown[0]}".`);
+    const given = declared.flatMap((c) => {
+      const secret = intake.credentials[c.credentialId];
+      const complete = secret && c.fields.every((f) => secret[f.key]?.trim());
+      if (!complete) {
+        if (c.required) throw new CommandError(422, 'invalid', `${c.system} is required.`);
+        return [];
+      }
+      return [{ id: c.credentialId, spec: pack.credentials[c.credentialId]!, secret }];
+    });
+    const checks = await Promise.all(
+      given.map(async (g) => ({ ...g, r: await g.spec.check(g.secret, target) })),
+    );
+    const failed = checks.find((c) => !c.r.ok);
+    if (failed)
+      throw new CommandError(422, 'credential_failed', `${failed.spec.system}: ${failed.r.detail}`);
+
     const credentialEvents: NewEvent[] = [];
-    for (const { key, secret, r } of checks) {
-      const spec = SPECS[key];
-      const sealed = await vault.seal(projectId, spec.credentialId, JSON.stringify(secret));
-      const hint =
-        key === 'environment' || key === 'organization'
-          ? tail(secret.clientSecret!)
-          : tail(secret.contextId!);
+    for (const { id, spec: c, secret, r } of checks) {
+      const sealed = await vault.seal(projectId, id, JSON.stringify(secret));
       credentialEvents.push(
         {
           type: 'credential.registered',
           actor: INTAKE,
-          subject: { kind: 'tool', id: spec.credentialId },
+          subject: { kind: 'tool', id },
           severity: 'routine',
           data: {
-            credentialId: spec.credentialId,
-            system: spec.system,
-            scope: spec.scope(ctx),
+            credentialId: id,
+            system: c.system,
+            scope: c.scope(target),
             reference: sealed.reference,
-            hint,
+            hint: tail(secret[c.hintField] ?? ''),
             expiresAt: null,
           },
         },
         {
           type: 'credential.verified',
           actor: INTAKE,
-          subject: { kind: 'tool', id: spec.credentialId },
+          subject: { kind: 'tool', id },
           severity: 'routine',
-          data: { credentialId: spec.credentialId, ok: true, detail: r.detail, expiresAt: null },
+          data: { credentialId: id, ok: true, detail: r.detail, expiresAt: null },
         },
       );
     }
     // Repository access comes from the GitHub App. A repo it can't reach yet doesn't stop intake:
     // Settings shows why, and a re-check picks up the installation once the client adds it.
-    credentialEvents.push(
-      ...(await this.githubEvents(intake.source.repo, intake.source.branch, INTAKE)),
-    );
+    if (repo)
+      credentialEvents.push(...(await this.githubEvents(repo, intake.source.branch, INTAKE)));
 
-    const environmentSites = checks.find((c) => c.key === 'environment')?.r.sites ?? [];
+    const described = pack.describe(target);
     await store.append(projectId, [
       {
         type: 'project.created',
@@ -264,30 +253,18 @@ export class IntakeService {
           budgets: intake.budgets,
           phases: phaseDefs(playbook),
           roster: roster(playbook),
-          site: { sourceUrl: intake.source.url },
-          subtitle: `${intake.source.repo} to SitecoreAI`,
+          site: { sourceUrl: url },
+          subtitle: repo ? `${repo} to ${pack.name}` : `${playbook.manifest.name}`,
           timezone: intake.timezone,
-          source: {
-            repo: intake.source.repo,
-            url: intake.source.url,
-            framework: null,
-            label: null,
-          },
-          target: {
-            collection: intake.target.siteCollection,
-            site: intake.target.site,
-            hosting: `Vercel, ${intake.hosting.project}`,
-          },
+          source: { repo, url, framework: null, label: null },
+          target: described.target,
           toolLabels: playbook.manifest.defaults.toolLabels,
           mode: 'live',
           intake: {
-            repo: intake.source.repo,
-            branch: intake.source.branch,
-            cmHost: hostOf(intake.target.cmHost),
-            siteCollection: intake.target.siteCollection,
-            site: intake.target.site,
-            languages: intake.target.languages,
-            hosting: intake.hosting,
+            platform: pack.id,
+            repo,
+            branch: repo ? intake.source.branch : null,
+            target,
           },
         },
       },
@@ -304,17 +281,13 @@ export class IntakeService {
           label: 'Intake',
           body: '',
           rows: [
-            { label: 'Source', value: `${intake.source.repo} (${intake.source.branch})` },
             {
-              label: 'Target',
-              value: `${hostOf(intake.target.cmHost)}, ${intake.target.siteCollection} / ${intake.target.site}`,
+              label: 'Playbook',
+              value: `${playbook.manifest.name} (${playbook.manifest.version})`,
             },
-            {
-              label: 'Sitecore',
-              value: environmentSites.length
-                ? `Environment client verified. Existing sites: ${environmentSites.join(', ')}.`
-                : 'Environment client verified. No sites on the environment yet.',
-            },
+            ...(repo ? [{ label: 'Source', value: `${repo} (${intake.source.branch})` }] : []),
+            { label: 'Target', value: described.label },
+            ...checks.map((c) => ({ label: c.spec.system, value: c.r.detail })),
           ],
           note: this.canStart
             ? 'Nothing has run yet. Start the project from Mission Control when you are ready.'
@@ -339,7 +312,7 @@ export class IntakeService {
     }
     // The build repository is needed from phase 3; a failure here shows in Settings, where it
     // can be retried, and doesn't hold up discovery.
-    if (!s.buildRepo && this.deps.buildOrg && this.deps.github) {
+    if (!s.buildRepo && s.intake?.repo && this.deps.buildOrg && this.deps.github) {
       await this.createBuildRepo(s).catch((e: unknown) => {
         console.warn(`Build repository for ${s.projectId} not created: ${(e as Error).message}`);
       });
@@ -350,6 +323,7 @@ export class IntakeService {
       client: s.client,
       sourceUrl: s.sourceUrl,
       budgets: s.budgets,
+      playbookId: s.playbook?.id ?? 'sitecoreai-migration',
     });
   }
 
@@ -358,8 +332,12 @@ export class IntakeService {
    * checks and reuses one of that name. Named after the source repository unless told otherwise.
    */
   async createBuildRepo(s: ProjectState, name?: string): Promise<void> {
-    if (s.mode !== 'live' || !s.intake) {
-      throw new CommandError(409, 'not_live', 'Only real projects have a build repository.');
+    if (s.mode !== 'live' || !s.intake?.repo) {
+      throw new CommandError(
+        409,
+        'not_live',
+        'Only real projects with a source repository have a build repository.',
+      );
     }
     if (s.buildRepo) {
       throw new CommandError(409, 'exists', `${s.name} already builds in ${s.buildRepo.repo}.`);
@@ -452,11 +430,11 @@ export class IntakeService {
   async reverify(s: ProjectState, credentialId: string): Promise<void> {
     const c = s.credentials[credentialId];
     if (!c) throw new CommandError(404, 'unknown_credential', `No credential "${credentialId}".`);
-    if (credentialId === 'github' && s.intake) {
+    if (credentialId === 'github' && s.intake?.repo) {
       // Re-finds the installation, so a repo the client installed the app on since is picked up.
       await this.deps.store.append(
         s.projectId,
-        await this.githubEvents(s.intake.repo, s.intake.branch, {
+        await this.githubEvents(s.intake.repo, s.intake.branch ?? 'main', {
           kind: 'director',
           id: 'director',
         }),
@@ -466,13 +444,11 @@ export class IntakeService {
     if (!c.reference) {
       throw new CommandError(409, 'not_provided', `${c.system} hasn't been provided yet.`);
     }
-    const key = (Object.keys(SPECS) as (keyof typeof SPECS)[]).find(
-      (k) => SPECS[k].credentialId === credentialId,
-    );
-    if (!key)
+    const spec = this.packOf(s)?.credentials[credentialId];
+    if (!spec || !s.intake)
       throw new CommandError(501, 'not_supported', `${c.system} can't be checked here yet.`);
     const secret = JSON.parse(await this.deps.vault.open(c.reference)) as Record<string, string>;
-    const r = await SPECS[key].check(this.deps.verify, secret, { cmHost: s.intake?.cmHost ?? '' });
+    const r = await spec.check(secret, s.intake.target);
     await this.deps.store.append(s.projectId, [
       {
         type: 'credential.verified',

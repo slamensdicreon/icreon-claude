@@ -11,7 +11,7 @@ import {
   stopDirective,
   undoResolution,
 } from './definitions';
-import { TASK_QUEUE, type ProjectInput, type ProjectPolicy } from './types';
+import { taskQueueFor, type ProjectInput, type ProjectPolicy } from './types';
 
 export const projectWorkflowId = (projectId: string) => `project:${projectId}`;
 
@@ -42,7 +42,11 @@ export function durationMs(d: string): number {
   return Number(m[1]) * (m[2] === 'h' ? 3_600_000 : 60_000);
 }
 
-export async function startProject(client: Client, input: ProjectInput, taskQueue = TASK_QUEUE) {
+export async function startProject(
+  client: Client,
+  input: ProjectInput,
+  taskQueue = taskQueueFor(input.playbook.manifest.id),
+) {
   return client.workflow.start('projectWorkflow', {
     taskQueue,
     workflowId: projectWorkflowId(input.projectId),

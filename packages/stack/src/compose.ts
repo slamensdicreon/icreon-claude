@@ -15,6 +15,7 @@ import {
   type Activities,
 } from '@lw/orchestrator';
 import { Blueprint } from '@lw/plan';
+import type { PlatformPack } from '@lw/platforms';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
 import {
@@ -40,6 +41,8 @@ export interface StackOptions {
   projections: Projections;
   playbook: Playbook;
   playbookDir: string;
+  /** The playbook's platform pack: scopes, target context and platform knowledge. */
+  platform: PlatformPack;
   /** Working files (clones, builds). Blobs go under `${dataDir}/blobs` unless `blobs` is given. */
   dataDir: string;
   /** Where artifacts, screenshots and assets are kept; shared with the Control API. */
@@ -82,35 +85,6 @@ export function missingOps(playbook: Playbook, servers: ToolServer[]): Map<strin
         ),
       ]),
   );
-}
-
-/**
- * Scope placeholders for a project. A collection can hold other teams' sites (a shared tenant),
- * so `{project}` and `{module}` name a folder of this site's own inside the collection's
- * Project folders, never the collection's folder itself.
- */
-export function projectBindings(i: {
-  siteCollection: string;
-  site: string;
-}): Record<string, string> {
-  const own = `${i.siteCollection}/${i.site}`;
-  return {
-    sitePath: `/sitecore/content/${i.siteCollection}/${i.site}`,
-    collection: i.siteCollection,
-    project: own,
-    module: own,
-  };
-}
-
-/** The paths a project may write in, for the agents' context. */
-export function ownedPaths(i: { siteCollection: string; site: string }): string[] {
-  const b = projectBindings(i);
-  return [
-    b.sitePath!,
-    `/sitecore/templates/Project/${b.project}`,
-    `/sitecore/layout/Renderings/Project/${b.module}`,
-    `/sitecore/media library/Project/${b.project}`,
-  ];
 }
 
 /** Roles whose every granted operation is served by a connected tool server. */
@@ -157,7 +131,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     // Scope placeholders, from the project's intake: what this project owns.
     bindings: (projectId): Record<string, string> => {
       const i = opts.projections.get(projectId)?.intake;
-      return i ? projectBindings(i) : {};
+      return i ? opts.platform.bindings(i.target) : {};
     },
     credentials: opts.credentials ?? { tokenFor: async () => 'no-external-credential' },
     idempotency: new MemoryIdempotencyStore(),
@@ -224,7 +198,9 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
 
   const live = opts.model ? liveRoles(opts.playbook, servers) : [];
   const missing = missingOps(opts.playbook, servers);
-  const prompts = await loadRolePrompts(opts.playbookDir, opts.playbook);
+  const prompts = await loadRolePrompts(opts.playbookDir, opts.playbook, [
+    opts.platform.knowledgeDir,
+  ]);
   const agents = opts.model
     ? withAgentRunner(
         base,
@@ -233,7 +209,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           gateway,
           playbook: opts.playbook,
           store: opts.store,
-          context: projectContext(opts.projections),
+          context: projectContext(opts.projections, opts.platform),
           prompt: (role) => prompts[role.role] ?? null,
         }),
         (role) => live.includes(role),
@@ -256,7 +232,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
 }
 
 /** What every agent is told about the project: its source site and the documents so far. */
-function projectContext(projections: Projections): ContextProvider {
+function projectContext(projections: Projections, platform: PlatformPack): ContextProvider {
   return {
     async forTask(projectId) {
       const s = projections.get(projectId);
@@ -266,13 +242,10 @@ function projectContext(projections: Projections): ContextProvider {
       return [
         `Project: ${s?.name ?? projectId} for ${s?.client ?? 'the client'}.`,
         `Source site: ${s?.sourceUrl ?? 'not given at intake'}.`,
-        ...(s?.intake
-          ? [
-              `Source repository: ${s.intake.repo} (branch ${s.intake.branch}).`,
-              `SitecoreAI target: site "${s.intake.site}" in collection "${s.intake.siteCollection}" on ${s.intake.cmHost}, at /sitecore/content/${s.intake.siteCollection}/${s.intake.site}; languages ${s.intake.languages.join(', ')}.`,
-              `This project owns only these paths; other sites in the collection belong to other teams, so never change anything outside them: ${ownedPaths(s.intake).join('; ')}.`,
-            ]
+        ...(s?.intake?.repo
+          ? [`Source repository: ${s.intake.repo} (branch ${s.intake.branch ?? 'main'}).`]
           : []),
+        ...(s?.intake ? platform.context(s.intake.target) : []),
         s?.buildRepo
           ? `Build repository: ${s.buildRepo.repo}, created from ${s.buildRepo.template}; the site's Next.js app is in ${s.buildRepo.appPath}. Read it with build-repo tools and commit only to launchworks/* branches; never commit to the source repository.`
           : 'Build repository: not created yet.',

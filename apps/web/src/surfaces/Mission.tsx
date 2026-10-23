@@ -255,16 +255,20 @@ function ReadyToStart() {
       </p>
       {i && (
         <div className="kv" style={{ marginBottom: 12 }}>
-          <span>Source</span>
-          <span className="v">
-            {i.repo} ({i.branch})
-          </span>
+          {i.repo && (
+            <>
+              <span>Source</span>
+              <span className="v">
+                {i.repo} ({i.branch})
+              </span>
+            </>
+          )}
           <span>Target</span>
           <span className="v">
-            {i.cmHost}: {i.siteCollection} / {i.site}, {i.languages.join(', ')}
+            {Object.values(i.target)
+              .map((v) => (Array.isArray(v) ? v.join(', ') : v))
+              .join(' · ')}
           </span>
-          <span>Hosting</span>
-          <span className="v">Vercel, {i.hosting.project}</span>
           <span>Credentials</span>
           <span className="v">
             {creds.length

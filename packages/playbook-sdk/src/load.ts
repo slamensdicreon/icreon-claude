@@ -48,6 +48,8 @@ export async function loadPlaybook(dir: string): Promise<Playbook> {
 export async function loadRolePrompts(
   dir: string,
   playbook: Playbook,
+  /** More folders to find knowledge documents in, after the playbook's own (its platform pack). */
+  knowledgeDirs: string[] = [],
 ): Promise<Record<string, string>> {
   let files: string[];
   try {
@@ -70,16 +72,60 @@ export async function loadRolePrompts(
   for (const r of playbook.roles) {
     for (const k of r.knowledge) {
       if (!knowledge.has(k)) {
-        try {
-          knowledge.set(k, (await readFile(join(dir, 'knowledge', `${k}.md`), 'utf8')).trim());
-        } catch {
+        const text = await firstFile(
+          [join(dir, 'knowledge'), ...knowledgeDirs].map((d) => join(d, `${k}.md`)),
+        );
+        if (text === null) {
           missing.push(`roles/${r.role}.yaml: knowledge/${k}.md does not exist`);
           continue;
         }
+        knowledge.set(k, text.trim());
       }
       prompts[r.role] = [prompts[r.role], knowledge.get(k)].filter(Boolean).join('\n\n');
     }
   }
   if (missing.length) throw new PlaybookError(missing);
   return prompts;
+}
+
+async function firstFile(paths: string[]): Promise<string | null> {
+  for (const p of paths) {
+    try {
+      return await readFile(p, 'utf8');
+    } catch {
+      /* try the next */
+    }
+  }
+  return null;
+}
+
+/** A playbook in the catalog, with the folder it was loaded from. */
+export interface CatalogEntry {
+  playbook: Playbook;
+  dir: string;
+}
+
+/**
+ * Every playbook under a folder: each subfolder holding a `playbook.yaml`. Ids must be unique; a
+ * project records the id and version it was created with.
+ */
+export async function loadCatalog(root: string): Promise<Map<string, CatalogEntry>> {
+  const catalog = new Map<string, CatalogEntry>();
+  const dirs = (await readdir(root, { withFileTypes: true }))
+    .filter((d) => d.isDirectory())
+    .map((d) => join(root, d.name))
+    .sort();
+  for (const dir of dirs) {
+    try {
+      await readFile(join(dir, 'playbook.yaml'));
+    } catch {
+      continue;
+    }
+    const playbook = await loadPlaybook(dir);
+    const id = playbook.manifest.id;
+    if (catalog.has(id)) throw new PlaybookError([`two playbooks have the id ${id}`]);
+    catalog.set(id, { playbook, dir });
+  }
+  if (!catalog.size) throw new PlaybookError([`no playbooks under ${root}`]);
+  return catalog;
 }

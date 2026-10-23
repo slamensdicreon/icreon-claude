@@ -1,4 +1,4 @@
-import { AgentTier, MetricKey, Workstream } from '@lw/contracts';
+import { AgentTier, Charter, MetricKey, Presence, Workstream } from '@lw/contracts';
 import { z } from 'zod';
 
 const Kebab = z.string().regex(/^[a-z][a-z0-9-]*$/, 'kebab-case');
@@ -61,11 +61,47 @@ export const PhaseSpec = z.object({
 });
 export type PhaseSpec = z.infer<typeof PhaseSpec>;
 
+/**
+ * What the New Project wizard collects for this playbook. Fields and credentials are ids from the
+ * platform pack, which says what each one is and how it's checked; the playbook picks them and
+ * groups them into steps.
+ */
+export const IntakeDecl = z.object({
+  source: z
+    .object({
+      repo: Presence.default('none'),
+      url: Presence.default('none'),
+      intro: z.string().optional(),
+    })
+    .default({ repo: 'none', url: 'none' }),
+  steps: z
+    .array(
+      z.object({
+        title: z.string(),
+        intro: z.string().optional(),
+        fields: z.array(z.string()).default([]),
+        credentials: z
+          .array(z.object({ id: z.string(), required: z.boolean().default(false) }))
+          .default([]),
+      }),
+    )
+    .default([]),
+});
+export type IntakeDecl = z.infer<typeof IntakeDecl>;
+
 export const PlaybookManifest = z.object({
   id: Kebab,
   version: z.string().regex(/^\d+\.\d+\.\d+(-[\w.]+)?$/, 'semver'),
   name: z.string(),
   description: z.string(),
+  /** The platform pack it runs on: tool servers, credentials, scopes and platform knowledge. */
+  platform: Kebab,
+  /**
+   * What the team owes the client. Every agent works with it in view, and the outcomes are what
+   * acceptance is judged against.
+   */
+  charter: Charter,
+  intake: IntakeDecl.default({ source: { repo: 'none', url: 'none' }, steps: [] }),
   defaults: z.object({
     concurrency: z.number().int().positive(),
     budgets: z.object({

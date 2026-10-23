@@ -146,6 +146,45 @@
 .wiz-review {
   margin: 0 0 12px;
 }
+.wiz-wrap {
+  flex-wrap: wrap;
+}
+.wiz-wrap > .wiz-field {
+  flex: 1 1 180px;
+}
+.wiz-playbooks {
+  display: grid;
+  gap: 10px;
+}
+.wiz-playbook {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.wiz-playbook:hover {
+  border-color: var(--web-border-strong);
+}
+.wiz-playbook.on {
+  border-color: var(--web-accent);
+  box-shadow: 0 0 0 1px var(--web-accent);
+}
+.wiz-playbook ul,
+.panel.playbook .outcomes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.panel.playbook .outcomes li {
+  margin-bottom: 4px;
+}
 @media (max-width: 640px) {
   .wiz-row {
     flex-direction: column;

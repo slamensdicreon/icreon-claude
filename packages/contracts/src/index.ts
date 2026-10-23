@@ -3,3 +3,4 @@ export * from './events';
 export * from './snapshots';
 export * from './commands';
 export * from './documents';
+export * from './playbooks';

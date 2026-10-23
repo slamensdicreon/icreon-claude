@@ -79,7 +79,7 @@ export class AgentRuntime {
       return { kind: 'failed', reason: `No role "${req.task.role}" in the playbook.`, spent: zero };
 
     const system = systemBlocks(
-      rolePrompt(role, deps.prompt?.(role) ?? null),
+      rolePrompt(role, deps.prompt?.(role) ?? null, deps.playbook.manifest.charter),
       await (deps.context ?? emptyContext).forTask(req.projectId, req.task),
     );
     const version = promptVersion(system);

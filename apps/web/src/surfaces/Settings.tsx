@@ -1,6 +1,6 @@
-import type { ProjectSummary, SettingsSnapshot } from '@lw/contracts';
+import type { PlaybookSummary, ProjectSummary, SettingsSnapshot } from '@lw/contracts';
 import { useEffect, useState } from 'react';
-import { post, put } from '../lib/api';
+import { get, post, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';
 import { TypedConfirm } from '../overlays/Dialogs';
 import { GithubAppPanel } from './GithubApp';
@@ -44,7 +44,8 @@ export function Settings() {
       </div>
       <div className="settings">
         {!p.demo && <SourceSitePanel current={p.sourceUrl} />}
-        {!p.demo && p.intake && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}
+        {!p.demo && p.playbook && <PlaybookPanel id={p.playbook.id} version={p.playbook.version} />}
+        {!p.demo && p.intake?.repo && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}
         <section className="panel">
           <h2>
             Credentials <small>references only</small>
@@ -354,6 +355,52 @@ export function Settings() {
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * The playbook the project runs, pinned at creation: what the team owes the client. Agents work
+ * with these outcomes in view, and acceptance is judged against them.
+ */
+function PlaybookPanel({ id, version }: { id: string; version: string }) {
+  const [list, setList] = useState<PlaybookSummary[] | null>(null);
+  useEffect(() => {
+    get<PlaybookSummary[]>('/playbooks')
+      .then(setList)
+      .catch(() => setList([]));
+  }, []);
+  const pb = list?.find((p) => p.id === id);
+  return (
+    <section className="panel playbook">
+      <h2>
+        Playbook <small>v{version}</small>
+      </h2>
+      {!list ? (
+        <p className="muted">Loading…</p>
+      ) : !pb ? (
+        <p className="muted">{id} (no longer in the catalog)</p>
+      ) : (
+        <>
+          <p>
+            <b>{pb.name}</b> <span className="muted">on {pb.platform.name}</span>
+          </p>
+          <p className="muted">{pb.charter.mission}</p>
+          <ul className="outcomes">
+            {pb.charter.outcomes.map((o) => (
+              <li key={o.id}>
+                <b>{o.title}</b>
+                <span className="muted"> · {o.measure}</span>
+              </li>
+            ))}
+          </ul>
+          {pb.version !== version && (
+            <p className="cred-miss">
+              The catalog has v{pb.version}. This project keeps v{version} until it is reset.
+            </p>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

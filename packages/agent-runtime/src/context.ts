@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BetaTextBlockParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import type { PlannedTask } from '@lw/plan';
+import type { Charter } from '@lw/contracts';
 import type { RoleDef } from '@lw/playbook-sdk';
 
 /**
@@ -27,12 +28,23 @@ export const emptyContext: ContextProvider = {
   },
 };
 
-/** The role's mandate, then its playbook prompt (how it works) when it has one. */
-export function rolePrompt(role: RoleDef, promptFile: string | null): string {
+/**
+ * The role and its mandate, the team's charter (what it owes the client, so every task is done
+ * with the outcomes in view), then the role's playbook prompt (how it works) when it has one.
+ * Stable per role and playbook, so it stays in the cached prefix.
+ */
+export function rolePrompt(role: RoleDef, promptFile: string | null, charter?: Charter): string {
   return [
     `Your role: ${role.name}.`,
     `Mandate: ${role.mandate}`,
     role.produces.length ? `You produce: ${role.produces.join('; ')}.` : '',
+    charter
+      ? [
+          `\nThe team's mission: ${charter.mission}`,
+          'The outcomes the team owes the client, which acceptance is judged against:',
+          ...charter.outcomes.map((o) => `- ${o.title}. Measured by: ${o.measure}`),
+        ].join('\n')
+      : '',
     promptFile ? `\n${promptFile}` : '',
   ]
     .filter(Boolean)

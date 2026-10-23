@@ -17,29 +17,30 @@ export const CreateProject = z.object({
 });
 export type CreateProject = z.infer<typeof CreateProject>;
 
-const ClientCredentials = z.object({
-  clientId: z.string().trim().min(1).max(200),
-  clientSecret: z.string().trim().min(1).max(500),
-});
-const ContextId = z.string().trim().min(1).max(200);
 const Repo = z
   .string()
   .trim()
   .regex(/^[\w.-]+\/[\w.-]+$/, 'owner/name');
 const Branch = z.string().trim().min(1).max(200);
+const Secret = z.record(z.string().max(60), z.string().trim().max(2000));
+const TargetValues = z.record(
+  z.string().max(60),
+  z.union([z.string().trim().max(500), z.array(z.string().trim().max(100)).max(50)]),
+);
 
 /**
- * POST /intake/verify — checks one credential against the live service before anything is stored.
- * The environment client is checked together with its CM host.
+ * POST /intake/verify — checks one credential against the live service before anything is stored:
+ * a credential the playbook's platform declares (with the target values its check needs), or
+ * GitHub access to the source repository.
  */
 export const VerifyIntakeCredential = z.discriminatedUnion('kind', [
-  ClientCredentials.extend({
-    kind: z.literal('sitecore.environment'),
-    cmHost: z.string().trim().min(1).max(300),
+  z.object({
+    kind: z.literal('credential'),
+    playbookId: z.string(),
+    credentialId: z.string(),
+    secret: Secret,
+    target: TargetValues.default({}),
   }),
-  ClientCredentials.extend({ kind: z.literal('sitecore.organization') }),
-  z.object({ kind: z.literal('edge.preview'), contextId: ContextId }),
-  z.object({ kind: z.literal('edge.live'), contextId: ContextId }),
   z.object({ kind: z.literal('github.repo'), repo: Repo, branch: Branch.default('main') }),
 ]);
 export type VerifyIntakeCredential = z.infer<typeof VerifyIntakeCredential>;
@@ -53,11 +54,13 @@ export const VerifyIntakeResult = z.object({
 export type VerifyIntakeResult = z.infer<typeof VerifyIntakeResult>;
 
 /**
- * POST /projects — the New Project wizard. Everything a real engagement needs before it starts:
- * the source, the SitecoreAI target and its credentials, hosting, budgets. Secrets are sealed in
- * the vault on arrival; the event log only ever records references.
+ * POST /projects — the New Project wizard. The playbook decides what else is collected: whether
+ * there is a source repository and site, which target values, and which credentials (all
+ * declared by its platform pack and checked against it on the server). Secrets are sealed in the
+ * vault on arrival; the event log only ever records references.
  */
 export const ProjectIntake = z.object({
+  playbookId: z.string().min(1).max(80),
   name: z.string().trim().min(1).max(120),
   client: z.string().trim().min(1).max(120),
   timezone: z.string().min(1).max(64).default('America/New_York'),
@@ -66,33 +69,19 @@ export const ProjectIntake = z.object({
     tokens: z.number().int().positive(),
     hours: z.number().positive().max(10_000),
   }),
-  source: z.object({
-    repo: Repo,
-    branch: Branch.default('main'),
-    url: z
-      .url({ protocol: /^https?$/ })
-      .nullable()
-      .default(null),
-  }),
-  target: z.object({
-    cmHost: z.string().trim().min(1).max(300),
-    siteCollection: z.string().trim().min(1).max(100),
-    site: z.string().trim().min(1).max(100),
-    languages: z.array(z.string().trim().min(2).max(20)).min(1).default(['en']),
-  }),
-  hosting: z.object({
-    provider: z.literal('vercel'),
-    project: z
-      .string()
-      .trim()
-      .regex(/^[a-z0-9][a-z0-9-]{0,99}$/, 'lowercase letters, digits and dashes'),
-  }),
-  credentials: z.object({
-    environment: ClientCredentials,
-    organization: ClientCredentials.nullable().default(null),
-    edgePreviewContextId: ContextId.nullable().default(null),
-    edgeLiveContextId: ContextId.nullable().default(null),
-  }),
+  source: z
+    .object({
+      repo: Repo.nullable().default(null),
+      branch: Branch.default('main'),
+      url: z
+        .url({ protocol: /^https?$/ })
+        .nullable()
+        .default(null),
+    })
+    .default({ repo: null, branch: 'main', url: null }),
+  target: TargetValues.default({}),
+  /** Keyed by the platform's credential id; values are that credential's fields. */
+  credentials: z.record(z.string().max(60), Secret).default({}),
 });
 export type ProjectIntake = z.infer<typeof ProjectIntake>;
 export type ProjectIntakeInput = z.input<typeof ProjectIntake>;

@@ -19,6 +19,7 @@
     "@lw/events": "workspace:*",
     "@lw/orchestrator": "workspace:*",
     "@lw/plan": "workspace:*",
+    "@lw/platforms": "workspace:*",
     "@lw/playbook-sdk": "workspace:*",
     "@lw/simulator": "workspace:*",
     "@lw/stack": "workspace:*",

@@ -9,7 +9,6 @@ import type {
   CosPresence,
   CredentialView,
   BuildRepo,
-  IntakeFacts,
   DecisionView,
   EscalationView,
   LeadRow,
@@ -38,6 +37,7 @@ import type {
   TeamSnapshot,
   WorkbenchSnapshot,
 } from '@lw/contracts';
+import { IntakeFacts } from '@lw/contracts';
 import { isLogEvent, toActivityItem } from './describe';
 import { compareEscalations, UNRESOLVED } from './escalations';
 import { computeHealth } from './health';
@@ -88,6 +88,8 @@ export interface ProjectState {
   /** live: a real engagement from the wizard. demo: scripted. */
   mode: 'live' | 'demo';
   intake: IntakeFacts | null;
+  /** The playbook (and version) the project was created with; it runs on that one. */
+  playbook: { id: string; version: string } | null;
   buildRepo: BuildRepo | null;
   conventions: { key: string; value: string }[];
 }
@@ -154,6 +156,7 @@ export function createProjectState(projectId: string): ProjectState {
     credentials: {},
     mode: 'live',
     intake: null,
+    playbook: null,
     buildRepo: null,
     settings: {},
     conventions: [],
@@ -208,7 +211,8 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       s.statCards = d.stats;
       s.toolLabels = d.toolLabels;
       s.mode = d.mode;
-      s.intake = d.intake;
+      s.intake = d.intake ? IntakeFacts.parse(d.intake) : null;
+      s.playbook = d.playbook;
       for (const p of d.phases) s.phases[p.number] = { ...p, status: 'future', enteredAt: null };
       for (const r of d.roster) s.agents[r.agentId] = newAgent(r);
       if (s.source.label || s.source.url)
@@ -680,6 +684,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     target: s.target,
     demo: s.mode === 'demo',
     intake: s.intake,
+    playbook: s.playbook,
     buildRepo: s.buildRepo,
   };
 }

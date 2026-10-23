@@ -2,19 +2,21 @@ import { fileURLToPath } from 'node:url';
 import {
   MissionControlSnapshot,
   SettingsSnapshot,
+  type PlaybookSummary,
   type ProjectIntakeInput,
   type ProjectListItem,
 } from '@lw/contracts';
 import { InMemoryEventStore, MemoryVault, Projections } from '@lw/events';
 import { MemoryBlobStore } from '@lw/tool-gateway';
-import { loadPlaybook } from '@lw/playbook-sdk';
+import { loadCatalog } from '@lw/playbook-sdk';
+import { createPlatforms } from '@lw/platforms';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import { IntakeService, type StartInput } from '../src/intake';
 import { SITECORE_DEFAULTS, type VerifyConfig } from '@lw/connectors';
 
-const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
+const PLAYBOOKS = fileURLToPath(new URL('../../../playbooks', import.meta.url));
 const SECRET = 'env-secret-value-WXYZ';
 
 /** A fake Sitecore with one environment client, one CM host and one preview Context ID. */
@@ -36,7 +38,8 @@ const fakeSitecore = (async (input: string | URL | Request, init?: RequestInit) 
   return json(404, {});
 }) as typeof fetch;
 
-const intake = (over: Partial<ProjectIntakeInput['credentials']> = {}): ProjectIntakeInput => ({
+const intake = (over: ProjectIntakeInput['credentials'] = {}): ProjectIntakeInput => ({
+  playbookId: 'sitecoreai-migration',
   name: 'Globex site',
   client: 'Globex',
   budgets: { usd: 900, tokens: 6_000_000, hours: 200 },
@@ -46,11 +49,11 @@ const intake = (over: Partial<ProjectIntakeInput['credentials']> = {}): ProjectI
     siteCollection: 'globex',
     site: 'globex',
     languages: ['en'],
+    hostingProject: 'globex-website',
   },
-  hosting: { provider: 'vercel', project: 'globex-website' },
   credentials: {
-    environment: { clientId: 'env-id', clientSecret: SECRET },
-    edgePreviewContextId: 'ctx-preview-1234',
+    'sitecore-environment': { clientId: 'env-id', clientSecret: SECRET },
+    'edge-preview': { contextId: 'ctx-preview-1234' },
     ...over,
   },
 });
@@ -75,9 +78,9 @@ async function start(opts: { orchestrator?: boolean } = {}) {
     commands: () => undefined,
     intake: new IntakeService({
       store,
-      playbook: await loadPlaybook(PLAYBOOK),
+      catalog: await loadCatalog(PLAYBOOKS),
+      platforms: createPlatforms({ sitecore: verify }),
       vault: new MemoryVault(),
-      verify,
       start: opts.orchestrator ? async (input) => void started.push(input) : undefined,
       stop: opts.orchestrator ? async (id) => void stopped.push(id) : undefined,
       blobs,
@@ -92,15 +95,23 @@ const post = (url: string, payload: unknown = {}) =>
 describe('New Project wizard', () => {
   it('checks a credential without storing anything', async () => {
     const { store } = await start();
-    const ok = await post('/intake/verify', {
-      kind: 'sitecore.environment',
-      cmHost: 'xmc-globex.sitecorecloud.io',
-      clientId: 'env-id',
-      clientSecret: SECRET,
-    });
+    const check = (credentialId: string, secret: object, target = {}) =>
+      post('/intake/verify', {
+        kind: 'credential',
+        playbookId: 'sitecoreai-migration',
+        credentialId,
+        secret,
+        target,
+      });
+    const ok = await check(
+      'sitecore-environment',
+      { clientId: 'env-id', clientSecret: SECRET },
+      { cmHost: 'https://xmc-globex.sitecorecloud.io/' },
+    );
     expect(ok.json()).toMatchObject({ ok: true, sites: ['globex'] });
-    const bad = await post('/intake/verify', { kind: 'edge.live', contextId: 'nope' });
+    const bad = await check('edge-live', { contextId: 'nope' });
     expect(bad.json()).toMatchObject({ ok: false });
+    expect((await check('jira-token', { token: 'x' })).statusCode).toBe(404);
     expect(await store.projectIds()).toEqual([]);
   });
 
@@ -122,9 +133,22 @@ describe('New Project wizard', () => {
     const mc = MissionControlSnapshot.parse(
       (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
     );
-    expect(mc.project.intake).toMatchObject({
+    expect(mc.project.intake).toEqual({
+      platform: 'sitecoreai',
       repo: 'globex/website',
-      cmHost: 'xmc-globex.sitecorecloud.io',
+      branch: 'main',
+      target: {
+        cmHost: 'xmc-globex.sitecorecloud.io',
+        siteCollection: 'globex',
+        site: 'globex',
+        languages: ['en'],
+        hostingProject: 'globex-website',
+      },
+    });
+    expect(mc.project.playbook).toMatchObject({ id: 'sitecoreai-migration' });
+    expect(mc.project.target).toMatchObject({
+      collection: 'globex',
+      hosting: 'Vercel, globex-website',
     });
 
     const settings = SettingsSnapshot.parse(
@@ -138,11 +162,46 @@ describe('New Project wizard', () => {
     expect(JSON.stringify(settings)).not.toContain('vault:');
   });
 
+  it('lists the playbooks a project can run, with their charter and intake', async () => {
+    await start();
+    const list = (await app!.inject('/playbooks')).json() as PlaybookSummary[];
+    const pb = list.find((p) => p.id === 'sitecoreai-migration')!;
+    expect(pb.platform).toEqual({ id: 'sitecoreai', name: 'SitecoreAI' });
+    expect(pb.charter.outcomes.map((o) => o.id)).toContain('marketer-autonomy');
+    expect(pb.intake.source).toMatchObject({ repo: 'required', url: 'optional' });
+    expect(pb.intake.steps.map((s) => s.title)).toEqual(['SitecoreAI', 'Edge and hosting']);
+    expect(pb.intake.steps[0]!.credentials).toEqual([
+      expect.objectContaining({
+        credentialId: 'sitecore-environment',
+        required: true,
+        uses: ['cmHost'],
+      }),
+      expect.objectContaining({ credentialId: 'sitecore-organization', required: false }),
+    ]);
+    expect(JSON.stringify(list)).not.toContain('check');
+  });
+
+  it('refuses intake missing what the playbook requires, or carrying what it does not take', async () => {
+    const { store } = await start();
+    const noEnv = intake();
+    delete noEnv.credentials!['sitecore-environment'];
+    const r1 = await post('/projects', noEnv);
+    expect(r1.statusCode).toBe(422);
+    expect(r1.json().error.message).toBe('SitecoreAI environment client is required.');
+    const r2 = await post('/projects', { ...intake(), target: { ...intake().target, site: '' } });
+    expect(r2.json().error.message).toBe('Site is required.');
+    const r3 = await post('/projects', intake({ 'jira-token': { token: 'x' } }));
+    expect(r3.json().error.message).toMatch(/takes no "jira-token"/);
+    const r4 = await post('/projects', { ...intake(), playbookId: 'optimizely-build' });
+    expect(r4.statusCode).toBe(404);
+    expect(await store.projectIds()).toEqual([]);
+  });
+
   it('refuses intake when a credential fails, and stores nothing', async () => {
     const { store } = await start();
     const r = await post(
       '/projects',
-      intake({ environment: { clientId: 'env-id', clientSecret: 'typo' } }),
+      intake({ 'sitecore-environment': { clientId: 'env-id', clientSecret: 'typo' } }),
     );
     expect(r.statusCode).toBe(422);
     expect(r.json().error.message).toMatch(/^SitecoreAI environment client: Sitecore rejected/);
@@ -171,6 +230,7 @@ describe('New Project wizard', () => {
         client: 'Globex',
         sourceUrl: 'https://www.globex.example',
         budgets: { usd: 900, tokens: 6_000_000, hours: 200 },
+        playbookId: 'sitecoreai-migration',
       },
     ]);
   });

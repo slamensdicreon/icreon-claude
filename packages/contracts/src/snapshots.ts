@@ -96,6 +96,8 @@ export const ProjectSummary = z.object({
   demo: z.boolean(),
   /** What intake recorded (live projects only). */
   intake: IntakeFacts.nullable(),
+  /** The playbook the project runs. */
+  playbook: z.object({ id: z.string(), version: z.string() }).nullable(),
   /** Where the new site is built, once created. */
   buildRepo: BuildRepo.nullable(),
 });

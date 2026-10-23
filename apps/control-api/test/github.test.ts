@@ -2,7 +2,8 @@ import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { SettingsSnapshot, type ProjectIntakeInput } from '@lw/contracts';
 import { InMemoryEventStore, MemoryIntegrationStore, MemoryVault, Projections } from '@lw/events';
-import { loadPlaybook } from '@lw/playbook-sdk';
+import { loadCatalog } from '@lw/playbook-sdk';
+import { createPlatforms } from '@lw/platforms';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
@@ -10,7 +11,7 @@ import { GithubApp } from '@lw/connectors';
 import { IntakeService } from '../src/intake';
 import { SITECORE_DEFAULTS } from '@lw/connectors';
 
-const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
+const PLAYBOOKS = fileURLToPath(new URL('../../../playbooks', import.meta.url));
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PEM = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 
@@ -82,6 +83,7 @@ function fakeGithub() {
 }
 
 const intake = (repo: string): ProjectIntakeInput => ({
+  playbookId: 'sitecoreai-migration',
   name: 'Globex site',
   client: 'Globex',
   budgets: { usd: 900, tokens: 6_000_000, hours: 200 },
@@ -91,9 +93,11 @@ const intake = (repo: string): ProjectIntakeInput => ({
     siteCollection: 'globex',
     site: 'globex',
     languages: ['en'],
+    hostingProject: 'globex-website',
   },
-  hosting: { provider: 'vercel', project: 'globex-website' },
-  credentials: { environment: { clientId: 'env-id', clientSecret: 'env-secret-value-WXYZ' } },
+  credentials: {
+    'sitecore-environment': { clientId: 'env-id', clientSecret: 'env-secret-value-WXYZ' },
+  },
 });
 
 const fakeSitecore = (async (input: string | URL | Request) =>
@@ -129,9 +133,9 @@ async function start(opts: { auth?: boolean } = {}) {
     github,
     intake: new IntakeService({
       store,
-      playbook: await loadPlaybook(PLAYBOOK),
+      catalog: await loadCatalog(PLAYBOOKS),
+      platforms: createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fakeSitecore } }),
       vault,
-      verify: { ...SITECORE_DEFAULTS, fetch: fakeSitecore },
       github,
     }),
     auth: opts.auth

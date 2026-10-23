@@ -1,10 +1,66 @@
-# Sitecore playbook manifest: phases, gates and defaults. Roles live in roles/*.yaml.
+# Playbook manifest: what the team delivers, what intake collects, phases and gates. Roles live in
+# roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
+# SitecoreAI platform pack in platforms/sitecoreai.
 id: sitecoreai-migration
-version: 0.2.0
-name: SitecoreAI replatform
+version: 0.3.0
+name: Build a SitecoreAI website
 description: >-
-  Takes a Next.js repository and SitecoreAI tenant credentials and delivers a Content SDK site, structured
-  per SXA and Click Click Launch, that marketers can build, personalize and test in Page builder.
+  Rebuilds a client's site from its Next.js repository as a Content SDK site on SitecoreAI,
+  structured per SXA and Click Click Launch, that marketers can build, personalize and test in Page
+  builder, and hands it over running.
+platform: sitecoreai
+charter:
+  mission: >-
+    Rebuild the client's site on SitecoreAI so their marketers can build, edit and publish it
+    themselves, then hand it over running, documented and owned by the client.
+  outcomes:
+    - id: marketer-autonomy
+      title: Marketers build and edit pages in Page builder without a developer
+      measure: >-
+        Every Blueprint component is in the toolbox, edits inline, creates useful starter content,
+        and a new page's datasource is its own (Definition of Done: inline editing, new component,
+        collections, independence).
+    - id: content-parity
+      title: Everything that should move is on the new site
+      measure: >-
+        Content parity at or above 98%, every media item uploaded with alt text, no broken internal
+        links, every route resolving.
+    - id: brand-fidelity
+      title: The site looks and behaves like the approved reference
+      measure: Visual parity within tolerance at three breakpoints; menus, hero and search behave as the source does.
+    - id: quality
+      title: Accessible and fast
+      measure: The brief's accessibility target and performance budgets met on representative pages, with the reports as evidence.
+    - id: release-ready
+      title: Releasable and recoverable
+      measure: >-
+        The reviewed commit runs on the editing and delivery hosts, serialization replays cleanly,
+        content is published to Experience Edge, and the runbook covers release and rollback.
+    - id: client-ownership
+      title: The client owns it
+      measure: >-
+        The build repository and hosting move to the client, with the component catalog, editor
+        guide and known-gaps register delivered.
+intake:
+  source:
+    repo: required
+    url: optional
+    intro: The code being migrated. Agents read it; the new site is built in a repository of its own.
+  steps:
+    - title: SitecoreAI
+      intro: The SitecoreAI environment the site is built in.
+      fields: [cmHost, siteCollection, site, languages]
+      credentials:
+        - { id: sitecore-environment, required: true }
+        - { id: sitecore-organization }
+    - title: Edge and hosting
+      intro: >-
+        Experience Edge Context IDs for the new head, and the Vercel project it deploys to. The
+        Context IDs are optional now and can be added later in Settings.
+      fields: [hostingProject]
+      credentials:
+        - { id: edge-preview }
+        - { id: edge-live }
 defaults:
   concurrency: 6
   budgets:

@@ -13,6 +13,7 @@
     "@lw/domain": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/orchestrator": "workspace:*",
+    "@lw/platforms": "workspace:*",
     "@lw/playbook-sdk": "workspace:*",
     "@lw/stack": "workspace:*",
     "@lw/tool-gateway": "workspace:*",

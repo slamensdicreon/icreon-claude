@@ -2,7 +2,6 @@ import type { ProjectState } from '@lw/domain';
 import type { SecretVault } from '@lw/events';
 import type { CredentialProvider } from '@lw/tool-gateway';
 import type { GithubApp } from './github-app';
-import { sitecoreToken, type VerifyConfig } from './sitecore';
 
 /** A credential a project needs but doesn't have, or one the service refused. */
 export class CredentialError extends Error {}
@@ -12,14 +11,20 @@ export interface VaultCredentialsDeps {
   project(projectId: string): Promise<ProjectState | undefined>;
   vault: SecretVault;
   github?: GithubApp | null;
-  sitecore: VerifyConfig;
+  /**
+   * The project credential a platform's tool server carries, and how it becomes a token (the
+   * platform pack decides: SitecoreAI's Authoring API takes the environment client).
+   */
+  toolCredential?: (
+    platform: string,
+    server: string,
+  ) =>
+    | {
+        credentialId: string;
+        token(secret: Record<string, string>): Promise<{ token: string; expiresAt: number }>;
+      }
+    | undefined;
 }
-
-/** Which project credential backs each Sitecore tool server. */
-const SITECORE: Record<string, string> = {
-  'sitecore-authoring': 'sitecore-environment',
-  'sitecore-deploy': 'sitecore-organization',
-};
 
 /**
  * Credentials for tool calls, minted at the moment of the call from what the project sealed at
@@ -29,8 +34,8 @@ const SITECORE: Record<string, string> = {
  * - github: an installation token of the Launchworks GitHub App, limited to the project's one
  *   source repository, valid an hour.
  * - build-repo: the same, on our organization's installation, limited to the build repository.
- * - sitecore-authoring / sitecore-deploy: an OAuth token for the project's environment or
- *   organization automation client.
+ * - a platform's own tool servers: whatever the platform pack says, from the project's sealed
+ *   credential (SitecoreAI: an OAuth token for the environment or organization client).
  * - Everything else needs no external credential.
  */
 export class VaultCredentials implements CredentialProvider {
@@ -41,8 +46,9 @@ export class VaultCredentials implements CredentialProvider {
   async tokenFor(projectId: string, server: string): Promise<string> {
     if (server === 'github') return this.github(projectId);
     if (server === 'build-repo') return this.buildRepo(projectId);
-    if (SITECORE[server]) return this.sitecore(projectId, SITECORE[server]);
-    return 'no-external-credential';
+    const platform = (await this.deps.project(projectId))?.intake?.platform;
+    const tc = platform ? this.deps.toolCredential?.(platform, server) : undefined;
+    return tc ? this.platform(projectId, tc) : 'no-external-credential';
   }
 
   private async github(projectId: string): Promise<string> {
@@ -71,25 +77,27 @@ export class VaultCredentials implements CredentialProvider {
     return this.deps.github.installationToken(b.installationId, [b.repo.split('/')[1]!]);
   }
 
-  private async sitecore(projectId: string, credentialId: string): Promise<string> {
-    const key = `${projectId}:${credentialId}`;
+  private async platform(
+    projectId: string,
+    tc: NonNullable<ReturnType<NonNullable<VaultCredentialsDeps['toolCredential']>>>,
+  ): Promise<string> {
+    const key = `${projectId}:${tc.credentialId}`;
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt - Date.now() > 2 * 60_000) return cached.token;
     const s = await this.deps.project(projectId);
-    const c = s?.credentials[credentialId];
+    const c = s?.credentials[tc.credentialId];
     if (!c?.reference) {
       throw new CredentialError(
-        `${c?.system ?? credentialId} hasn't been provided for this project.`,
+        `${c?.system ?? tc.credentialId} hasn't been provided for this project.`,
       );
     }
-    const secret = JSON.parse(await this.deps.vault.open(c.reference)) as {
-      clientId: string;
-      clientSecret: string;
-    };
-    const r = await sitecoreToken(this.deps.sitecore, secret.clientId, secret.clientSecret);
-    if (!('token' in r)) throw new CredentialError(`${c.system}: ${r.detail}`);
-    const expiresAt = r.expiresAt ? Date.parse(r.expiresAt) : Date.now() + 10 * 60_000;
-    this.cache.set(key, { token: r.token, expiresAt });
-    return r.token;
+    const secret = JSON.parse(await this.deps.vault.open(c.reference)) as Record<string, string>;
+    try {
+      const t = await tc.token(secret);
+      this.cache.set(key, t);
+      return t.token;
+    } catch (err) {
+      throw new CredentialError(`${c.system}: ${(err as Error).message}`);
+    }
   }
 }

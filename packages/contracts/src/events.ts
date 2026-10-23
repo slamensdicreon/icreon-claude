@@ -244,16 +244,46 @@ export const BuildRepo = z.object({
 });
 export type BuildRepo = z.infer<typeof BuildRepo>;
 
-/** What intake recorded about a live project, beyond the source and target labels. */
-export const IntakeFacts = z.object({
-  repo: z.string(),
-  branch: z.string(),
-  cmHost: z.string(),
-  siteCollection: z.string(),
-  site: z.string(),
-  languages: z.array(z.string()),
-  hosting: z.object({ provider: z.literal('vercel'), project: z.string() }),
-});
+/** A value the wizard collects for a playbook's target: text, or a list (languages). */
+export const IntakeValue = z.union([z.string(), z.array(z.string())]);
+export type IntakeValue = z.infer<typeof IntakeValue>;
+
+/**
+ * Intake records from before playbooks declared their own intake held SitecoreAI's fields at the
+ * top level. Read them as SitecoreAI targets; the event log itself is never rewritten.
+ */
+export function normalizeIntake(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || 'target' in raw) return raw;
+  const r = raw as Record<string, unknown>;
+  const hosting = r.hosting as { project?: string } | undefined;
+  return {
+    platform: 'sitecoreai',
+    repo: r.repo ?? null,
+    branch: r.branch ?? null,
+    target: {
+      cmHost: r.cmHost,
+      siteCollection: r.siteCollection,
+      site: r.site,
+      languages: r.languages,
+      ...(hosting?.project ? { hostingProject: hosting.project } : {}),
+    },
+  };
+}
+
+/**
+ * What intake recorded about a live project: the platform pack it targets, the source repository
+ * (when the playbook takes one) and the target values the playbook's intake declares. Only the
+ * platform pack interprets `target`.
+ */
+export const IntakeFacts = z.preprocess(
+  normalizeIntake,
+  z.object({
+    platform: z.string(),
+    repo: z.string().nullable(),
+    branch: z.string().nullable(),
+    target: z.record(z.string(), IntakeValue),
+  }),
+);
 export type IntakeFacts = z.infer<typeof IntakeFacts>;
 
 export const StatCard = z.object({

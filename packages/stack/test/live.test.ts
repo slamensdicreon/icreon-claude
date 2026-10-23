@@ -14,9 +14,12 @@ import { canTransition, plan } from '@lw/domain';
 import { InMemoryEventStore, Projections } from '@lw/events';
 import { createWorker, defaultPolicy, ProjectCommandsClient, startProject } from '@lw/orchestrator';
 import { loadPlaybook } from '@lw/playbook-sdk';
+import { Client } from '@temporalio/client';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { composeStack, liveRoles, type Stack } from '../src';
+import { SITECORE_DEFAULTS } from '@lw/connectors';
+import { createPlatforms } from '@lw/platforms';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 const SITE = fileURLToPath(
@@ -210,6 +213,7 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
     projections,
     playbook,
     playbookDir: PLAYBOOK,
+    platform: createPlatforms({ sitecore: SITECORE_DEFAULTS }).get('sitecoreai')!,
     dataDir: await mkdtemp(join(tmpdir(), 'lw-stack-')),
     model: claude,
     allowPrivateNetworks: true,
@@ -229,9 +233,12 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
     taskQueue: 'live',
     activities: stack.activities,
   });
+  // A plain client: the time-skipping one skips virtual time while awaiting the result, which
+  // races the Director bot below (deadlines and activity timeouts fire before it answers).
+  const client = new Client({ connection: env.connection, namespace: env.namespace });
   await worker.runUntil(async () => {
     const handle = await startProject(
-      env.client,
+      client,
       {
         projectId: 'p1',
         name: 'Acme corporate site',
@@ -245,7 +252,7 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
       },
       'live',
     );
-    const commands = new ProjectCommandsClient(env.client, 'p1');
+    const commands = new ProjectCommandsClient(client, 'p1');
     // The Director approves both gates (typing the name for Gate 2) and takes recommendations.
     let done = false;
     const bot = (async () => {

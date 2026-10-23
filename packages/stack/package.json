@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@lw/agent-runtime": "workspace:*",
+    "@lw/connectors": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/orchestrator": "workspace:*",
     "@lw/plan": "workspace:*",
+    "@lw/platforms": "workspace:*",
     "@lw/playbook-sdk": "workspace:*",
     "@lw/tool-browser": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
@@ -22,9 +24,10 @@
     "@lw/tool-workspace": "workspace:*"
   },
   "devDependencies": {
-    "@temporalio/testing": "^1.24.0",
-    "@lw/domain": "workspace:*",
+    "@anthropic-ai/sdk": "^1.1.0",
     "@lw/contracts": "workspace:*",
-    "@anthropic-ai/sdk": "^1.1.0"
+    "@lw/domain": "workspace:*",
+    "@temporalio/client": "^1.24.0",
+    "@temporalio/testing": "^1.24.0"
   }
 }

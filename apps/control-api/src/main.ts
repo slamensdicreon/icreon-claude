@@ -21,7 +21,8 @@ import {
   startProject,
   stopProject,
 } from '@lw/orchestrator';
-import { loadPlaybook } from '@lw/playbook-sdk';
+import { loadCatalog } from '@lw/playbook-sdk';
+import { createPlatforms } from '@lw/platforms';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import { composeStack } from '@lw/stack';
 import { openBlobStore } from '@lw/tool-gateway';
@@ -111,9 +112,10 @@ const env = z
     SIM_SPEED: z.coerce.number().positive().default(1),
     /** Scripted engagements to run beside the demo project (intake adds more). */
     SIM_PROJECTS: z.coerce.number().int().min(0).max(10).default(0),
-    PLAYBOOK_DIR: z
+    /** Every folder under it holding a playbook.yaml is a playbook new projects can run. */
+    PLAYBOOKS_DIR: z
       .string()
-      .default(fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url))),
+      .default(fileURLToPath(new URL('../../../playbooks', import.meta.url))),
   })
   .parse(process.env);
 
@@ -165,7 +167,13 @@ const opened = await openStore(env.STORE, {
 const { store } = opened;
 const projections = new Projections(store);
 await projections.start({ eager: env.PROJECTIONS === 'eager' });
-const playbook = await loadPlaybook(env.PLAYBOOK_DIR);
+const catalog = await loadCatalog(env.PLAYBOOKS_DIR);
+const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS });
+// The scripted demo, the simulator and the local sample project run the SitecoreAI build.
+const DEFAULT_PLAYBOOK = 'sitecoreai-migration';
+const { playbook, dir: playbookDir } = catalog.get(DEFAULT_PLAYBOOK) ?? [...catalog.values()][0]!;
+const playbookOf = (id: string | undefined) =>
+  catalog.get(id ?? DEFAULT_PLAYBOOK)?.playbook ?? playbook;
 const cleanups: (() => Promise<void>)[] = [];
 // Shared with the worker's tool servers (one folder in dev; object storage when deployed). The
 // demo projects keep theirs in memory, with the event log.
@@ -277,7 +285,8 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
       store,
       projections,
       playbook,
-      playbookDir: env.PLAYBOOK_DIR,
+      playbookDir,
+      platform: platforms.get(playbook.manifest.platform)!,
       dataDir: env.DATA_DIR,
       blobs,
       model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
@@ -314,8 +323,8 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
       name: input.name,
       client: input.client,
       site: { sourceUrl: input.sourceUrl },
-      playbook,
-      policy: { ...defaultPolicy(playbook), budgets: input.budgets },
+      playbook: playbookOf(input.playbookId),
+      policy: { ...defaultPolicy(playbookOf(input.playbookId)), budgets: input.budgets },
       registered: true,
     });
   };
@@ -383,9 +392,9 @@ const app = await buildApp({
   commands,
   intake: new IntakeService({
     store,
-    playbook,
+    catalog,
+    platforms,
     vault,
-    verify: SITECORE_DEFAULTS,
     start,
     stop,
     blobs,
@@ -394,7 +403,7 @@ const app = await buildApp({
   }),
   github,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
-  policyDefaults: () => policyRows(playbook),
+  policyDefaults: (projectId) => policyRows(playbookOf(projections.get(projectId)?.playbook?.id)),
   corsOrigin: env.CORS_ORIGIN,
   auth,
   extraOrigins,

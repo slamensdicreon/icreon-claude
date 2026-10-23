@@ -3,9 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadPlaybook, loadRolePrompts, roster, validatePlaybook } from '../src';
+import { loadCatalog, loadPlaybook, loadRolePrompts, roster, validatePlaybook } from '../src';
 
 const DIR = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
+// The playbook's platform pack holds the platform knowledge its roles list.
+const PLATFORM_KNOWLEDGE = fileURLToPath(
+  new URL('../../../platforms/sitecoreai/knowledge', import.meta.url),
+);
 
 describe('sitecoreai-migration playbook', () => {
   it('loads and passes bundle validation', async () => {
@@ -41,7 +45,7 @@ describe('sitecoreai-migration playbook', () => {
 describe('role prompts', () => {
   it('loads one per prompted role, naming the artifacts later roles depend on', async () => {
     const pb = await loadPlaybook(DIR);
-    const prompts = await loadRolePrompts(DIR, pb);
+    const prompts = await loadRolePrompts(DIR, pb, [PLATFORM_KNOWLEDGE]);
     // Prompted roles, and roles that consult a knowledge document (known pitfalls, the DoD).
     expect(Object.keys(prompts).sort()).toEqual([
       'component-engineer',
@@ -84,6 +88,18 @@ describe('role prompts', () => {
     await expect(loadRolePrompts(dir, pb)).rejects.toThrow(
       'knowledge/known-pitfalls.md does not exist',
     );
+  });
+
+  it('loads the catalog: every playbook folder, with a platform and a charter', async () => {
+    const catalog = await loadCatalog(
+      fileURLToPath(new URL('../../../playbooks', import.meta.url)),
+    );
+    const pb = catalog.get('sitecoreai-migration')!.playbook;
+    expect(pb.manifest).toMatchObject({
+      platform: 'sitecoreai',
+      name: 'Build a SitecoreAI website',
+    });
+    expect(pb.manifest.charter.outcomes.length).toBeGreaterThanOrEqual(3);
   });
 
   it('refuses a prompt for a role the playbook does not have', async () => {

@@ -219,6 +219,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .map(projectListItem);
   });
 
+  // The playbooks a new project can run: what each team delivers and what its intake collects.
+  app.get('/playbooks', async (_req, reply) => {
+    if (!deps.intake) {
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    }
+    return deps.intake.playbooks();
+  });
+
   app.post('/intake/verify', async (req, reply) => {
     if (!deps.intake) {
       return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');

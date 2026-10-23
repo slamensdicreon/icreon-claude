@@ -5,6 +5,15 @@ import type { Playbook } from '@lw/playbook-sdk';
 
 export const TASK_QUEUE = 'launchworks-orchestration';
 
+/**
+ * Each playbook's projects run on a queue of their own, served by a worker with that playbook's
+ * agents and tools. The first playbook keeps the original queue name, so projects started before
+ * there was a catalog keep running.
+ */
+export function taskQueueFor(playbookId: string): string {
+  return playbookId === 'sitecoreai-migration' ? TASK_QUEUE : `${TASK_QUEUE}.${playbookId}`;
+}
+
 export interface ProjectPolicy {
   concurrency: number;
   budgets: Budgets;

@@ -2,11 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { inScope } from '@lw/tool-gateway';
 import { describe, expect, it } from 'vitest';
-import { projectBindings } from '../src';
+import { sitecoreBindings } from '@lw/platforms';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 // Ansco shares the Brands collection with another team's site, new-brand.
-const ansco = projectBindings({ siteCollection: 'Brands', site: 'ansco' });
+const ansco = sitecoreBindings({ siteCollection: 'Brands', site: 'ansco' });
 
 describe('write scopes in a shared collection', () => {
   it("reach only the project's own site and folders, never a neighbouring site's", async () => {

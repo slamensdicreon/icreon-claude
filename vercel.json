@@ -50,6 +50,12 @@
       }
     },
     {
+      "source": "/playbooks",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/intake/(.*)",
       "destination": {
         "service": "api"

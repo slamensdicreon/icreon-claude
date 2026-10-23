@@ -8,8 +8,9 @@ import {
   PostgresVault,
   Projections,
 } from '@lw/events';
-import { createWorker } from '@lw/orchestrator';
-import { loadPlaybook } from '@lw/playbook-sdk';
+import { createWorker, taskQueueFor } from '@lw/orchestrator';
+import { loadCatalog } from '@lw/playbook-sdk';
+import { createPlatforms, sitecoreTarget } from '@lw/platforms';
 import { composeStack } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
@@ -43,9 +44,10 @@ const env = z
     /** Opens the credentials the New Project wizard sealed (same key as the Control API). */
     CREDENTIALS_KEY: z.string().optional(),
     CREDENTIALS_KEY_PREVIOUS: z.string().optional(),
-    PLAYBOOK_DIR: z
+    /** Every folder under it holding a playbook.yaml is served, each on its own task queue. */
+    PLAYBOOKS_DIR: z
       .string()
-      .default(fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url))),
+      .default(fileURLToPath(new URL('../../../playbooks', import.meta.url))),
   })
   .parse(process.env);
 
@@ -57,7 +59,8 @@ const opened = await openStore('postgres', {
 // Tool servers read per-project facts (the source site) from the read models.
 const projections = new Projections(opened.store);
 await projections.start();
-const playbook = await loadPlaybook(env.PLAYBOOK_DIR);
+const catalog = await loadCatalog(env.PLAYBOOKS_DIR);
+const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS });
 
 // Real connections, from the secrets the project and the app hold. Without the vault key nothing
 // that needs a project credential connects, and those roles block on live projects.
@@ -93,7 +96,7 @@ if (env.AGENTS === 'claude') {
       new GithubToolServer({
         facts: async (id) => {
           const i = (await project(id))?.intake;
-          return i ? { repo: i.repo, branch: i.branch } : null;
+          return i?.repo ? { repo: i.repo, branch: i.branch ?? 'main' } : null;
         },
         commits: false,
       }),
@@ -113,13 +116,14 @@ if (env.AGENTS === 'claude') {
       new SitecoreAuthoringToolServer({
         facts: async (id) => {
           const s = await project(id);
-          if (!s?.intake) return null;
+          if (s?.intake?.platform !== 'sitecoreai') return null;
           const host = s.sourceUrl ? new URL(s.sourceUrl).hostname : null;
+          const t = sitecoreTarget(s.intake);
           return {
-            cmHost: s.intake.cmHost,
-            siteCollection: s.intake.siteCollection,
-            site: s.intake.site,
-            languages: s.intake.languages,
+            cmHost: t.cmHost,
+            siteCollection: t.siteCollection,
+            site: t.site,
+            languages: t.languages,
             sourceHosts: host
               ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`]
               : [],
@@ -133,23 +137,38 @@ console.log(
   `Connected tool servers: ${servers.map((s) => s.name).join(', ') || 'none'}${vault ? '' : ' (CREDENTIALS_KEY not set: no project credentials)'}`,
 );
 
-const stack = await composeStack({
-  store: opened.store,
-  projections,
-  playbook,
-  playbookDir: env.PLAYBOOK_DIR,
-  dataDir: env.DATA_DIR,
-  blobs: openBlobStore(env.BLOB_STORE, env.DATA_DIR),
-  model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
-  directives: env.AGENTS === 'claude' ? (input) => readDirective(input) : null,
-  servers,
-  credentials: vault
-    ? new VaultCredentials({ project, vault, github, sitecore: SITECORE_DEFAULTS })
-    : undefined,
-});
-console.log(`Live agents: ${stack.liveRoles.join(', ') || 'none'}`);
+const credentials = vault
+  ? new VaultCredentials({
+      project,
+      vault,
+      github,
+      toolCredential: (platform, server) => platforms.get(platform)?.toolCredential(server),
+    })
+  : undefined;
+const blobs = openBlobStore(env.BLOB_STORE, env.DATA_DIR);
+
+// One stack per playbook: its roles, prompts, grants and platform pack.
+const stacks = [];
+for (const { playbook, dir } of catalog.values()) {
+  const stack = await composeStack({
+    store: opened.store,
+    projections,
+    playbook,
+    playbookDir: dir,
+    platform: platforms.get(playbook.manifest.platform)!,
+    dataDir: env.DATA_DIR,
+    blobs,
+    model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
+    directives: env.AGENTS === 'claude' ? (input) => readDirective(input) : null,
+    servers,
+    credentials,
+  });
+  console.log(`Live agents (${playbook.manifest.id}): ${stack.liveRoles.join(', ') || 'none'}`);
+  stacks.push({ id: playbook.manifest.id, stack });
+}
 if (env.AGENTS === 'claude') {
-  for (const m of await checkModels(playbook.roles.map((r) => r.model.id))) {
+  const models = [...catalog.values()].flatMap((e) => e.playbook.roles.map((r) => r.model.id));
+  for (const m of await checkModels([...new Set(models)])) {
     console.log(`Claude ${m.id}: ${m.ok ? `ok (${m.detail})` : `NOT AVAILABLE, ${m.detail}`}`);
   }
 }
@@ -169,17 +188,22 @@ const connection = await NativeConnection.connect({
 });
 console.log(`Temporal: connected to ${env.TEMPORAL_ADDRESS}, namespace ${env.TEMPORAL_NAMESPACE}`);
 
-const worker = await createWorker({
-  connection,
-  namespace: env.TEMPORAL_NAMESPACE,
-  activities: stack.activities,
-});
+const workers = await Promise.all(
+  stacks.map(({ id, stack }) =>
+    createWorker({
+      connection,
+      namespace: env.TEMPORAL_NAMESPACE,
+      activities: stack.activities,
+      taskQueue: taskQueueFor(id),
+    }),
+  ),
+);
 
-// Vercel sends SIGTERM on rollout and gives the grace period to finish; the worker drains.
-const stop = () => worker.shutdown();
+// Vercel sends SIGTERM on rollout and gives the grace period to finish; the workers drain.
+const stop = () => workers.forEach((w) => w.shutdown());
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 
-await worker.run();
-await stack.close();
+await Promise.all(workers.map((w) => w.run()));
+for (const { stack } of stacks) await stack.close();
 await opened.close();

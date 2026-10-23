@@ -1,20 +1,25 @@
-import type { ProjectIntakeInput, VerifyIntakeCredential, VerifyIntakeResult } from '@lw/contracts';
-import { useState } from 'react';
-import { ApiProblem, post } from '../lib/api';
+import type {
+  IntakeCredentialSpec,
+  IntakeFieldSpec,
+  PlaybookSummary,
+  ProjectIntakeInput,
+  VerifyIntakeCredential,
+  VerifyIntakeResult,
+} from '@lw/contracts';
+import { useEffect, useState } from 'react';
+import { ApiProblem, get, post } from '../lib/api';
 import { useApp } from '../state';
 import { Scrim } from './Dialogs';
 
 /**
- * The New Project wizard. A real engagement starts with everything the team will need: the
- * source repository, the SitecoreAI environment and its automation client, Experience Edge, and
- * hosting. Each credential is tested against the live service here; the API tests them again,
- * seals them in the vault and records the project ready to start.
+ * The New Project wizard. The Director first picks a playbook: what the team will deliver. The
+ * playbook then decides the rest: whether there is a source repository and live site, which
+ * target values and which credentials, in which steps. Each credential is tested against the live
+ * service here; the API tests them again, seals them in the vault and records the project ready
+ * to start.
  */
 
 type Check = { state: 'idle' } | { state: 'busy' } | ({ state: 'done' } & VerifyIntakeResult);
-type CheckKey = 'environment' | 'organization' | 'edgePreview' | 'edgeLive' | 'github';
-
-const STEPS = ['Project', 'Source', 'SitecoreAI', 'Edge and hosting', 'Review'] as const;
 
 const ZONES = [
   'America/New_York',
@@ -34,8 +39,15 @@ const slug = (s: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
 
+const SLUG = /^[a-z0-9][a-z0-9-]{0,99}$/;
+const REPO = /^[\w.-]+\/[\w.-]+$/;
+const URL_OK = /^https?:\/\/[^\s]+\.[^\s]+/;
+
 export function NewProject() {
   const { closeOverlay, switchProject, toast } = useApp();
+  const [playbooks, setPlaybooks] = useState<PlaybookSummary[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [playbookId, setPlaybookId] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [f, setF] = useState({
     name: '',
@@ -47,50 +59,97 @@ export function NewProject() {
     repo: '',
     branch: 'main',
     sourceUrl: '',
-    cmHost: '',
-    siteCollection: '',
-    site: '',
-    languages: 'en',
-    envClientId: '',
-    envClientSecret: '',
-    withOrg: false,
-    orgClientId: '',
-    orgClientSecret: '',
-    previewContextId: '',
-    liveContextId: '',
-    hostingProject: '',
   });
-  const [checks, setChecks] = useState<Record<CheckKey, Check>>({
-    environment: { state: 'idle' },
-    organization: { state: 'idle' },
-    edgePreview: { state: 'idle' },
-    edgeLive: { state: 'idle' },
-    github: { state: 'idle' },
-  });
+  const [target, setTarget] = useState<Record<string, string>>({});
+  const [secrets, setSecrets] = useState<Record<string, Record<string, string>>>({});
+  const [checks, setChecks] = useState<Record<string, Check>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Editing a field a check depends on clears that check: a green tick always means these values.
-  const DEPENDS: Partial<Record<keyof typeof f, CheckKey>> = {
-    cmHost: 'environment',
-    envClientId: 'environment',
-    envClientSecret: 'environment',
-    orgClientId: 'organization',
-    orgClientSecret: 'organization',
-    previewContextId: 'edgePreview',
-    liveContextId: 'edgeLive',
-    repo: 'github',
-    branch: 'github',
-  };
-  const set =
-    <K extends keyof typeof f>(k: K) =>
-    (v: (typeof f)[K]) => {
-      setF((cur) => ({ ...cur, [k]: v }));
-      const dep = DEPENDS[k];
-      if (dep) setChecks((c) => ({ ...c, [dep]: { state: 'idle' } }));
-    };
+  useEffect(() => {
+    get<PlaybookSummary[]>('/playbooks')
+      .then((list) => {
+        setPlaybooks(list);
+        if (list.length === 1) setPlaybookId(list[0]!.id);
+      })
+      .catch((err: unknown) =>
+        setLoadError(
+          err instanceof ApiProblem ? err.message : 'The playbooks could not be loaded.',
+        ),
+      );
+  }, []);
 
-  const test = async (key: CheckKey, input: VerifyIntakeCredential) => {
+  const pb = playbooks?.find((p) => p.id === playbookId) ?? null;
+  const steps = pb?.intake.steps ?? [];
+  const credentials = steps.flatMap((s) => s.credentials);
+  const hasSource = Boolean(
+    pb && (pb.intake.source.repo !== 'none' || pb.intake.source.url !== 'none'),
+  );
+  const TITLES = [
+    'Playbook',
+    'Project',
+    ...(hasSource ? ['Source'] : []),
+    ...steps.map((s) => s.title),
+    'Review',
+  ];
+
+  const clear = (key: string) => setChecks((c) => ({ ...c, [key]: { state: 'idle' } }));
+  const setBase =
+    <K extends keyof typeof f>(k: K) =>
+    (v: string) => {
+      setF((cur) => ({ ...cur, [k]: v }));
+      if (k === 'repo' || k === 'branch') clear('github');
+    };
+  const setField = (key: string, v: string) => {
+    setTarget((t) => ({ ...t, [key]: v }));
+    // A green tick always means these values: a check that uses this field starts over.
+    for (const c of credentials) if (c.uses.includes(key)) clear(c.credentialId);
+  };
+  const setSecret = (credentialId: string, key: string, v: string) => {
+    setSecrets((s) => ({ ...s, [credentialId]: { ...s[credentialId], [key]: v } }));
+    clear(credentialId);
+  };
+
+  const fieldValue = (fs: IntakeFieldSpec) =>
+    (target[fs.key] ?? '').trim() ||
+    (fs.defaultFrom === 'name' ? slug(f.name) : '') ||
+    fs.defaultValue ||
+    '';
+  const fieldOk = (fs: IntakeFieldSpec) => {
+    const v = fieldValue(fs);
+    if (!v) return !fs.required;
+    const pattern = fs.pattern ? new RegExp(fs.pattern) : fs.kind === 'slug' ? SLUG : null;
+    return !pattern || pattern.test(v);
+  };
+  const targetValues = () =>
+    Object.fromEntries(
+      steps
+        .flatMap((s) => s.fields)
+        .map((fs) => {
+          const v = fieldValue(fs);
+          return [
+            fs.key,
+            fs.kind === 'list'
+              ? v
+                  .split(',')
+                  .map((x) => x.trim())
+                  .filter(Boolean)
+              : v,
+          ] as const;
+        })
+        .filter(([, v]) => v.length),
+    );
+
+  const filled = (c: IntakeCredentialSpec) =>
+    c.fields.every((fl) => (secrets[c.credentialId]?.[fl.key] ?? '').trim());
+  const touched = (c: IntakeCredentialSpec) =>
+    c.fields.some((fl) => (secrets[c.credentialId]?.[fl.key] ?? '').trim());
+  const ok = (key: string) => {
+    const c = checks[key];
+    return c?.state === 'done' && c.ok;
+  };
+
+  const test = async (key: string, input: VerifyIntakeCredential) => {
     setChecks((c) => ({ ...c, [key]: { state: 'busy' } }));
     try {
       const r = (await post('/intake/verify', input)) as unknown as VerifyIntakeResult;
@@ -109,45 +168,52 @@ export function NewProject() {
     }
   };
 
-  const ok = (k: CheckKey) => checks[k].state === 'done' && (checks[k] as { ok: boolean }).ok;
-  const urlOk = !f.sourceUrl || /^https?:\/\/[^\s]+\.[^\s]+/.test(f.sourceUrl.trim());
-  const repoOk = /^[\w.-]+\/[\w.-]+$/.test(f.repo.trim());
-  const hosting = f.hostingProject || slug(f.name);
+  const source = pb?.intake.source;
+  const repoOk = REPO.test(f.repo.trim());
+  const urlOk = f.sourceUrl.trim() ? URL_OK.test(f.sourceUrl.trim()) : source?.url !== 'required';
   const valid = [
+    Boolean(pb),
     Boolean(f.name.trim() && f.client.trim() && +f.usd > 0 && +f.tokensM > 0 && +f.hours > 0),
-    Boolean(repoOk && f.branch.trim() && urlOk),
-    Boolean(f.cmHost.trim() && f.siteCollection.trim() && f.site.trim() && ok('environment')) &&
-      (!f.withOrg || ok('organization')),
-    (!f.previewContextId.trim() || ok('edgePreview')) &&
-      (!f.liveContextId.trim() || ok('edgeLive')) &&
-      /^[a-z0-9][a-z0-9-]{0,99}$/.test(hosting),
+    ...(hasSource
+      ? [
+          (source!.repo === 'none' ||
+            (repoOk && Boolean(f.branch.trim())) ||
+            (source!.repo === 'optional' && !f.repo.trim())) &&
+            urlOk,
+        ]
+      : []),
+    ...steps.map(
+      (s) =>
+        s.fields.every(fieldOk) &&
+        s.credentials.every((c) =>
+          c.required ? filled(c) && ok(c.credentialId) : !touched(c) || ok(c.credentialId),
+        ),
+    ),
     true,
   ];
 
   const body = (): ProjectIntakeInput => ({
+    playbookId: pb!.id,
     name: f.name.trim(),
     client: f.client.trim(),
     timezone: f.timezone,
     budgets: { usd: +f.usd, tokens: Math.round(+f.tokensM * 1_000_000), hours: +f.hours },
-    source: { repo: f.repo.trim(), branch: f.branch.trim(), url: f.sourceUrl.trim() || null },
-    target: {
-      cmHost: f.cmHost.trim(),
-      siteCollection: f.siteCollection.trim(),
-      site: f.site.trim(),
-      languages: f.languages
-        .split(',')
-        .map((l) => l.trim())
-        .filter(Boolean),
+    source: {
+      repo: f.repo.trim() || null,
+      branch: f.branch.trim() || 'main',
+      url: f.sourceUrl.trim() || null,
     },
-    hosting: { provider: 'vercel', project: hosting },
-    credentials: {
-      environment: { clientId: f.envClientId.trim(), clientSecret: f.envClientSecret.trim() },
-      organization: f.withOrg
-        ? { clientId: f.orgClientId.trim(), clientSecret: f.orgClientSecret.trim() }
-        : null,
-      edgePreviewContextId: f.previewContextId.trim() || null,
-      edgeLiveContextId: f.liveContextId.trim() || null,
-    },
+    target: targetValues(),
+    credentials: Object.fromEntries(
+      credentials
+        .filter(filled)
+        .map((c) => [
+          c.credentialId,
+          Object.fromEntries(
+            c.fields.map((fl) => [fl.key, (secrets[c.credentialId]?.[fl.key] ?? '').trim()]),
+          ),
+        ]),
+    ),
   });
 
   const create = async () => {
@@ -164,30 +230,31 @@ export function NewProject() {
     }
   };
 
-  const text = (
+  const input = (
+    id: string,
     label: string,
-    k: keyof typeof f,
-    placeholder: string,
-    opts: { hint?: string; secret?: boolean; bad?: boolean } = {},
+    value: string,
+    onChange: (v: string) => void,
+    opts: { placeholder?: string; hint?: string | null; secret?: boolean; bad?: boolean } = {},
   ) => (
-    <div className="wiz-field">
-      <label className="eyebrow" htmlFor={`np-${k}`}>
+    <div className="wiz-field" key={id}>
+      <label className="eyebrow" htmlFor={`np-${id}`}>
         {label}
       </label>
       <input
-        id={`np-${k}`}
-        aria-describedby={opts.hint ? `np-${k}-hint` : undefined}
+        id={`np-${id}`}
+        aria-describedby={opts.hint ? `np-${id}-hint` : undefined}
         className="input"
         type={opts.secret ? 'password' : 'text'}
         autoComplete={opts.secret ? 'new-password' : 'off'}
         spellCheck={false}
-        value={f[k] as string}
-        placeholder={placeholder}
+        value={value}
+        placeholder={opts.placeholder}
         aria-invalid={opts.bad || undefined}
-        onChange={(e) => set(k)(e.target.value as never)}
+        onChange={(e) => onChange(e.target.value)}
       />
       {opts.hint && (
-        <span className="wiz-hint" id={`np-${k}-hint`}>
+        <span className="wiz-hint" id={`np-${id}-hint`}>
           {opts.hint}
         </span>
       )}
@@ -195,19 +262,19 @@ export function NewProject() {
   );
 
   const checkRow = (
-    key: CheckKey,
+    key: string,
     label: string,
     ready: boolean,
-    input: () => VerifyIntakeCredential,
+    req: () => VerifyIntakeCredential,
   ) => {
-    const c = checks[key];
+    const c = checks[key] ?? { state: 'idle' };
     return (
       <div className="wiz-check">
         <button
           type="button"
           className="btn sm"
           disabled={!ready || c.state === 'busy'}
-          onClick={() => void test(key, input())}
+          onClick={() => void test(key, req())}
         >
           {c.state === 'busy' ? 'Testing…' : `Test ${label}`}
         </button>
@@ -220,14 +287,89 @@ export function NewProject() {
     );
   };
 
-  const pages = [
+  const field = (fs: IntakeFieldSpec) =>
+    input(fs.key, fs.label, target[fs.key] ?? '', (v) => setField(fs.key, v), {
+      placeholder:
+        (fs.defaultFrom === 'name' ? slug(f.name) : '') || fs.defaultValue || fs.placeholder || '',
+      hint: fs.hint,
+      bad: Boolean(target[fs.key]?.trim()) && !fieldOk(fs),
+    });
+
+  const credential = (c: IntakeCredentialSpec) => (
+    <div className="wiz-group" key={c.credentialId}>
+      <h4>
+        {c.system} <span className="muted">({c.required ? 'required' : 'optional'})</span>
+      </h4>
+      {c.description && <p className="wiz-hint">{c.description}</p>}
+      <div className="wiz-row">
+        {c.fields.map((fl) =>
+          input(
+            `${c.credentialId}-${fl.key}`,
+            fl.label,
+            secrets[c.credentialId]?.[fl.key] ?? '',
+            (v) => setSecret(c.credentialId, fl.key, v),
+            { secret: fl.secret },
+          ),
+        )}
+      </div>
+      {checkRow(
+        c.credentialId,
+        c.fields.length > 1 ? 'connection' : c.fields[0]!.label,
+        filled(c) && c.uses.every((u) => (target[u] ?? '').trim()),
+        () => ({
+          kind: 'credential',
+          playbookId: pb!.id,
+          credentialId: c.credentialId,
+          secret: Object.fromEntries(
+            c.fields.map((fl) => [fl.key, (secrets[c.credentialId]?.[fl.key] ?? '').trim()]),
+          ),
+          target: targetValues(),
+        }),
+      )}
+    </div>
+  );
+
+  const pickPage = (
     <>
-      <p>
-        A real engagement: agents work on the repository and the SitecoreAI environment you give
-        here.
-      </p>
-      {text('Project name', 'name', 'CableCom corporate site')}
-      {text('Client', 'client', 'CableCom')}
+      <p>What will the team deliver? The playbook sets the team, its plan and what intake needs.</p>
+      {loadError && <p className="cred-miss">{loadError}</p>}
+      {!playbooks && !loadError && <p className="muted">Loading playbooks…</p>}
+      <div className="wiz-playbooks" role="radiogroup" aria-label="Playbook">
+        {playbooks?.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={p.id === playbookId}
+            className={`wiz-playbook ${p.id === playbookId ? 'on' : ''}`}
+            onClick={() => {
+              setPlaybookId(p.id);
+              setChecks({});
+            }}
+          >
+            <span className="eyebrow">
+              {p.platform.name} · v{p.version}
+            </span>
+            <b>{p.name}</b>
+            <span className="muted">{p.charter.mission}</span>
+            <ul>
+              {p.charter.outcomes.map((o) => (
+                <li key={o.id}>{o.title}</li>
+              ))}
+            </ul>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
+  const projectPage = (
+    <>
+      <p>A real engagement: agents work on the systems you give in the next steps.</p>
+      {input('name', 'Project name', f.name, setBase('name'), {
+        placeholder: 'CableCom corporate site',
+      })}
+      {input('client', 'Client', f.client, setBase('client'), { placeholder: 'CableCom' })}
       <div className="wiz-field">
         <label className="eyebrow" htmlFor="np-timezone">
           Time zone
@@ -237,7 +379,7 @@ export function NewProject() {
           aria-describedby="np-timezone-hint"
           className="select"
           value={f.timezone}
-          onChange={(e) => set('timezone')(e.target.value)}
+          onChange={(e) => setBase('timezone')(e.target.value)}
         >
           {[...new Set([f.timezone, ...ZONES])].map((z) => (
             <option key={z}>{z}</option>
@@ -248,132 +390,75 @@ export function NewProject() {
         </span>
       </div>
       <div className="wiz-row">
-        {text('Budget, $', 'usd', '1200')}
-        {text('Tokens, millions', 'tokensM', '8')}
-        {text('Hours', 'hours', '240')}
+        {input('usd', 'Budget, $', f.usd, setBase('usd'), { placeholder: '1200' })}
+        {input('tokensM', 'Tokens, millions', f.tokensM, setBase('tokensM'), { placeholder: '8' })}
+        {input('hours', 'Hours', f.hours, setBase('hours'), { placeholder: '240' })}
       </div>
-    </>,
+    </>
+  );
+
+  const sourcePage = source && (
     <>
-      <p>The code being migrated. Agents read it and open pull requests on a branch.</p>
-      {text('Repository', 'repo', 'cablecom/website', {
-        hint: 'owner/name on GitHub. Agents reach it through the Launchworks GitHub App, which the client installs on this repository.',
-        bad: Boolean(f.repo) && !repoOk,
-      })}
-      {text('Branch', 'branch', 'main')}
-      {checkRow('github', 'access', Boolean(repoOk && f.branch.trim()), () => ({
-        kind: 'github.repo',
-        repo: f.repo.trim(),
-        branch: f.branch.trim(),
-      }))}
-      <p className="wiz-hint">
-        Optional now: if the client hasn’t installed the app yet, the project records it and you can
-        check again from Settings.
-      </p>
-      {text('Live site', 'sourceUrl', 'https://www.cablecom.com', {
-        hint: 'Optional. Used for crawling, parity checks and screenshots.',
-        bad: !urlOk,
-      })}
-    </>,
-    <>
-      <p>
-        The SitecoreAI environment the site is built in. In the Deploy app, create an{' '}
-        <b>environment automation client</b> for this environment and paste its ID and secret.
-      </p>
-      {text('CM host', 'cmHost', 'xmc-cablecom-abc123.sitecorecloud.io', {
-        hint: 'From the environment’s Details tab.',
-      })}
-      <div className="wiz-row">
-        {text('Site collection', 'siteCollection', 'cablecom')}
-        {text('Site', 'site', 'cablecom')}
-        {text('Languages', 'languages', 'en, es-US')}
-      </div>
-      <div className="wiz-group">
-        <h4>Environment automation client (required)</h4>
-        <div className="wiz-row">
-          {text('Client ID', 'envClientId', '')}
-          {text('Client secret', 'envClientSecret', '', { secret: true })}
-        </div>
-        {checkRow(
-          'environment',
-          'connection',
-          Boolean(f.cmHost.trim() && f.envClientId.trim() && f.envClientSecret.trim()),
-          () => ({
-            kind: 'sitecore.environment',
-            cmHost: f.cmHost,
-            clientId: f.envClientId,
-            clientSecret: f.envClientSecret,
-          }),
+      {source.intro && <p>{source.intro}</p>}
+      {source.repo !== 'none' && (
+        <>
+          {input(
+            'repo',
+            `Repository${source.repo === 'optional' ? ' (optional)' : ''}`,
+            f.repo,
+            setBase('repo'),
+            {
+              placeholder: 'cablecom/website',
+              hint: 'owner/name on GitHub. Agents reach it through the Launchworks GitHub App, which the client installs on this repository.',
+              bad: Boolean(f.repo) && !repoOk,
+            },
+          )}
+          {input('branch', 'Branch', f.branch, setBase('branch'), { placeholder: 'main' })}
+          {checkRow('github', 'access', Boolean(repoOk && f.branch.trim()), () => ({
+            kind: 'github.repo',
+            repo: f.repo.trim(),
+            branch: f.branch.trim(),
+          }))}
+          <p className="wiz-hint">
+            Optional now: if the client hasn’t installed the app yet, the project records it and you
+            can check again from Settings.
+          </p>
+        </>
+      )}
+      {source.url !== 'none' &&
+        input(
+          'sourceUrl',
+          `Live site${source.url === 'optional' ? ' (optional)' : ''}`,
+          f.sourceUrl,
+          setBase('sourceUrl'),
+          {
+            placeholder: 'https://www.cablecom.com',
+            hint: 'Used for crawling, parity checks and screenshots.',
+            bad: Boolean(f.sourceUrl.trim()) && !urlOk,
+          },
         )}
-      </div>
-      <div className="wiz-group">
-        <label className="toggle-row">
-          <button
-            type="button"
-            className="toggle"
-            role="switch"
-            aria-checked={f.withOrg}
-            aria-label="Add an organization client"
-            onClick={() => {
-              setF((cur) => ({ ...cur, withOrg: !cur.withOrg }));
-              setChecks((c) => ({ ...c, organization: { state: 'idle' } }));
-            }}
-          />
-          <span>
-            <b>Organization automation client</b>{' '}
-            <span className="muted">
-              (optional: Deploy API, reaches every environment in the org)
-            </span>
-          </span>
-        </label>
-        {f.withOrg && (
-          <>
-            <div className="wiz-row">
-              {text('Client ID', 'orgClientId', '')}
-              {text('Client secret', 'orgClientSecret', '', { secret: true })}
-            </div>
-            {checkRow(
-              'organization',
-              'client',
-              Boolean(f.orgClientId.trim() && f.orgClientSecret.trim()),
-              () => ({
-                kind: 'sitecore.organization',
-                clientId: f.orgClientId,
-                clientSecret: f.orgClientSecret,
-              }),
-            )}
-          </>
-        )}
-      </div>
-    </>,
+    </>
+  );
+
+  const stepPages = steps.map((s) => (
     <>
-      <p>
-        Experience Edge Context IDs for the new head, from the environment&rsquo;s Developer
-        settings. Both are optional now and can be added later in Settings.
-      </p>
-      <div className="wiz-group">
-        {text('Preview Context ID', 'previewContextId', '', { secret: true })}
-        {checkRow('edgePreview', 'preview ID', Boolean(f.previewContextId.trim()), () => ({
-          kind: 'edge.preview',
-          contextId: f.previewContextId,
-        }))}
-      </div>
-      <div className="wiz-group">
-        {text('Live Context ID', 'liveContextId', '', { secret: true })}
-        {checkRow('edgeLive', 'live ID', Boolean(f.liveContextId.trim()), () => ({
-          kind: 'edge.live',
-          contextId: f.liveContextId,
-        }))}
-      </div>
-      {text('Vercel project for the head', 'hostingProject', slug(f.name) || 'cablecom-website', {
-        hint: 'Lowercase letters, digits and dashes. The editing secret is generated when the head is deployed.',
-      })}
-    </>,
+      {s.intro && <p>{s.intro}</p>}
+      {s.fields.length > 0 && <div className="wiz-row wiz-wrap">{s.fields.map(field)}</div>}
+      {s.credentials.map(credential)}
+    </>
+  ));
+
+  const reviewPage = pb && (
     <>
       <p>
         Everything below is checked again when you create the project. Secrets are sealed and never
         shown again.
       </p>
       <dl className="contract wiz-review">
+        <dt>Playbook</dt>
+        <dd>
+          {pb.name} ({pb.platform.name}, v{pb.version})
+        </dd>
         <dt>Project</dt>
         <dd>
           {f.name} for {f.client}, {f.timezone}
@@ -382,44 +467,72 @@ export function NewProject() {
         <dd>
           ${f.usd}, {f.tokensM}M tokens, {f.hours} h
         </dd>
-        <dt>Source</dt>
-        <dd>
-          {f.repo} ({f.branch}){f.sourceUrl ? `, ${f.sourceUrl}` : ''}
-        </dd>
-        <dt>Target</dt>
-        <dd>
-          {f.cmHost}: {f.siteCollection} / {f.site}, {f.languages}
-        </dd>
-        <dt>Credentials</dt>
-        <dd>
-          Environment client ✓{f.withOrg && ', organization client ✓'}
-          {f.previewContextId && ', preview Context ID ✓'}
-          {f.liveContextId && ', live Context ID ✓'}
-        </dd>
-        <dt>Hosting</dt>
-        <dd>Vercel, {hosting}</dd>
-        <dt>Repository access</dt>
-        <dd>
-          {ok('github')
-            ? 'GitHub App ✓'
-            : 'Not confirmed yet. Creating the project checks it again and records the outcome; re-check it in Settings once the client installs the app.'}
-        </dd>
+        {hasSource && (
+          <>
+            <dt>Source</dt>
+            <dd>
+              {[f.repo && `${f.repo} (${f.branch})`, f.sourceUrl].filter(Boolean).join(', ') ||
+                'None'}
+            </dd>
+          </>
+        )}
+        {steps.flatMap((s) => s.fields).length > 0 && (
+          <>
+            <dt>Target</dt>
+            <dd>
+              {steps
+                .flatMap((s) => s.fields)
+                .map((fs) => `${fs.label}: ${fieldValue(fs) || '–'}`)
+                .join(' · ')}
+            </dd>
+          </>
+        )}
+        {credentials.length > 0 && (
+          <>
+            <dt>Credentials</dt>
+            <dd>
+              {credentials
+                .filter(filled)
+                .map((c) => `${c.system} ✓`)
+                .join(', ') || 'None yet'}
+            </dd>
+          </>
+        )}
+        {source?.repo !== 'none' && f.repo && (
+          <>
+            <dt>Repository access</dt>
+            <dd>
+              {ok('github')
+                ? 'GitHub App ✓'
+                : 'Not confirmed yet. Creating the project checks it again and records the outcome; re-check it in Settings once the client installs the app.'}
+            </dd>
+          </>
+        )}
       </dl>
       <p className="muted" style={{ fontSize: 13 }}>
         The project is created ready to start. Nothing runs until you press Start on Mission
         Control.
       </p>
-    </>,
+    </>
+  );
+
+  const pages = [
+    pickPage,
+    projectPage,
+    ...(hasSource ? [sourcePage] : []),
+    ...stepPages,
+    reviewPage,
   ];
+  const last = TITLES.length - 1;
 
   return (
     <Scrim>
       <div className="dialog wiz" role="dialog" aria-labelledby="np-t">
         <h2 id="np-t">New project</h2>
         <ol className="wiz-steps" aria-label="Steps">
-          {STEPS.map((s, i) => (
+          {TITLES.map((s, i) => (
             <li
-              key={s}
+              key={`${i}-${s}`}
               aria-current={i === step ? 'step' : undefined}
               className={i < step ? 'done' : ''}
             >
@@ -442,7 +555,7 @@ export function NewProject() {
           >
             {step ? 'Back' : 'Cancel'}
           </button>
-          {step < STEPS.length - 1 ? (
+          {step < last ? (
             <button
               type="button"
               className="btn primary"
