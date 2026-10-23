@@ -33,7 +33,7 @@ export function withAgentRunner(
             const key = MetricKey.safeParse(k);
             if (key.success) metrics[key.data] = v;
           }
-          return { ...spent, metrics };
+          return { ...spent, metrics, summary: out.summary };
         }
         case 'needs_decision':
           throw ApplicationFailure.create({

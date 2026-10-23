@@ -13,6 +13,8 @@
   "dependencies": {
     "@lw/agent-runtime": "workspace:*",
     "@lw/connectors": "workspace:*",
+    "@lw/contracts": "workspace:*",
+    "@lw/domain": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/orchestrator": "workspace:*",
     "@lw/plan": "workspace:*",
@@ -25,8 +27,6 @@
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
-    "@lw/contracts": "workspace:*",
-    "@lw/domain": "workspace:*",
     "@temporalio/client": "^1.24.0",
     "@temporalio/testing": "^1.24.0"
   }

@@ -4,3 +4,4 @@ export * from './pricing';
 export * from './runtime';
 export * from './tools';
 export * from './directives';
+export * from './review';

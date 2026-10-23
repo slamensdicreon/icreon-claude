@@ -5,6 +5,8 @@ import {
   type DirectiveInput,
   type DirectiveReading,
   type ModelClient,
+  type ReviewInput,
+  type ReviewVerdict,
 } from '@lw/agent-runtime';
 import type { EventStore, Projections } from '@lw/events';
 import {
@@ -16,6 +18,7 @@ import {
 } from '@lw/orchestrator';
 import { Blueprint } from '@lw/plan';
 import type { PlatformPack } from '@lw/platforms';
+import { withReview } from './review';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
 import {
@@ -51,6 +54,8 @@ export interface StackOptions {
   model?: ModelClient | null;
   /** Reads Director messages on live projects (Claude); without it, the simple reader is used. */
   directives?: ((input: DirectiveInput) => Promise<DirectiveReading>) | null;
+  /** A Lead's review of each finished task on live projects (Claude); without it, checks only. */
+  review?: ((input: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null;
   /** Extra servers (tests); the browser and workspace servers are always connected. */
   servers?: ToolServer[];
   /** Credentials for tool calls (the vault-backed provider in the worker). */
@@ -215,7 +220,16 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
         (role) => live.includes(role),
       )
     : base;
-  const activities = withLiveGuard(agents, {
+  // Done means checked: automated checks, then the Lead's review of what was actually done.
+  const reviewed = withReview(agents, {
+    store: opts.store,
+    projections: opts.projections,
+    library,
+    playbook: opts.playbook,
+    isLive,
+    review: opts.review ?? null,
+  });
+  const activities = withLiveGuard(reviewed, {
     store: opts.store,
     isLive,
     // Without Claude, nothing is connected: every specialist task on a live project blocks.

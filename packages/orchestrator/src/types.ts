@@ -62,6 +62,8 @@ export interface AgentResult {
   usd: number;
   /** Measured values reported by the task (e.g. parity from the Parity Auditor). */
   metrics?: Partial<Record<MetricKey, number>>;
+  /** What the agent says it did; its Lead reviews it against the steps it took. */
+  summary?: string;
   /** Artifacts the task produced; the orchestrator assigns versions. */
   artifacts?: { artifactId: string; kind: ArtifactKind; title: string }[];
 }
