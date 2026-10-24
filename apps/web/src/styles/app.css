@@ -252,9 +252,14 @@
   min-height: 0;
 }
 
-/* Settings: source site */
-.source-site .row .input {
+/* Settings: source site, intake values */
+.source-site .row .input,
+.intake-values .row .input {
   min-width: 0;
+}
+.intake-values th {
+  text-align: left;
+  font-weight: 500;
 }
 .sr-only {
   position: absolute;

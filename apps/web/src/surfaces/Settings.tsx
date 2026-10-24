@@ -95,6 +95,13 @@ export function Settings() {
           />
         )}
         {!p.demo && p.intake?.repo && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}
+        {!p.demo && p.intake && p.playbook && (
+          <IntakePanel
+            values={p.intake.target}
+            spec={playbooks?.find((x) => x.id === p.playbook?.id)?.intake ?? null}
+            open={p.status === 'intake'}
+          />
+        )}
         <section className="panel">
           <h2>
             Credentials <small>references only</small>
@@ -668,6 +675,99 @@ function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; s
           </button>
         </>
       )}
+    </section>
+  );
+}
+
+/**
+ * What intake recorded about the target. Before Start, a value no credential check depends on
+ * can change here (a hosting project name that turned out to be taken).
+ */
+function IntakePanel({
+  values,
+  spec,
+  open,
+}: {
+  values: Record<string, string | string[]>;
+  spec: PlaybookSummary['intake'] | null;
+  open: boolean;
+}) {
+  const { projectId, run } = useApp();
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  if (!spec) return null;
+  const checked = new Set(spec.steps.flatMap((st) => st.credentials.flatMap((c) => c.uses)));
+  const shown = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(', ') : (v ?? ''));
+  return (
+    <section className="panel intake-values">
+      <h2>Intake</h2>
+      <p className="muted">
+        {open
+          ? 'Values a credential was checked against are fixed; the others can change until Start.'
+          : 'Fixed once the project started. Reset the project to change them.'}
+      </p>
+      <table>
+        <tbody>
+          {spec.steps
+            .flatMap((st) => st.fields)
+            .map((f) => (
+              <tr key={f.key}>
+                <th scope="row">{f.label}</th>
+                <td>
+                  {editing === f.key ? (
+                    <form
+                      className="row"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void run(
+                          () => put(`/projects/${projectId}/target/${f.key}`, { value: draft }),
+                          `${f.label} saved.`,
+                        ).then((ok) => ok && setEditing(null));
+                      }}
+                    >
+                      <label className="sr-only" htmlFor={`intake-${f.key}`}>
+                        {f.label}
+                      </label>
+                      <input
+                        id={`intake-${f.key}`}
+                        className="input l"
+                        placeholder={f.placeholder ?? undefined}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                      />
+                      <button
+                        className="btn sm primary"
+                        type="submit"
+                        disabled={!draft.trim() || draft.trim() === shown(values[f.key])}
+                      >
+                        Save
+                      </button>
+                      <button className="btn sm" type="button" onClick={() => setEditing(null)}>
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <span className="mono">{shown(values[f.key]) || '—'}</span>
+                  )}
+                  {f.hint && editing === f.key && <p className="muted">{f.hint}</p>}
+                </td>
+                <td>
+                  {open && !checked.has(f.key) && editing !== f.key && (
+                    <button
+                      className="btn sm"
+                      onClick={() => {
+                        setDraft(shown(values[f.key]));
+                        setEditing(f.key);
+                      }}
+                    >
+                      Change
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
     </section>
   );
 }

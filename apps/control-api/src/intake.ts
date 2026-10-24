@@ -518,6 +518,51 @@ export class IntakeService {
     ]);
   }
 
+  /**
+   * Changes one intake value before Start (a hosting project name that turned out to be taken).
+   * Values a credential check depends on stay as checked: change those by replacing the
+   * credential's project instead.
+   */
+  async setTargetValue(s: ProjectState, key: string, value: string | string[]): Promise<void> {
+    if (s.mode !== 'live' || !s.playbook || !s.intake) {
+      throw new CommandError(409, 'not_live', 'Only real projects have intake values.');
+    }
+    if (s.status !== 'intake') {
+      throw new CommandError(
+        409,
+        'started',
+        'Intake values can only change before Start. Reset the project to change them.',
+      );
+    }
+    const { pack, spec } = this.resolve(s.playbook.id);
+    const field = spec.steps.flatMap((st) => st.fields).find((f) => f.key === key);
+    if (!field) throw new CommandError(404, 'unknown_field', `This playbook has no "${key}".`);
+    const checkedBy = spec.steps.flatMap((st) => st.credentials).find((c) => c.uses.includes(key));
+    if (checkedBy) {
+      throw new CommandError(
+        409,
+        'checked_value',
+        `${field.label} is what the ${checkedBy.system} check was run against, so it can't change here.`,
+      );
+    }
+    let target: TargetValues;
+    try {
+      target = pack.normalize(validateTarget(spec, { ...s.intake.target, [key]: value }));
+    } catch (err) {
+      if (err instanceof IntakeError) throw new CommandError(422, 'invalid', err.message);
+      throw err;
+    }
+    await this.deps.store.append(s.projectId, [
+      {
+        type: 'project.updated',
+        actor: { kind: 'director', id: 'director' },
+        subject: { kind: 'project', id: s.projectId },
+        severity: 'notable',
+        data: { intakeTarget: { [key]: target[key]! }, target: pack.describe(target).target },
+      },
+    ]);
+  }
+
   /** Re-checks a stored credential of a live project and records the outcome. */
   async reverify(s: ProjectState, credentialId: string): Promise<void> {
     const c = s.credentials[credentialId];

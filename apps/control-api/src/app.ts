@@ -4,6 +4,7 @@ import {
   ArchiveProject,
   ChangeSetting,
   ChangeBrief,
+  ChangeTargetValue,
   ChangeSourceSite,
   CreateBuildRepo,
   SetCredential,
@@ -607,6 +608,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const r: CommandResult = { accepted: true, seq };
     return r;
   });
+
+  // One intake value, changed before Start.
+  app.put<{ Params: { id: string; key: string } }>(
+    '/projects/:id/target/:key',
+    async (req, reply) => {
+      const s = known(req.params.id);
+      if (!deps.intake) {
+        return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+      }
+      await deps.intake.setTargetValue(s, req.params.key, ChangeTargetValue.parse(req.body).value);
+      const seq = await store.head(s.projectId);
+      await projections.waitFor(s.projectId, seq);
+      const r: CommandResult = { accepted: true, seq };
+      return r;
+    },
+  );
 
   // The source site, set or corrected after intake. A live project's API records it itself: the
   // worker's tools and the agents' context read it from the log.

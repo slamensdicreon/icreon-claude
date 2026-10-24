@@ -54,6 +54,10 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
     case 'project.updated':
       if (e.data.buildRepo) return `Build repository ready: ${e.data.buildRepo.repo}`;
       if (e.data.brief) return 'Brief updated';
+      if (e.data.intakeTarget)
+        return `Intake changed: ${Object.entries(e.data.intakeTarget)
+          .map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(', ') : v}`)
+          .join('; ')}`;
       if (e.data.hosting)
         return e.data.hosting.url
           ? `Head live at ${e.data.hosting.url}`

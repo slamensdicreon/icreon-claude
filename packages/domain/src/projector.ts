@@ -238,6 +238,8 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (d.timezone !== undefined) s.timezone = d.timezone;
       if (d.buildRepo !== undefined) s.buildRepo = d.buildRepo;
       if (d.brief !== undefined) s.brief = d.brief;
+      if (d.intakeTarget && s.intake)
+        s.intake = { ...s.intake, target: { ...s.intake.target, ...d.intakeTarget } };
       // A URL once known stays until a newer one replaces it.
       if (d.hosting !== undefined)
         s.hosting = { ...d.hosting, url: d.hosting.url ?? s.hosting?.url ?? null };

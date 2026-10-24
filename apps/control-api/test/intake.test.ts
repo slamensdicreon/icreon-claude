@@ -286,6 +286,41 @@ describe('New Project wizard', () => {
     expect((await store.read(projectId)).at(-1)).toMatchObject({ type: 'project.updated' });
   });
 
+  it('changes an unchecked intake value before Start, and keeps checked ones fixed', async () => {
+    const { started, store } = await start({ orchestrator: true });
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    const put = (key: string, value: unknown) =>
+      app!.inject({
+        method: 'PUT',
+        url: `/projects/${projectId}/target/${key}`,
+        payload: { value },
+      });
+    expect((await put('hostingProject', 'Globex Site')).statusCode).toBe(422);
+    expect((await put('cmHost', 'xmc-other.sitecorecloud.io')).json().error.code).toBe(
+      'checked_value',
+    );
+    expect((await put('nope', 'x')).statusCode).toBe(404);
+    expect((await put('hostingProject', 'globex-sitecoreai')).statusCode).toBe(200);
+    const mc = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(mc.project.intake?.target.hostingProject).toBe('globex-sitecoreai');
+    expect(mc.project.target?.hosting).toBe('Vercel, globex-sitecoreai');
+    await post(`/projects/${projectId}/start`);
+    expect(started).toHaveLength(1);
+    // The run records its status as it starts.
+    await store.append(projectId, [
+      {
+        type: 'project.status',
+        actor: { kind: 'system', id: 'orchestrator' },
+        subject: { kind: 'project', id: projectId },
+        severity: 'routine',
+        data: { status: 'running' },
+      },
+    ]);
+    expect((await put('hostingProject', 'globex-later')).json().error.code).toBe('started');
+  });
+
   it('sets the source site after intake, for the crawl and the agents', async () => {
     const { store } = await start();
     const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
