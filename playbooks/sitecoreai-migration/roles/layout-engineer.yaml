@@ -25,6 +25,10 @@ tools:
       paths:
         - /sitecore/templates/Project/{project}/**
         - '{sitePath}/Presentation/**'
+      # Layouts refer to renderings and to the site's items (Data, the page tree): read only.
+      readPaths:
+        - /sitecore/layout/Renderings/Project/{module}/**
+        - '{sitePath}/**'
   sitecore-cli:
     ops:
       - ser.pull

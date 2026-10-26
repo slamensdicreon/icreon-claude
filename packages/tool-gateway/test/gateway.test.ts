@@ -185,6 +185,23 @@ describe('authorization matrix (every role × every operation)', () => {
 });
 
 describe('resource scope', () => {
+  it('lets the Layout Engineer read renderings and the site, but write only its own paths', async () => {
+    const { gateway } = setup();
+    const go = (op: string, path: string) =>
+      gateway.call(call('layout-engineer', 'sitecore-authoring', op, { path }));
+    expect((await go('item.read', '/sitecore/layout/Renderings/Project/Acme/Hero')).ok).toBe(true);
+    expect((await go('item.read', '/sitecore/content/Acme/Corporate/Data/Heroes')).ok).toBe(true);
+    expect(await go('item.update', '/sitecore/layout/Renderings/Project/Acme/Hero')).toMatchObject({
+      denied: 'out_of_scope',
+    });
+    expect(await go('item.read', '/sitecore/content/Acme/Other/Data')).toMatchObject({
+      denied: 'out_of_scope',
+    });
+    expect((await go('item.update', '/sitecore/content/Acme/Corporate/Presentation/x')).ok).toBe(
+      true,
+    );
+  });
+
   it('keeps the Content Migrator inside Home and Data', async () => {
     const { gateway } = setup();
     const create = (path: unknown) =>

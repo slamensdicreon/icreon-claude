@@ -180,13 +180,17 @@ export class ToolGateway {
     }
     if (grant.scope && spec.pathArgs?.length) {
       const bindings = this.deps.bindings(call.projectId);
+      // Reads may also reach what the role's work refers to; writes stay in its own paths.
+      const paths = spec.mutates
+        ? grant.scope.paths
+        : [...grant.scope.paths, ...(grant.scope.readPaths ?? [])];
       for (const arg of spec.pathArgs) {
         const values = readArg(call.args, arg);
         if (!values.length)
           return deny('out_of_scope', `${call.op} needs "${arg}" to check its scope.`);
         for (const v of values) {
           try {
-            if (!inScope(String(v), grant.scope.paths, bindings)) {
+            if (!inScope(String(v), paths, bindings)) {
               return deny('out_of_scope', `${String(v)} is outside ${call.role}'s scope.`);
             }
           } catch (e) {

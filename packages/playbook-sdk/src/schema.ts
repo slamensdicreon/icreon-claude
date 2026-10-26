@@ -7,7 +7,13 @@ export const ToolGrant = z.object({
   /** Operations from the tool server's catalog, e.g. `item.create`. */
   ops: z.array(z.string().min(1)).min(1),
   /** Resource scope enforced by the tool gateway. `{module}`, `{project}`, `{sitePath}` are bound per project. */
-  scope: z.object({ paths: z.array(z.string()).min(1) }).optional(),
+  scope: z
+    .object({
+      paths: z.array(z.string()).min(1),
+      /** More paths the role may read but never change: what its work refers to. */
+      readPaths: z.array(z.string()).default([]),
+    })
+    .optional(),
 });
 export type ToolGrant = z.infer<typeof ToolGrant>;
 
