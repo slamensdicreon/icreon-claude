@@ -43,6 +43,25 @@ export function costOf(
   return { tokens, usd };
 }
 
+/**
+ * What a turn counts against a role's token budget: new input, cache writes and output in full,
+ * the cached conversation it re-reads at a tenth, as it is billed. A long session re-reads its
+ * context every turn; counting that in full stopped ordinary tasks long before they cost much.
+ */
+export function budgetTokens(
+  usage: Pick<
+    BetaUsage,
+    'input_tokens' | 'output_tokens' | 'cache_read_input_tokens' | 'cache_creation_input_tokens'
+  >,
+): number {
+  return (
+    usage.input_tokens +
+    usage.output_tokens +
+    (usage.cache_creation_input_tokens ?? 0) +
+    Math.ceil((usage.cache_read_input_tokens ?? 0) / 10)
+  );
+}
+
 export function knownModel(model: string): boolean {
   return model in PRICES;
 }

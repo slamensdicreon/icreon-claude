@@ -342,6 +342,25 @@ describe('AgentRuntime', () => {
       kind: 'failed',
       reason: 'Token budget of 400,000 exhausted.',
     });
+
+    // Re-reading cached context counts at a tenth: six turns of 250,000 cached tokens and a
+    // little new work stay inside the same budget, and the spend still reports every token.
+    const cached = Array.from({ length: 6 }, () =>
+      reply(
+        [
+          use('sitecore-authoring__item_read', {
+            path: '/sitecore/layout/Renderings/Project/Acme/Hero',
+          }),
+        ],
+        'tool_use',
+        { input_tokens: 2_000, output_tokens: 1_000, cache_read_input_tokens: 250_000 },
+      ),
+    );
+    cached.push(reply([use('submit_result', { status: 'done', summary: 'ok' })], 'tool_use'));
+    const long = setup(scripted(cached));
+    const done = await long.runtime.run(request('register-hero'));
+    expect(done).toMatchObject({ kind: 'done' });
+    expect(done.spent.tokens).toBeGreaterThan(1_500_000);
   });
 
   it('routes each role to its model, without fallbacks where the model has none', async () => {

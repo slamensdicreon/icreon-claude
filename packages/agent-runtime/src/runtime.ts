@@ -19,7 +19,7 @@ import {
   type ContextProvider,
 } from './context';
 import type { ModelClient } from './model';
-import { costOf, type Spend } from './pricing';
+import { budgetTokens, costOf, type Spend } from './pricing';
 import { SUBMIT, SubmitInput, toolsFor } from './tools';
 
 export interface RunRequest {
@@ -87,12 +87,14 @@ export class AgentRuntime {
     const model = role.model.id;
     const budget = role.budget?.tokens ?? Infinity;
     const spent: Spend = { tokens: 0, usd: 0 };
+    // Against the role's budget: cached context re-read each turn counts at its billed tenth.
+    let charged = 0;
     const messages: BetaMessageParam[] = [{ role: 'user', content: taskBrief(req) }];
     let stepIndex = 0;
     let maxTokens = deps.maxTokensPerTurn ?? DEFAULT_MAX_TOKENS;
 
     for (let turn = 1; turn <= (deps.maxTurns ?? DEFAULT_MAX_TURNS); turn++) {
-      if (spent.tokens >= budget) {
+      if (charged >= budget) {
         return {
           kind: 'failed',
           reason: `Token budget of ${budget.toLocaleString('en-US')} exhausted.`,
@@ -116,6 +118,7 @@ export class AgentRuntime {
       const cost = costOf(response.model || model, response.usage);
       spent.tokens += cost.tokens;
       spent.usd += cost.usd;
+      charged += budgetTokens(response.usage);
       await this.recordTurn(
         req,
         role,
