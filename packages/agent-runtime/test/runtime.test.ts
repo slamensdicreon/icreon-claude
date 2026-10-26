@@ -344,7 +344,7 @@ describe('AgentRuntime', () => {
     });
 
     // Re-reading cached context counts at a tenth: six turns of 250,000 cached tokens and a
-    // little new work stay inside the same budget, and the spend still reports every token.
+    // little new work stay inside the same budget.
     const cached = Array.from({ length: 6 }, () =>
       reply(
         [
@@ -360,7 +360,8 @@ describe('AgentRuntime', () => {
     const long = setup(scripted(cached));
     const done = await long.runtime.run(request('register-hero'));
     expect(done).toMatchObject({ kind: 'done' });
-    expect(done.spent.tokens).toBeGreaterThan(1_500_000);
+    // Six working turns, cache reads at a tenth, and the submit turn (1,000 in, 200 out).
+    expect(done.spent.tokens).toBe(6 * (2_000 + 1_000 + 25_000) + 1_200);
   });
 
   it('routes each role to its model, without fallbacks where the model has none', async () => {

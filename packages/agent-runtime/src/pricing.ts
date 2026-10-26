@@ -15,6 +15,7 @@ const PRICES: Record<string, Price> = {
 };
 
 export interface Spend {
+  /** Billed-equivalent tokens: cached context re-read counts at a tenth (see budgetTokens). */
   tokens: number;
   usd: number;
 }
@@ -33,7 +34,8 @@ export function costOf(
     );
   const read = usage.cache_read_input_tokens ?? 0;
   const write = usage.cache_creation_input_tokens ?? 0;
-  const tokens = usage.input_tokens + usage.output_tokens + read + write;
+  // Task, role and project budgets all count tokens this way, so they track what is billed.
+  const tokens = budgetTokens(usage);
   const usd =
     (usage.input_tokens * p.input +
       write * p.input * 1.25 +
