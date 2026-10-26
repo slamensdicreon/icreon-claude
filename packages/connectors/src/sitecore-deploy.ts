@@ -95,10 +95,25 @@ export class DeployClient {
       `/api/environments/v1/${encodeURIComponent(environmentId)}/obtain-editing-secret`,
     );
     if (r.status !== 200) return { problem: problem(r, 'reading the editing secret') };
-    const secret = (r.body as { apiKey?: string | null } | null)?.apiKey;
-    return secret
-      ? { secret }
-      : { problem: 'The Deploy API returned no editing secret for this environment.' };
+    // The API's definition says { apiKey }; a bare string or another name is taken too.
+    const body = r.body;
+    const fields = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+    const secret =
+      typeof body === 'string' && /^\S{16,}$/.test(body)
+        ? body
+        : [fields.apiKey, fields.editingSecret, fields.secret].find(
+            (v): v is string => typeof v === 'string' && v.length > 0,
+          );
+    if (secret) return { secret };
+    // Field names only, never values: enough to see what the API actually answered.
+    const names = Object.keys(fields);
+    return {
+      problem: `The Deploy API returned no editing secret for this environment (${
+        names.length
+          ? `its answer has ${names.map((n) => `${n}${fields[n] == null || fields[n] === '' ? ' (empty)' : ''}`).join(', ')}`
+          : `its answer was ${typeof body === 'string' ? (body ? 'text' : 'empty') : String(body)}`
+      }). Copy SITECORE_EDITING_SECRET from the Deploy app's Developer settings into the SitecoreAI editing secret credential in Settings instead.`,
+    };
   }
 }
 

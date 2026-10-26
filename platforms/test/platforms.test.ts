@@ -50,6 +50,33 @@ describe('platform packs', () => {
     ).toThrow(IntakeError);
   });
 
+  it('give the head the stored editing secret first, and say why when there is none', async () => {
+    const pack = platforms.get('sitecoreai')!;
+    const target = {
+      cmHost: 'xmc-acme.sitecorecloud.io',
+      siteCollection: 'Brands',
+      site: 'acme',
+      languages: ['en'],
+    };
+    const env = (stored: string | null) =>
+      pack.headEnv!(target, 'production', {
+        credential: async (id) => (id === 'editing-secret' && stored ? { secret: stored } : null),
+        editingSecret: async () => ({ problem: 'The Deploy API returned no editing secret.' }),
+      });
+    const withStored = await env('stored-editing-secret-123');
+    expect(withStored.vars).toContainEqual({
+      key: 'SITECORE_EDITING_SECRET',
+      value: 'stored-editing-secret-123',
+      sensitive: true,
+    });
+    expect((await env(null)).missing).toContain(
+      'the editing secret: The Deploy API returned no editing secret.',
+    );
+    const check = pack.credentials['editing-secret']!.check;
+    expect((await check({ secret: 'short' }, target)).ok).toBe(false);
+    expect((await check({ secret: 'stored-editing-secret-123' }, target)).ok).toBe(true);
+  });
+
   it('read intake recorded before playbooks declared their own as SitecoreAI targets', () => {
     const legacy = IntakeFacts.parse({
       repo: 'slamensdicreon/dycom-ansco-associates',

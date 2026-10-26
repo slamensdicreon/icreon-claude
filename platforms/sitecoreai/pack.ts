@@ -180,6 +180,23 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
         scope: () => 'Context ID (preview)',
         check: (s) => verifyContextId(cfg, { contextId: s.contextId ?? '', label: 'preview' }),
       },
+      // Only when the Deploy API can't provide it: the Director copies it from the Deploy app.
+      'editing-secret': {
+        system: 'SitecoreAI editing secret',
+        description:
+          'SITECORE_EDITING_SECRET from the Deploy app: the environment’s Developer settings, Preview. Only needed when the organization client can’t read it.',
+        fields: [{ key: 'secret', label: 'Editing secret', secret: true }],
+        uses: [],
+        hintField: 'secret',
+        scope: () => 'Editing secret, for the editing host',
+        check: async (s) =>
+          /^\S{16,}$/.test(s.secret ?? '')
+            ? { ok: true, detail: 'Stored. The head uses it as SITECORE_EDITING_SECRET.' }
+            : {
+                ok: false,
+                detail: 'That doesn’t look like an editing secret: copy the whole value.',
+              },
+      },
       'edge-live': {
         system: 'Experience Edge, live',
         description: 'The live Context ID, from the environment’s Developer settings.',
@@ -242,7 +259,9 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
       } else {
         missing.push('the preview Context ID (Experience Edge, preview) was not given');
       }
-      const secret = await deps.editingSecret();
+      // The one the Director stored wins; otherwise the Deploy API's.
+      const stored = (await deps.credential('editing-secret'))?.secret;
+      const secret = stored ? { secret: stored } : await deps.editingSecret();
       if ('secret' in secret)
         vars.push({ key: 'SITECORE_EDITING_SECRET', value: secret.secret, sensitive: true });
       else missing.push(`the editing secret: ${secret.problem}`);

@@ -61,6 +61,7 @@ intake:
       credentials:
         - { id: edge-preview }
         - { id: edge-live }
+        - { id: editing-secret }
   brief:
     - key: personalization
       label: Is Sitecore Personalize licensed and in scope?

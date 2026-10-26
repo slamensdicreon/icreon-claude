@@ -120,6 +120,18 @@ describe('SitecoreDeployToolServer', () => {
     const env = await c.environmentFor('XMC-ACME.sitecorecloud.io');
     expect('id' in env && env.id).toBe('env-1');
     expect(await c.editingSecret('env-1')).toEqual({ secret: 'editing-secret' });
+    // An answer without a secret names its fields, never their values.
+    const empty = new DeployClient('org-jwt', {
+      fetch: (async () =>
+        new Response(JSON.stringify({ apiKey: null, edgeUrl: 'https://edge' }), {
+          status: 200,
+        })) as unknown as typeof globalThis.fetch,
+    });
+    const none = await empty.editingSecret('env-1');
+    expect('problem' in none && none.problem).toMatch(
+      /its answer has apiKey \(empty\), edgeUrl\)\. Copy SITECORE_EDITING_SECRET/,
+    );
+    expect('problem' in none && none.problem).not.toMatch(/https:\/\/edge/);
     expect(await c.editingSecret('env-gone')).toEqual({
       problem: 'The Deploy API answered 404 reading the editing secret.',
     });
