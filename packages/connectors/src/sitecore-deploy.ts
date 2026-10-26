@@ -60,7 +60,8 @@ export class DeployClient {
         `/api/environments/v1?pageNumber=${page}&pageSize=${size}`,
       );
       if (r.status !== 200) return { status: r.status, error: problem(r, 'listing environments') };
-      const body = r.body as { data?: DeployEnvironment[]; totalCount?: number } | DeployEnvironment[];
+      const body = r.body as
+        { data?: DeployEnvironment[]; totalCount?: number } | DeployEnvironment[];
       const list = Array.isArray(body) ? body : (body.data ?? []);
       const hit = list.find((e) => (e.host ?? '').toLowerCase() === want);
       if (hit) return hit;
