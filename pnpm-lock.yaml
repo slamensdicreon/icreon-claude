@@ -480,6 +480,9 @@ importers:
 
   tool-servers/sitecore:
     dependencies:
+      '@lw/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       '@lw/tool-gateway':
         specifier: workspace:*
         version: link:../../packages/tool-gateway

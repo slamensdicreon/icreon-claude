@@ -197,13 +197,16 @@ if (env.AGENTS === 'claude' && vault && credentials) {
               const ref = s.credentials[credentialId]?.reference;
               return ref ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
             },
+            // Says why when it can't: "missing" alone left the team guessing.
             editingSecret: async () => {
               try {
                 const deploy = new DeployClient(await credentials.tokenFor(id, 'sitecore-deploy'));
                 const e = await deploy.environmentFor(sitecoreTarget(s.intake!).cmHost);
-                return 'error' in e ? null : await deploy.editingSecret(e.id);
-              } catch {
-                return null;
+                return 'error' in e ? { problem: e.error } : await deploy.editingSecret(e.id);
+              } catch (err) {
+                return {
+                  problem: `the organization client couldn't be used: ${err instanceof Error ? err.message : String(err)}`,
+                };
               }
             },
           });
@@ -278,7 +281,7 @@ if (
         if (!s?.intake || !pack?.headEnv) return {};
         const { vars } = await pack.headEnv(s.intake.target, 'preview', {
           credential: (c) => credential(id, c),
-          editingSecret: async () => null,
+          editingSecret: async () => ({ problem: 'builds never read the editing secret' }),
         });
         return Object.fromEntries(vars.map((v) => [v.key, v.value]));
       },

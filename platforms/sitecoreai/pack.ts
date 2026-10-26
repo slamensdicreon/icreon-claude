@@ -160,14 +160,16 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
         system: 'SitecoreAI organization client',
         description: 'For the Deploy API; it reaches every environment in the organization.',
         fields: CLIENT_FIELDS,
-        uses: [],
+        // Checked against the project's environment, found by its CM host.
+        uses: ['cmHost'],
         hintField: 'clientSecret',
         scope: () => 'Deploy API, all environments',
-        check: (s) =>
-          verifyOrganizationClient(cfg, {
-            clientId: s.clientId ?? '',
-            clientSecret: s.clientSecret ?? '',
-          }),
+        check: (s, t) =>
+          verifyOrganizationClient(
+            cfg,
+            { clientId: s.clientId ?? '', clientSecret: s.clientSecret ?? '' },
+            sitecoreTarget({ target: t }).cmHost,
+          ),
       },
       'edge-preview': {
         system: 'Experience Edge, preview',
@@ -241,11 +243,9 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
         missing.push('the preview Context ID (Experience Edge, preview) was not given');
       }
       const secret = await deps.editingSecret();
-      if (secret) vars.push({ key: 'SITECORE_EDITING_SECRET', value: secret, sensitive: true });
-      else
-        missing.push(
-          'the editing secret (needs the organization client, to read it from the Deploy API)',
-        );
+      if ('secret' in secret)
+        vars.push({ key: 'SITECORE_EDITING_SECRET', value: secret.secret, sensitive: true });
+      else missing.push(`the editing secret: ${secret.problem}`);
       return { vars, missing };
     },
   };

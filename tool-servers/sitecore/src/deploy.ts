@@ -1,13 +1,14 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
+import { DeployClient, problem } from '@lw/connectors';
+
+export { DEPLOY_API, DeployClient } from '@lw/connectors';
 
 /**
  * The SitecoreAI Deploy API, with the organization automation client: finds the project's
  * environment by its CM host and registers the head as its editing host, so Page builder renders
  * pages through it. Context IDs and secrets it reads never leave the server.
  */
-
-export const DEPLOY_API = 'https://xmclouddeploy-api.sitecorecloud.io';
 
 export interface DeployFacts {
   cmHost: string;
@@ -20,84 +21,6 @@ export interface DeployServerOptions {
   fetch?: typeof fetch;
   api?: string;
 }
-
-interface Environment {
-  id: string;
-  name: string | null;
-  projectName: string | null;
-  host: string | null;
-  provisioningStatus?: string | null;
-}
-
-/** A small client for the endpoints this server and the head's environment need. */
-export class DeployClient {
-  private readonly fetch: typeof fetch;
-  constructor(
-    private readonly token: string,
-    opts: { fetch?: typeof fetch; api?: string } = {},
-  ) {
-    this.fetch = opts.fetch ?? ((...a) => fetch(...a));
-    this.api = opts.api ?? DEPLOY_API;
-  }
-  private readonly api: string;
-
-  async request(method: string, path: string, body?: unknown) {
-    const res = await this.fetch(`${this.api}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        accept: 'application/json',
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    let parsed: unknown = text;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      /* not JSON */
-    }
-    return { status: res.status, body: parsed };
-  }
-
-  /** The environment whose CM host is this one, across every page of the organization's list. */
-  async environmentFor(cmHost: string): Promise<Environment | { error: string; status: number }> {
-    const want = cmHost.toLowerCase();
-    // The API refuses a page size over 50 ("validation errors").
-    const size = 50;
-    for (let page = 1; page <= 40; page++) {
-      const r = await this.request(
-        'GET',
-        `/api/environments/v1?pageNumber=${page}&pageSize=${size}`,
-      );
-      if (r.status !== 200) return { status: r.status, error: problem(r, 'listing environments') };
-      const body = r.body as { data?: Environment[]; totalCount?: number } | Environment[];
-      const list = Array.isArray(body) ? body : (body.data ?? []);
-      const hit = list.find((e) => (e.host ?? '').toLowerCase() === want);
-      if (hit) return hit;
-      if (list.length < size) break;
-    }
-    return { status: 404, error: `No environment in the organization has the CM host ${cmHost}.` };
-  }
-
-  /** The environment's editing secret, which the head checks on every Page builder request. */
-  async editingSecret(environmentId: string): Promise<string | null> {
-    const r = await this.request(
-      'GET',
-      `/api/environments/v1/${encodeURIComponent(environmentId)}/obtain-editing-secret`,
-    );
-    if (r.status !== 200) return null;
-    return (r.body as { apiKey?: string | null }).apiKey ?? null;
-  }
-}
-
-const problem = (r: { status: number; body: unknown }, doing: string) => {
-  const b = r.body as { detail?: string; title?: string } | null;
-  const why = b?.detail ?? b?.title;
-  return `The Deploy API answered ${r.status} ${doing}${why ? `: ${why}` : ''}.`;
-};
 
 const RegisterArgs = z.object({
   /** The head's base URL, e.g. https://acme-site.vercel.app */

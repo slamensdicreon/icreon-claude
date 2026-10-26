@@ -116,8 +116,8 @@ export interface HeadEnvVar {
 export interface HeadEnvDeps {
   /** A project credential's fields, or null when it wasn't given. */
   credential(credentialId: string): Promise<Record<string, string> | null>;
-  /** The platform's editing secret for the project's environment, or null when unavailable. */
-  editingSecret(): Promise<string | null>;
+  /** The platform's editing secret for the project's environment, or why it can't be read. */
+  editingSecret(): Promise<{ secret: string } | { problem: string }>;
 }
 
 export interface PlatformConfig {

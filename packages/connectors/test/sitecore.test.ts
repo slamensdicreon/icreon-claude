@@ -9,7 +9,7 @@ import {
 } from '../src';
 
 /** A fake Sitecore: one valid client, one CM host with two sites, one valid Context ID. */
-function fakeSitecore(opts: { cmStatus?: number; hang?: boolean } = {}) {
+function fakeSitecore(opts: { cmStatus?: number; hang?: boolean; secretStatus?: number } = {}) {
   const calls: { url: string; body: unknown; auth: string | null }[] = [];
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -39,6 +39,26 @@ function fakeSitecore(opts: { cmStatus?: number; hang?: boolean } = {}) {
       if (auth !== 'Bearer jwt') return json(401, {});
       if (opts.cmStatus) return json(opts.cmStatus, {});
       return json(200, { data: { sites: [{ name: 'acme' }, { name: 'acme-careers' }] } });
+    }
+    if (url.startsWith('https://xmclouddeploy-api.sitecorecloud.io/api/environments/v1?')) {
+      if (auth !== 'Bearer jwt') return json(401, {});
+      return json(200, {
+        data: [
+          {
+            id: 'env-1',
+            name: 'production',
+            projectName: 'brands',
+            host: 'xmc-acme.sitecorecloud.io',
+          },
+        ],
+      });
+    }
+    if (
+      url ===
+      'https://xmclouddeploy-api.sitecorecloud.io/api/environments/v1/env-1/obtain-editing-secret'
+    ) {
+      if (opts.secretStatus) return json(opts.secretStatus, { title: 'Forbidden' });
+      return json(200, { apiKey: 'editing-secret' });
     }
     if (
       url.startsWith(
@@ -106,12 +126,32 @@ describe('Sitecore credential checks', () => {
     expect(cmUrl(cfg, 'https://sitecorecloud.io.evil.example')).toMatch(/SitecoreAI host/);
   });
 
-  it('checks an organization client with a token alone', async () => {
-    const { cfg } = fakeSitecore();
-    expect(
-      (await verifyOrganizationClient(cfg, { clientId: 'good-id', clientSecret: 'good-secret' }))
-        .ok,
-    ).toBe(true);
+  it('checks an organization client against the project environment on the Deploy API', async () => {
+    const good = { clientId: 'good-id', clientSecret: 'good-secret' };
+    const ok = await verifyOrganizationClient(
+      fakeSitecore().cfg,
+      good,
+      'xmc-acme.sitecorecloud.io',
+    );
+    expect(ok).toMatchObject({ ok: true });
+    expect(ok.detail).toBe(
+      'Deploy API reached: environment production (brands) for xmc-acme.sitecorecloud.io, and its editing secret can be read.',
+    );
+    const other = await verifyOrganizationClient(
+      fakeSitecore().cfg,
+      good,
+      'xmc-other.sitecorecloud.io',
+    );
+    expect(other).toMatchObject({ ok: false });
+    expect(other.detail).toMatch(/^The token was issued, but no environment .* xmc-other/);
+    const denied = await verifyOrganizationClient(
+      fakeSitecore({ secretStatus: 403 }).cfg,
+      good,
+      'xmc-acme.sitecorecloud.io',
+    );
+    expect(denied.detail).toBe(
+      'Found the environment production (brands) for xmc-acme.sitecorecloud.io, but the Deploy API answered 403 reading the editing secret: Forbidden.',
+    );
   });
 
   it('checks a Context ID against Experience Edge the way the Content SDK sends it', async () => {

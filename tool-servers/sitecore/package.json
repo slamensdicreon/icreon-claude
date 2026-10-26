@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lw/connectors": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
     "zod": "^4.6.7"
   }

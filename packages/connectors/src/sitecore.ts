@@ -9,6 +9,8 @@
  * - Experience Edge: a site query with the Context ID, as the Content SDK sends it.
  */
 
+import { DeployClient } from './sitecore-deploy';
+
 export interface VerifyResult {
   ok: boolean;
   /** One sentence: what worked, or what to fix. */
@@ -25,6 +27,8 @@ export interface VerifyConfig {
   edgeUrl: string;
   /** Host suffixes a CM URL may have: the API calls it from the server, so not any host. */
   cmHostSuffixes: string[];
+  /** The Deploy API; the organization client's check reads the project's environment there. */
+  deployUrl?: string;
   fetch: typeof fetch;
   timeoutMs: number;
 }
@@ -34,6 +38,7 @@ export const SITECORE_DEFAULTS: VerifyConfig = {
   audience: 'https://api.sitecorecloud.io',
   edgeUrl: 'https://edge-platform.sitecorecloud.io',
   cmHostSuffixes: ['.sitecorecloud.io'],
+  deployUrl: 'https://xmclouddeploy-api.sitecorecloud.io',
   fetch: (...a) => fetch(...a),
   timeoutMs: 15_000,
 };
@@ -165,19 +170,37 @@ export async function verifyEnvironmentClient(
   };
 }
 
-/** Organization automation client: a token is the whole check (it spans every environment). */
+/**
+ * Organization automation client: a token, then what the team needs it for on the Deploy API,
+ * finding the project's environment by its CM host and reading its editing secret. A token alone
+ * proved nothing about either.
+ */
 export async function verifyOrganizationClient(
   cfg: VerifyConfig,
   input: { clientId: string; clientSecret: string },
+  cmHost?: string,
 ): Promise<VerifyResult> {
   const t = await sitecoreToken(cfg, input.clientId, input.clientSecret);
   if (!('token' in t)) return t;
+  if (!cmHost) return { ok: true, detail: 'Organization client accepted.', expiresAt: t.expiresAt };
+  const deploy = new DeployClient(t.token, { fetch: cfg.fetch, api: cfg.deployUrl });
+  const env = await deploy.environmentFor(cmHost);
+  if ('error' in env) return { ok: false, detail: `The token was issued, but ${lower(env.error)}` };
+  const label = `${env.name ?? env.id}${env.projectName ? ` (${env.projectName})` : ''}`;
+  const secret = await deploy.editingSecret(env.id);
+  if ('problem' in secret)
+    return {
+      ok: false,
+      detail: `Found the environment ${label} for ${cmHost}, but ${lower(secret.problem)}`,
+    };
   return {
     ok: true,
-    detail: 'Organization client accepted: the Deploy API and every environment’s CM APIs.',
+    detail: `Deploy API reached: environment ${label} for ${cmHost}, and its editing secret can be read.`,
     expiresAt: t.expiresAt,
   };
 }
+
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** Experience Edge Context ID (preview or live): the site list through the Edge content API. */
 export async function verifyContextId(

@@ -98,6 +98,9 @@ describe('SitecoreDeployToolServer', () => {
     const c = new DeployClient('org-jwt', { fetch: fakeDeploy().fetch });
     const env = await c.environmentFor('XMC-ACME.sitecorecloud.io');
     expect('id' in env && env.id).toBe('env-1');
-    expect(await c.editingSecret('env-1')).toBe('editing-secret');
+    expect(await c.editingSecret('env-1')).toEqual({ secret: 'editing-secret' });
+    expect(await c.editingSecret('env-gone')).toEqual({
+      problem: 'The Deploy API answered 404 reading the editing secret.',
+    });
   });
 });
