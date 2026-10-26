@@ -385,9 +385,10 @@ export class IntakeService {
    * Takes a live project back to intake: stops its run, deletes everything it produced (events,
    * documents, screenshots) and keeps what the Director gave it (intake facts, credentials and
    * their checks, the source site). Start runs it again from the beginning, on the catalog's
-   * current version of its playbook.
+   * current version of its playbook. With `newBuildRepo`, it also lets go of the build repository
+   * and the hosting record, so the next run builds in a new repository.
    */
-  async reset(s: ProjectState, confirmation: string): Promise<void> {
+  async reset(s: ProjectState, confirmation: string, newBuildRepo = false): Promise<void> {
     if (s.mode !== 'live') {
       throw new CommandError(409, 'demo_project', 'Only real projects can be reset.');
     }
@@ -415,6 +416,12 @@ export class IntakeService {
     // The run starts over on the catalog's current version of the playbook: its phases and team
     // replace the ones pinned at intake.
     const current = s.playbook && this.deps.catalog.get(s.playbook.id)?.playbook;
+    const released = newBuildRepo ? s.buildRepo?.repo : undefined;
+    const kept = keep.flatMap((e) => {
+      if (!newBuildRepo || e.type !== 'project.updated') return [e];
+      const { buildRepo: _repo, hosting: _hosting, ...rest } = e.data;
+      return Object.keys(rest).length ? [{ ...e, data: rest }] : [];
+    });
     const repinned = (e: (typeof keep)[number]) =>
       e.type === 'project.created' && current
         ? {
@@ -428,7 +435,7 @@ export class IntakeService {
     await store.reset(s.projectId);
     await this.deps.blobs?.deleteProject(s.projectId);
     await store.append(s.projectId, [
-      ...keep.map(
+      ...kept.map(
         (e) =>
           ({
             type: e.type,
@@ -448,7 +455,7 @@ export class IntakeService {
           messageId: randomUUID(),
           kind: 'text',
           title: 'Reset to intake',
-          body: `The Director reset this project. The run so far, its decisions and its documents were removed; the intake facts, credentials and source site are kept.${current ? ` It now runs playbook v${current.manifest.version}.` : ''} Press Start to run it again from the beginning.`,
+          body: `The Director reset this project. The run so far, its decisions and its documents were removed; the intake facts, credentials and source site are kept.${current ? ` It now runs playbook v${current.manifest.version}.` : ''}${released ? ` It no longer builds in ${released}, which is left as it is: create a new build repository in Settings.` : ''} Press Start to run it again from the beginning.`,
         },
       },
     ]);

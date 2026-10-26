@@ -254,7 +254,8 @@
 
 /* Settings: source site, intake values */
 .source-site .row .input,
-.intake-values .row .input {
+.intake-values .row .input,
+.build-repo .row .input {
   min-width: 0;
 }
 .intake-values th {

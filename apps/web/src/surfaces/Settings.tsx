@@ -377,34 +377,50 @@ export function Settings() {
               </button>
             </div>
           )}
-          {!p.demo && p.status !== 'intake' && (
+          {!p.demo && (
             <div className="row">
               <span className="l">
                 Reset to intake{' '}
-                <span className="muted">(stop the run, delete its history and documents)</span>
+                <span className="muted">
+                  (stop the run, delete its history and documents, move to the catalog’s playbook
+                  version)
+                </span>
               </span>
-              <button
-                className="btn sm danger"
-                onClick={() =>
-                  openOverlay(
-                    <TypedConfirm
-                      title="Reset this project to intake?"
-                      body="The run stops now. Its activity, decisions, plan and Workbench documents are deleted. The intake facts, credentials and source site are kept, and Start runs the project again from the beginning. This cannot be undone."
-                      confirmLabel="Reset project"
-                      typed={p.name}
-                      onConfirm={() => {
-                        closeOverlay();
-                        void run(
-                          () => post(`${base}/reset`, { confirmation: p.name }),
-                          `${p.name} reset to intake`,
-                        );
-                      }}
-                    />,
-                  )
-                }
-              >
-                Reset
-              </button>
+              <span className="btn-row">
+                {[false, ...(p.buildRepo ? [true] : [])].map((newBuildRepo) => (
+                  <button
+                    key={String(newBuildRepo)}
+                    className="btn sm danger"
+                    onClick={() =>
+                      openOverlay(
+                        <TypedConfirm
+                          title={
+                            newBuildRepo
+                              ? 'Reset this project and start in a new build repository?'
+                              : 'Reset this project to intake?'
+                          }
+                          body={`The run stops now. Its activity, decisions, plan and Workbench documents are deleted. The intake facts, credentials, brief and source site are kept, and Start runs the project again from the beginning on the catalog’s playbook version.${
+                            newBuildRepo
+                              ? ` The project also lets go of ${p.buildRepo!.repo} and its hosting record; the repository itself is left as it is. Create a new build repository in Settings before Start.`
+                              : ''
+                          } This cannot be undone.`}
+                          confirmLabel="Reset project"
+                          typed={p.name}
+                          onConfirm={() => {
+                            closeOverlay();
+                            void run(
+                              () => post(`${base}/reset`, { confirmation: p.name, newBuildRepo }),
+                              `${p.name} reset to intake`,
+                            );
+                          }}
+                        />,
+                      )
+                    }
+                  >
+                    {newBuildRepo ? 'Reset with a new build repository' : 'Reset'}
+                  </button>
+                ))}
+              </span>
             </div>
           )}
           <div className="row">
@@ -642,6 +658,9 @@ function CredentialForm({
  */
 function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; source: string }) {
   const { projectId, run } = useApp();
+  const suggested = `${source.split('/')[1] ?? 'site'}-sitecoreai`;
+  const [name, setName] = useState('');
+  const valid = !name.trim() || /^[A-Za-z0-9._-]{1,100}$/.test(name.trim());
   return (
     <section className="panel build-repo">
       <h2>Build repository</h2>
@@ -662,17 +681,40 @@ function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; s
       ) : (
         <>
           <p className="cred-miss">Not created yet: building can’t start until it is.</p>
-          <button
-            className="btn sm primary"
-            onClick={() =>
-              void run(
-                () => post(`/projects/${projectId}/build-repo`, {}),
-                'Build repository created.',
-              )
-            }
+          <form
+            className="row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (valid)
+                void run(
+                  () =>
+                    post(
+                      `/projects/${projectId}/build-repo`,
+                      name.trim() ? { name: name.trim() } : {},
+                    ),
+                  'Build repository created.',
+                );
+            }}
           >
-            Create build repository
-          </button>
+            <label className="sr-only" htmlFor="build-repo-name">
+              Repository name
+            </label>
+            <input
+              id="build-repo-name"
+              className="input l"
+              placeholder={suggested}
+              aria-invalid={valid ? undefined : true}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <button className="btn sm primary" type="submit" disabled={!valid}>
+              Create build repository
+            </button>
+          </form>
+          <p className="muted">
+            Leave the name empty for {suggested}. A repository that already has an earlier run’s
+            work in it is never reused: give a new name instead.
+          </p>
         </>
       )}
     </section>

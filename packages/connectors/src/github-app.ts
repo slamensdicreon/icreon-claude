@@ -401,6 +401,35 @@ export class GithubApp {
       }
       await new Promise((res) => setTimeout(res, 2000));
     }
+    // An existing repository is reused only while it is still the untouched starter (a retry
+    // after GitHub was slow to fill it), never with an earlier run's work in it.
+    if (!created) {
+      const branch = info.default_branch ?? 'main';
+      const [branches, commits] = await Promise.all([
+        this.call('GET', `/repos/${full}/branches?per_page=10`, token),
+        this.call(
+          'GET',
+          `/repos/${full}/commits?sha=${encodeURIComponent(branch)}&per_page=2`,
+          token,
+        ),
+      ]);
+      const others = ((branches.body as { name: string }[] | null) ?? [])
+        .map((b) => b.name)
+        .filter((b) => b !== branch);
+      const history = (commits.body as unknown[] | null) ?? [];
+      if (
+        branches.status !== 200 ||
+        commits.status !== 200 ||
+        others.length ||
+        history.length > 1
+      ) {
+        throw new CommandError(
+          409,
+          'repo_used',
+          `${full} already has work in it${others.length ? ` (branches ${others.join(', ')})` : ''}, so it isn't a fresh starter. Choose another name.`,
+        );
+      }
+    }
     return {
       repo: full,
       branch: info.default_branch ?? 'main',

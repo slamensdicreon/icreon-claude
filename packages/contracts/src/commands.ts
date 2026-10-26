@@ -113,8 +113,15 @@ export const ChangeSourceSite = z.object({
 });
 export type ChangeSourceSite = z.infer<typeof ChangeSourceSite>;
 
-/** POST /projects/:id/reset — back to intake. `confirmation` is the project name. */
-export const ResetProject = z.object({ confirmation: z.string() });
+/**
+ * POST /projects/:id/reset — back to intake. `confirmation` is the project name. With
+ * `newBuildRepo`, the project lets go of its build repository and hosting record, so the next
+ * run builds in a new repository (the old one is left as it is).
+ */
+export const ResetProject = z.object({
+  confirmation: z.string(),
+  newBuildRepo: z.boolean().default(false),
+});
 export type ResetProject = z.infer<typeof ResetProject>;
 
 /**

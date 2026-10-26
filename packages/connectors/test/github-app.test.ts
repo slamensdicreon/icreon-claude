@@ -10,7 +10,7 @@ const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 function setup(opts: {
   administration?: string;
   selection?: string;
-  exists?: 'starter' | 'other';
+  exists?: 'starter' | 'other' | 'used';
 }) {
   const calls: string[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status });
@@ -39,6 +39,15 @@ function setup(opts: {
             private: true,
           })
         : json(404, {});
+    if (p === '/repos/lw-build/acme-site-sitecoreai/branches')
+      return json(
+        200,
+        opts.exists === 'used'
+          ? [{ name: 'main' }, { name: 'launchworks/hero' }]
+          : [{ name: 'main' }],
+      );
+    if (p === '/repos/lw-build/acme-site-sitecoreai/commits')
+      return json(200, opts.exists === 'used' ? [{}, {}] : [{}]);
     if (p === `/repos/${STARTER.owner}/${STARTER.repo}/generate`) {
       generated = true;
       return json(201, {
@@ -50,7 +59,7 @@ function setup(opts: {
     if (p === `/repos/lw-build/acme-site-sitecoreai/contents/${STARTER.appPath}/package.json`) {
       // GitHub fills a generated repository in the background.
       if (generated) return ++probes < 2 ? json(404, {}) : json(200, {});
-      return opts.exists === 'starter' ? json(200, {}) : json(404, {});
+      return opts.exists === 'other' ? json(404, {}) : json(200, {});
     }
     return json(404, {});
   }) as typeof globalThis.fetch;
@@ -105,6 +114,10 @@ describe('build repository', () => {
     await expect(
       setup({ exists: 'other' }).app.createBuildRepo('lw-build', 'acme-site-sitecoreai', 'Acme'),
     ).rejects.toThrow("isn't built from Sitecore/xmcloud-starter-js");
+    // An earlier run's repository is never handed to a new one.
+    await expect(
+      setup({ exists: 'used' }).app.createBuildRepo('lw-build', 'acme-site-sitecoreai', 'Acme'),
+    ).rejects.toThrow('already has work in it (branches launchworks/hero)');
   });
 
   it('says what the organization installation is missing', async () => {

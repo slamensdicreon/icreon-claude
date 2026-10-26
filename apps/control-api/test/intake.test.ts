@@ -402,6 +402,49 @@ describe('New Project wizard', () => {
     expect(after.data.roster.length).toBeGreaterThan(0);
   });
 
+  it('resets from intake too, and can let go of the build repository', async () => {
+    const { store } = await start({ orchestrator: true });
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    const repo = {
+      repo: 'lw-build/globex-sitecoreai',
+      branch: 'main',
+      installationId: 7,
+      url: 'https://github.com/lw-build/globex-sitecoreai',
+      template: 'Sitecore/xmcloud-starter-js',
+      appPath: 'examples/basic-nextjs',
+    };
+    await store.append(projectId, [
+      {
+        type: 'project.updated',
+        actor: { kind: 'director', id: 'director' },
+        subject: { kind: 'project', id: projectId },
+        severity: 'notable',
+        data: {
+          buildRepo: repo,
+          hosting: { provider: 'vercel', project: 'globex-website', url: null },
+          sourceUrl: 'https://anscollc.com/',
+        },
+      },
+    ]);
+    const reset = (newBuildRepo: boolean) =>
+      post(`/projects/${projectId}/reset`, { confirmation: 'Globex site', newBuildRepo });
+    const summary = async () =>
+      MissionControlSnapshot.parse(
+        (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+      ).project;
+
+    expect((await reset(false)).statusCode).toBe(200);
+    expect((await summary()).buildRepo?.repo).toBe(repo.repo);
+
+    expect((await reset(true)).statusCode).toBe(200);
+    const p = await summary();
+    expect(p).toMatchObject({ status: 'intake', buildRepo: null, hosting: null });
+    expect(p.sourceUrl).toBe('https://anscollc.com/');
+    expect((await store.read(projectId)).at(-1)).toMatchObject({
+      data: { body: expect.stringMatching(/no longer builds in lw-build\/globex-sitecoreai/) },
+    });
+  });
+
   it('adds a credential intake did not have, and replaces one, only once it checks out', async () => {
     const { store } = await start();
     const { projectId } = (await post('/projects', intake())).json() as { projectId: string };

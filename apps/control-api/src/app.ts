@@ -576,7 +576,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!deps.intake) {
       return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
     }
-    await deps.intake.reset(s, ResetProject.parse(req.body).confirmation);
+    const { confirmation, newBuildRepo } = ResetProject.parse(req.body);
+    await deps.intake.reset(s, confirmation, newBuildRepo);
     const seq = await store.head(s.projectId);
     await projections.catchUp(s.projectId);
     const r: CommandResult = { accepted: true, seq };
