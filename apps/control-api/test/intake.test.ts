@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import {
   MissionControlSnapshot,
   SettingsSnapshot,
+  type NewEvent,
   type PlaybookSummary,
   type ProjectIntakeInput,
   type ProjectListItem,
@@ -340,6 +341,21 @@ describe('New Project wizard', () => {
   it('resets a started project to intake, keeping what the Director gave it', async () => {
     const { store, stopped, blobs } = await start({ orchestrator: true });
     const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    // Created on an older version of the playbook, with a smaller team.
+    const created = (await store.read(projectId)).map((e) => ({
+      type: e.type,
+      actor: e.actor,
+      subject: e.subject,
+      severity: e.severity,
+      at: e.ts,
+      data:
+        e.type === 'project.created'
+          ? { ...e.data, playbook: { ...e.data.playbook, version: '0.1.0' }, roster: [] }
+          : e.data,
+    })) as NewEvent[];
+    const team = (await store.read(projectId))[0]!;
+    await store.reset(projectId);
+    await store.append(projectId, created);
     await post(`/projects/${projectId}/start`);
     // What a run leaves behind: a status change, a step, a stored document.
     await store.append(projectId, [
@@ -378,6 +394,12 @@ describe('New Project wizard', () => {
       (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
     );
     expect(mc.project).toMatchObject({ status: 'intake', sourceUrl: 'https://anscollc.com/' });
+    // Back on the catalog's version, with its whole team.
+    const after = (await store.read(projectId))[0]!;
+    if (after.type !== 'project.created' || team.type !== 'project.created') throw new Error();
+    expect(after.data.playbook).toEqual(team.data.playbook);
+    expect(after.data.roster).toEqual(team.data.roster);
+    expect(after.data.roster.length).toBeGreaterThan(0);
   });
 
   it('adds a credential intake did not have, and replaces one, only once it checks out', async () => {
