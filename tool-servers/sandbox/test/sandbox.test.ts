@@ -46,6 +46,54 @@ const facts = async () => ({
 });
 
 describe('working copies', () => {
+  it('generates .sitecore before type-check, as the starter build does', async () => {
+    const scripts = {
+      'sitecore-tools:generate-map': 'x',
+      'sitecore-tools:build': 'x',
+      'next:build': 'x',
+      'type-check': 'x',
+      build: 'x',
+    };
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/package.json': JSON.stringify({ scripts }) },
+      (cmd, args) =>
+        cmd === 'git' && args[0] === 'rev-parse' ? { exitCode: 0, output: 'abc1234\n' } : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('exec.build', {}, ctx);
+    expect(fake.runs.filter((x) => x.cmd === 'npm').map((x) => x.args[1])).toEqual([
+      'sitecore-tools:generate-map',
+      'sitecore-tools:build',
+      'type-check',
+      'next:build',
+    ]);
+    expect(r.summary).toBe(
+      'Build green: type-check and build passed (nothing uncommitted, at abc1234)',
+    );
+  });
+
+  it('refuses to write files git ignores, which would never be committed', async () => {
+    const fake = fakeBox({}, (cmd, args) =>
+      cmd === 'git' && args[0] === 'check-ignore'
+        ? { exitCode: 0, output: 'examples/basic-nextjs/.sitecore/sites.json\n' }
+        : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call(
+      'fs.write',
+      {
+        files: [
+          { path: 'examples/basic-nextjs/.sitecore/sites.json', content: '[]' },
+          { path: 'examples/basic-nextjs/src/components/CardGrid.tsx', content: 'x' },
+        ],
+      },
+      ctx,
+    );
+    expect(r.code).toBe(422);
+    expect(r.summary).toMatch(/git ignores examples\/basic-nextjs\/.sitecore\/sites.json/);
+    expect(fake.files['examples/basic-nextjs/src/components/CardGrid.tsx']).toBeUndefined();
+  });
+
   it('installs with npm install when the lock file is behind package.json, and says to commit it', async () => {
     const fake = fakeBox({ 'examples/basic-nextjs/package-lock.json': '{}' }, (cmd, args) =>
       cmd === 'npm' && args[0] === 'ci'

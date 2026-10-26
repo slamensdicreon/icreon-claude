@@ -112,7 +112,7 @@ export class GithubToolServer implements ToolServer {
     },
     'code.search': {
       description:
-        'Search the repository code (GitHub code search on the default branch): returns matching file paths and fragments. Example queries: "getServerSideProps", "fetch(\'/api", "useSession".',
+        'Search the repository code with GitHub code search: returns matching file paths and fragments. It covers only the default branch (main), so it never finds work on launchworks/* branches: read those with repo.read and `ref`. Example queries: "getServerSideProps", "fetch(\'/api", "useSession".',
       inputSchema: {
         type: 'object',
         properties: { query: { type: 'string' } },
