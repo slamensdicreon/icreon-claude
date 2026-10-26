@@ -178,6 +178,7 @@ describe('authorization matrix (every role × every operation)', () => {
     expect(gateway.allowedOperations('research-agent')).toEqual([
       { server: 'research', op: 'web.search' },
       { server: 'research', op: 'web.fetch' },
+      { server: 'artifacts', op: 'read' },
       { server: 'artifacts', op: 'write' },
     ]);
   });

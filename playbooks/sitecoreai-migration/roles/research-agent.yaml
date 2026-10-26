@@ -21,6 +21,7 @@ tools:
       - web.fetch
   artifacts:
     ops:
+      - read
       - write
 acceptance:
   - validator:notes.cited

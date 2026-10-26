@@ -65,14 +65,19 @@ export class DeployClient {
   /** The environment whose CM host is this one, across every page of the organization's list. */
   async environmentFor(cmHost: string): Promise<Environment | { error: string; status: number }> {
     const want = cmHost.toLowerCase();
-    for (let page = 1; page <= 20; page++) {
-      const r = await this.request('GET', `/api/environments/v1?pageNumber=${page}&pageSize=100`);
+    // The API refuses a page size over 50 ("validation errors").
+    const size = 50;
+    for (let page = 1; page <= 40; page++) {
+      const r = await this.request(
+        'GET',
+        `/api/environments/v1?pageNumber=${page}&pageSize=${size}`,
+      );
       if (r.status !== 200) return { status: r.status, error: problem(r, 'listing environments') };
       const body = r.body as { data?: Environment[]; totalCount?: number } | Environment[];
       const list = Array.isArray(body) ? body : (body.data ?? []);
       const hit = list.find((e) => (e.host ?? '').toLowerCase() === want);
       if (hit) return hit;
-      if (list.length < 100) break;
+      if (list.length < size) break;
     }
     return { status: 404, error: `No environment in the organization has the CM host ${cmHost}.` };
   }

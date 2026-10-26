@@ -49,6 +49,10 @@ tools:
         - /sitecore/templates/Project/{project}/**
         - /sitecore/layout/Renderings/Project/{module}/**
         - /sitecore/media library/Project/{project}/**
+  artifacts:
+    ops:
+      - read
+      - write
 acceptance:
   - validator:smoke.green
   - validator:edge.published

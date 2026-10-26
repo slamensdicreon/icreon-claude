@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +26,26 @@ describe('sitecoreai-migration playbook', () => {
         .sort(),
     ).toEqual(['content', 'discovery', 'engineering', 'quality']);
     expect(r.find((a) => a.agentId === 'chief-of-staff')?.activePhases).toHaveLength(11);
+  });
+
+  it('grants every tool a role prompt tells the agent to use', async () => {
+    const pb = await loadPlaybook(DIR);
+    const servers = new Set(pb.roles.flatMap((r) => Object.keys(r.tools)));
+    const missing: string[] = [];
+    for (const role of pb.roles) {
+      let prompt: string;
+      try {
+        prompt = await readFile(join(DIR, 'prompts', `${role.role}.md`), 'utf8');
+      } catch {
+        continue;
+      }
+      // Tool operations are written `server.op` in prompts.
+      for (const [, server, op] of prompt.matchAll(/`([a-z][a-z-]*)\.([a-z][a-z.-]*[a-z])`/g)) {
+        if (servers.has(server!) && !role.tools[server!]?.ops.includes(op!))
+          missing.push(`${role.role}: ${server}.${op}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   it('catches broken reporting lines and unknown phases', async () => {

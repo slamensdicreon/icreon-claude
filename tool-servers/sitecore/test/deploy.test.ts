@@ -11,6 +11,9 @@ function fakeDeploy() {
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer org-jwt');
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
+    // As the real API: a page size over 50 is refused with validation errors.
+    if (url.pathname === '/api/environments/v1' && Number(url.searchParams.get('pageSize')) > 50)
+      return json(400, { title: 'One or more validation errors occurred.' });
     if (url.pathname === '/api/environments/v1')
       return json(200, {
         data: [
