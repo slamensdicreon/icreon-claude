@@ -211,6 +211,16 @@ if (env.AGENTS === 'claude' && vault && credentials) {
             },
           });
         },
+        // Agents' commits aren't Vercel team members: Vercel's own Git deployments of them are
+        // refused and notify the team. Deployments go through these tools instead.
+        prepare: async (id) => {
+          const s = await project(id);
+          if (!s?.buildRepo || !github) return 'no build repository to configure';
+          const done = await github.ensureNoGitDeploys(s.buildRepo);
+          return done === 'added'
+            ? `turned off automatic Git deployments (${s.buildRepo.appPath}/vercel.json on ${s.buildRepo.branch})`
+            : 'automatic Git deployments already off';
+        },
         record: async (id, r) => {
           const s = await project(id);
           const name = s?.intake ? text(s.intake.target, 'hostingProject') : '';

@@ -53,6 +53,11 @@ export interface HostingServerOptions {
     target: 'preview' | 'production',
   ): Promise<{ vars: EnvVar[]; missing: string[] }>;
   /** Records the Vercel project and each ready deployment on the project. */
+  /**
+   * Readies the build repository for hosting (turns off Vercel's automatic Git deployments);
+   * says what it did, or throws.
+   */
+  prepare?(projectId: string): Promise<string>;
   record(projectId: string, r: HostingRecord): Promise<void>;
   fetch?: typeof fetch;
   api?: string;
@@ -170,6 +175,12 @@ export class HostingToolServer implements ToolServer {
   }
 
   private async create(projectId: string, facts: HostingFacts): Promise<ToolResult> {
+    let prepared: string | null = null;
+    try {
+      prepared = (await this.opts.prepare?.(projectId)) ?? null;
+    } catch (err) {
+      prepared = `couldn't turn off automatic Git deployments: ${err instanceof Error ? err.message : String(err)}`;
+    }
     const name = encodeURIComponent(facts.project);
     let p = await this.request('GET', `/v9/projects/${name}`);
     let created = false;
@@ -231,11 +242,14 @@ export class HostingToolServer implements ToolServer {
         repository: v.link ? `${v.link.org}/${v.link.repo}` : null,
         rootDirectory: v.rootDirectory,
         protection: v.ssoProtection ? 'on' : 'off',
+        repositoryConfig: prepared,
         problems,
       },
-      summary: problems.length
-        ? `${v.name}: ${problems.join('; ')}`
-        : `${created ? 'Created' : 'Checked'} Vercel project ${v.name}, linked to ${facts.repo} (${facts.rootDirectory}), protection off`,
+      summary: `${
+        problems.length
+          ? `${v.name}: ${problems.join('; ')}`
+          : `${created ? 'Created' : 'Checked'} Vercel project ${v.name}, linked to ${facts.repo} (${facts.rootDirectory}), protection off`
+      }${prepared ? `; ${prepared}` : ''}`,
     };
   }
 

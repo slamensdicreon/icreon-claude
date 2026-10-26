@@ -2,7 +2,7 @@ import type { SecretVault } from '@lw/events';
 import { MemoryIntegrationStore } from '@lw/events';
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { GithubApp, STARTER } from '../src';
+import { GithubApp, NO_GIT_DEPLOYS_MESSAGE, STARTER } from '../src';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
@@ -10,8 +10,9 @@ const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
 function setup(opts: {
   administration?: string;
   selection?: string;
-  exists?: 'starter' | 'other' | 'used';
+  exists?: 'starter' | 'other' | 'used' | 'configured';
 }) {
+  const written: Record<string, unknown>[] = [];
   const calls: string[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status });
   let generated = false;
@@ -47,7 +48,32 @@ function setup(opts: {
           : [{ name: 'main' }],
       );
     if (p === '/repos/lw-build/acme-site-sitecoreai/commits')
-      return json(200, opts.exists === 'used' ? [{}, {}] : [{}]);
+      return json(
+        200,
+        opts.exists === 'used'
+          ? [{ commit: { message: 'Add hero' } }, { commit: { message: 'Initial commit' } }]
+          : opts.exists === 'configured'
+            ? [
+                { commit: { message: NO_GIT_DEPLOYS_MESSAGE } },
+                { commit: { message: 'Initial commit' } },
+              ]
+            : [{ commit: { message: 'Initial commit' } }],
+      );
+    if (p === '/repos/lw-build/acme-site-sitecoreai/contents/examples/basic-nextjs/vercel.json') {
+      if (method === 'PUT') {
+        const b = JSON.parse(String(init!.body)) as { content: string };
+        written.push(JSON.parse(Buffer.from(b.content, 'base64').toString('utf8')));
+        return json(201, {});
+      }
+      return opts.exists === 'configured'
+        ? json(200, {
+            sha: 's1',
+            content: Buffer.from(JSON.stringify({ git: { deploymentEnabled: false } })).toString(
+              'base64',
+            ),
+          })
+        : json(404, {});
+    }
     if (p === `/repos/${STARTER.owner}/${STARTER.repo}/generate`) {
       generated = true;
       return json(201, {
@@ -85,12 +111,12 @@ function setup(opts: {
     owner: { kind: 'user' },
     fetch,
   });
-  return { app, calls };
+  return { app, calls, written };
 }
 
 describe('build repository', () => {
   it('generates it from the starter and waits until the app can be read back', async () => {
-    const { app, calls } = setup({});
+    const { app, calls, written } = setup({});
     const r = await app.createBuildRepo('lw-build', 'acme-site-sitecoreai', 'Acme');
     expect(r).toEqual({
       repo: 'lw-build/acme-site-sitecoreai',
@@ -101,6 +127,13 @@ describe('build repository', () => {
       appPath: 'examples/basic-nextjs',
     });
     expect(calls.filter((c) => c.endsWith('/package.json'))).toHaveLength(2);
+    // Vercel's own Git deployments are off: deployments go through the hosting tools.
+    expect(written).toEqual([
+      {
+        $schema: 'https://openapi.vercel.sh/vercel.json',
+        git: { deploymentEnabled: false },
+      },
+    ]);
   }, 15_000);
 
   it('reuses an existing starter repository and refuses anything else', async () => {
@@ -114,6 +147,12 @@ describe('build repository', () => {
     await expect(
       setup({ exists: 'other' }).app.createBuildRepo('lw-build', 'acme-site-sitecoreai', 'Acme'),
     ).rejects.toThrow("isn't built from Sitecore/xmcloud-starter-js");
+    // Our own vercel.json commit doesn't make a starter "used", and isn't written twice.
+    const configured = setup({ exists: 'configured' });
+    await expect(
+      configured.app.createBuildRepo('lw-build', 'acme-site-sitecoreai', 'Acme'),
+    ).resolves.toMatchObject({ repo: 'lw-build/acme-site-sitecoreai' });
+    expect(configured.written).toEqual([]);
     // An earlier run's repository is never handed to a new one.
     await expect(
       setup({ exists: 'used' }).app.createBuildRepo('lw-build', 'acme-site-sitecoreai', 'Acme'),

@@ -5,6 +5,10 @@ import type { BuildRepo } from '@lw/contracts';
 import type { VerifyResult } from './sitecore';
 
 /** Sitecore's starter, and the Next.js app inside it that becomes the site. */
+/** The one commit Launchworks adds to a fresh starter: see ensureNoGitDeploys. */
+export const NO_GIT_DEPLOYS_MESSAGE =
+  'Deploy through Launchworks only: no automatic Vercel deployments on commits';
+
 export const STARTER = {
   owner: 'Sitecore',
   repo: 'xmcloud-starter-js',
@@ -409,14 +413,17 @@ export class GithubApp {
         this.call('GET', `/repos/${full}/branches?per_page=10`, token),
         this.call(
           'GET',
-          `/repos/${full}/commits?sha=${encodeURIComponent(branch)}&per_page=2`,
+          `/repos/${full}/commits?sha=${encodeURIComponent(branch)}&per_page=3`,
           token,
         ),
       ]);
       const others = ((branches.body as { name: string }[] | null) ?? [])
         .map((b) => b.name)
         .filter((b) => b !== branch);
-      const history = (commits.body as unknown[] | null) ?? [];
+      // The starter's commit, and at most Launchworks' own vercel.json commit.
+      const history = ((commits.body as { commit?: { message?: string } }[] | null) ?? []).filter(
+        (c) => c.commit?.message !== NO_GIT_DEPLOYS_MESSAGE,
+      );
       if (
         branches.status !== 200 ||
         commits.status !== 200 ||
@@ -430,6 +437,12 @@ export class GithubApp {
         );
       }
     }
+    await this.ensureNoGitDeploys({
+      repo: full,
+      branch: info.default_branch ?? 'main',
+      installationId: i.id,
+      appPath: STARTER.appPath,
+    });
     return {
       repo: full,
       branch: info.default_branch ?? 'main',
@@ -438,6 +451,56 @@ export class GithubApp {
       template: `${STARTER.owner}/${STARTER.repo}`,
       appPath: STARTER.appPath,
     };
+  }
+
+  /**
+   * The build repository's vercel.json turns off Vercel's automatic deployments on commits.
+   * Deployments go through Launchworks' hosting tools (the API), as approved releases; Vercel's
+   * own Git deployments of agents' commits are refused anyway (the commit author isn't a team
+   * member) and notify the team each time. Idempotent; the client can turn them back on.
+   */
+  async ensureNoGitDeploys(repo: {
+    repo: string;
+    branch: string;
+    installationId: number;
+    appPath: string;
+  }): Promise<'added' | 'present'> {
+    const token = `token ${await this.installationToken(repo.installationId, [repo.repo.split('/')[1]!])}`;
+    const path = `${repo.appPath}/vercel.json`;
+    const url = `/repos/${repo.repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+    const r = await this.call('GET', `${url}?ref=${encodeURIComponent(repo.branch)}`, token);
+    let config: Record<string, unknown> = {};
+    let sha: string | undefined;
+    if (r.status === 200) {
+      const f = r.body as { content?: string; sha: string };
+      sha = f.sha;
+      try {
+        config = JSON.parse(Buffer.from(f.content ?? '', 'base64').toString('utf8')) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        throw new CommandError(409, 'bad_vercel_json', `${repo.repo}/${path} isn't valid JSON.`);
+      }
+      if ((config.git as { deploymentEnabled?: unknown } | undefined)?.deploymentEnabled === false)
+        return 'present';
+    } else if (r.status !== 404) {
+      throw new CommandError(503, 'github_error', `GitHub answered ${r.status} reading ${path}.`);
+    }
+    const next = {
+      $schema: 'https://openapi.vercel.sh/vercel.json',
+      ...config,
+      git: { ...(config.git as object | undefined), deploymentEnabled: false },
+    };
+    const put = await this.call('PUT', url, token, {
+      message: NO_GIT_DEPLOYS_MESSAGE,
+      content: Buffer.from(`${JSON.stringify(next, null, 2)}\n`).toString('base64'),
+      branch: repo.branch,
+      ...(sha ? { sha } : {}),
+    });
+    if (put.status !== 200 && put.status !== 201)
+      throw new CommandError(503, 'github_error', `GitHub answered ${put.status} writing ${path}.`);
+    return 'added';
   }
 
   private readonly tokens = new Map<string, { token: string; expiresAt: number }>();
