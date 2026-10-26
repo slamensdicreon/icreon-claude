@@ -30,11 +30,24 @@ const TreeArgs = z.object({
   path: z.string().max(500).optional(),
   ref: z.string().max(200).optional(),
 });
+/** Paths as given: one string, or a list; a list run together with commas or new lines splits. */
+const splitPaths = (v: unknown) => {
+  const list = typeof v === 'string' ? [v] : v;
+  if (!Array.isArray(list)) return v;
+  return list.flatMap((p: unknown) =>
+    typeof p === 'string'
+      ? p
+          .split(/[,\n]/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+      : [p],
+  );
+};
 const ReadArgs = z.object({
-  // One path is accepted as a string too.
+  // Split rather than read as one path that doesn't exist.
   paths: z.preprocess(
-    (v) => (typeof v === 'string' ? [v] : v),
-    z.array(z.string().min(1).max(500)).min(1).max(20),
+    splitPaths,
+    z.array(z.string().min(1).max(500)).min(1).max(20, 'at most 20 paths per call'),
   ),
   ref: z.string().max(200).optional(),
 });
@@ -84,7 +97,7 @@ export class GithubToolServer implements ToolServer {
     },
     'repo.read': {
       description:
-        'Read up to 20 files (UTF-8 text, up to 200 KB each) at the project branch, or at `ref`. Use paths from tree.read.',
+        'Read up to 20 files (UTF-8 text, up to 200 KB each) at the project branch, or at `ref`. Use file paths from tree.read, one per array item; a folder path answers with the files in it.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -234,7 +247,13 @@ export class GithubToolServer implements ToolServer {
         if (r.status === 404) return { path: clean, error: 'not found' };
         if (r.status !== 200) return { path: clean, error: `GitHub answered ${r.status}` };
         const f = r.body as { type: string; size: number; encoding?: string; content?: string };
-        if (Array.isArray(r.body)) return { path: clean, error: 'is a directory' };
+        if (Array.isArray(r.body)) {
+          // A folder: say what is in it, so the next call can read its files.
+          const inside = (r.body as { path: string; type: string }[]).map((e) =>
+            e.type === 'dir' ? `${e.path}/` : e.path,
+          );
+          return { path: clean, error: 'is a folder, not a file', contains: inside };
+        }
         if (f.size > MAX_FILE_BYTES) return { path: clean, error: `too large (${f.size} bytes)` };
         if (f.encoding !== 'base64' || f.content === undefined)
           return { path: clean, error: 'no inline content' };
@@ -244,10 +263,15 @@ export class GithubToolServer implements ToolServer {
       }),
     );
     const ok = files.filter((f) => 'content' in f).length;
+    // Why a path wasn't read, in the step itself: reviewers and retries see the summary.
+    const failed = files.flatMap((f) => ('error' in f ? [`${f.path}: ${f.error}`] : []));
+    const why = failed.length
+      ? ` (${failed.slice(0, 5).join('; ')}${failed.length > 5 ? `; and ${failed.length - 5} more` : ''})`
+      : '';
     return {
       code: 200,
       body: { ref, files },
-      summary: `Read ${ok} of ${files.length} file${files.length === 1 ? '' : 's'} from ${facts.repo}`,
+      summary: `Read ${ok} of ${files.length} file${files.length === 1 ? '' : 's'} from ${facts.repo}${why}`,
     };
   }
 

@@ -21,6 +21,11 @@ function fakeGithub() {
           { path: 'node_modules/x.js', type: 'blob', size: 1 },
         ],
       });
+    if (p === '/contents/src')
+      return json(200, [
+        { path: 'src/Hero.tsx', type: 'file' },
+        { path: 'src/lib', type: 'dir' },
+      ]);
     if (p === '/contents/src/Hero.tsx')
       return json(200, {
         type: 'file',
@@ -74,6 +79,17 @@ describe('GithubToolServer', () => {
         { path: 'missing.ts', error: 'not found' },
       ],
     });
+    expect(read.summary).toBe('Read 1 of 2 files from acme/site (missing.ts: not found)');
+
+    // A list run together in one string is split; a folder says what is in it.
+    const loose = await server.call('repo.read', { paths: 'src/Hero.tsx, src\n' }, ctx);
+    expect(loose.body).toMatchObject({
+      files: [
+        { path: 'src/Hero.tsx', content: 'export const Hero = () => null;' },
+        { path: 'src', error: 'is a folder, not a file', contains: ['src/Hero.tsx', 'src/lib/'] },
+      ],
+    });
+    expect(loose.summary).toBe('Read 1 of 2 files from acme/site (src: is a folder, not a file)');
   });
 
   it('commits to a new launchworks branch from the project branch, never to others', async () => {
