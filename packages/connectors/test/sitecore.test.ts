@@ -44,11 +44,21 @@ function fakeSitecore(opts: { cmStatus?: number; hang?: boolean; secretStatus?: 
       if (auth !== 'Bearer jwt') return json(401, {});
       return json(200, {
         data: [
+          // An editing host is listed first, with the CM host of the environment it serves.
+          {
+            id: 'eh-1',
+            name: 'basic-nextjs',
+            projectName: 'brands',
+            host: 'xmc-acme.sitecorecloud.io',
+            type: 'eh',
+            editingHostEnvironmentDetails: { cmEnvironmentId: 'env-1' },
+          },
           {
             id: 'env-1',
             name: 'production',
             projectName: 'brands',
             host: 'xmc-acme.sitecorecloud.io',
+            type: 'cm',
           },
         ],
       });

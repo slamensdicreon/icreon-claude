@@ -12,7 +12,15 @@ export interface DeployEnvironment {
   projectName: string | null;
   host: string | null;
   provisioningStatus?: string | null;
+  /** "cm" or an editing host's type; editing hosts are listed as environments too. */
+  type?: string | null;
+  /** Set on an editing host: the CM environment it renders for. */
+  editingHostEnvironmentDetails?: { cmEnvironmentId?: string | null } | null;
 }
+
+/** An editing host listed among the environments: it has no editing secret of its own. */
+const isEditingHost = (e: DeployEnvironment) =>
+  Boolean(e.editingHostEnvironmentDetails?.cmEnvironmentId) || /^(eh|editing)/i.test(e.type ?? '');
 
 /** A small client for the endpoints this server and the head's environment need. */
 export class DeployClient {
@@ -47,11 +55,16 @@ export class DeployClient {
     return { status: res.status, body: parsed };
   }
 
-  /** The environment whose CM host is this one, across every page of the organization's list. */
+  /**
+   * The CM environment whose host is this one. Editing hosts are listed as environments too and
+   * can carry the same host, so the whole list is read and the CM environment preferred; an
+   * editing host alone leads to the CM environment it renders for.
+   */
   async environmentFor(
     cmHost: string,
   ): Promise<DeployEnvironment | { error: string; status: number }> {
     const want = cmHost.toLowerCase();
+    const all: DeployEnvironment[] = [];
     // The API refuses a page size over 50 ("validation errors").
     const size = 50;
     for (let page = 1; page <= 40; page++) {
@@ -63,10 +76,15 @@ export class DeployClient {
       const body = r.body as
         { data?: DeployEnvironment[]; totalCount?: number } | DeployEnvironment[];
       const list = Array.isArray(body) ? body : (body.data ?? []);
-      const hit = list.find((e) => (e.host ?? '').toLowerCase() === want);
-      if (hit) return hit;
+      all.push(...list);
       if (list.length < size) break;
     }
+    const hits = all.filter((e) => (e.host ?? '').toLowerCase() === want);
+    const cm = hits.find((e) => !isEditingHost(e));
+    if (cm) return cm;
+    const cmId = hits.find(isEditingHost)?.editingHostEnvironmentDetails?.cmEnvironmentId;
+    const owner = cmId ? all.find((e) => e.id === cmId) : undefined;
+    if (owner) return owner;
     return { status: 404, error: `No environment in the organization has the CM host ${cmHost}.` };
   }
 

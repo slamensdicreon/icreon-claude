@@ -94,6 +94,27 @@ describe('SitecoreDeployToolServer', () => {
     expect(back.body).toMatchObject({ hosts: [{ applicationName: 'basic-nextjs' }] });
   });
 
+  it('finds the CM environment when only its editing host carries the CM host', async () => {
+    const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+    const fetch = (async () =>
+      json({
+        data: [
+          { id: 'env-cm', name: 'production', host: null, type: 'cm' },
+          {
+            id: 'env-eh',
+            name: 'basic-nextjs',
+            host: 'xmc-acme.sitecorecloud.io',
+            type: 'eh',
+            editingHostEnvironmentDetails: { cmEnvironmentId: 'env-cm' },
+          },
+        ],
+      })) as unknown as typeof globalThis.fetch;
+    const env = await new DeployClient('org-jwt', { fetch }).environmentFor(
+      'xmc-acme.sitecorecloud.io',
+    );
+    expect('id' in env && env.id).toBe('env-cm');
+  });
+
   it('reads the editing secret for the head, server-side', async () => {
     const c = new DeployClient('org-jwt', { fetch: fakeDeploy().fetch });
     const env = await c.environmentFor('XMC-ACME.sitecorecloud.io');
