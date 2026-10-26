@@ -219,4 +219,46 @@ describe('acceptance on live projects', () => {
     await store.append('p1', [step('git.commit', 'Committed 1 file to launchworks/port-hero')]);
     expect((await validate(t)).pass).toBe(true);
   });
+
+  it('accepts committing first and then building green on that commit', async () => {
+    const { store, validate } = await setup(null);
+    const step = (operation: string, summary: string, code = 200) => ({
+      type: 'step.recorded' as const,
+      actor: { kind: 'agent' as const, id: 'component-engineer' },
+      subject: { kind: 'step' as const, id: operation },
+      severity: 'routine' as const,
+      data: {
+        stepId: crypto.randomUUID(),
+        agentId: 'component-engineer',
+        taskId: 'port-hero',
+        toolServer: 'sandbox',
+        operation,
+        resultCode: code,
+        durationMs: 1,
+        summary,
+      },
+    });
+    const t = task({
+      taskId: 'port-hero',
+      role: 'component-engineer',
+      title: 'Port Hero',
+      acceptance: ['validator:build.green'],
+    });
+    await store.append('p1', [
+      step('fs.write', 'Wrote 3 files'),
+      step('git.commit', 'Committed 3 files to launchworks/port-hero (1bea14f)'),
+      step(
+        'exec.build',
+        'Build green: type-check and build passed (nothing uncommitted, at 1bea14f)',
+      ),
+      step('git.commit', 'Nothing to commit.', 422),
+    ]);
+    expect(await validate(t)).toMatchObject({ pass: true });
+    // A build with work left uncommitted still needs a commit after it.
+    await store.append('p1', [
+      step('exec.content-sdk-cli', 'sitecore-tools component generate-map: done'),
+      step('exec.build', 'Build green: type-check and build passed (uncommitted changes)'),
+    ]);
+    expect((await validate(t)).reason).toMatch(/not committed/);
+  });
 });

@@ -358,15 +358,20 @@ export class SandboxToolServer implements ToolServer {
             ? await run('npm', ['run', 'build'], { cwd: app, env, timeoutMs: 20 * 60_000 })
             : null;
         const green = types.exitCode === 0 && build?.exitCode === 0;
+        // What was built: the commit, and whether anything was uncommitted. Acceptance reads it.
+        const dirty = (await run('git', ['status', '--porcelain'])).output.trim();
+        const head = (await run('git', ['rev-parse', '--short=7', 'HEAD'])).output.trim();
         return {
           code: 200,
           body: {
             green,
+            commit: head,
+            uncommitted: dirty ? dirty.split('\n').length : 0,
             typeCheck: { exitCode: types.exitCode, output: types.exitCode ? types.output : '' },
             build: build ? { exitCode: build.exitCode, output: build.output } : 'skipped',
           },
           summary: green
-            ? 'Build green: type-check and build passed'
+            ? `Build green: type-check and build passed (${dirty ? 'uncommitted changes' : `nothing uncommitted, at ${head}`})`
             : `Build red: ${types.exitCode ? 'type-check failed' : 'build failed'}`,
         };
       }
