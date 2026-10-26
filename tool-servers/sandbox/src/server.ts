@@ -249,12 +249,18 @@ export class SandboxToolServer implements ToolServer {
           }
         }
         let install: { exitCode: number; output: string } | null = null;
+        let lockUpdated = false;
         if (created || !(await box.read(`${facts.appPath}/node_modules/.package-lock.json`))) {
           const lock = await box.read(`${facts.appPath}/package-lock.json`);
-          install = await run('npm', [lock ? 'ci' : 'install', '--no-audit', '--no-fund'], {
-            cwd: app,
-            timeoutMs: 15 * 60_000,
-          });
+          const npm = (verb: string) =>
+            run('npm', [verb, '--no-audit', '--no-fund'], { cwd: app, timeoutMs: 15 * 60_000 });
+          install = await npm(lock ? 'ci' : 'install');
+          // Sitecore's starter has shipped a lock file behind its package.json, which npm ci
+          // refuses. npm install brings the lock file up to date; the agent commits it.
+          if (lock && install.exitCode !== 0 && /EUSAGE|in sync/.test(install.output)) {
+            install = await npm('install');
+            lockUpdated = install.exitCode === 0;
+          }
         }
         const head = await run('git', ['log', '-1', '--format=%h %s']);
         const branch = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -266,7 +272,7 @@ export class SandboxToolServer implements ToolServer {
             app: facts.appPath,
             install: install ? { exitCode: install.exitCode, output: install.output } : 'reused',
           },
-          summary: `Working copy on ${branch.output.trim()} (${head.output.trim().slice(0, 60)})${install ? `, dependencies ${install.exitCode === 0 ? 'installed' : 'failed to install'}` : ''}`,
+          summary: `Working copy on ${branch.output.trim()} (${head.output.trim().slice(0, 60)})${install ? `, dependencies ${install.exitCode === 0 ? 'installed' : `failed to install: ${lastError(install.output)}`}` : ''}${lockUpdated ? `; ${facts.appPath}/package-lock.json was out of date with package.json and was updated: commit it` : ''}`,
         };
       }
       case 'fs.list': {
@@ -429,6 +435,16 @@ export class SandboxToolServer implements ToolServer {
 }
 
 /** A git header carrying the token for one command, never written to the repository's config. */
+/** The line of command output that says what went wrong, for a step's summary. */
+const lastError = (output: string) =>
+  (
+    output
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => /error|ERR!/i.test(l) && l.length > 12)
+      .at(0) ?? 'see the output'
+  ).slice(0, 200);
+
 export const basic = (token: string) =>
   `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
 

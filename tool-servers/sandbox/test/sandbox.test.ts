@@ -46,6 +46,40 @@ const facts = async () => ({
 });
 
 describe('working copies', () => {
+  it('installs with npm install when the lock file is behind package.json, and says to commit it', async () => {
+    const fake = fakeBox({ 'examples/basic-nextjs/package-lock.json': '{}' }, (cmd, args) =>
+      cmd === 'npm' && args[0] === 'ci'
+        ? {
+            exitCode: 1,
+            output:
+              'npm error code EUSAGE\nnpm error `npm ci` can only install packages when your package.json and package-lock.json are in sync.',
+          }
+        : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('workspace.open', {}, ctx);
+    expect(r.code).toBe(200);
+    expect(fake.runs.filter((x) => x.cmd === 'npm').map((x) => x.args[0])).toEqual([
+      'ci',
+      'install',
+    ]);
+    expect(r.summary).toMatch(
+      /package-lock.json was out of date with package.json and was updated: commit it$/,
+    );
+  });
+
+  it('names the install error when dependencies fail for another reason', async () => {
+    const fake = fakeBox({}, (cmd) =>
+      cmd === 'npm'
+        ? { exitCode: 1, output: 'npm error code E404\nnpm error 404 Not Found - GET x' }
+        : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('workspace.open', {}, ctx);
+    expect(r.code).toBe(500);
+    expect(r.summary).toMatch(/failed to install: npm error code E404$/);
+  });
+
   it('keep agents inside the repository and away from git internals and secrets', () => {
     expect(safePath('examples/basic-nextjs/src/Hero.tsx')).toBe(
       'examples/basic-nextjs/src/Hero.tsx',

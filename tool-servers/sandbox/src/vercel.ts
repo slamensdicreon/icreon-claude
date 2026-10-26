@@ -18,20 +18,26 @@ export class VercelBoxProvider implements BoxProvider {
       sandbox = await Sandbox.get({ name, ...this.credentials });
       if (sandbox.status !== 'running') throw new Error(sandbox.status);
     } catch {
-      sandbox = await Sandbox.create({
-        name,
-        ...this.credentials,
-        source: {
-          type: 'git',
-          url: init.repoUrl,
-          username: 'x-access-token',
-          password: init.token,
-          depth: 50,
-        },
-        runtime: 'node24',
-        resources: { vcpus: this.opts.vcpus ?? 4 },
-        timeout: this.opts.timeoutMs ?? 45 * 60_000,
-        tags: { app: 'launchworks' },
+      const create = () =>
+        Sandbox.create({
+          name,
+          ...this.credentials,
+          source: {
+            type: 'git',
+            url: init.repoUrl,
+            username: 'x-access-token',
+            password: init.token,
+            depth: 50,
+          },
+          runtime: 'node24',
+          resources: { vcpus: this.opts.vcpus ?? 4 },
+          timeout: this.opts.timeoutMs ?? 45 * 60_000,
+          tags: { app: 'launchworks' },
+        });
+      // A clone has failed once and worked seconds later on the same repository and token.
+      sandbox = await create().catch(async () => {
+        await new Promise((r) => setTimeout(r, 3_000));
+        return create();
       });
       created = true;
     }
