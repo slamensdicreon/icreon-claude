@@ -96,6 +96,19 @@ describe('control-api on paused, short-lived instances', () => {
     expect(got.at(-1)?.event).toBe('bye');
   });
 
+  it('tells an open stream to reset when the log is rewritten to the same length', async () => {
+    const { store, base } = await start();
+    await store.append('p', [status('running'), status('paused')]);
+    setTimeout(() => {
+      void (async () => {
+        await store.reset('p');
+        await store.append('p', [status('paused'), status('running')]);
+      })();
+    }, 100);
+    const got = await frames(`${base}/projects/p/stream?after=2`);
+    expect(got).toEqual([{ event: 'reset', data: JSON.stringify({ head: 2 }) }]);
+  });
+
   it('tells a client ahead of a reseeded log to reset', async () => {
     const { store, base } = await start();
     await store.append('p', [status('running'), status('paused'), status('running')]);

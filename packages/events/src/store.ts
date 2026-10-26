@@ -21,10 +21,15 @@ export interface EventStore {
   append(projectId: string, events: NewEvent[]): Promise<LwEvent[]>;
   read(projectId: string, opts?: ReadOptions): Promise<LwEvent[]>;
   head(projectId: string): Promise<number>;
+  /**
+   * The head and the id of the log's first event, in one read. A reset log rewritten to any
+   * length has a new first event, which is how readers tell it from the log they folded.
+   */
+  tip(projectId: string): Promise<{ head: number; firstId: string | null }>;
   projectIds(): Promise<string[]>;
   /**
-   * Deletes a project's log. Only the demo runner uses it, to reseed its scripted projects on
-   * start; readers notice the head moving backwards and rebuild.
+   * Deletes a project's log, to be written again from seq 1 (a demo reseeded, a project reset
+   * to intake). Readers notice the first event changing and rebuild.
    */
   reset(projectId: string): Promise<void>;
   /** Live tail of every project, in append order. Returns an unsubscribe function. */
@@ -67,6 +72,11 @@ export class InMemoryEventStore implements EventStore {
 
   async head(projectId: string): Promise<number> {
     return this.logs.get(projectId)?.length ?? 0;
+  }
+
+  async tip(projectId: string): Promise<{ head: number; firstId: string | null }> {
+    const log = this.logs.get(projectId) ?? [];
+    return { head: log.length, firstId: log[0]?.id ?? null };
   }
 
   async projectIds(): Promise<string[]> {

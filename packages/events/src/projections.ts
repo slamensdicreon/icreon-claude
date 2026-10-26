@@ -86,21 +86,14 @@ export class Projections {
   }
 
   private async fold(projectId: string): Promise<void> {
-    const head = await this.store.head(projectId);
+    const { head, firstId } = await this.store.tip(projectId);
     let s = this.states.get(projectId);
-    if (s && head < s.seq) {
+    // A log reset and rewritten, to any length (shorter, the same, longer): start over from seq 1.
+    if (s && (head < s.seq || (firstId && firstId !== this.firstIds.get(projectId)))) {
       this.states.delete(projectId);
       s = undefined;
     }
     if (!head || (s && s.seq >= head)) return;
-    if (s) {
-      // A log reset and rewritten past where this read model stopped: start over from seq 1.
-      const [first] = await this.store.read(projectId, { after: 0, before: 2 });
-      if (first && first.id !== this.firstIds.get(projectId)) {
-        this.states.delete(projectId);
-        s = undefined;
-      }
-    }
     for (const e of await this.store.read(projectId, { after: s?.seq ?? 0 })) this.apply(e);
   }
 

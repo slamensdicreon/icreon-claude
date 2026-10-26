@@ -74,6 +74,8 @@ export async function streamProject(
     last = e.seq;
   };
 
+  // The log's first event when the stream began: a different one means it was reset.
+  let first: string | null = null;
   // One read at a time; the live tail and the timer both just ask for one.
   let reading: Promise<void> | null = null;
   let again = false;
@@ -85,9 +87,11 @@ export async function streamProject(
     reading = (async () => {
       do {
         again = false;
-        const head = await store.head(projectId);
+        const { head, firstId } = await store.tip(projectId);
         if (closed) return;
-        if (head < last) {
+        first ??= firstId;
+        // Moved backwards, or rewritten from seq 1 to any length: the client starts over.
+        if (head < last || (first && firstId && firstId !== first)) {
           res.write(`event: reset\ndata: ${JSON.stringify({ head })}\n\n`);
           close();
           return;

@@ -179,6 +179,17 @@ export class PostgresEventStore implements EventStore {
     return Number(rows[0]?.head ?? 0);
   }
 
+  async tip(projectId: string): Promise<{ head: number; firstId: string | null }> {
+    const { rows } = await this.sql.query<{ head: number; first_id: string | null }>(
+      `SELECT h.head, e.id AS first_id
+         FROM lw_project_heads h
+         LEFT JOIN lw_events e ON e.project_id = h.project_id AND e.seq = 1
+        WHERE h.project_id = $1`,
+      [projectId],
+    );
+    return { head: Number(rows[0]?.head ?? 0), firstId: rows[0]?.first_id ?? null };
+  }
+
   async projectIds(): Promise<string[]> {
     const { rows } = await this.sql.query<{ project_id: string }>(
       'SELECT project_id FROM lw_project_heads ORDER BY project_id',

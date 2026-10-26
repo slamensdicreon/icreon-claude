@@ -61,6 +61,21 @@ describe('Projections without a live tail', () => {
     expect(projections.get('p')).toMatchObject({ seq: 3, startedAt: '2026-02-03T00:00:00.000Z' });
   });
 
+  it('starts over when a log is reset and rewritten to the same length', async () => {
+    const store = new InMemoryEventStore();
+    await store.append('p', [status('running'), status('paused')]);
+    const projections = new Projections(withoutTail(store));
+    await projections.start({ eager: false });
+    await projections.catchUp('p');
+    expect(projections.get('p')?.status).toBe('paused');
+
+    // A reset in intake: one event dropped, one note added, so the head doesn't move.
+    await store.reset('p');
+    await store.append('p', [status('paused'), status('running')]);
+    await projections.catchUp('p');
+    expect(projections.get('p')).toMatchObject({ seq: 2, status: 'running' });
+  });
+
   it('drops a project whose log was deleted from the list', async () => {
     const store = new InMemoryEventStore();
     await store.append('p', [status('running')]);

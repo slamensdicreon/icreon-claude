@@ -75,6 +75,16 @@ describe('PostgresEventStore', () => {
     expect(back).toEqual(first);
   });
 
+  it('reads the tip: the head and the first event, which a reset replaces', async () => {
+    expect(await store.tip('a')).toEqual({ head: 0, firstId: null });
+    const [first] = await store.append('a', [status('running'), status('paused')]);
+    expect(await store.tip('a')).toEqual({ head: 2, firstId: first!.id });
+    await store.reset('a');
+    const [again] = await store.append('a', [status('running'), status('paused')]);
+    expect(await store.tip('a')).toEqual({ head: 2, firstId: again!.id });
+    expect(again!.id).not.toBe(first!.id);
+  });
+
   it('commits nothing when any event in a batch is invalid', async () => {
     const bad = { ...status('running'), data: { status: 'exploded' } } as unknown as NewEvent;
     await expect(store.append('a', [status('running'), bad])).rejects.toThrow();
