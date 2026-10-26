@@ -137,6 +137,14 @@ export const ChangeBrief = z.object({
 });
 export type ChangeBrief = z.infer<typeof ChangeBrief>;
 
+/** PUT /projects/:id/budgets — the project's limits, raised or lowered while it runs. */
+export const ChangeBudgets = z.object({
+  tokens: z.number().int().positive().max(10_000_000_000),
+  usd: z.number().positive().max(1_000_000),
+  hours: z.number().positive().max(10_000),
+});
+export type ChangeBudgets = z.infer<typeof ChangeBudgets>;
+
 /** PUT /projects/:id/target/:key — change one intake value before Start. */
 export const ChangeTargetValue = z.object({
   value: z.union([z.string().trim().max(200), z.array(z.string().trim().max(60)).max(20)]),

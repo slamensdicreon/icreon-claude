@@ -1,5 +1,5 @@
 // Workflow messages. Imported by the workflows and by the client, so it must stay workflow-safe.
-import type { Control } from '@lw/contracts';
+import type { Budgets, Control } from '@lw/contracts';
 import { defineSignal, defineUpdate } from '@temporalio/workflow';
 
 export interface CommandAck {
@@ -20,6 +20,9 @@ export const postMessage = defineUpdate<CommandAck, [{ body: string }]>('postMes
 export const stopDirective = defineUpdate<CommandAck, [{ directiveId: string }]>('stopDirective');
 
 export const control = defineUpdate<CommandAck, [Control]>('control');
+
+/** New limits for the project's spend; a project the hard stop paused resumes if they cover it. */
+export const changeBudgets = defineUpdate<CommandAck, [Budgets]>('changeBudgets');
 
 /** Takes back a reversible choice while its undo window is open; the card re-opens. */
 export const undoResolution = defineUpdate<CommandAck, [{ escalationId: string }]>(

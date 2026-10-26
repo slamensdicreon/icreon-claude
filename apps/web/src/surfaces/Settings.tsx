@@ -236,9 +236,10 @@ export function Settings() {
             </span>
           </div>
           <p className="quiet-line" style={{ margin: 0 }}>
-            Soft warning at 80%: new tasks keep dispatching, you are told. Hard stop at 100%: no new
-            tasks until you acknowledge.
+            At 80% of any budget, new tasks wait until you acknowledge. At 100% the project pauses;
+            raising the budget past what is spent resumes it. Time counts from Start.
           </p>
+          {!p.demo && <BudgetForm current={s.budgets} />}
         </section>
 
         <section className="panel">
@@ -811,6 +812,69 @@ function IntakePanel({
         </tbody>
       </table>
     </section>
+  );
+}
+
+/** The project's limits, changed while it runs. */
+function BudgetForm({ current }: { current: SettingsSnapshot['budgets'] }) {
+  const { projectId, run } = useApp();
+  const [open, setOpen] = useState(false);
+  const [v, setV] = useState({ usd: '', tokens: '', hours: '' });
+  const start = () => {
+    setV({
+      usd: String(current.usd),
+      tokens: String(current.tokens / 1e6),
+      hours: String(current.hours),
+    });
+    setOpen(true);
+  };
+  const next = {
+    usd: Number(v.usd),
+    tokens: Math.round(Number(v.tokens) * 1e6),
+    hours: Number(v.hours),
+  };
+  const valid = next.usd > 0 && next.tokens > 0 && next.hours > 0;
+  if (!open)
+    return (
+      <button className="btn sm" onClick={start}>
+        Change budgets
+      </button>
+    );
+  const field = (key: keyof typeof v, label: string, unit: string) => (
+    <label className="budget-field">
+      <span>{label}</span>
+      <input
+        className="input"
+        inputMode="decimal"
+        value={v[key]}
+        onChange={(e) => setV((x) => ({ ...x, [key]: e.target.value }))}
+      />
+      <span className="muted">{unit}</span>
+    </label>
+  );
+  return (
+    <form
+      className="budget-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid)
+          void run(() => put(`/projects/${projectId}/budgets`, next), 'Budgets saved.').then(
+            (ok) => ok && setOpen(false),
+          );
+      }}
+    >
+      {field('usd', 'Cost', 'USD')}
+      {field('tokens', 'Tokens', 'million')}
+      {field('hours', 'Time', 'hours from Start')}
+      <div className="btn-row">
+        <button className="btn sm primary" type="submit" disabled={!valid}>
+          Save budgets
+        </button>
+        <button className="btn sm" type="button" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 

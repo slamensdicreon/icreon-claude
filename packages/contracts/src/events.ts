@@ -375,6 +375,8 @@ export const EventBody = z.discriminatedUnion('type', [
       sourceUrl: z.string().url().nullable().optional(),
       buildRepo: BuildRepo.optional(),
       hosting: HostingState.optional(),
+      /** Budgets the Director changed after start. */
+      budgets: Budgets.optional(),
       /** Intake target values changed in Settings before Start, merged over intake's. */
       intakeTarget: z.record(z.string(), IntakeValue).optional(),
       /** The brief, answered or revised after intake. */

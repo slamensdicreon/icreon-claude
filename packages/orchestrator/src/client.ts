@@ -1,9 +1,10 @@
-import type { Control, EscalationType } from '@lw/contracts';
+import type { Budgets, Control, EscalationType } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
 import type { Playbook } from '@lw/playbook-sdk';
 import { ApplicationFailure } from '@temporalio/common';
 import { WorkflowNotFoundError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import {
+  changeBudgets,
   control,
   deferEscalation,
   postMessage,
@@ -135,5 +136,9 @@ export class ProjectCommandsClient {
 
   control(cmd: Control) {
     return this.run(() => this.handle.executeUpdate(control, { args: [cmd] }));
+  }
+
+  changeBudgets(budgets: Budgets) {
+    return this.run(() => this.handle.executeUpdate(changeBudgets, { args: [budgets] }));
   }
 }

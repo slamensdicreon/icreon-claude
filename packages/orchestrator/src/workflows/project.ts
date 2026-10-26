@@ -41,6 +41,7 @@ import {
 import type { Activities } from '../activities';
 import {
   cancelTask,
+  changeBudgets,
   control,
   deferEscalation,
   pauseTask,
@@ -126,6 +127,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   let budgetHold = false;
   let softWarned = false;
   let hardStopped = false;
+  /** The hard stop paused the project (not the Director): new budgets that cover it resume it. */
+  let budgetPaused = false;
   let completed = false;
   let wake = false;
   let childRuns = 0;
@@ -714,14 +717,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       severity: 'routine',
       data: { spent: { tokens: spent.tokens, usd: spent.usd, hours } },
     });
-    const { budgets } = policy;
-    const ratio = Math.max(
-      spent.tokens / budgets.tokens,
-      spent.usd / budgets.usd,
-      hours / budgets.hours,
-    );
+    const ratio = budgetRatio(hours);
     if (ratio >= 1 && !hardStopped) {
       hardStopped = true;
+      budgetPaused = true;
       projectPaused = true;
       events.push(
         {
@@ -777,8 +776,15 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     }
   }
 
+  /** The largest share of any budget used: tokens, dollars or hours since start. */
+  function budgetRatio(hours = Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100) {
+    const { budgets } = policy;
+    return Math.max(spent.tokens / budgets.tokens, spent.usd / budgets.usd, hours / budgets.hours);
+  }
+
   async function setProjectPaused(paused: boolean) {
     projectPaused = paused;
+    if (!paused) budgetPaused = false;
     await send({
       type: 'project.status',
       actor: DIRECTOR,
@@ -1428,6 +1434,50 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           if (verb === 'resume' && !pausedTasks.has(scope.id))
             return reject('conflict', 'This task is not paused.');
         }
+      },
+    },
+  );
+
+  setHandler(
+    changeBudgets,
+    async (budgets) => {
+      const before = policy.budgets;
+      policy.budgets = budgets;
+      // The warnings re-arm against the new limits.
+      const ratio = budgetRatio();
+      if (ratio < 1) hardStopped = false;
+      if (ratio < BUDGET_SOFT) {
+        softWarned = false;
+        // An open 80% card is answered by the new budget: new work dispatches again.
+        budgetHold = false;
+        for (const [id, e] of escalations)
+          if (e.card.type === 'budget') await supersede(id, 'the Director changed the budgets');
+      }
+      await send(
+        {
+          type: 'project.updated',
+          actor: DIRECTOR,
+          subject: { kind: 'project', id: projectId },
+          severity: 'notable',
+          data: { budgets },
+        },
+        decision(
+          'Change the project budgets',
+          `$${budgets.usd.toLocaleString('en-US')}, ${budgets.tokens.toLocaleString('en-US')} tokens, ${budgets.hours} h`,
+          `Was $${before.usd.toLocaleString('en-US')}, ${before.tokens.toLocaleString('en-US')} tokens, ${before.hours} h. Set by the Director.`,
+          'director',
+          'budgets',
+          null,
+        ),
+      );
+      if (budgetPaused && ratio < 1) await setProjectPaused(false);
+      poke();
+      return { accepted: true };
+    },
+    {
+      validator: (b) => {
+        if (!(b.tokens > 0 && b.usd > 0 && b.hours > 0))
+          return reject('invalid', 'Budgets must be positive.');
       },
     },
   );

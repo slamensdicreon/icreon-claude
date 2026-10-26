@@ -252,6 +252,19 @@
   min-height: 0;
 }
 
+/* Settings: budgets */
+.budget-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.budget-field {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 160px) auto;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Settings: source site, intake values */
 .source-site .row .input,
 .intake-values .row .input,

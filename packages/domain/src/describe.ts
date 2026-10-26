@@ -54,6 +54,8 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
     case 'project.updated':
       if (e.data.buildRepo) return `Build repository ready: ${e.data.buildRepo.repo}`;
       if (e.data.brief) return 'Brief updated';
+      if (e.data.budgets)
+        return `Budgets set to $${e.data.budgets.usd.toLocaleString('en-US')}, ${e.data.budgets.tokens.toLocaleString('en-US')} tokens, ${e.data.budgets.hours} h`;
       if (e.data.intakeTarget)
         return `Intake changed: ${Object.entries(e.data.intakeTarget)
           .map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(', ') : v}`)

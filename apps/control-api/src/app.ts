@@ -4,6 +4,7 @@ import {
   ArchiveProject,
   ChangeSetting,
   ChangeBrief,
+  ChangeBudgets,
   ChangeTargetValue,
   ChangeSourceSite,
   CreateBuildRepo,
@@ -563,6 +564,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         'Type the project name exactly to archive it.',
       );
     return command(req.params.id, (o) => supported(o, 'archive')());
+  });
+
+  app.put<P>('/projects/:id/budgets', async (req) => {
+    const budgets = ChangeBudgets.parse(req.body);
+    return command(req.params.id, (o) => supported(o, 'changeBudgets')(budgets));
   });
 
   app.put<{ Params: { id: string; key: string } }>('/projects/:id/settings/:key', async (req) => {

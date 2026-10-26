@@ -175,4 +175,27 @@ describe('project workflow', () => {
     expect(budget.title).toMatch(/^Budget at \d+%$/);
     await p.handle.terminate();
   }, 60_000);
+
+  it('pauses at the hard limit, and resumes when the Director raises the budget', async () => {
+    const p = await launch(h, {
+      policy: { budgets: { tokens: 60_000, usd: 10_000, hours: 10_000 } },
+    });
+    await until(() => (p.state()?.status === 'paused' ? true : undefined), 30_000);
+    expect(p.state()!.conversation.some((m) => m.title === 'Budget exhausted')).toBe(true);
+    await expect(
+      p.commands.changeBudgets({ tokens: 0, usd: 10_000, hours: 10_000 }),
+    ).rejects.toMatchObject({ status: 422 });
+
+    await p.commands.changeBudgets({ tokens: 50_000_000, usd: 10_000, hours: 10_000 });
+    await until(() => (p.state()?.status === 'running' ? true : undefined), 10_000);
+    expect(p.state()!.budgets.tokens).toBe(50_000_000);
+    // The 80% card raised on the way is answered by the new budget.
+    expect(openEscalations(p.state()).some((x) => x.type === 'budget')).toBe(false);
+    expect(p.state()!.decisions.at(-1)).toMatchObject({
+      question: 'Change the project budgets',
+      decidedBy: 'director',
+    });
+    assertLegalLog(await h.store.read(p.projectId));
+    await p.handle.terminate();
+  }, 60_000);
 });

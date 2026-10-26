@@ -33,6 +33,8 @@ export interface ProjectCommands {
   rollbackPhase?(phase: number): Promise<unknown>;
   archive?(): Promise<unknown>;
   changeSetting?(key: SettingKey, value: unknown): Promise<unknown>;
+  /** New limits for a running project; one the hard stop paused resumes if they cover it. */
+  changeBudgets?(budgets: { tokens: number; usd: number; hours: number }): Promise<unknown>;
   verifyCredential?(credentialId: string): Promise<unknown>;
   /** Simulated projects only: raise one of the scripted scenarios on demand. */
   runScenario?(key: string): Promise<unknown>;
