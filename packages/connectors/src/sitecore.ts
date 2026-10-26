@@ -188,11 +188,15 @@ export async function verifyOrganizationClient(
   if ('error' in env) return { ok: false, detail: `The token was issued, but ${lower(env.error)}` };
   const label = `${env.name ?? env.id}${env.projectName ? ` (${env.projectName})` : ''}`;
   const secret = await deploy.editingSecret(env.id);
-  if ('problem' in secret)
+  if ('problem' in secret) {
+    // Answered without a secret: the client works, and the secret can be stored by hand.
+    const answered = !/answered \d{3}/.test(secret.problem);
     return {
-      ok: false,
+      ok: answered,
       detail: `Found the environment ${label} for ${cmHost}, but ${lower(secret.problem)}`,
+      ...(answered ? { expiresAt: t.expiresAt } : {}),
     };
+  }
   return {
     ok: true,
     detail: `Deploy API reached: environment ${label} for ${cmHost}, and its editing secret can be read.`,

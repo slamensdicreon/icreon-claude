@@ -159,6 +159,7 @@ describe('Sitecore credential checks', () => {
       good,
       'xmc-acme.sitecorecloud.io',
     );
+    expect(denied.ok).toBe(false);
     expect(denied.detail).toBe(
       'Found the environment production (brands) for xmc-acme.sitecorecloud.io, but the Deploy API answered 403 reading the editing secret: Forbidden.',
     );
