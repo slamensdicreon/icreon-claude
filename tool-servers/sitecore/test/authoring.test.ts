@@ -188,6 +188,24 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(inherited).toMatchObject({ code: 200, body: { verified: true } });
     const read = await s3.call('item.read', { path: `${home}/Contact` }, ctx);
     expect(JSON.stringify(read.body)).toContain('Datasource Template');
+    // Standard fields such as insert options are read by name.
+    await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [{ name: '__Masters', value: 'a1b2c3d4-0000-4000-8000-000000000003' }],
+      },
+      ctx,
+    );
+    const masters = await s3.call(
+      'item.read',
+      { path: `${home}/Contact`, fields: ['__Masters', 'Nope'] },
+      ctx,
+    );
+    expect(masters.body).toMatchObject({
+      fields: { nodes: [{ name: '__Masters', value: '{A1B2C3D4-0000-4000-8000-000000000003}' }] },
+      notOnItem: ['Nope'],
+    });
   });
 
   it('reports a missing item and refuses hosts outside SitecoreAI', async () => {

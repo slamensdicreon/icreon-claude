@@ -30,6 +30,8 @@ const ReadArgs = z.object({
   path: Path,
   language: z.string().optional(),
   children: z.boolean().optional(),
+  /** Only these fields, standard ones included (__Masters, __Standard values). */
+  fields: z.array(z.string().min(1).max(100)).max(30).optional(),
 });
 const CreateArgs = z
   .object({
@@ -115,13 +117,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'item.read': {
       description:
-        'Read an item by absolute path (fields, template, and with children:true its children).',
+        'Read an item by absolute path (fields, template, and with children:true its children). Sitecore\'s standard fields (insert options __Masters, __Renderings, workflow…) are left out unless you name them in `fields`, e.g. fields: ["__Masters"]; naming fields returns only those.',
       inputSchema: {
         type: 'object',
         properties: {
           path: { type: 'string' },
           language: { type: 'string' },
           children: { type: 'boolean' },
+          fields: { type: 'array', items: { type: 'string' } },
         },
         required: ['path'],
         additionalProperties: false,
@@ -375,15 +378,28 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
   private async read(q: Gql, a: Parsed<typeof ReadArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
-    const d = await q.run<{ item: unknown }>(
+    const named = a.data.fields?.map((f) => f.toLowerCase());
+    const d = await q.run<{
+      item: { fields: { nodes: { name: string; value: string }[] } } | null;
+    }>(
       `query { item(where: { database: "master", path: ${gql(a.data.path)}, language: ${gql(lang(a.data.language))} }) {
         itemId name path template { name templateId }
-        fields(ownFields: false, excludeStandardFields: true) { nodes { name value } }
+        fields(ownFields: false, excludeStandardFields: ${named ? 'false' : 'true'}) { nodes { name value } }
         ${a.data.children ? 'children { nodes { itemId name path template { name } } }' : ''}
       } }`,
     );
     if (!d.item) return { code: 404, body: { error: `No item at ${a.data.path}` } };
-    return { code: 200, body: d.item, summary: `Read ${a.data.path}` };
+    if (!named) return { code: 200, body: d.item, summary: `Read ${a.data.path}` };
+    // Named fields only, and say which the item doesn't have.
+    const nodes = d.item.fields.nodes.filter((f) => named.includes(f.name.toLowerCase()));
+    const absent = a.data.fields!.filter(
+      (f) => !nodes.some((n) => n.name.toLowerCase() === f.toLowerCase()),
+    );
+    return {
+      code: 200,
+      body: { ...d.item, fields: { nodes }, ...(absent.length ? { notOnItem: absent } : {}) },
+      summary: `Read ${nodes.map((n) => n.name).join(', ') || 'no fields'} on ${a.data.path}${absent.length ? ` (no ${absent.join(', ')} on this item)` : ''}`,
+    };
   }
 
   private async create(q: Gql, a: Parsed<typeof CreateArgs>, lang: Lang): Promise<ToolResult> {
