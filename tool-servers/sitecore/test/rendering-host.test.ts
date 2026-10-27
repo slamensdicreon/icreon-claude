@@ -19,7 +19,7 @@ const URLS = {
 };
 
 /** A tenant with the environment's Default host, Ansco's Site Grouping item and another site's. */
-function tenant(setting: string) {
+function tenant(setting: string, field = 'RenderingHost') {
   type Item = { id: string; template: string; fields: Record<string, string> };
   const items = new Map<string, Item>([
     [HOSTS, { id: 'hosts-id', template: 'folder', fields: {} }],
@@ -30,7 +30,7 @@ function tenant(setting: string) {
       {
         id: 'ansco-g',
         template: 'grouping',
-        fields: { SiteName: 'ansco', 'Predefined application rendering host': setting },
+        fields: { SiteName: 'ansco', [field]: setting },
       },
     ],
   ]);
@@ -82,10 +82,13 @@ function tenant(setting: string) {
 
 describe('rendering hosts', () => {
   it("points the project's site at its own head, leaving the environment's host alone", async () => {
-    const t = tenant('Default');
+    // As on a new site: SitecoreAI's `RenderingHost` field, empty (the default host).
+    const t = tenant('');
     const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: t.fetch });
     const before = await s.call('rendering-host.read', {}, ctx);
-    expect(before.summary).toBe('ansco renders through "Default"; 1 rendering host: Default');
+    expect(before.summary).toBe(
+      'ansco renders through the default host (no setting); 1 rendering host: Default',
+    );
 
     const r = await s.call(
       'rendering-host.set',
@@ -103,9 +106,7 @@ describe('rendering hosts', () => {
           'https://ansco-editing.vercel.app/api/editing/config',
       },
     });
-    expect(t.items.get(`${GROUPING}/ansco`)!.fields['Predefined application rendering host']).toBe(
-      'ansco',
-    );
+    expect(t.items.get(`${GROUPING}/ansco`)!.fields.RenderingHost).toBe('ansco');
     // The environment's own host is untouched.
     expect(t.items.get(`${HOSTS}/Default`)!.fields).toEqual(URLS);
 
@@ -118,7 +119,10 @@ describe('rendering hosts', () => {
   });
 
   it('writes the setting as an ID when that is how it is stored', async () => {
-    const t = tenant('{11111111-2222-3333-4444-555555555555}');
+    const t = tenant(
+      '{11111111-2222-3333-4444-555555555555}',
+      'Predefined application rendering host',
+    );
     const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: t.fetch });
     expect((await s.call('rendering-host.set', { url: 'https://a.vercel.app' }, ctx)).code).toBe(
       200,
@@ -129,5 +133,13 @@ describe('rendering hosts', () => {
     expect((await s.call('rendering-host.set', { url: 'http://a.vercel.app' }, ctx)).code).toBe(
       422,
     );
+  });
+
+  it("creates nothing when the site's setting can't be found", async () => {
+    const t = tenant('', 'Something else');
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: t.fetch });
+    const r = await s.call('rendering-host.set', { url: 'https://a.vercel.app' }, ctx);
+    expect(r).toMatchObject({ code: 422 });
+    expect(t.items.has(`${HOSTS}/ansco`)).toBe(false);
   });
 });

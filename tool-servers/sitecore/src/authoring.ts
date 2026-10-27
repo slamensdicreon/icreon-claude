@@ -763,7 +763,10 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       items.find((it) => it.name.toLowerCase() === site) ??
       items[0];
     if (!item) return { root, item: null, field: null };
-    return { root, item, field: value(item, /rendering host/i) ?? null };
+    // Named `RenderingHost` on SitecoreAI's Site Grouping template; shown as "Predefined
+    // application rendering host".
+    const field = value(item, /^rendering ?host$/i) ?? value(item, /rendering ?host/i) ?? null;
+    return { root, item, field };
   }
 
   /** The rendering host items, with their fields. */
@@ -837,6 +840,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       return bad(
         `${model.path} has no URL fields to set (fields: ${model.fields.nodes.map((f) => f.name).join(', ')}).`,
       );
+    // The site's setting first: when it can't be set, nothing is created.
+    const g = await this.grouping(q, facts);
+    if (!g.item) return bad(`No Site Grouping item under ${g.root}.`, 404);
+    if (!g.field)
+      return bad(
+        `${g.item.path} has no rendering host field (fields: ${g.item.fields.nodes.map((f) => f.name).join(', ')}).`,
+      );
     const name = facts.site;
     const path = `${HOSTS}/${name}`;
     const existing = hosts.find((h) => h.name.toLowerCase() === name.toLowerCase());
@@ -854,12 +864,6 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         );
     if (host.code !== 200) return host;
 
-    const g = await this.grouping(q, facts);
-    if (!g.item) return bad(`No Site Grouping item under ${g.root}.`, 404);
-    if (!g.field)
-      return bad(
-        `${g.item.path} has no rendering host field (fields: ${g.item.fields.nodes.map((f) => f.name).join(', ')}).`,
-      );
     // The setting holds a host's name, or its ID: write it the way it is stored.
     const hostId = (host.body as { itemId?: string }).itemId ?? existing?.itemId ?? '';
     const value = /^\{?[0-9a-f-]{36}\}?$/i.test(g.field.value.trim()) ? hostId : name;
