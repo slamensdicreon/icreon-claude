@@ -974,6 +974,7 @@ async function readBack(
   names: string[] = [],
 ): Promise<{ itemId: string; path: string; fields: Map<string, string> } | null> {
   const where = `where: { database: "master", path: ${gql(path)}, language: ${gql(language)} }`;
+  let found: { itemId: string; path: string; fields: Map<string, string> } | null = null;
   if (names.length) {
     try {
       const d = await q.run<{
@@ -989,29 +990,40 @@ async function readBack(
         const f = d.item![`f${i}`] as { value: string } | null | undefined;
         if (f) fields.set(n.toLowerCase(), f.value);
       });
-      return { itemId: d.item.itemId, path: d.item.path, fields };
+      found = { itemId: d.item.itemId, path: d.item.path, fields };
+      if (names.every((n) => fields.has(n.toLowerCase()))) return found;
     } catch (err) {
       // An API without single-field reads: fall back to the field list.
       if (!(err instanceof GqlError)) throw err;
     }
   }
-  const d = await q.run<{
+  // The whole field list, asking for a page large enough for every standard field, or the
+  // API's default page where it doesn't take a size.
+  type Listed = {
     item: {
       itemId: string;
       path: string;
       fields: { nodes: { name: string; value: string }[] };
     } | null;
-  }>(
-    `query { item(${where}) {
-      itemId path fields(ownFields: false, excludeStandardFields: false) { nodes { name value } }
-    } }`,
-  );
-  if (!d.item) return null;
-  return {
-    itemId: d.item.itemId,
-    path: d.item.path,
-    fields: new Map(d.item.fields.nodes.map((f) => [f.name.toLowerCase(), f.value])),
   };
+  const list = (size: string) =>
+    q.run<Listed>(
+      `query { item(${where}) {
+        itemId path fields(ownFields: false, excludeStandardFields: false${size}) { nodes { name value } }
+      } }`,
+    );
+  let d: Listed;
+  try {
+    d = await list(', first: 1000');
+  } catch (err) {
+    if (!(err instanceof GqlError)) throw err;
+    d = await list('');
+  }
+  if (!d.item) return found;
+  const fields = new Map(d.item.fields.nodes.map((f) => [f.name.toLowerCase(), f.value]));
+  // What the single-field reads found stands; the list fills in the rest.
+  for (const [k, v] of found?.fields ?? []) fields.set(k, v);
+  return { itemId: d.item.itemId, path: d.item.path, fields };
 }
 
 /** A stored value as written: IDs and ID lists Sitecore keeps uppercase in braces compare equal. */
