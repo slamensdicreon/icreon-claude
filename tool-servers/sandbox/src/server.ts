@@ -113,6 +113,8 @@ const IntegrateArgs = z.object({
     )
     .min(1)
     .max(80),
+  /** Rebuild from the default branch with exactly these branches, leaving out any others. */
+  fresh: z.boolean().optional(),
 });
 const CommitArgs = z.object({
   branch: z.string().regex(AGENT_BRANCH, 'must start with launchworks/'),
@@ -126,7 +128,14 @@ export class SandboxToolServer implements ToolServer {
       description: `Bring accepted agent branches (launchworks/design-system, launchworks/port-…) into ${INTEGRATION_BRANCH}, which the editing host deploys: starts from the integration branch as pushed (or the default branch the first time), merges each branch in order, settles conflicts in generated files (the component map, package-lock.json) by generating them again, builds once, and pushes only if the build is green. Branches that don't exist are skipped and listed; one already merged changes nothing. A conflict in source files stops it before anything is pushed, naming the branch and files: integrate again without that branch. If another integration pushes first, it starts again from that, up to three times.`,
       inputSchema: {
         type: 'object',
-        properties: { branches: { type: 'array', items: { type: 'string' } } },
+        properties: {
+          branches: { type: 'array', items: { type: 'string' } },
+          fresh: {
+            type: 'boolean',
+            description:
+              'Rebuild from the default branch with exactly these branches, leaving out any not listed (a cancelled component, say). Replaces the integration branch only if no one pushed to it meanwhile.',
+          },
+        },
         required: ['branches'],
         additionalProperties: false,
       },
@@ -455,10 +464,15 @@ export class SandboxToolServer implements ToolServer {
         const regenerated = new Set<string>();
         for (let attempt = 1; ; attempt++) {
           const has = await run('git', [...auth, 'fetch', 'origin', INTEGRATION_BRANCH]);
-          // Start from the integration branch as pushed, or from the default branch the first time.
+          // What the integration branch was: a rebuild replaces it only if it's still that.
+          const lease =
+            has.exitCode === 0 ? (await run('git', ['rev-parse', 'FETCH_HEAD'])).output.trim() : '';
+          // Start from the integration branch as pushed, or from the default branch the first time
+          // (and for a rebuild).
           await run('git', ['reset', '--hard', '-q']);
           await run('git', ['clean', '-fdq', '-e', 'node_modules']);
-          const from = has.exitCode === 0 ? 'FETCH_HEAD' : `origin/${facts.branch}`;
+          const from =
+            has.exitCode === 0 && !a.data.fresh ? 'FETCH_HEAD' : `origin/${facts.branch}`;
           const start = await run('git', ['checkout', '-q', '-B', INTEGRATION_BRANCH, from]);
           if (start.exitCode !== 0)
             return bad(`Couldn't start from ${from}: ${lastError(start.output)}`);
@@ -532,7 +546,15 @@ export class SandboxToolServer implements ToolServer {
           }
           const push = await run(
             'git',
-            [...auth, 'push', 'origin', `HEAD:refs/heads/${INTEGRATION_BRANCH}`],
+            [
+              ...auth,
+              'push',
+              ...(a.data.fresh && lease
+                ? [`--force-with-lease=refs/heads/${INTEGRATION_BRANCH}:${lease}`]
+                : []),
+              'origin',
+              `HEAD:refs/heads/${INTEGRATION_BRANCH}`,
+            ],
             { timeoutMs: 120_000 },
           );
           if (push.exitCode === 0) break;

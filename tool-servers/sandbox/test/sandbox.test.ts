@@ -90,6 +90,28 @@ describe('working copies', () => {
     ).toMatchObject({ code: 422 });
   });
 
+  it('rebuilds the integration branch from the default branch, leaving out unlisted branches', async () => {
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },
+      (cmd, args) =>
+        cmd === 'git' && args[0] === 'rev-parse' ? { exitCode: 0, output: 'def5678\n' } : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call(
+      'git.integrate',
+      { branches: ['launchworks/port-hero'], fresh: true },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    const git = fake.runs
+      .filter((x) => x.cmd === 'git')
+      .map((x) => x.args.filter((a) => !a.startsWith('http.extraHeader') && a !== '-c').join(' '));
+    expect(git).toContain('checkout -q -B launchworks/integration origin/main');
+    expect(git).toContain(
+      'push --force-with-lease=refs/heads/launchworks/integration:def5678 origin HEAD:refs/heads/launchworks/integration',
+    );
+  });
+
   it('starts again from what another integration pushed', async () => {
     let pushes = 0;
     const fake = fakeBox(
