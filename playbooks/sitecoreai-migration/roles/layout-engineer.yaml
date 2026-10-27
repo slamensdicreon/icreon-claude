@@ -20,6 +20,7 @@ tools:
       - item.read
       - item.create
       - item.update
+      - item.rename
       - template.create
     scope:
       paths:

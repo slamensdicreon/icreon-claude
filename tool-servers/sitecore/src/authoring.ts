@@ -54,6 +54,14 @@ const UpdateArgs = z.object({
   language: z.string().optional(),
   fields: z.array(Field).min(1).max(200),
 });
+const RenameArgs = z.object({
+  path: Path,
+  name: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[^/\\:?"<>|\[\]]+$/, 'an item name, without / \\ : ? " < > | [ ]'),
+});
 const TemplateArgs = z.object({
   parentPath: Path,
   name: z.string().min(1).max(100),
@@ -182,6 +190,18 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           },
         },
         required: ['path', 'fields'],
+        additionalProperties: false,
+      },
+      mutates: true,
+      pathArgs: ['path'],
+    },
+    'item.rename': {
+      description:
+        'Rename an item (by absolute path). Its ID, fields, children and every reference to it stay as they are; reads it back under the new name.',
+      inputSchema: {
+        type: 'object',
+        properties: { path: { type: 'string' }, name: { type: 'string' } },
+        required: ['path', 'name'],
         additionalProperties: false,
       },
       mutates: true,
@@ -369,6 +389,8 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           return await this.create(q, CreateArgs.safeParse(args), lang);
         case 'item.update':
           return await this.update(q, UpdateArgs.safeParse(args), lang);
+        case 'item.rename':
+          return await this.rename(q, RenameArgs.safeParse(args));
         case 'template.create':
           return await this.template(q, TemplateArgs.safeParse(args));
         case 'rendering.create':
@@ -538,6 +560,32 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         ? `Updated ${a.data.path}, but ${mismatches.join(', ')} read back differently`
         : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back`,
     };
+  }
+
+  private async rename(q: Gql, a: Parsed<typeof RenameArgs>): Promise<ToolResult> {
+    if (!a.success) return bad(a.error.issues[0]!.message);
+    const itemId = await this.idOf(q, a.data.path);
+    const target = `${a.data.path.slice(0, a.data.path.lastIndexOf('/'))}/${a.data.name}`;
+    await q.run<{ renameItem: { item: { itemId: string } } }>(
+      `mutation { renameItem(input: { database: "master", itemId: ${gql(itemId)}, newName: ${gql(a.data.name)} }) { item { itemId } } }`,
+    );
+    // Executed is not verified: the same item answers at the new path.
+    const back = await readBack(q, target, 'en');
+    const same =
+      back &&
+      back.itemId.replace(/[{}-]/g, '').toLowerCase() ===
+        itemId.replace(/[{}-]/g, '').toLowerCase();
+    return same
+      ? {
+          code: 200,
+          body: { itemId, path: target },
+          summary: `Renamed ${a.data.path} to ${a.data.name}, read back (ID unchanged)`,
+        }
+      : {
+          code: 409,
+          body: { itemId, path: a.data.path, expected: target },
+          summary: `Renamed ${a.data.path}, but ${target} doesn't read back as the same item`,
+        };
   }
 
   private async template(q: Gql, a: Parsed<typeof TemplateArgs>): Promise<ToolResult> {

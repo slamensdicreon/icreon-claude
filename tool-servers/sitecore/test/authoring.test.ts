@@ -53,6 +53,16 @@ function fakeCm(
       if (opts.drop) lost();
       return ok({ createItem: { item: { itemId: items[path], path } } });
     }
+    if (/renameItem\(/.test(query)) {
+      const id = /itemId: "([^"]+)"/.exec(query)![1]!;
+      const name = /newName: "([^"]+)"/.exec(query)![1]!;
+      const from = Object.keys(items).find((k) => items[k] === id)!;
+      const to = `${from.slice(0, from.lastIndexOf('/'))}/${name}`;
+      items[to] = id;
+      delete items[from];
+      values.set(to, values.get(from) ?? new Map());
+      return ok({ renameItem: { item: { itemId: id } } });
+    }
     if (/updateItem\(/.test(query)) {
       const path = /path: "([^"]+)"/.exec(query)![1]!;
       // As Sitecore does: IDs are stored uppercase, in braces.
@@ -248,6 +258,21 @@ describe('SitecoreAuthoringToolServer', () => {
       fields: { nodes: [{ name: '__Masters', value: '{A1B2C3D4-0000-4000-8000-000000000003}' }] },
       notOnItem: ['Nope'],
     });
+  });
+
+  it('renames an item, keeping its ID, and reads it back under the new name', async () => {
+    const tpl = '/sitecore/templates/Project/Brands/ansco/Pages/Ansco Page';
+    const cm = fakeCm({ [tpl]: 'tpl-id' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    const r = await s.call('item.rename', { path: tpl, name: 'Corporate Page' }, ctx);
+    expect(r).toMatchObject({
+      code: 200,
+      body: {
+        itemId: 'tpl-id',
+        path: '/sitecore/templates/Project/Brands/ansco/Pages/Corporate Page',
+      },
+    });
+    expect((await s.call('item.rename', { path: tpl, name: 'a/b' }, ctx)).code).toBe(422);
   });
 
   it('reports a missing item and refuses hosts outside SitecoreAI', async () => {

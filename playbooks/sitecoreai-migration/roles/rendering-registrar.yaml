@@ -23,6 +23,7 @@ tools:
       - item.read
       - item.create
       - item.update
+      - item.rename
       - rendering.create
     scope:
       paths:
