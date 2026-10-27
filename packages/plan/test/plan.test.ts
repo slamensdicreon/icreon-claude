@@ -304,6 +304,16 @@ describe('scheduling', () => {
       'register-hero',
       'port-hero',
     ]);
-    expect(dependentsOf(plan, 'port-tabs')).toEqual(['register-tabs', 'validate-components']);
+    // Designs bind registered renderings, so they depend on every registration.
+    expect(dependentsOf(plan, 'port-tabs')).toEqual([
+      'register-tabs',
+      'validate-components',
+      'partial-designs',
+      'template-home',
+      'template-landing',
+      'template-article',
+      'template-blog',
+      'validate-templates',
+    ]);
   });
 });

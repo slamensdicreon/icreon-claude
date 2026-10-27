@@ -75,21 +75,22 @@ describe('pause and cancel below the project', () => {
     const project = { kind: 'project' as const, id: p.projectId };
     await p.commands.control({ verb: 'pause', scope: project });
     await p.commands.resolve(g.escalationId, 'approve');
-    await p.commands.control({ verb: 'pause', scope: { kind: 'phase', id: '4' } });
+    // Phase 5's designs wait on phase 4's renderings, so phase 5 is the one held.
+    await p.commands.control({ verb: 'pause', scope: { kind: 'phase', id: '5' } });
     await expect(
-      p.commands.control({ verb: 'pause', scope: { kind: 'phase', id: '4' } }),
+      p.commands.control({ verb: 'pause', scope: { kind: 'phase', id: '5' } }),
     ).rejects.toMatchObject({ status: 409 });
     await p.commands.control({ verb: 'resume', scope: project });
 
-    await until(() => p.state()!.phases[5]!.status === 'done', 30_000);
+    await until(() => p.state()!.phases[4]!.status === 'done', 30_000);
     const s = p.state()!;
     expect(missionControl(s).project.holds).toEqual([
-      { kind: 'phase', id: '4', label: 'Phase 4: Component build and registration' },
+      { kind: 'phase', id: '5', label: 'Phase 5: Templates, layouts, and designs' },
     ]);
-    expect(plan(s).tasks.filter((t) => t.phase === 4 && t.state !== 'planned')).toEqual([]);
+    expect(plan(s).tasks.filter((t) => t.phase === 5 && t.state !== 'planned')).toEqual([]);
 
-    await p.commands.control({ verb: 'resume', scope: { kind: 'phase', id: '4' } });
-    await until(() => p.state()!.phases[4]!.status === 'done', 30_000);
+    await p.commands.control({ verb: 'resume', scope: { kind: 'phase', id: '5' } });
+    await until(() => p.state()!.phases[5]!.status === 'done', 30_000);
     expect(missionControl(p.state()!).project.holds).toEqual([]);
     await bot.stop();
     await p.handle.terminate();
