@@ -154,3 +154,38 @@ it('releases waits nothing can end: nobody working and no card open', async () =
   expect(header).toHaveLength(2);
   expect(header[1]!.instructions).toContain('Nothing is working on what you waited for');
 }, 120_000);
+
+it('hands fixes for a later phase to that task, without waiting on it', async () => {
+  const seen: RunRequest[] = [];
+  const runner = {
+    async run(req: RunRequest) {
+      seen.push(req);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      if (req.task.taskId === 'port-header' && !req.instructions)
+        return {
+          kind: 'waiting' as const,
+          summary: 'The re-crawl must include the header links.',
+          waitingOn: {
+            taskIds: [],
+            sendBack: [{ taskId: 'recrawl-source', fixes: 'Include the header links.' }],
+            what: 'header links in the re-crawl',
+          },
+          spent,
+        };
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  const header = seen.filter((r) => r.task.taskId === 'port-header');
+  expect(header).toHaveLength(2);
+  expect(header[1]!.instructions).toContain('Your fixes for Re-crawl the source for parity');
+  const recrawl = seen.filter((r) => r.task.taskId === 'recrawl-source');
+  expect(recrawl[0]!.instructions).toBe(
+    'Handed on by Component Engineer (Port Header to Content SDK): Include the header links.',
+  );
+  expect(Object.values(p.state()!.escalations).some((x) => x.title.includes('Header'))).toBe(false);
+}, 120_000);

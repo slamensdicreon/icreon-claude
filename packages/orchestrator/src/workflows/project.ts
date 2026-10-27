@@ -617,22 +617,32 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const back = (w.sendBack ?? []).filter(
         (x) => x.taskId !== t.taskId && task(x.taskId)?.kind === 'work',
       );
-      const named = [...new Set([...w.taskIds, ...back.map((x) => x.taskId)])].filter(
+      // Fixes for a task whose phase hasn't started travel in its brief: it gets them when it
+      // runs, and nothing waits on it (that phase starts only once this one is done).
+      const handOn = patched('send-back-later-phase')
+        ? back.filter((x) => {
+            const d = task(x.taskId)!;
+            return d.phase > t.phase && !started.has(d.phase) && stateOf(x.taskId) !== 'done';
+          })
+        : [];
+      const backNow = back.filter((x) => !handOn.includes(x));
+      const named = [...new Set([...w.taskIds, ...backNow.map((x) => x.taskId)])].filter(
         (id) => id !== t.taskId && task(id)?.kind === 'work',
       );
       const cycle = named.some((id) => waitingOn.get(id)?.ids.includes(t.taskId));
-      const overSent = back.filter((x) => (sentBack[x.taskId] ?? 0) >= MAX_SEND_BACKS);
+      const overSent = backNow.filter((x) => (sentBack[x.taskId] ?? 0) >= MAX_SEND_BACKS);
       const count = (waits[t.taskId] = (waits[t.taskId] ?? 0) + 1);
       const asked = [...w.taskIds, ...(w.sendBack ?? []).map((x) => x.taskId)];
-      const problem = !named.length
-        ? `it named no task in the plan that makes it (${asked.join(', ')})`
-        : cycle
-          ? `${named.map(titleOf).join(', ')} wait on this task in turn`
-          : overSent.length
-            ? `${overSent.map((x) => titleOf(x.taskId)).join(', ')} were already sent back ${MAX_SEND_BACKS} times`
-            : count > MAX_WAITS
-              ? `it has waited ${MAX_WAITS} times and it is still missing`
-              : null;
+      const problem =
+        !named.length && !handOn.length
+          ? `it named no task in the plan that makes it (${asked.join(', ')})`
+          : cycle
+            ? `${named.map(titleOf).join(', ')} wait on this task in turn`
+            : overSent.length
+              ? `${overSent.map((x) => titleOf(x.taskId)).join(', ')} were already sent back ${MAX_SEND_BACKS} times`
+              : count > MAX_WAITS
+                ? `it has waited ${MAX_WAITS} times and it is still missing`
+                : null;
       if (problem) {
         await send(...events);
         return onOutcome(t, {
@@ -650,7 +660,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       }
       // Finished work that must change goes back to its owner, with the fixes in its brief.
       const by = `${roles.get(t.role)?.name ?? t.role} (${t.title})`;
-      for (const x of back) {
+      for (const x of handOn) {
+        const note = `Handed on by ${by}: ${x.fixes}`;
+        if (!(instructions[x.taskId] ?? '').includes(note))
+          instructions[x.taskId] = [instructions[x.taskId], note].filter(Boolean).join('\n\n');
+      }
+      for (const x of backNow) {
         sentBack[x.taskId] = (sentBack[x.taskId] ?? 0) + 1;
         const note = `Sent back by ${by}: ${x.fixes}`;
         if (stateOf(x.taskId) === 'done') {
@@ -670,9 +685,17 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         ids: open,
         what: w.what,
         prior: prior ?? null,
-        note: later.length
-          ? `${later.map(titleOf).join(', ')} run${later.length === 1 ? 's' : ''} in a later phase, which starts only after this one is done, so this task can't wait for ${later.length === 1 ? 'it' : 'them'}. Finish what is yours now, don't wait on ${later.length === 1 ? 'it' : 'them'} again, and say in your summary what is left for ${later.length === 1 ? 'it' : 'them'}.`
-          : undefined,
+        note:
+          [
+            later.length
+              ? `${later.map(titleOf).join(', ')} run${later.length === 1 ? 's' : ''} in a later phase, which starts only after this one is done, so this task can't wait for ${later.length === 1 ? 'it' : 'them'}. Finish what is yours now, don't wait on ${later.length === 1 ? 'it' : 'them'} again, and say in your summary what is left for ${later.length === 1 ? 'it' : 'them'}.`
+              : '',
+            handOn.length
+              ? `Your fixes for ${handOn.map((x) => titleOf(x.taskId)).join(', ')} are in ${handOn.length === 1 ? 'its' : 'their'} brief for when ${handOn.length === 1 ? 'it runs' : 'they run'} in a later phase. Don't wait on or send back to ${handOn.length === 1 ? 'it' : 'them'} again: finish now, and say in your summary what you handed on.`
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ') || undefined,
       });
       events.push(
         taskMove(t, 'waiting', `Waiting on ${named.map(titleOf).join(', ')}: ${w.what}`),

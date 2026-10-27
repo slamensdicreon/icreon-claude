@@ -63,6 +63,7 @@ templates:
     role: structural-validator
     title: Validate the site skeleton
     dependsOn: [create-site]
+    acceptance: [validator:structural.site]
 
   # 4 — Component build and registration
   - id: port-{key}
@@ -122,6 +123,7 @@ templates:
     role: structural-validator
     title: Validate renderings and Available Renderings
     dependsOn: [register-*]
+    acceptance: [validator:structural.renderings]
 
   # 5 — Templates, layouts and designs
   - id: partial-designs
@@ -141,6 +143,7 @@ templates:
     role: structural-validator
     title: Validate templates and designs
     dependsOn: [template-*]
+    acceptance: [validator:structural.templates]
 
   # 6 — Content and media migration
   - id: migrate-pages-{key}
