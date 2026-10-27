@@ -131,6 +131,30 @@ describe('project workflow', () => {
     await p.handle.terminate();
   }, 60_000);
 
+  it('re-runs a finished task, even one whose phase has exited', async () => {
+    const p = await launch(h);
+    await until(() => (p.state()?.phases[0]?.status === 'done' ? true : undefined));
+    await expect(p.commands.rerunTask('nope', 'x')).rejects.toMatchObject({ status: 404 });
+    await expect(p.commands.rerunTask('design-system', 'x')).rejects.toMatchObject({
+      status: 409,
+    });
+    const seq = p.state()!.seq;
+    await p.commands.rerunTask('verify-access', 'Check the Experience Edge token too');
+    const moves = async () =>
+      (await h.store.read(p.projectId, { after: seq }))
+        .filter((e) => e.type === 'task.state' && e.subject.id === 'verify-access')
+        .map((e) => (e.data as { to: string }).to);
+    for (let i = 0; i < 300 && (await moves()).at(-1) !== 'done'; i++)
+      await new Promise((r) => setTimeout(r, 100));
+    expect(await moves()).toEqual(['rolled_back', 'ready', 'running', 'validating', 'done']);
+    expect(
+      p
+        .state()!
+        .decisions.some((d) => d.question === 'Re-run Verify credentials and record tenant facts'),
+    ).toBe(true);
+    await p.handle.terminate();
+  }, 60_000);
+
   it('acknowledges a directive with its impact, then applies it after the stop window', async () => {
     const p = await launch(h, { policy: { directiveWindowMs: 1_500 } });
     const gate1 = await until(() => openEscalations(p.state()).find((x) => x.type === 'gate'));

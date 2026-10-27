@@ -24,6 +24,11 @@ export const control = defineUpdate<CommandAck, [Control]>('control');
 /** New limits for the project's spend; a project the hard stop paused resumes if they cover it. */
 export const changeBudgets = defineUpdate<CommandAck, [Budgets]>('changeBudgets');
 
+/** Sends a finished task back for a fresh attempt, with the Director's instructions in its brief. */
+export const rerunTask = defineUpdate<CommandAck, [{ taskId: string; instructions: string }]>(
+  'rerunTask',
+);
+
 /** Takes back a reversible choice while its undo window is open; the card re-opens. */
 export const undoResolution = defineUpdate<CommandAck, [{ escalationId: string }]>(
   'undoResolution',

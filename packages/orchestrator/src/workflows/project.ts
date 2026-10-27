@@ -42,6 +42,7 @@ import type { Activities } from '../activities';
 import {
   cancelTask,
   changeBudgets,
+  rerunTask,
   control,
   deferEscalation,
   pauseTask,
@@ -107,6 +108,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const attempts: Record<string, number> = {};
   const instructions: Record<string, string | null> = {};
   const retryFromBlocked = new Set<string>();
+  /** Tasks the Director sent back: they run even if their phase has already exited. */
+  const reruns = new Set<string>();
   const taskEscalation = new Map<string, string>();
   const started = new Set<number>();
   const done = new Set<number>();
@@ -505,6 +508,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   async function dispatch(batch: PlannedTask[], from: 'ready' | 'blocked') {
     const events: NewEvent[] = [];
     for (const t of batch) {
+      reruns.delete(t.taskId);
       if (from === 'ready' && stateOf(t.taskId) === 'planned') events.push(taskMove(t, 'ready'));
       const set = running.get(t.role) ?? new Set<string>();
       set.add(t.taskId);
@@ -1483,6 +1487,38 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   );
 
   setHandler(
+    rerunTask,
+    async ({ taskId, instructions: notes }) => {
+      const t = task(taskId)!;
+      await rerun([taskId], notes.trim() || null);
+      reruns.add(taskId);
+      await send(
+        decision(
+          `Re-run ${t.title}`,
+          notes.trim() || 'No new instructions',
+          'Sent back by the Director for a fresh attempt.',
+          'director',
+          `rerun:${taskId}:${uuid4().slice(0, 8)}`,
+          null,
+        ),
+      );
+      poke();
+      return { accepted: true };
+    },
+    {
+      validator: ({ taskId }) => {
+        const t = task(taskId);
+        if (!t || t.kind !== 'work') return reject('not_found', `No task "${taskId}".`);
+        if (stateOf(taskId) !== 'done')
+          return reject(
+            'conflict',
+            `Only a finished task can be re-run; ${t.title} is ${stateOf(taskId)}.`,
+          );
+      },
+    },
+  );
+
+  setHandler(
     undoResolution,
     async ({ escalationId }) => {
       const e = escalations.get(escalationId)!;
@@ -1598,7 +1634,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         const st = stateOf(t.taskId);
         return (
           t.kind === 'work' &&
-          active.has(t.phase) &&
+          (active.has(t.phase) || reruns.has(t.taskId)) &&
           (st === 'planned' || st === 'ready') &&
           !children.has(t.taskId) &&
           !held(t) &&

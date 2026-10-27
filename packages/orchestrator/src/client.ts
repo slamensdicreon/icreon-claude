@@ -5,6 +5,7 @@ import { ApplicationFailure } from '@temporalio/common';
 import { WorkflowNotFoundError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
 import {
   changeBudgets,
+  rerunTask,
   control,
   deferEscalation,
   postMessage,
@@ -140,5 +141,11 @@ export class ProjectCommandsClient {
 
   changeBudgets(budgets: Budgets) {
     return this.run(() => this.handle.executeUpdate(changeBudgets, { args: [budgets] }));
+  }
+
+  rerunTask(taskId: string, instructions: string) {
+    return this.run(() =>
+      this.handle.executeUpdate(rerunTask, { args: [{ taskId, instructions }] }),
+    );
   }
 }
