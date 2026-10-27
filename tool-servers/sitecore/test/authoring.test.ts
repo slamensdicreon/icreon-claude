@@ -14,6 +14,8 @@ const ctx = { projectId: 'p', token: 'jwt', role: 'tenant-provisioner', taskId: 
  * A CM that remembers what is created and updated. `drop` makes the next mutation succeed but
  * lose its response (a timeout); `ignore` makes it fail silently (stored values unchanged).
  */
+const INHERITED = new Set(['Datasource Template', 'Renderings']);
+
 function fakeCm(
   items: Record<string, string>,
   opts: { drop?: boolean; ignoreUpdate?: boolean } = {},
@@ -53,7 +55,16 @@ function fakeCm(
     }
     if (/updateItem\(/.test(query)) {
       const path = /path: "([^"]+)"/.exec(query)![1]!;
-      if (!opts.ignoreUpdate) for (const [k, v] of fieldsOf(query)) values.get(path)?.set(k, v);
+      // As Sitecore does: IDs are stored uppercase, in braces.
+      const stored = (v: string) =>
+        /^\{?[0-9a-f-]{36}\}?(\|\{?[0-9a-f-]{36}\}?)*$/i.test(v)
+          ? v
+              .split('|')
+              .map((g) => `{${g.replace(/[{}]/g, '').toUpperCase()}}`)
+              .join('|')
+          : v;
+      if (!opts.ignoreUpdate)
+        for (const [k, v] of fieldsOf(query)) values.get(path)?.set(k, stored(v));
       if (opts.drop) lost();
       return ok({ updateItem: { item: { itemId: items[path], name: 'n' } } });
     }
@@ -66,7 +77,10 @@ function fakeCm(
             name: 'n',
             path,
             fields: {
-              nodes: [...(values.get(path) ?? new Map())].map(([name, value]) => ({ name, value })),
+              // Fields from base templates come back only when inherited fields are asked for.
+              nodes: [...(values.get(path) ?? new Map())]
+                .filter(([name]) => !/ownFields: true/.test(query) || !INHERITED.has(name))
+                .map(([name, value]) => ({ name, value })),
             },
           },
         });
@@ -148,7 +162,32 @@ describe('SitecoreAuthoringToolServer', () => {
       { path: `${home}/Contact`, fields: [{ name: 'Title', value: 'Talk to us' }] },
       ctx,
     );
-    expect(u).toMatchObject({ code: 409, body: { verified: false, mismatches: ['Title'] } });
+    expect(u).toMatchObject({
+      code: 409,
+      body: { verified: false, mismatches: ['Title (reads "Contact")'] },
+    });
+
+    // Inherited fields read back, and IDs stored uppercase in braces match what was written.
+    const cm3 = fakeCm({ [home]: 'home-id', [tpl]: 'tpl-id' });
+    const s3 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm3.fetch });
+    await s3.call('item.create', create, ctx);
+    const inherited = await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [
+          { name: 'Datasource Template', value: '/sitecore/templates/Project/Brands/ansco/Hero' },
+          {
+            name: 'Renderings',
+            value: 'a1b2c3d4-0000-4000-8000-000000000001|{a1b2c3d4-0000-4000-8000-000000000002}',
+          },
+        ],
+      },
+      ctx,
+    );
+    expect(inherited).toMatchObject({ code: 200, body: { verified: true } });
+    const read = await s3.call('item.read', { path: `${home}/Contact` }, ctx);
+    expect(JSON.stringify(read.body)).toContain('Datasource Template');
   });
 
   it('reports a missing item and refuses hosts outside SitecoreAI', async () => {

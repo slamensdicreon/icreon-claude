@@ -378,7 +378,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     const d = await q.run<{ item: unknown }>(
       `query { item(where: { database: "master", path: ${gql(a.data.path)}, language: ${gql(lang(a.data.language))} }) {
         itemId name path template { name templateId }
-        fields(ownFields: true, excludeStandardFields: true) { nodes { name value } }
+        fields(ownFields: false, excludeStandardFields: true) { nodes { name value } }
         ${a.data.children ? 'children { nodes { itemId name path template { name } } }' : ''}
       } }`,
     );
@@ -703,7 +703,10 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
 type Lang = (l?: string) => string;
 
-/** An item's own field values, or null when there is no item at the path. */
+/**
+ * An item's field values, inherited ones included (a rendering's Datasource Template, a group's
+ * Renderings), or null when there is no item at the path.
+ */
 async function readBack(
   q: Gql,
   path: string,
@@ -717,7 +720,7 @@ async function readBack(
     } | null;
   }>(
     `query { item(where: { database: "master", path: ${gql(path)}, language: ${gql(language)} }) {
-      itemId path fields(ownFields: true, excludeStandardFields: false) { nodes { name value } }
+      itemId path fields(ownFields: false, excludeStandardFields: false) { nodes { name value } }
     } }`,
   );
   if (!d.item) return null;
@@ -728,14 +731,27 @@ async function readBack(
   };
 }
 
-/** Fields whose stored value isn't what was written. */
+/** A stored value as written: IDs and ID lists Sitecore keeps uppercase in braces compare equal. */
+const canonical = (v: string) => {
+  const t = v.trim();
+  return /^\{?[0-9a-f-]{36}\}?(\|\{?[0-9a-f-]{36}\}?)*$/i.test(t)
+    ? t.replace(/[{}]/g, '').toLowerCase()
+    : t;
+};
+
+/** Fields whose stored value isn't what was written, with what was read back. */
 function compare(
   written: { name: string; value: string }[],
   stored: Map<string, string>,
 ): string[] {
   return written
-    .filter((f) => (stored.get(f.name.toLowerCase()) ?? '').trim() !== f.value.trim())
-    .map((f) => f.name);
+    .filter((f) => canonical(stored.get(f.name.toLowerCase()) ?? '') !== canonical(f.value))
+    .map((f) => {
+      const back = stored.get(f.name.toLowerCase());
+      return back === undefined
+        ? `${f.name} (no such field on this item)`
+        : `${f.name} (reads "${back.length > 80 ? `${back.slice(0, 80)}…` : back}")`;
+    });
 }
 type Parsed<S extends z.ZodType> = z.ZodSafeParseResult<z.infer<S>>;
 
