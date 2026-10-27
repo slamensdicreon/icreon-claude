@@ -387,8 +387,9 @@ function Engagement({ s }: { s: ScheduleSnapshot }) {
 }
 
 function List({ s }: { s: ScheduleSnapshot }) {
-  const { ui, setUi } = useApp();
+  const { ui, setUi, inspect } = useApp();
   const tz = s.timezone;
+  const titles = new Map(s.tasks.map((t) => [t.taskId, t.title]));
   const all = s.phases.flatMap((p) =>
     p.activities.map((a) => ({ ...a, phase: p.phase, phaseName: p.name })),
   );
@@ -444,7 +445,27 @@ function List({ s }: { s: ScheduleSnapshot }) {
                       {a.phase}. {a.phaseName}
                     </td>
                     <td>
-                      <b style={{ fontWeight: 500 }}>{a.title}</b>
+                      {a.taskIds.length === 1 ? (
+                        <button className="link-btn" onClick={() => inspect('task', a.taskIds[0]!)}>
+                          {a.title}
+                        </button>
+                      ) : (
+                        <details>
+                          <summary>
+                            {a.title} <span className="muted">({a.taskIds.length} tasks)</span>
+                          </summary>
+                          {a.taskIds.map((id) => (
+                            <button
+                              key={id}
+                              className="link-btn"
+                              style={{ display: 'block' }}
+                              onClick={() => inspect('task', id)}
+                            >
+                              {titles.get(id) ?? id}
+                            </button>
+                          ))}
+                        </details>
+                      )}
                     </td>
                     <td>
                       <AgentCell agentId={a.agentId} />
