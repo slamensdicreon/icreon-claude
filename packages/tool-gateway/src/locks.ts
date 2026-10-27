@@ -1,7 +1,7 @@
 /**
- * One writer per item: while a task changes an item, no other task may change the same item. A
- * task's locks last until its result is accepted, or lapse after a while without writes (a task
- * that stalled doesn't hold others up for ever).
+ * One writer per item: while a task's session changes an item, no other task may change it. Locks
+ * are released when the session ends (or its result is accepted), and lapse after a while without
+ * writes, so a task that stalled or escalated doesn't hold others up.
  */
 export interface WriteLocks {
   /** Takes (or renews) the paths for the task, or says which task holds one of them. */
@@ -10,7 +10,7 @@ export interface WriteLocks {
     taskId: string,
     paths: string[],
   ): Promise<{ ok: true } | { ok: false; path: string; heldBy: string }>;
-  /** Everything the task holds, once its result is accepted. */
+  /** Everything the task holds, when its session ends. */
   release(projectId: string, taskId: string): Promise<void>;
 }
 

@@ -221,7 +221,7 @@ export class ToolGateway {
         if (!lock.ok) {
           return deny(
             'locked',
-            `${lock.path} is being changed by another task (${lock.heldBy}). Work on something else, or finish and say this is waiting for it; don't retry it in a loop.`,
+            `${lock.path} is being changed right now by another task's session (${lock.heldBy}); this is temporary and frees when that session ends. Do your other work first and try this again at the end. If it is still locked then, finish with everything else done and say this one change waits on ${lock.heldBy}: don't ask the Director about a lock, and don't retry it in a loop.`,
           );
         }
       }

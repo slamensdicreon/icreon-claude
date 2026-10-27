@@ -310,8 +310,20 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
         (role) => live.includes(role),
       )
     : base;
+  // Locks keep two sessions off the same item at once; a session that ended holds nothing, so
+  // a task that escalated can't block the others (every registration shares the toolbox item).
+  const sessions: Activities = {
+    ...agents,
+    async runAgent(req) {
+      try {
+        return await agents.runAgent(req);
+      } finally {
+        await locks.release(req.projectId, req.task.taskId);
+      }
+    },
+  };
   // Done means checked: automated checks, then the Lead's review of what was actually done.
-  const reviewed = withReview(agents, {
+  const reviewed = withReview(sessions, {
     store: opts.store,
     projections: opts.projections,
     library,
