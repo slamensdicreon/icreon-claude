@@ -96,7 +96,7 @@ export function taskBrief(req: {
       : '',
     req.feedback ? `Your Lead rejected the previous attempt: ${req.feedback}` : '',
     req.instructions ? `Instructions from the Director: ${req.instructions}` : '',
-    req.board ? `Team plan (unfinished tasks):\n${req.board}` : '',
+    req.board ? `Team plan:\n${req.board}` : '',
   ]
     .filter(Boolean)
     .join('\n\n');

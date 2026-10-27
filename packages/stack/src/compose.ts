@@ -358,26 +358,31 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
 
 /**
  * The team plan as a task sees it: every other unfinished task, with its owner and state, so an
- * agent that needs something not made yet can name the task it waits on.
+ * agent that needs something not made yet can name the task it waits on; then the finished
+ * tasks, so it can send work back to the task that made it.
  */
 async function teamBoard(projections: Projections, projectId: string, taskId: string) {
   await projections.catchUp(projectId);
-  const tasks = Object.values(projections.get(projectId)?.tasks ?? {});
-  const open = tasks
-    .filter(
-      (t) =>
-        t.kind === 'work' &&
-        t.taskId !== taskId &&
-        !['done', 'cancelled', 'rolled_back'].includes(t.state),
-    )
+  const tasks = Object.values(projections.get(projectId)?.tasks ?? {})
+    .filter((t) => t.kind === 'work' && t.taskId !== taskId)
     .sort((a, b) => a.phase - b.phase);
-  if (!open.length) return null;
-  const lines = open
-    .slice(0, 150)
-    .map((t) => `- ${t.taskId} · ${t.title} · ${t.role} · ${t.state}`);
-  const more = open.length > 150 ? [`- and ${open.length - 150} more`] : [];
-  const done = tasks.filter((t) => t.kind === 'work' && t.state === 'done').length;
-  return [...lines, ...more, `(${done} other tasks are done.)`].join('\n');
+  const open = tasks.filter((t) => !['done', 'cancelled', 'rolled_back'].includes(t.state));
+  const done = tasks.filter((t) => t.state === 'done');
+  if (!open.length && !done.length) return null;
+  const list = (ts: typeof tasks, line: (t: (typeof tasks)[number]) => string, cap: number) => [
+    ...ts.slice(0, cap).map(line),
+    ...(ts.length > cap ? [`- and ${ts.length - cap} more`] : []),
+  ];
+  return [
+    'Unfinished:',
+    ...(open.length
+      ? list(open, (t) => `- ${t.taskId} · ${t.title} · ${t.role} · ${t.state}`, 150)
+      : ['- none']),
+    'Finished (send work back to these by id):',
+    ...(done.length
+      ? list(done, (t) => `- ${t.taskId} · ${t.title} · ${t.role}`, 250)
+      : ['- none']),
+  ].join('\n');
 }
 
 /** What every agent is told about the project: its source site and the documents so far. */
