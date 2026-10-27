@@ -32,6 +32,7 @@ import {
   allHandlersFinished,
   ApplicationFailure,
   condition,
+  patched,
   proxyActivities,
   setHandler,
   startChild,
@@ -111,7 +112,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** Tasks the Director sent back: they run even if their phase has already exited. */
   const reruns = new Set<string>();
   /** Tasks parked until other tasks make what they need, and how often each has waited. */
-  const waitingOn = new Map<string, { ids: string[]; what: string; prior: string | null }>();
+  const waitingOn = new Map<
+    string,
+    { ids: string[]; what: string; prior: string | null; note?: string }
+  >();
   const waits: Record<string, number> = {};
   const MAX_WAITS = 3;
   /** How often agents sent each finished task back; past the limit, the Director decides. */
@@ -656,8 +660,20 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           instructions[x.taskId] = [instructions[x.taskId], note].filter(Boolean).join('\n\n');
         }
       }
-      const open = named.filter((id) => !SETTLED_STATES.has(stateOf(id)));
-      waitingOn.set(t.taskId, { ids: open, what: w.what, prior: prior ?? null });
+      // A task in a phase that hasn't started can't be waited on: that phase starts only once
+      // this one is done. Finish now and leave the rest to it.
+      const later = patched('wait-later-phase')
+        ? named.filter((id) => task(id)!.phase > t.phase && !started.has(task(id)!.phase))
+        : [];
+      const open = named.filter((id) => !SETTLED_STATES.has(stateOf(id)) && !later.includes(id));
+      waitingOn.set(t.taskId, {
+        ids: open,
+        what: w.what,
+        prior: prior ?? null,
+        note: later.length
+          ? `${later.map(titleOf).join(', ')} run${later.length === 1 ? 's' : ''} in a later phase, which starts only after this one is done, so this task can't wait for ${later.length === 1 ? 'it' : 'them'}. Finish what is yours now, don't wait on ${later.length === 1 ? 'it' : 'them'} again, and say in your summary what is left for ${later.length === 1 ? 'it' : 'them'}.`
+          : undefined,
+      });
       events.push(
         taskMove(t, 'waiting', `Waiting on ${named.map(titleOf).join(', ')}: ${w.what}`),
         agentRefresh(t.role),
@@ -1723,7 +1739,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       if (!t || stateOf(id) !== 'waiting') continue;
       instructions[id] = [
         w.prior,
-        `What you waited for (${w.what}) should exist now: ${w.ids.length ? `${w.ids.map(titleOf).join(', ')} finished` : 'the tasks you named had finished'}. Check it, and carry on from where you stopped.`,
+        w.note && !w.ids.length
+          ? w.note
+          : `What you waited for (${w.what}) should exist now: ${w.ids.length ? `${w.ids.map(titleOf).join(', ')} finished` : 'the tasks you named had finished'}. Check it, and carry on from where you stopped.${w.note ? ` ${w.note}` : ''}`,
       ]
         .filter(Boolean)
         .join('\n\n');
@@ -1766,6 +1784,31 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           .slice(0, Math.max(1, t.batchSize));
         for (const b of batch) taken.add(b.taskId);
         await dispatch(batch, 'ready');
+        progressed = true;
+      }
+    }
+
+    // Nobody working, nothing waiting on the Director, yet tasks wait on each other: no wait can
+    // end, so release them all to finish what is theirs.
+    if (
+      waitingOn.size &&
+      !children.size &&
+      !projectPaused &&
+      !budgetHold &&
+      ![...escalations.values()].some((e) => e.status === 'open') &&
+      patched('release-stalled-waits')
+    ) {
+      for (const [id, w] of [...waitingOn]) {
+        waitingOn.delete(id);
+        const t = task(id);
+        if (!t || stateOf(id) !== 'waiting') continue;
+        instructions[id] = [
+          w.prior,
+          `Nothing is working on what you waited for (${w.what}): the tasks that would make it can't start until this work moves. Finish what is yours now, don't wait on ${w.ids.length ? w.ids.map(titleOf).join(', ') : 'them'} again, and say in your summary what is left and for whom.`,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+        await send(taskMove(t, 'ready', 'Released: what it waited on could not move'));
         progressed = true;
       }
     }

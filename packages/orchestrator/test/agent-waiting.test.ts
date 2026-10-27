@@ -100,3 +100,57 @@ it('sends finished work back to its owner with the fixes, and carries on when it
   expect(Object.values(s.escalations).some((x) => x.title.includes('Header'))).toBe(false);
   expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
 }, 120_000);
+
+it('never parks a task on a later phase: it finishes its part and leaves the rest', async () => {
+  const seen: RunRequest[] = [];
+  const runner = {
+    async run(req: RunRequest) {
+      seen.push(req);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      if (req.task.taskId === 'port-header' && !req.instructions)
+        return {
+          kind: 'waiting' as const,
+          summary: 'The re-crawl has to happen first.',
+          waitingOn: { taskIds: ['recrawl-source'], what: 'the re-crawl' },
+          spent,
+        };
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  const header = seen.filter((r) => r.task.taskId === 'port-header');
+  expect(header).toHaveLength(2);
+  expect(header[1]!.instructions).toContain('runs in a later phase');
+  expect(Object.values(p.state()!.escalations).some((x) => x.title.includes('Header'))).toBe(false);
+}, 120_000);
+
+it('releases waits nothing can end: nobody working and no card open', async () => {
+  const seen: RunRequest[] = [];
+  const runner = {
+    async run(req: RunRequest) {
+      seen.push(req);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      // Validation waits on Header's registration, which waits on this port: it can't move.
+      if (req.task.taskId === 'port-header' && !req.instructions)
+        return {
+          kind: 'waiting' as const,
+          summary: 'Waiting for validation.',
+          waitingOn: { taskIds: ['validate-components'], what: 'the validation' },
+          spent,
+        };
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  const header = seen.filter((r) => r.task.taskId === 'port-header');
+  expect(header).toHaveLength(2);
+  expect(header[1]!.instructions).toContain('Nothing is working on what you waited for');
+}, 120_000);
