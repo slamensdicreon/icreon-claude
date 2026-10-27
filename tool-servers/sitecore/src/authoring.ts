@@ -43,6 +43,12 @@ const CreateArgs = z
     fields: z.array(Field).max(200).optional(),
   })
   .refine((a) => a.templatePath || a.templateId, 'templatePath or templateId is required');
+const HostArgs = z.object({
+  /** The head's base URL, e.g. https://acme-editing.vercel.app */
+  url: z.url({ protocol: /^https$/ }),
+});
+/** Where SitecoreAI keeps rendering hosts; the environment's own is "Default". */
+const HOSTS = '/sitecore/system/Settings/Services/Rendering Hosts';
 const UpdateArgs = z.object({
   path: Path,
   language: z.string().optional(),
@@ -95,8 +101,8 @@ const LanguageArgs = z.object({
   code: z.string().regex(/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/),
 });
 
-const bad = (message: string): ToolResult => ({
-  code: 422,
+const bad = (message: string, code = 422): ToolResult => ({
+  code,
   body: { error: message },
   summary: message,
 });
@@ -285,6 +291,24 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       releases: true,
       pathArgs: ['paths'],
     },
+    'rendering-host.read': {
+      description:
+        "Which rendering host the project's site renders through in Page builder: the site's setting (its Site Grouping item) and the rendering host items, with their URLs. Changes nothing.",
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      mutates: false,
+    },
+    'rendering-host.set': {
+      description:
+        "Make the project's own head the site's editing host in Page builder: creates or updates a rendering host item named after the site (same template as the environment's Default host, with this head's render, application and config URLs) and points the site's Site Grouping setting at it. Other sites keep their host. `url` is the head's base URL. Reads both back.",
+      inputSchema: {
+        type: 'object',
+        properties: { url: { type: 'string' } },
+        required: ['url'],
+        additionalProperties: false,
+      },
+      mutates: true,
+      releases: true,
+    },
     'site.verify': {
       description:
         "Check the project's site exists in its site collection (both default to the project's target). Returns the site if it does; if not, says so (sites are created in SitecoreAI Sites). Changes nothing.",
@@ -358,6 +382,10 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         case 'site.verify':
         case 'site.create':
           return await this.site(q, SiteArgs.safeParse(args), facts);
+        case 'rendering-host.read':
+          return await this.hostRead(q, facts);
+        case 'rendering-host.set':
+          return await this.hostSet(q, HostArgs.safeParse(args), facts, lang);
         case 'language.add':
           return await this.language(q, LanguageArgs.safeParse(args));
         default:
@@ -705,6 +733,154 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       }),
       (l) => l ?? 'en',
     );
+  }
+
+  /** The site's Site Grouping item and its rendering host field. */
+  private async grouping(q: Gql, facts: TenantFacts) {
+    const root = `/sitecore/content/${facts.siteCollection}/${facts.site}/Settings/Site Grouping`;
+    const d = await q.run<{
+      item: {
+        children: {
+          nodes: {
+            itemId: string;
+            name: string;
+            path: string;
+            fields: { nodes: { name: string; value: string }[] };
+          }[];
+        };
+      } | null;
+    }>(
+      `query { item(where: { database: "master", path: ${gql(root)} }) {
+        children { nodes { itemId name path fields(ownFields: false, excludeStandardFields: true) { nodes { name value } } } }
+      } }`,
+    );
+    const items = d.item?.children.nodes ?? [];
+    const site = facts.site.toLowerCase();
+    const value = (it: (typeof items)[number], name: RegExp) =>
+      it.fields.nodes.find((f) => name.test(f.name));
+    const item =
+      items.find((it) => value(it, /^site ?name$/i)?.value.toLowerCase() === site) ??
+      items.find((it) => it.name.toLowerCase() === site) ??
+      items[0];
+    if (!item) return { root, item: null, field: null };
+    return { root, item, field: value(item, /rendering host/i) ?? null };
+  }
+
+  /** The rendering host items, with their fields. */
+  private async hosts(q: Gql) {
+    const d = await q.run<{
+      item: {
+        children: {
+          nodes: {
+            itemId: string;
+            name: string;
+            path: string;
+            template: { templateId: string };
+            fields: { nodes: { name: string; value: string }[] };
+          }[];
+        };
+      } | null;
+    }>(
+      `query { item(where: { database: "master", path: ${gql(HOSTS)} }) {
+        children { nodes { itemId name path template { templateId } fields(ownFields: false, excludeStandardFields: true) { nodes { name value } } } }
+      } }`,
+    );
+    return d.item?.children.nodes ?? [];
+  }
+
+  private async hostRead(q: Gql, facts: TenantFacts): Promise<ToolResult> {
+    const [g, hosts] = await Promise.all([this.grouping(q, facts), this.hosts(q)]);
+    const urls = (h: (typeof hosts)[number]) =>
+      Object.fromEntries(
+        h.fields.nodes.filter((f) => /url/i.test(f.name)).map((f) => [f.name, f.value]),
+      );
+    const chosen = g.field?.value ?? null;
+    return {
+      code: 200,
+      body: {
+        siteGrouping: g.item?.path ?? null,
+        settingField: g.field?.name ?? null,
+        renderingHost: chosen,
+        hosts: hosts.map((h) => ({ name: h.name, itemId: h.itemId, urls: urls(h) })),
+      },
+      summary: g.item
+        ? `${facts.site} renders through ${chosen ? `"${chosen}"` : 'the default host (no setting)'}; ${hosts.length} rendering host${hosts.length === 1 ? '' : 's'}: ${hosts.map((h) => h.name).join(', ')}`
+        : `No Site Grouping item under ${g.root}`,
+    };
+  }
+
+  private async hostSet(
+    q: Gql,
+    a: Parsed<typeof HostArgs>,
+    facts: TenantFacts,
+    lang: Lang,
+  ): Promise<ToolResult> {
+    if (!a.success) return bad(a.error.issues[0]!.message);
+    const origin = new URL(a.data.url).origin;
+    const hosts = await this.hosts(q);
+    // Copy the environment's own host: its template and field names, with this head's URLs.
+    const model = hosts.find((h) => h.name.toLowerCase() === 'default') ?? hosts[0];
+    if (!model) return bad(`No rendering host under ${HOSTS} to copy.`, 404);
+    const url = (name: string) =>
+      /endpoint/i.test(name)
+        ? `${origin}/api/editing/render`
+        : /config/i.test(name)
+          ? `${origin}/api/editing/config`
+          : /application/i.test(name)
+            ? origin
+            : null;
+    const fields = model.fields.nodes.flatMap((f) => {
+      const v = url(f.name);
+      return v ? [{ name: f.name, value: v }] : [];
+    });
+    if (!fields.length)
+      return bad(
+        `${model.path} has no URL fields to set (fields: ${model.fields.nodes.map((f) => f.name).join(', ')}).`,
+      );
+    const name = facts.site;
+    const path = `${HOSTS}/${name}`;
+    const existing = hosts.find((h) => h.name.toLowerCase() === name.toLowerCase());
+    const host = existing
+      ? await this.update(q, UpdateArgs.safeParse({ path: existing.path, fields }), lang)
+      : await this.create(
+          q,
+          CreateArgs.safeParse({
+            parentPath: HOSTS,
+            name,
+            templateId: model.template.templateId,
+            fields,
+          }),
+          lang,
+        );
+    if (host.code !== 200) return host;
+
+    const g = await this.grouping(q, facts);
+    if (!g.item) return bad(`No Site Grouping item under ${g.root}.`, 404);
+    if (!g.field)
+      return bad(
+        `${g.item.path} has no rendering host field (fields: ${g.item.fields.nodes.map((f) => f.name).join(', ')}).`,
+      );
+    // The setting holds a host's name, or its ID: write it the way it is stored.
+    const hostId = (host.body as { itemId?: string }).itemId ?? existing?.itemId ?? '';
+    const value = /^\{?[0-9a-f-]{36}\}?$/i.test(g.field.value.trim()) ? hostId : name;
+    const set = await this.update(
+      q,
+      UpdateArgs.safeParse({ path: g.item.path, fields: [{ name: g.field.name, value }] }),
+      lang,
+    );
+    if (set.code !== 200) return set;
+    return {
+      code: 200,
+      body: {
+        renderingHost: path,
+        url: origin,
+        fields,
+        siteGrouping: g.item.path,
+        setting: g.field.name,
+        value,
+      },
+      summary: `${facts.site} now renders through ${origin} in Page builder: rendering host ${path} (${fields.map((f) => f.name).join(', ')}), and ${g.item.path} "${g.field.name}" set to ${value}; both read back`,
+    };
   }
 
   /** An item's ID by path, or a 404 the agent can act on. */
