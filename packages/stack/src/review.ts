@@ -439,6 +439,17 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
             steps: trail,
             artifacts,
             checks: results,
+            previous: log
+              .filter(
+                (e): e is Extract<LwEvent, { type: 'review.recorded' }> =>
+                  e.type === 'review.recorded' && e.data.taskId === task.taskId,
+              )
+              .slice(-4)
+              .map((e) => `${e.data.verdict}: ${e.data.note ?? ''}`),
+            permissions: Object.entries(role?.tools ?? {}).map(
+              ([server, grant]) =>
+                `${server}: ${grant.ops.join(', ')}${grant.scope?.paths?.length ? ` (writes only under ${grant.scope.paths.join(', ')})` : ''}`,
+            ),
           });
         } catch (err) {
           // A review that can't run doesn't hold the project up; it says so on the record.
