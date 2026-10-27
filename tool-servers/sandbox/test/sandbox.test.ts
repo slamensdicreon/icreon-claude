@@ -46,6 +46,103 @@ const facts = async () => ({
 });
 
 describe('working copies', () => {
+  it('integrates branches: merges each, skips missing ones, builds once, pushes', async () => {
+    const fake = fakeBox(
+      {
+        'examples/basic-nextjs/node_modules/.package-lock.json': '{}',
+        'examples/basic-nextjs/package.json': JSON.stringify({ scripts: { 'next:build': 'x' } }),
+      },
+      (cmd, args) =>
+        cmd === 'git' && args[0] === 'rev-parse'
+          ? { exitCode: 0, output: 'abc1234\n' }
+          : cmd === 'git' && args.at(-1)?.includes('port-gone')
+            ? { exitCode: 128, output: "fatal: couldn't find remote ref" }
+            : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call(
+      'git.integrate',
+      { branches: ['launchworks/port-hero', 'launchworks/port-gone', 'launchworks/port-card'] },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      code: 200,
+      body: {
+        commit: 'abc1234',
+        integrated: ['launchworks/port-hero', 'launchworks/port-card'],
+        missing: ['launchworks/port-gone'],
+        regenerated: [],
+      },
+    });
+    const git = fake.runs
+      .filter((x) => x.cmd === 'git')
+      .map((x) => x.args.filter((a) => !a.startsWith('http.extraHeader') && a !== '-c').join(' '));
+    expect(git.filter((g) => g.startsWith('merge'))).toEqual([
+      'merge --no-ff --no-edit -m Integrate launchworks/port-hero origin/launchworks/port-hero',
+      'merge --no-ff --no-edit -m Integrate launchworks/port-card origin/launchworks/port-card',
+    ]);
+    expect(git.at(-2)).toBe('push origin HEAD:refs/heads/launchworks/integration');
+    expect(fake.runs.filter((x) => x.cmd === 'npm' && x.args.includes('type-check'))).toHaveLength(
+      1,
+    );
+    expect(
+      await s.call('git.integrate', { branches: ['launchworks/integration'] }, ctx),
+    ).toMatchObject({ code: 422 });
+  });
+
+  it('starts again from what another integration pushed', async () => {
+    let pushes = 0;
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },
+      (cmd, args) =>
+        cmd === 'git' && args.includes('push')
+          ? ++pushes === 1
+            ? { exitCode: 1, output: ' ! [rejected] HEAD -> launchworks/integration (fetch first)' }
+            : { exitCode: 0, output: '' }
+          : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('git.integrate', { branches: ['launchworks/port-hero'] }, ctx);
+    expect(r.code).toBe(200);
+    expect(pushes).toBe(2);
+    expect(fake.runs.filter((x) => x.args[0] === 'merge')).toHaveLength(2);
+  });
+
+  it('stops on a source conflict, and regenerates a conflicted component map', async () => {
+    const conflict = (files: string) =>
+      fakeBox({ 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' }, (cmd, args) =>
+        cmd === 'git' && args[0] === 'merge' && args[1] !== '--abort'
+          ? { exitCode: 1, output: 'CONFLICT' }
+          : cmd === 'git' && args[0] === 'diff'
+            ? { exitCode: 0, output: files }
+            : null,
+      );
+    const src = conflict('examples/basic-nextjs/src/Layout.tsx\n');
+    const s1 = new SandboxToolServer({ provider: src.provider, facts, buildEnv: async () => ({}) });
+    const r1 = await s1.call('git.integrate', { branches: ['launchworks/port-hero'] }, ctx);
+    expect(r1).toMatchObject({
+      code: 409,
+      body: { conflicts: ['examples/basic-nextjs/src/Layout.tsx'] },
+    });
+    expect(src.runs.some((x) => x.args.join(' ') === 'merge --abort')).toBe(true);
+    expect(src.runs.some((x) => x.args.includes('push'))).toBe(false);
+
+    const map = conflict('examples/basic-nextjs/.sitecore/component-map.ts\n');
+    const s2 = new SandboxToolServer({ provider: map.provider, facts, buildEnv: async () => ({}) });
+    const r2 = await s2.call('git.integrate', { branches: ['launchworks/port-hero'] }, ctx);
+    expect(r2).toMatchObject({
+      code: 200,
+      body: { regenerated: ['examples/basic-nextjs/.sitecore/component-map.ts'] },
+    });
+    expect(
+      map.runs.some(
+        (x) =>
+          x.args.join(' ') ===
+          'checkout --ours -- examples/basic-nextjs/.sitecore/component-map.ts',
+      ),
+    ).toBe(true);
+  });
+
   it('generates .sitecore before type-check, as the starter build does', async () => {
     const scripts = {
       'sitecore-tools:generate-map': 'x',

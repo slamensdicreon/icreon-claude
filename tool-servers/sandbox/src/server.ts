@@ -96,6 +96,24 @@ const CliArgs = z.object({
     .regex(/^[A-Z][A-Za-z0-9]{1,60}$/, 'PascalCase')
     .optional(),
 });
+/** Where accepted components come together; the editing host deploys it. */
+export const INTEGRATION_BRANCH = 'launchworks/integration';
+/** Files the build generates: a conflict in them is settled by generating them again. */
+const GENERATED = /(^|\/)(\.sitecore\/component-map(\.client)?\.ts|package-lock\.json)$/;
+const IntegrateArgs = z.object({
+  branches: z
+    .array(
+      z
+        .string()
+        .regex(AGENT_BRANCH, 'agent branches, launchworks/…')
+        .refine(
+          (b) => b !== INTEGRATION_BRANCH,
+          'the branches to bring in, not the integration branch',
+        ),
+    )
+    .min(1)
+    .max(80),
+});
 const CommitArgs = z.object({
   branch: z.string().regex(AGENT_BRANCH, 'must start with launchworks/'),
   message: z.string().min(1).max(2000),
@@ -104,6 +122,16 @@ const CommitArgs = z.object({
 export class SandboxToolServer implements ToolServer {
   readonly name = 'sandbox';
   readonly catalog: OperationCatalog = {
+    'git.integrate': {
+      description: `Bring accepted agent branches (launchworks/design-system, launchworks/port-…) into ${INTEGRATION_BRANCH}, which the editing host deploys: starts from the integration branch as pushed (or the default branch the first time), merges each branch in order, settles conflicts in generated files (the component map, package-lock.json) by generating them again, builds once, and pushes only if the build is green. Branches that don't exist are skipped and listed; one already merged changes nothing. A conflict in source files stops it before anything is pushed, naming the branch and files: integrate again without that branch. If another integration pushes first, it starts again from that, up to three times.`,
+      inputSchema: {
+        type: 'object',
+        properties: { branches: { type: 'array', items: { type: 'string' } } },
+        required: ['branches'],
+        additionalProperties: false,
+      },
+      mutates: true,
+    },
     'workspace.open': {
       description:
         "Open this task's working copy of the build repository, on your agent branch (launchworks/…; created from the default branch if new), and install dependencies. Call it first; it is reused for the rest of the task. Commit before you finish: an unused working copy expires after 45 minutes.",
@@ -225,6 +253,61 @@ export class SandboxToolServer implements ToolServer {
       await run('git', ['config', 'user.name', 'Launchworks']);
       await run('git', ['config', 'user.email', 'agents@launchworks.invalid']);
     }
+    const auth = ['-c', `http.extraHeader=${basic(ctx.token)}`];
+
+    /** Installs dependencies when the working copy has none. */
+    const install = async () => {
+      if (!created && (await box.read(`${facts.appPath}/node_modules/.package-lock.json`)))
+        return { result: null, lockUpdated: false };
+      const lock = await box.read(`${facts.appPath}/package-lock.json`);
+      const npm = (verb: string) =>
+        run('npm', [verb, '--no-audit', '--no-fund'], { cwd: app, timeoutMs: 15 * 60_000 });
+      let result = await npm(lock ? 'ci' : 'install');
+      let lockUpdated = false;
+      // Sitecore's starter has shipped a lock file behind its package.json, which npm ci
+      // refuses. npm install brings the lock file up to date; the agent commits it.
+      if (lock && result.exitCode !== 0 && /EUSAGE|in sync/.test(result.output)) {
+        result = await npm('install');
+        lockUpdated = result.exitCode === 0;
+      }
+      return { result, lockUpdated };
+    };
+
+    /** The starter's build: generate .sitecore, type-check, then build. */
+    const build = async () => {
+      const env = { ...(await this.opts.buildEnv(ctx.projectId)), CI: '1' };
+      const npm = (script: string, minutes: number) =>
+        run('npm', ['run', script], { cwd: app, env, timeoutMs: minutes * 60_000 });
+      // The starter generates .sitecore/ (sites, import maps, metadata) during its build, and
+      // its type-check needs those files: generate first, so a clean checkout type-checks.
+      const pkg = await box.read(`${facts.appPath}/package.json`);
+      const has = new Set(
+        Object.keys(
+          (pkg ? (JSON.parse(pkg.toString('utf8')) as { scripts?: object }) : {}).scripts ?? {},
+        ),
+      );
+      const staged = ['sitecore-tools:generate-map', 'sitecore-tools:build', 'next:build'].every(
+        (x) => has.has(x),
+      );
+      let generated: { exitCode: number; output: string } | null = null;
+      if (staged) {
+        generated = await npm('sitecore-tools:generate-map', 5);
+        if (generated.exitCode === 0) generated = await npm('sitecore-tools:build', 10);
+      }
+      const types =
+        !generated || generated.exitCode === 0
+          ? await npm('type-check', 10)
+          : { exitCode: generated.exitCode, output: generated.output };
+      const built = types.exitCode === 0 ? await npm(staged ? 'next:build' : 'build', 20) : null;
+      const green = types.exitCode === 0 && built?.exitCode === 0;
+      const why =
+        generated && generated.exitCode
+          ? 'generating .sitecore failed'
+          : types.exitCode
+            ? 'type-check failed'
+            : 'build failed';
+      return { green, types, built, why };
+    };
 
     switch (op) {
       case 'workspace.open': {
@@ -248,31 +331,20 @@ export class SandboxToolServer implements ToolServer {
             );
           }
         }
-        let install: { exitCode: number; output: string } | null = null;
-        let lockUpdated = false;
-        if (created || !(await box.read(`${facts.appPath}/node_modules/.package-lock.json`))) {
-          const lock = await box.read(`${facts.appPath}/package-lock.json`);
-          const npm = (verb: string) =>
-            run('npm', [verb, '--no-audit', '--no-fund'], { cwd: app, timeoutMs: 15 * 60_000 });
-          install = await npm(lock ? 'ci' : 'install');
-          // Sitecore's starter has shipped a lock file behind its package.json, which npm ci
-          // refuses. npm install brings the lock file up to date; the agent commits it.
-          if (lock && install.exitCode !== 0 && /EUSAGE|in sync/.test(install.output)) {
-            install = await npm('install');
-            lockUpdated = install.exitCode === 0;
-          }
-        }
+        const { result: installed, lockUpdated } = await install();
         const head = await run('git', ['log', '-1', '--format=%h %s']);
         const branch = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
         return {
-          code: install && install.exitCode !== 0 ? 500 : 200,
+          code: installed && installed.exitCode !== 0 ? 500 : 200,
           body: {
             branch: branch.output.trim(),
             head: head.output.trim(),
             app: facts.appPath,
-            install: install ? { exitCode: install.exitCode, output: install.output } : 'reused',
+            install: installed
+              ? { exitCode: installed.exitCode, output: installed.output }
+              : 'reused',
           },
-          summary: `Working copy on ${branch.output.trim()} (${head.output.trim().slice(0, 60)})${install ? `, dependencies ${install.exitCode === 0 ? 'installed' : `failed to install: ${lastError(install.output)}`}` : ''}${lockUpdated ? `; ${facts.appPath}/package-lock.json was out of date with package.json and was updated: commit it` : ''}`,
+          summary: `Working copy on ${branch.output.trim()} (${head.output.trim().slice(0, 60)})${installed ? `, dependencies ${installed.exitCode === 0 ? 'installed' : `failed to install: ${lastError(installed.output)}`}` : ''}${lockUpdated ? `; ${facts.appPath}/package-lock.json was out of date with package.json and was updated: commit it` : ''}`,
         };
       }
       case 'fs.list': {
@@ -357,32 +429,138 @@ export class SandboxToolServer implements ToolServer {
           summary: `Wrote ${writes.length} and deleted ${deletes.length} file${a.data.files.length === 1 ? '' : 's'}`,
         };
       }
-      case 'exec.build': {
-        const env = { ...(await this.opts.buildEnv(ctx.projectId)), CI: '1' };
-        const npm = (script: string, minutes: number) =>
-          run('npm', ['run', script], { cwd: app, env, timeoutMs: minutes * 60_000 });
-        // The starter generates .sitecore/ (sites, import maps, metadata) during its build, and
-        // its type-check needs those files: generate first, so a clean checkout type-checks.
-        const pkg = await box.read(`${facts.appPath}/package.json`);
-        const has = new Set(
-          Object.keys(
-            (pkg ? (JSON.parse(pkg.toString('utf8')) as { scripts?: object }) : {}).scripts ?? {},
-          ),
-        );
-        const staged = ['sitecore-tools:generate-map', 'sitecore-tools:build', 'next:build'].every(
-          (s) => has.has(s),
-        );
-        let generated: { exitCode: number; output: string } | null = null;
-        if (staged) {
-          generated = await npm('sitecore-tools:generate-map', 5);
-          if (generated.exitCode === 0) generated = await npm('sitecore-tools:build', 10);
+      case 'git.integrate': {
+        const a = IntegrateArgs.safeParse(args);
+        if (!a.success) return bad(a.error.issues[0]!.message);
+        const wanted = [...new Set(a.data.branches)];
+        // The working copy is a shallow clone: a merge needs the shared history.
+        await run('git', [...auth, 'fetch', '-q', '--unshallow', 'origin']);
+        const base = await run('git', [...auth, 'fetch', 'origin', facts.branch]);
+        if (base.exitCode !== 0)
+          return bad(`Couldn't fetch ${facts.branch}: ${lastError(base.output)}`, 502);
+        const branches: string[] = [];
+        const missing: string[] = [];
+        for (const b of wanted) {
+          const got = await run('git', [
+            ...auth,
+            'fetch',
+            'origin',
+            `+refs/heads/${b}:refs/remotes/origin/${b}`,
+          ]);
+          (got.exitCode === 0 ? branches : missing).push(b);
         }
-        const types =
-          !generated || generated.exitCode === 0
-            ? await npm('type-check', 10)
-            : { exitCode: generated.exitCode, output: generated.output };
-        const build = types.exitCode === 0 ? await npm(staged ? 'next:build' : 'build', 20) : null;
-        const green = types.exitCode === 0 && build?.exitCode === 0;
+        if (!branches.length)
+          return bad(`None of these branches exist: ${missing.join(', ')}`, 404);
+        // No lock: integrations run side by side, and the push says when another got there first.
+        const regenerated = new Set<string>();
+        for (let attempt = 1; ; attempt++) {
+          const has = await run('git', [...auth, 'fetch', 'origin', INTEGRATION_BRANCH]);
+          // Start from the integration branch as pushed, or from the default branch the first time.
+          await run('git', ['reset', '--hard', '-q']);
+          await run('git', ['clean', '-fdq', '-e', 'node_modules']);
+          const from = has.exitCode === 0 ? 'FETCH_HEAD' : `origin/${facts.branch}`;
+          const start = await run('git', ['checkout', '-q', '-B', INTEGRATION_BRANCH, from]);
+          if (start.exitCode !== 0)
+            return bad(`Couldn't start from ${from}: ${lastError(start.output)}`);
+          regenerated.clear();
+          for (const branch of branches) {
+            const merge = await run('git', [
+              'merge',
+              '--no-ff',
+              '--no-edit',
+              '-m',
+              `Integrate ${branch}`,
+              `origin/${branch}`,
+            ]);
+            if (merge.exitCode === 0) continue;
+            const conflicted = (await run('git', ['diff', '--name-only', '--diff-filter=U'])).output
+              .split('\n')
+              .map((l) => l.trim())
+              .filter(Boolean);
+            const source = conflicted.filter((f) => !GENERATED.test(f));
+            if (!conflicted.length || source.length) {
+              await run('git', ['merge', '--abort']);
+              return {
+                code: 409,
+                body: {
+                  branch,
+                  conflicts: source.length ? source : conflicted,
+                  output: merge.output,
+                },
+                summary: source.length
+                  ? `${branch} conflicts with ${INTEGRATION_BRANCH} in ${source.join(', ')}: nothing pushed`
+                  : `Merging ${branch} failed: ${lastError(merge.output)}`,
+              };
+            }
+            // Generated files: keep the integration branch's for now, generate them after the build.
+            await run('git', ['checkout', '--ours', '--', ...conflicted]);
+            await run('git', ['add', '--', ...conflicted]);
+            const done = await run('git', ['commit', '-q', '--no-edit']);
+            if (done.exitCode !== 0)
+              return bad(`Couldn't finish merging ${branch}: ${lastError(done.output)}`, 500);
+            for (const f of conflicted) regenerated.add(f);
+          }
+          const { result: installed } = await install();
+          if (
+            [...regenerated].some((f) => f.endsWith('package-lock.json')) ||
+            (installed && installed.exitCode !== 0)
+          ) {
+            const again = await run('npm', ['install', '--no-audit', '--no-fund'], {
+              cwd: app,
+              timeoutMs: 15 * 60_000,
+            });
+            if (again.exitCode !== 0)
+              return bad(`Dependencies failed to install: ${lastError(again.output)}`, 500);
+          }
+          const { green, types, built, why } = await build();
+          if (!green) {
+            return {
+              code: 422,
+              body: {
+                branches,
+                typeCheck: { exitCode: types.exitCode, output: types.exitCode ? types.output : '' },
+                build: built ? { exitCode: built.exitCode, output: built.output } : 'skipped',
+              },
+              summary: `Build red after merging ${branches.join(', ')} (${why}): nothing pushed`,
+            };
+          }
+          // The build regenerates the tracked component maps and the lockfile: keep them with the merge.
+          const changed = (await run('git', ['status', '--porcelain'])).output.trim();
+          if (changed) {
+            await run('git', ['add', '-A']);
+            await run('git', ['commit', '-q', '-m', 'Generated files after integrating']);
+          }
+          const push = await run(
+            'git',
+            [...auth, 'push', 'origin', `HEAD:refs/heads/${INTEGRATION_BRANCH}`],
+            { timeoutMs: 120_000 },
+          );
+          if (push.exitCode === 0) break;
+          // Another component's integration pushed first: start again from what it pushed.
+          if (!/rejected|fetch first|non-fast-forward/.test(push.output) || attempt === 3)
+            return {
+              code: 409,
+              body: { error: push.output },
+              summary: `Couldn't push ${INTEGRATION_BRANCH}: ${lastError(push.output)}`,
+            };
+        }
+        const sha = (await run('git', ['rev-parse', '--short=7', 'HEAD'])).output.trim();
+        const skipped = missing.length ? `; skipped ${missing.join(', ')} (not found)` : '';
+        const regen = regenerated.size ? `; regenerated ${[...regenerated].join(', ')}` : '';
+        return {
+          code: 200,
+          body: {
+            integrated: branches,
+            missing,
+            integration: INTEGRATION_BRANCH,
+            commit: sha,
+            regenerated: [...regenerated],
+          },
+          summary: `Integrated ${branches.length} branch${branches.length === 1 ? '' : 'es'} into ${INTEGRATION_BRANCH} (${sha}), build green, pushed${skipped}${regen}`,
+        };
+      }
+      case 'exec.build': {
+        const { green, types, built, why } = await build();
         // What was built: the commit, and whether anything was uncommitted. Acceptance reads it.
         const dirty = (await run('git', ['status', '--porcelain'])).output.trim();
         const head = (await run('git', ['rev-parse', '--short=7', 'HEAD'])).output.trim();
@@ -393,11 +571,11 @@ export class SandboxToolServer implements ToolServer {
             commit: head,
             uncommitted: dirty ? dirty.split('\n').length : 0,
             typeCheck: { exitCode: types.exitCode, output: types.exitCode ? types.output : '' },
-            build: build ? { exitCode: build.exitCode, output: build.output } : 'skipped',
+            build: built ? { exitCode: built.exitCode, output: built.output } : 'skipped',
           },
           summary: green
             ? `Build green: type-check and build passed (${dirty ? 'uncommitted changes' : `nothing uncommitted, at ${head}`})`
-            : `Build red: ${generated && generated.exitCode ? 'generating .sitecore failed' : types.exitCode ? 'type-check failed' : 'build failed'}`,
+            : `Build red: ${why}`,
         };
       }
       case 'exec.content-sdk-cli': {
