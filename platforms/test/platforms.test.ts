@@ -250,6 +250,8 @@ describe('SitecoreAI checks', () => {
             attrs: { insertOptions: ['corporate-page', 'careers-page'] },
           },
           { key: 'careers-page', name: 'Careers Page', attrs: { insertOptions: ['careers-page'] } },
+          // Merged into Corporate Page: no template of its own.
+          { key: 'faq', name: 'FAQ', status: 'merge', attrs: { mergedInto: 'corporate-page' } },
         ],
       },
     };
@@ -259,7 +261,11 @@ describe('SitecoreAI checks', () => {
     );
     items[`${root}/Pages/Corporate Page/__Standard Values`].fields.__Masters = '{c0-1}|{ca-2}';
     const ok = await pack.checks!['structural.templates']!(ctx(tenant(items).read, bp));
-    expect(ok.status).toBe('pass');
+    expect(ok).toEqual({
+      status: 'pass',
+      detail:
+        '2 templates exist with standard values, and their insert options match the Blueprint; 1 merged into others, as the Blueprint says.',
+    });
   });
 
   it("checks the site, Home and the project's own folders", async () => {

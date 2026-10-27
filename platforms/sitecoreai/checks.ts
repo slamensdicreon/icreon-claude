@@ -144,8 +144,16 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
 
     // Every page template in the Blueprint exists in the project's folder, with standard values.
     'structural.templates': async (ctx) => {
-      const templates = inScope(ctx, 'templates');
-      if (!templates.length) return pending('The Blueprint has no templates to check.');
+      const all = inScope(ctx, 'templates');
+      if (!all.length) return pending('The Blueprint has no templates to check.');
+      // A merged template ships inside another: it has no item of its own, its target does.
+      const intoOf = (t: (typeof all)[number]) => {
+        const a = t.attrs ?? {};
+        const v = a.mergedInto ?? a.mergeInto ?? a.mergesInto ?? a.into;
+        return typeof v === 'string' ? v : null;
+      };
+      const merged = all.filter((t) => t.status === 'merge' || intoOf(t));
+      const templates = all.filter((t) => !merged.includes(t));
       const root = `/sitecore/templates/Project/${sitecoreBindings(ctx.target).project}`;
       const found = await findByName(
         ctx,
@@ -195,10 +203,16 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
             `${t.name}'s insert options (__Masters on ${sv}) ${value ? `are ${value}` : 'are empty'}; the Blueprint wants ${want.map((w) => (w.hit ? `${w.name} ${w.hit.itemId}` : `${w.name} (no such template)`)).join(' and ')}, missing ${missing.map((w) => w.name).join(', ')}`,
           );
       }
+      for (const m of merged) {
+        const into = intoOf(m);
+        const target = into ? byKeyOrName(into) : null;
+        if (into && (!target || !found.get(target.name.toLowerCase())))
+          problems.push(`${m.name} is merged into ${into}, which isn't under ${root}`);
+      }
       return problems.length
         ? fail(problems)
         : pass(
-            `${templates.length} templates exist with standard values, and their insert options match the Blueprint.`,
+            `${templates.length} templates exist with standard values, and their insert options match the Blueprint${merged.length ? `; ${merged.length} merged into others, as the Blueprint says` : ''}.`,
           );
     },
 
