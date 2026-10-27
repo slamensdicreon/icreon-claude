@@ -171,7 +171,9 @@ describe('SitecoreAI checks', () => {
     };
     const res = await pack.checks!['structural.renderings']!(ctx(t.read, bp));
     expect(res.status).toBe('fail');
-    expect(res.detail).toBe("Cards isn't in Available Renderings.");
+    expect(res.detail).toBe(
+      "Cards ({BBBB-2}) isn't in Available Renderings: none of Page Content lists that ID.",
+    );
 
     // A registration task is checked on its own component, whose rendering may be a
     // { name, componentName } model contract rather than a plain name.
@@ -194,9 +196,38 @@ describe('SitecoreAI checks', () => {
     expect(own).toMatchObject({ status: 'pass' });
     const all = await pack.checks!['structural.renderings']!(ctx(t.read, contract));
     expect(all.detail).toBe(
-      "Cards isn't in Available Renderings; rendering Tabs not under " + r + '.',
+      "Cards ({BBBB-2}) isn't in Available Renderings: none of Page Content lists that ID; rendering Tabs not under " +
+        r +
+        '.',
     );
     expect(all.detail).not.toContain('[object Object]');
+  });
+
+  it('names duplicate renderings, and reads groups kept in folders', async () => {
+    const r = '/sitecore/layout/Renderings/Project/Brands/ansco';
+    const groups = '/sitecore/content/Brands/ansco/Presentation/Available Renderings';
+    const t = tenant({
+      [r]: {},
+      [`${r}/Rich Text`]: { id: '{CCCC-3}' },
+      [`${r}/Content`]: {},
+      [`${r}/Content/Rich Text`]: { id: '{DDDD-4}' },
+      [`${r}/Hero`]: { id: '{AAAA-1}' },
+      [groups]: {},
+      [`${groups}/Brand`]: {},
+      [`${groups}/Brand/Heroes`]: { fields: { Renderings: '{AAAA-1}' } },
+    });
+    const bp = {
+      collections: {
+        components: [
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero' } },
+          { key: 'rich-text', name: 'Rich Text', attrs: { rendering: 'Rich Text' } },
+        ],
+      },
+    };
+    const res = await pack.checks!['structural.renderings']!(ctx(t.read, bp));
+    expect(res.detail).toBe(
+      `2 renderings named Rich Text (${r}/Rich Text {CCCC-3}, ${r}/Content/Rich Text {DDDD-4}): keep one, delete the others, and offer the one kept.`,
+    );
   });
 
   it("checks the site, Home and the project's own folders", async () => {

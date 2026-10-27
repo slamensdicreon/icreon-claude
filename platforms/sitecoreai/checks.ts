@@ -37,18 +37,29 @@ async function item(
   return r.body as Item;
 }
 
-/** Items named `names` under a root, looking up to two folders deep. */
-async function findByName(ctx: PlatformCheckContext, root: string, names: string[]) {
+/**
+ * Items named `names` under a root, looking up to two folders deep. With `all`, every item of each
+ * name is collected there, and the search covers every level rather than stopping at the first hits.
+ */
+async function findByName(
+  ctx: PlatformCheckContext,
+  root: string,
+  names: string[],
+  all?: Map<string, Child[]>,
+) {
   const want = new Set(names.map((n) => n.toLowerCase()));
   const found = new Map<string, Child>();
   let level = [root];
-  for (let depth = 0; depth < 3 && level.length && found.size < want.size; depth++) {
+  for (let depth = 0; depth < 3 && level.length && (all || found.size < want.size); depth++) {
     const next: string[] = [];
     for (const path of level.slice(0, 40)) {
       const it = await item(ctx, path, true);
       for (const c of it?.children?.nodes ?? []) {
-        if (want.has(c.name.toLowerCase())) found.set(c.name.toLowerCase(), c);
-        else next.push(c.path);
+        const key = c.name.toLowerCase();
+        if (want.has(key)) {
+          if (!found.has(key)) found.set(key, c);
+          all?.set(key, [...(all.get(key) ?? []), c]);
+        } else next.push(c.path);
       }
     }
     level = next;
@@ -160,19 +171,36 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const b = sitecoreBindings(ctx.target);
       const root = `/sitecore/layout/Renderings/Project/${b.module}`;
       const names = components.map(renderingName);
-      const found = await findByName(ctx, root, names);
-      const available = await item(ctx, `${b.sitePath}/Presentation/Available Renderings`, true);
+      const all = new Map<string, Child[]>();
+      await findByName(ctx, root, names, all);
+      // The site's groups of renderings, and groups kept in folders one level down.
+      const groupsPath = `${b.sitePath}/Presentation/Available Renderings`;
+      const available = await item(ctx, groupsPath, true);
       const offered = new Set<string>();
-      for (const group of available?.children?.nodes ?? []) {
-        const g = await item(ctx, group.path);
-        const v = g?.fields?.nodes.find((f) => f.name === 'Renderings')?.value ?? '';
-        for (const part of v.split('|')) if (part) offered.add(id(part));
-      }
+      const groups: string[] = [];
+      const readGroup = async (path: string, depth: number) => {
+        const g = await item(ctx, path, true);
+        const field = g?.fields?.nodes.find((f) => f.name === 'Renderings');
+        if (field) {
+          groups.push(g!.name);
+          for (const part of field.value.split('|')) if (part) offered.add(id(part));
+        } else if (depth === 0) {
+          for (const c of g?.children?.nodes ?? []) await readGroup(c.path, 1);
+        }
+      };
+      for (const group of available?.children?.nodes ?? []) await readGroup(group.path, 0);
       const problems: string[] = [];
       for (const n of names) {
-        const hit = found.get(n.toLowerCase());
-        if (!hit) problems.push(`rendering ${n} not under ${root}`);
-        else if (!offered.has(id(hit.itemId))) problems.push(`${n} isn't in Available Renderings`);
+        const hits = all.get(n.toLowerCase()) ?? [];
+        if (!hits.length) problems.push(`rendering ${n} not under ${root}`);
+        else if (hits.length > 1)
+          problems.push(
+            `${hits.length} renderings named ${n} (${hits.map((h) => `${h.path} ${h.itemId}`).join(', ')}): keep one, delete the others, and offer the one kept`,
+          );
+        else if (!offered.has(id(hits[0]!.itemId)))
+          problems.push(
+            `${n} (${hits[0]!.itemId}) isn't in Available Renderings: none of ${groups.length ? groups.join(', ') : `the groups under ${groupsPath} (there are none)`} lists that ID`,
+          );
       }
       return problems.length
         ? fail(problems)

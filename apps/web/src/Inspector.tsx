@@ -324,6 +324,32 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
           >
             Roll back
           </button>
+          <button
+            className="btn danger"
+            disabled={['done', 'cancelled', 'rolled_back'].includes(t.state) || t.kind !== 'work'}
+            onClick={() =>
+              openOverlay(
+                <TypedConfirm
+                  title={`Cancel ${t.title}?`}
+                  body="For work the project no longer needs. The task stops and won't run, along with the later tasks for the same item (registering a component after its port, for example). Anything waiting on it carries on, and an open card about it closes."
+                  confirmLabel="Cancel the task"
+                  onConfirm={() => {
+                    closeOverlay();
+                    void run(
+                      () =>
+                        post(`/projects/${projectId}/control`, {
+                          verb: 'cancel',
+                          scope: { kind: 'task', id: t.taskId },
+                        }),
+                      `Cancelling ${t.title}`,
+                    );
+                  }}
+                />,
+              )
+            }
+          >
+            Cancel task
+          </button>
         </div>
       </div>
     </>
