@@ -3455,7 +3455,7 @@ tr.changed td:first-child {
   font-size: 13px;
   line-height: 1.5;
 }
-.card.full .impact span {
+.card.full .impact > span {
   font-size: 10.5px;
   text-transform: uppercase;
   color: var(--web-fg-2);

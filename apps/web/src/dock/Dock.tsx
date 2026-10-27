@@ -1,43 +1,32 @@
-import type { ConversationItem, EscalationView } from '@lw/contracts';
+import type { ConversationItem } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
 import { post } from '../lib/api';
 import { clock, localDate, longDay, zoneLabel } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { Chip, useJump, Who } from '../parts/bits';
-import { Card, TYPE_LABEL } from '../parts/Card';
+import { TYPE_LABEL } from '../parts/Card';
 import { useApp, useConversation, useNow, useRoster, useTz } from '../state';
 
 const ORDER: Record<string, number> = {
   blocker: 0,
   access: 1,
-  decision: 2,
-  gate: 3,
+  gate: 2,
+  decision: 3,
   budget: 4,
   risk: 5,
 };
 
 export function Dock() {
-  const { layout, setLayout, ui, setUi, projects, projectId } = useApp();
+  const { layout, setLayout, go } = useApp();
   const conv = useConversation().data;
-  const now = useNow();
-  const name = projects.find((p) => p.id === projectId)?.name ?? '';
-  const waiting = conv?.queue.filter((x) => x.status === 'open').length ?? 0;
   const thinking = conv?.presence === 'thinking';
-
-  // The queue keeps cards that are open, deferred, or still inside their undo window.
-  const items: EscalationView[] = (conv?.queue ?? [])
-    .filter(
-      (x) =>
-        x.status === 'open' ||
-        x.status === 'deferred' ||
-        (x.undoUntil && Date.parse(x.undoUntil) > now),
-    )
+  // Decisions are made in Needs you; the chat only points there, so it stays a conversation.
+  const open = (conv?.queue ?? [])
+    .filter((x) => x.status === 'open')
     .sort(
-      (a, b) =>
-        Number(a.status !== 'open') - Number(b.status !== 'open') ||
-        (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) ||
-        b.raisedAt.localeCompare(a.raisedAt),
+      (a, b) => (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) || a.raisedAt.localeCompare(b.raisedAt),
     );
+  const waiting = open.length;
 
   return (
     <aside className="dock" aria-label="Cypher">
@@ -66,25 +55,18 @@ export function Dock() {
           <Icon name="chevron--right" />
         </button>
       </div>
-      {items.length > 0 && (
-        <div className={`queue ${ui.queueCollapsed ? 'collapsed' : ''}`}>
-          <div className="q-h">
-            <h3>Needs you{waiting > 0 && <span className="badge">{waiting}</span>}</h3>
-            <button
-              className="link-btn"
-              onClick={() => setUi({ queueCollapsed: !ui.queueCollapsed })}
-            >
-              {ui.queueCollapsed ? 'Show' : 'Hide'}
-            </button>
-          </div>
-          {!ui.queueCollapsed && (
-            <div className="q-list">
-              {items.map((x) => (
-                <Card key={x.escalationId} x={x} mode="queue" projectName={name} />
-              ))}
-            </div>
-          )}
-        </div>
+      {waiting > 0 && (
+        <button
+          className={`needs-strip ${open[0]!.type}`}
+          onClick={() => go('inbox', { expanded: open[0]!.escalationId })}
+        >
+          <span className="ns-count">{waiting}</span>
+          <span className="ns-text">
+            <b>{waiting === 1 ? 'Needs you' : `${waiting} need you`}</b>
+            <span>{open[0]!.title}</span>
+          </span>
+          <span className="ns-go">Review</span>
+        </button>
       )}
       <Conversation items={conv?.items ?? []} />
       <Composer />
@@ -184,7 +166,7 @@ function Actions({ links }: { links: ConversationItem['links'] }) {
 function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz: string }) {
   const jump = useJump();
   const { byId } = useRoster();
-  const { setUi, setLayout } = useApp();
+  const { go } = useApp();
   const t = `${clock(m.ts, tz)} ${zoneLabel(tz)}`;
   if (m.from === 'director')
     return (
@@ -314,13 +296,7 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
             <div className="em-item" key={n.escalationId}>
               <span className={`type ${n.type}`}>{TYPE_LABEL[n.type]}</span>
               <span className="em-it">{n.title}</span>
-              <button
-                className="btn sm"
-                onClick={() => {
-                  setUi({ expanded: n.escalationId, queueCollapsed: false });
-                  setLayout({ dockOpen: true });
-                }}
-              >
+              <button className="btn sm" onClick={() => go('inbox', { expanded: n.escalationId })}>
                 Open
               </button>
             </div>

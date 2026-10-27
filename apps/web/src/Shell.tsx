@@ -14,6 +14,7 @@ const HEALTH_WORD = { healthy: 'Healthy', attention: 'Attention', blocked: 'Bloc
 
 const NAV: [Surface, string, string][] = [
   ['mission', 'dashboard', 'Mission Control'],
+  ['inbox', 'notification', 'Needs you'],
   ['team', 'user-group', 'Team'],
   ['plan', 'milestone', 'Plan'],
   ['workbench', 'document', 'Workbench'],
@@ -64,7 +65,7 @@ export function Sidebar() {
           >
             <Icon name={icon} />
             <span className="lbl">{label}</span>
-            {s === 'mission' && waiting > 0 && <span className="count">{waiting}</span>}
+            {s === 'inbox' && waiting > 0 && <span className="count">{waiting}</span>}
           </button>
         ))}
         <div className="side-label">Manage</div>
@@ -186,8 +187,7 @@ export function Strip() {
         data-action="focus-waiting"
         onClick={() => {
           if (!first) return toast('Nothing is waiting on you');
-          setUi({ expanded: first.escalationId, queueCollapsed: false });
-          setLayout({ dockOpen: true });
+          go('inbox', { expanded: first.escalationId });
         }}
       >
         <span className={`waiting ${p.waitingCount ? '' : 'none'}`}>

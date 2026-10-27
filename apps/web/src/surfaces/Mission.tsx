@@ -1,9 +1,9 @@
 import type { PreviewSnapshot, SettingsSnapshot } from '@lw/contracts';
 import { post } from '../lib/api';
-import { clock } from '../lib/fmt';
+import { age, clock } from '../lib/fmt';
 import { Icon } from '../lib/icons';
-import { Card } from '../parts/Card';
-import { useApp, useMission, useProjectResource, useRoster, useTz } from '../state';
+import { TYPE_LABEL } from '../parts/Card';
+import { useApp, useMission, useNow, useProjectResource, useRoster, useTz } from '../state';
 
 const clean = (op: string) =>
   op
@@ -16,6 +16,7 @@ export function Mission() {
   const mc = useMission().data;
   const { agents, byId } = useRoster();
   const tz = useTz();
+  const now = useNow(60_000);
   const preview = useProjectResource<PreviewSnapshot>(layout.present ? '/preview' : null).data;
   if (!mc) return <p className="quiet-line">Loading Mission Control…</p>;
   const p = mc.project;
@@ -62,11 +63,25 @@ export function Mission() {
           <h2>Waiting on you{open.length > 0 && <small>{open.length}</small>}</h2>
         </div>
         {open.length ? (
-          <div className="waitgrid">
-            {open.map((x) => (
-              <Card key={x.escalationId} x={x} mode="compact" projectName={p.name} />
-            ))}
-          </div>
+          <>
+            <ul className="waitlist">
+              {open.slice(0, 5).map((x) => (
+                <li key={x.escalationId}>
+                  <button
+                    className={`wl-row ${x.type}`}
+                    onClick={() => go('inbox', { expanded: x.escalationId })}
+                  >
+                    <span className={`type ${x.type}`}>{x.typeLabel ?? TYPE_LABEL[x.type]}</span>
+                    <span className="wl-title">{x.title}</span>
+                    <span className="age">{age(x.raisedAt, now)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button className="link-btn" onClick={() => go('inbox')}>
+              {open.length > 5 ? `All ${open.length} in Needs you` : 'Open Needs you'}
+            </button>
+          </>
         ) : (
           <p className="quiet-line">
             Nothing needs you.

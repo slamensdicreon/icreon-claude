@@ -11,6 +11,7 @@ import { MobileNav, Sidebar, Strip, Toasts, useAwayLine } from './Shell';
 import { AppProvider, useApp, useMission, type Surface } from './state';
 import { Activity } from './surfaces/Activity';
 import { GithubAppPanel } from './surfaces/GithubApp';
+import { Inbox } from './surfaces/Inbox';
 import { Mission } from './surfaces/Mission';
 import { Plan } from './surfaces/Plan';
 import { Preview } from './surfaces/Preview';
@@ -20,6 +21,7 @@ import { Workbench } from './surfaces/Workbench';
 
 const SURFACE: Record<Surface, () => React.JSX.Element> = {
   mission: Mission,
+  inbox: Inbox,
   team: Team,
   plan: Plan,
   workbench: Workbench,
@@ -30,6 +32,7 @@ const SURFACE: Record<Surface, () => React.JSX.Element> = {
 
 const CHORD: Record<string, Surface> = {
   m: 'mission',
+  n: 'inbox',
   t: 'team',
   p: 'plan',
   w: 'workbench',
@@ -185,7 +188,7 @@ function useKeys() {
       }
       if (e.key === '?') {
         a.toast(
-          'Shortcuts: Ctrl or Cmd K opens the palette. G then M, T, P, W, S or A changes surface. 1 to 4 chooses on the open card, D defers, A approves a gate, Esc closes.',
+          'Shortcuts: Ctrl or Cmd K opens the palette. G then M, N, T, P, W, S or A changes surface. In Needs you, J and K move between items; 1 to 4 chooses, D defers, A approves a gate. Esc closes.',
         );
         return;
       }

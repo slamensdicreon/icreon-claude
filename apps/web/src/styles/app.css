@@ -596,3 +596,232 @@
   gap: 4px;
   flex: 1 1 200px;
 }
+
+/* ---------- Needs you: decisions, one at a time ---------- */
+.inbox {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.ibx-list {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  background: var(--web-surface);
+  padding: 8px 0;
+}
+.ibx-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ibx-h {
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--web-fg-2);
+  margin: 8px 14px 6px;
+}
+.ibx-h small {
+  font-size: 12px;
+  margin-left: 4px;
+  color: var(--web-fg-3);
+}
+.ibx-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px 10px 12px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--web-fg);
+  cursor: pointer;
+  min-width: 0;
+}
+.ibx-row:hover {
+  background: var(--web-surface-2);
+}
+.ibx-row[aria-current='true'] {
+  background: var(--web-surface-3);
+  border-left-color: var(--web-accent);
+}
+.ibx-row.blocker[aria-current='true'] {
+  border-left-color: var(--danger);
+}
+.ibx-row.access[aria-current='true'],
+.ibx-row.budget[aria-current='true'] {
+  border-left-color: var(--warning);
+}
+.ibx-row:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+.ibx-row.deferred,
+.ibx-row.resolved,
+.ibx-row.expired {
+  opacity: 0.72;
+}
+.ibx-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ibx-title {
+  font-weight: var(--fw-medium);
+  font-size: 14px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.ibx-meta,
+.ibx-rec,
+.ibx-due {
+  font-size: 12.5px;
+  color: var(--web-fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ibx-due {
+  color: var(--web-fg-3);
+}
+.ibx-detail {
+  min-width: 0;
+}
+.ibx-detail .card.full {
+  padding: 20px 24px;
+}
+.card-about {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 2px 0 6px;
+  font-size: 13px;
+  color: var(--web-fg-2);
+}
+/* Agents write paths and IDs into cards: wrap them instead of breaking the layout. */
+.card .card-h,
+.card .card-title,
+.card .ctx,
+.card .impact p,
+.opt .otext {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1100px) {
+  .inbox {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ibx-list {
+    position: static;
+    max-height: 320px;
+  }
+}
+
+/* Mission Control: what waits, in a short list that opens Needs you */
+.waitlist {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  border-top: 1px solid var(--web-border);
+}
+.wl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--web-border);
+  background: transparent;
+  color: var(--web-fg);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.wl-row:hover .wl-title {
+  color: var(--web-accent-text);
+}
+.wl-row .type {
+  flex: none;
+  width: 92px;
+}
+.wl-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Cypher: one line that points to Needs you, so the chat stays a chat */
+.needs-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--web-accent);
+  border-left-width: 3px;
+  border-radius: var(--web-radius-2);
+  background: var(--web-surface);
+  color: var(--web-fg);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.needs-strip.blocker {
+  border-color: var(--danger);
+}
+.needs-strip.access,
+.needs-strip.budget {
+  border-color: var(--warning);
+}
+.needs-strip:hover {
+  box-shadow: var(--elev-3);
+}
+.ns-count {
+  flex: none;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--web-radius-pill);
+  background: var(--web-accent);
+  color: var(--web-fg-on-accent);
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ns-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+}
+.ns-text span {
+  color: var(--web-fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ns-go {
+  flex: none;
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  color: var(--web-accent-text);
+}

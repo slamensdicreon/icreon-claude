@@ -30,13 +30,11 @@ function left(ms: number): string {
 }
 
 export function useCardActions(x: EscalationView) {
-  const { projectId, run, setUi, setLayout, setComposer, openOverlay, closeOverlay } = useApp();
+  const { projectId, run, go, setLayout, setComposer, openOverlay, closeOverlay } = useApp();
   const base = `/projects/${projectId}`;
   return {
-    expand: () => {
-      setUi({ expanded: x.escalationId, queueCollapsed: false });
-      setLayout({ dockOpen: true });
-    },
+    /** Opens the card in Needs you, where decisions are made one at a time. */
+    expand: () => go('inbox', { expanded: x.escalationId }),
     choose: (optionId: string, notes?: string) =>
       run(() =>
         post(`${base}/escalations/${x.escalationId}/resolve`, {
@@ -100,10 +98,13 @@ export function Card({
   x,
   mode,
   projectName,
+  about,
 }: {
   x: EscalationView;
   mode: 'compact' | 'queue' | 'full';
   projectName: string;
+  /** Who raised it and the task it holds up, when known. */
+  about?: { task: string | null; who: string | null };
 }) {
   const { ui } = useApp();
   const tz = useTz();
@@ -191,6 +192,12 @@ export function Card({
         <span className="age">{age(x.raisedAt, now)}</span>
       </div>
       <h4 className="card-h">{x.title}</h4>
+      {about && (about.who || about.task) && (
+        <p className="card-about">
+          {about.who && <span>From {about.who}</span>}
+          {about.task && <span>About {about.task}</span>}
+        </p>
+      )}
       <p className="ctx">
         <Who text={x.context} />
       </p>
