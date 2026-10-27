@@ -230,6 +230,38 @@ describe('SitecoreAI checks', () => {
     );
   });
 
+  it("checks insert options on each template's standard values against the Blueprint", async () => {
+    const root = '/sitecore/templates/Project/Brands/ansco';
+    const items = {
+      [root]: {},
+      [`${root}/Pages`]: {},
+      // Set on the template item itself, where Sitecore ignores it.
+      [`${root}/Pages/Corporate Page`]: { id: '{C0-1}', fields: { __Masters: '{C0-1}|{CA-2}' } },
+      [`${root}/Pages/Corporate Page/__Standard Values`]: { fields: { __Masters: '{C0-1}' } },
+      [`${root}/Pages/Careers Page`]: { id: '{CA-2}' },
+      [`${root}/Pages/Careers Page/__Standard Values`]: { fields: { __Masters: '{CA-2}' } },
+    };
+    const bp = {
+      collections: {
+        templates: [
+          {
+            key: 'corporate-page',
+            name: 'Corporate Page',
+            attrs: { insertOptions: ['corporate-page', 'careers-page'] },
+          },
+          { key: 'careers-page', name: 'Careers Page', attrs: { insertOptions: ['careers-page'] } },
+        ],
+      },
+    };
+    const res = await pack.checks!['structural.templates']!(ctx(tenant(items).read, bp));
+    expect(res.detail).toBe(
+      `Corporate Page's insert options (__Masters on ${root}/Pages/Corporate Page/__Standard Values) are {C0-1}; the Blueprint wants Corporate Page {C0-1} and Careers Page {CA-2}, missing Careers Page.`,
+    );
+    items[`${root}/Pages/Corporate Page/__Standard Values`].fields.__Masters = '{c0-1}|{ca-2}';
+    const ok = await pack.checks!['structural.templates']!(ctx(tenant(items).read, bp));
+    expect(ok.status).toBe('pass');
+  });
+
   it("checks the site, Home and the project's own folders", async () => {
     const site = '/sitecore/content/Brands/ansco';
     const t = tenant({

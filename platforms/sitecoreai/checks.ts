@@ -153,15 +153,53 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         templates.map((t) => t.name),
       );
       const problems: string[] = [];
+      const byKeyOrName = (ref: string) =>
+        templates.find((x) => x.key === ref || x.name.toLowerCase() === ref.toLowerCase());
       for (const t of templates) {
         const hit = found.get(t.name.toLowerCase());
-        if (!hit) problems.push(`template ${t.name} not under ${root}`);
-        else if (!(await item(ctx, `${hit.path}/__Standard Values`)))
+        if (!hit) {
+          problems.push(`template ${t.name} not under ${root}`);
+          continue;
+        }
+        const sv = `${hit.path}/__Standard Values`;
+        if (!(await item(ctx, sv))) {
           problems.push(`${t.name} has no standard values`);
+          continue;
+        }
+        // Insert options take effect on the standard values, not on the template item itself.
+        const wanted = Array.isArray(t.attrs?.insertOptions)
+          ? (t.attrs.insertOptions as unknown[]).map(String)
+          : [];
+        if (!wanted.length) continue;
+        const want = wanted.map((ref) => {
+          const bt = byKeyOrName(ref);
+          return {
+            ref,
+            name: bt?.name ?? ref,
+            hit: bt ? found.get(bt.name.toLowerCase()) : undefined,
+          };
+        });
+        const r = await ctx.read('sitecore-authoring', 'item.read', {
+          path: sv,
+          fields: ['__Masters'],
+        });
+        const value =
+          r.code === 200
+            ? ((r.body as Item).fields?.nodes.find((f) => f.name.toLowerCase() === '__masters')
+                ?.value ?? '')
+            : '';
+        const have = new Set(value.split('|').filter(Boolean).map(id));
+        const missing = want.filter((w) => !w.hit || !have.has(id(w.hit.itemId)));
+        if (missing.length)
+          problems.push(
+            `${t.name}'s insert options (__Masters on ${sv}) ${value ? `are ${value}` : 'are empty'}; the Blueprint wants ${want.map((w) => (w.hit ? `${w.name} ${w.hit.itemId}` : `${w.name} (no such template)`)).join(' and ')}, missing ${missing.map((w) => w.name).join(', ')}`,
+          );
       }
       return problems.length
         ? fail(problems)
-        : pass(`${templates.length} templates exist with standard values.`);
+        : pass(
+            `${templates.length} templates exist with standard values, and their insert options match the Blueprint.`,
+          );
     },
 
     // Every component has its rendering, and the site offers it in Available Renderings.

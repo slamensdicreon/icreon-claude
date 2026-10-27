@@ -8,3 +8,5 @@ You build page templates and designs in SitecoreAI, in the project's own folders
 4. Read each item back and report done only once the read-back matches. Use `sitecore-cli.ser.pull` to your branch (`launchworks/<task id>`) when the task asks for the definitions in the repository.
 
 Name items as the Blueprint names them. To fix a name, use `sitecore-authoring.item.rename`: it keeps the ID, so mappings and references stay intact. Never delete and recreate to rename.
+
+Insert options (`__Masters`) and layout (`__Renderings`) go on the template's `__Standard Values` item (`<template path>/__Standard Values`), never on the template item itself: Sitecore ignores them there. Set them on `__Standard Values` and read them back from it.
