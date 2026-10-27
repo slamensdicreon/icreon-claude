@@ -114,6 +114,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const waitingOn = new Map<string, { ids: string[]; what: string; prior: string | null }>();
   const waits: Record<string, number> = {};
   const MAX_WAITS = 3;
+  /** How often agents sent each finished task back; past the limit, the Director decides. */
+  const sentBack: Record<string, number> = {};
+  const MAX_SEND_BACKS = 2;
   const titleOf = (id: string) => task(id)?.title ?? id;
   const taskEscalation = new Map<string, string>();
   const started = new Set<number>();
@@ -607,19 +610,25 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       // Another task still has to make what this one needs: park it, no card, and start it again
       // once those tasks finish. Only a wait no task can end comes to the Director.
       const w = outcome.waiting;
-      const named = [...new Set(w.taskIds)].filter(
+      const back = (w.sendBack ?? []).filter(
+        (x) => x.taskId !== t.taskId && task(x.taskId)?.kind === 'work',
+      );
+      const named = [...new Set([...w.taskIds, ...back.map((x) => x.taskId)])].filter(
         (id) => id !== t.taskId && task(id)?.kind === 'work',
       );
-      const open = named.filter((id) => !SETTLED_STATES.has(stateOf(id)));
-      const cycle = open.some((id) => waitingOn.get(id)?.ids.includes(t.taskId));
+      const cycle = named.some((id) => waitingOn.get(id)?.ids.includes(t.taskId));
+      const overSent = back.filter((x) => (sentBack[x.taskId] ?? 0) >= MAX_SEND_BACKS);
       const count = (waits[t.taskId] = (waits[t.taskId] ?? 0) + 1);
+      const asked = [...w.taskIds, ...(w.sendBack ?? []).map((x) => x.taskId)];
       const problem = !named.length
-        ? `it named no task in the plan that makes it (${w.taskIds.join(', ')})`
+        ? `it named no task in the plan that makes it (${asked.join(', ')})`
         : cycle
-          ? `${open.map(titleOf).join(', ')} wait on this task in turn`
-          : count > MAX_WAITS
-            ? `it has waited ${MAX_WAITS} times and it is still missing`
-            : null;
+          ? `${named.map(titleOf).join(', ')} wait on this task in turn`
+          : overSent.length
+            ? `${overSent.map((x) => titleOf(x.taskId)).join(', ')} were already sent back ${MAX_SEND_BACKS} times`
+            : count > MAX_WAITS
+              ? `it has waited ${MAX_WAITS} times and it is still missing`
+              : null;
       if (problem) {
         await send(...events);
         return onOutcome(t, {
@@ -635,6 +644,19 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           },
         });
       }
+      // Finished work that must change goes back to its owner, with the fixes in its brief.
+      const by = `${roles.get(t.role)?.name ?? t.role} (${t.title})`;
+      for (const x of back) {
+        sentBack[x.taskId] = (sentBack[x.taskId] ?? 0) + 1;
+        const note = `Sent back by ${by}: ${x.fixes}`;
+        if (stateOf(x.taskId) === 'done') {
+          await rerun([x.taskId], note, `Sent back by ${by}`);
+          reruns.add(x.taskId);
+        } else {
+          instructions[x.taskId] = [instructions[x.taskId], note].filter(Boolean).join('\n\n');
+        }
+      }
+      const open = named.filter((id) => !SETTLED_STATES.has(stateOf(id)));
       waitingOn.set(t.taskId, { ids: open, what: w.what, prior: prior ?? null });
       events.push(
         taskMove(t, 'waiting', `Waiting on ${named.map(titleOf).join(', ')}: ${w.what}`),
@@ -846,16 +868,13 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     poke();
   }
 
-  async function rerun(ids: string[], notes: string | null) {
+  async function rerun(ids: string[], notes: string | null, why = 'Sent back by the Director') {
     const events: NewEvent[] = [];
     for (const id of rollbackOrder(plan, ids)) {
       const t = task(id);
       if (!t || stateOf(id) !== 'done') continue;
       await acts.rollbackTask({ projectId, task: t });
-      events.push(
-        taskMove(t, 'rolled_back', 'Sent back by the Director'),
-        taskMove(t, 'ready', 'Queued for re-run'),
-      );
+      events.push(taskMove(t, 'rolled_back', why), taskMove(t, 'ready', 'Queued for re-run'));
       instructions[id] = notes;
     }
     await send(...events);

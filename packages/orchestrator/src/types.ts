@@ -127,6 +127,8 @@ export const AGENT_FAILED = 'AgentFailed';
 export interface AgentWaiting {
   summary: string;
   taskIds: string[];
+  /** Finished tasks sent back to their owners with fixes; the agent waits on them too. */
+  sendBack?: { taskId: string; fixes: string }[];
   what: string;
 }
 

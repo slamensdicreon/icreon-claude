@@ -19,7 +19,15 @@ export const SubmitInput = z.object({
     })
     .optional(),
   waitingOn: z
-    .object({ taskIds: z.array(z.string()).min(1).max(10), what: z.string().min(1) })
+    .object({
+      taskIds: z.array(z.string()).max(10).default([]),
+      sendBack: z
+        .array(z.object({ taskId: z.string(), fixes: z.string().min(1) }))
+        .max(10)
+        .default([]),
+      what: z.string().min(1),
+    })
+    .refine((w) => w.taskIds.length + w.sendBack.length > 0, 'name a task to wait on or send back')
     .optional(),
   metrics: z.record(z.string(), z.number()).optional(),
 });
@@ -29,7 +37,8 @@ const submitTool: BetaTool = {
   name: SUBMIT,
   description:
     'Call exactly once, when the task is finished (status "done"); when what it needs is still to be ' +
-    'produced by other tasks in the team plan (status "waiting", naming those task ids and what you need: ' +
+    'produced by other tasks in the team plan, or a finished task must fix its work (status "waiting": ' +
+    'name the unfinished tasks in taskIds, and send finished ones back with sendBack and the exact fixes; ' +
     'you are restarted automatically when they finish); or when it cannot continue without a decision ' +
     'from the Director (status "needs_decision", with the question, two to four options and the option ' +
     'you recommend). The summary is one or two plain sentences on what changed.',
@@ -44,13 +53,30 @@ const submitTool: BetaTool = {
           taskIds: {
             type: 'array',
             items: { type: 'string' },
-            minItems: 1,
             maxItems: 10,
             description: 'Ids of the unfinished tasks in the team plan that produce what you need.',
           },
+          sendBack: {
+            type: 'array',
+            maxItems: 10,
+            description:
+              'Finished tasks whose work must change: each is re-run by its owner with your fixes, and you wait for it.',
+            items: {
+              type: 'object',
+              properties: {
+                taskId: { type: 'string' },
+                fixes: {
+                  type: 'string',
+                  description:
+                    'Exactly what to fix, with paths and IDs, so the owner can act on it.',
+                },
+              },
+              required: ['taskId', 'fixes'],
+            },
+          },
           what: { type: 'string', description: 'What you need from them, in a few words.' },
         },
-        required: ['taskIds', 'what'],
+        required: ['what'],
       },
       decision: {
         type: 'object',

@@ -62,3 +62,41 @@ it('parks a task waiting on another, restarts it when that finishes, and asks on
   expect(card.context).toContain('it named no task in the plan that makes it (make-variants)');
   expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
 }, 120_000);
+
+it('sends finished work back to its owner with the fixes, and carries on when it is redone', async () => {
+  const seen: RunRequest[] = [];
+  const runner = {
+    async run(req: RunRequest) {
+      seen.push(req);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      if (req.task.taskId === 'port-header' && !req.instructions)
+        return {
+          kind: 'waiting' as const,
+          summary: 'Header needs the Hero export renamed.',
+          waitingOn: {
+            taskIds: [],
+            sendBack: [{ taskId: 'port-hero', fixes: 'Export Hero as HeroBanner.' }],
+            what: 'the HeroBanner export',
+          },
+          spent,
+        };
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  const s = p.state()!;
+  const hero = seen.filter((r) => r.task.taskId === 'port-hero');
+  expect(hero).toHaveLength(2);
+  expect(hero[1]!.instructions).toBe(
+    'Sent back by Component Engineer (Port Header to Content SDK): Export Hero as HeroBanner.',
+  );
+  const header = seen.filter((r) => r.task.taskId === 'port-header');
+  expect(header).toHaveLength(2);
+  expect(header[1]!.instructions).toContain('What you waited for (the HeroBanner export)');
+  expect(Object.values(s.escalations).some((x) => x.title.includes('Header'))).toBe(false);
+  expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
+}, 120_000);

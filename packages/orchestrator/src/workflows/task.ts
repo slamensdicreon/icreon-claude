@@ -147,10 +147,15 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
         };
       }
       const waits = detail as Partial<AgentWaiting>;
-      if (app?.type === WAITING && waits.taskIds?.length && waits.what) {
+      if (
+        app?.type === WAITING &&
+        (waits.taskIds?.length || waits.sendBack?.length) &&
+        waits.what
+      ) {
         const waiting: AgentWaiting = {
           summary: waits.summary ?? message,
-          taskIds: waits.taskIds,
+          taskIds: waits.taskIds ?? [],
+          sendBack: waits.sendBack ?? [],
           what: waits.what,
         };
         return { outcome: 'waiting', state, attempt, waiting, spent };

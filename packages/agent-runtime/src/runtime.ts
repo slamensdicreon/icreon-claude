@@ -41,7 +41,11 @@ export type RunOutcome =
   | {
       kind: 'waiting';
       summary: string;
-      waitingOn: NonNullable<SubmitInput['waitingOn']>;
+      waitingOn: {
+        taskIds: string[];
+        sendBack?: { taskId: string; fixes: string }[];
+        what: string;
+      };
       spent: Spend;
     }
   | { kind: 'access_denied'; message: string; spent: Spend }
