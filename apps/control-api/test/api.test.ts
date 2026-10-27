@@ -178,6 +178,26 @@ describe('control-api', () => {
     expect(steps.items.every((i) => i.type === 'step.recorded' && i.toolServer)).toBe(true);
   });
 
+  it('exports the activity log as CSV, oldest first, with full text', async () => {
+    const h = await start();
+    await until(async () => (await get(h, '/projects/p1/mission-control')).body.seq > 40);
+    const r = await fetch(`${h.base}/projects/p1/activity.csv?view=all`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+    expect(r.headers.get('content-disposition')).toMatch(
+      /^attachment; filename=".+-activity-\d{4}-\d{2}-\d{2}\.csv"$/,
+    );
+    const text = (await r.text()).replace(/^\uFEFF/, '');
+    const lines = text.trimEnd().split('\r\n');
+    expect(lines[0]).toBe(
+      'seq,time,phase,who,role,task,tool,server,operation,result,code,duration_ms,tokens,severity,event,summary,note',
+    );
+    const seqs = lines.slice(1).map((l) => Number(l.split(',')[0]));
+    expect(seqs.length).toBeGreaterThan(40);
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    expect((await fetch(`${h.base}/projects/nope/activity.csv`)).status).toBe(404);
+  });
+
   it('resolves a Decision and records it in the Decision Log', async () => {
     const h = await start(100);
     const sot = await openEscalation(h, (x) => x.type === 'decision');

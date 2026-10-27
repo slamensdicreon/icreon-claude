@@ -1,6 +1,6 @@
 import type { ActivityItem, ActivityPage } from '@lw/contracts';
 import { useEffect, useRef, useState } from 'react';
-import { get } from '../lib/api';
+import { API, get } from '../lib/api';
 import { duration, stamp, tokens } from '../lib/fmt';
 import { live } from '../lib/live';
 import { AgentCell } from '../parts/bits';
@@ -112,6 +112,20 @@ export function Activity() {
           ))}
         </select>
         <span className="grow" />
+        <a
+          className="btn"
+          href={(() => {
+            const q = new URLSearchParams({ view: 'log' });
+            if (f.sev === 'warn') q.set('severity', 'warning,failure');
+            if (f.sev === 'bad') q.set('severity', 'failure');
+            if (f.agent !== 'all') q.set('agent', f.agent);
+            return `${API}/projects/${projectId}/activity.csv?${q}`;
+          })()}
+          download
+          title="The whole log as shown (these filters), oldest first, with full text"
+        >
+          Export CSV
+        </a>
         <label className="toggle-row">
           <button
             className="toggle"

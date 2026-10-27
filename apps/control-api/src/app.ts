@@ -54,6 +54,7 @@ import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from 
 import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
 import { streamProject, type StreamOptions } from './sse';
+import { activityCsv } from './activity-csv';
 
 export interface AppDeps {
   store: EventStore;
@@ -493,6 +494,52 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
       const page: ActivityPage = { items, nextBefore: before > 1 ? before : null };
       return page;
+    },
+  );
+
+  /**
+   * The activity log as a CSV download, oldest first, with full text: an audit trail to hand on.
+   * Takes the Activity page's filters (view, severity, agent, phase) and an optional ISO `since`.
+   */
+  app.get<P & { Querystring: Record<string, string> }>(
+    '/projects/:id/activity.csv',
+    async (req, reply) => {
+      const s = project(req.params.id);
+      if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+      const q = ActivityQuery.extend({
+        view: z.enum(['all', 'log']).default('log'),
+        since: z.iso.datetime({ offset: true }).optional(),
+      }).parse({ ...req.query, limit: undefined });
+      const severities = q.severity?.split(',');
+      const types = q.type?.split(',');
+      const since = q.since ? Date.parse(q.since) : null;
+      const items: ActivityItem[] = [];
+      let after = 0;
+      const MAX = 200_000;
+      while (items.length < MAX) {
+        const chunk = await store.read(s.projectId, { after, limit: 1000 });
+        if (!chunk.length) break;
+        for (const e of chunk) {
+          const i = toActivity(s, e);
+          if (
+            (q.view === 'all' || i.toolLabel !== null) &&
+            (!severities || severities.includes(i.severity)) &&
+            (!types || types.includes(i.type)) &&
+            (!q.agent || i.agentId === q.agent) &&
+            (q.phase === undefined || i.phase === q.phase) &&
+            (since === null || Date.parse(i.ts) >= since)
+          )
+            items.push(i);
+        }
+        after = chunk.at(-1)!.seq;
+      }
+      const day = new Date().toISOString().slice(0, 10);
+      const name = `${(s.name ?? s.projectId).replace(/[^A-Za-z0-9-]+/g, '-')}-activity-${day}.csv`;
+      return reply
+        .header('content-type', 'text/csv; charset=utf-8')
+        .header('content-disposition', `attachment; filename="${name}"`)
+        .header('cache-control', 'no-store')
+        .send(`\uFEFF${activityCsv(items, (id) => s.agents[id])}`);
     },
   );
 
