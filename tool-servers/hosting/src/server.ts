@@ -64,6 +64,10 @@ export interface HostingServerOptions {
 }
 
 const AGENT_BRANCH = /^launchworks\/[A-Za-z0-9._/-]{1,100}$/;
+/** The branch accepted components are integrated on; its preview is the editing host. */
+const INTEGRATION_BRANCH = 'launchworks/integration';
+/** The editing host's fixed address: Page builder's rendering host points here. */
+export const editingHost = (project: string) => `${project}-editing.vercel.app`;
 
 const PreviewArgs = z.object({
   ref: z.string().regex(AGENT_BRANCH, 'an agent branch, launchworks/…').optional(),
@@ -97,8 +101,7 @@ export class HostingToolServer implements ToolServer {
       mutates: true,
     },
     'deploy.preview': {
-      description:
-        'Deploy an agent branch (launchworks/…) of the build repository as a preview. Returns the deployment id; follow it with deploy.status until it is READY or ERROR.',
+      description: `Deploy an agent branch (launchworks/…) of the build repository as a preview. Returns the deployment id; follow it with deploy.status until it is READY or ERROR. A ready preview of ${INTEGRATION_BRANCH} becomes the editing host, at the project's fixed address https://<project>-editing.vercel.app.`,
       inputSchema: {
         type: 'object',
         properties: { ref: { type: 'string' } },
@@ -377,8 +380,33 @@ export class HostingToolServer implements ToolServer {
     const url = d.url ? `https://${d.url}` : null;
     const ref = d.meta?.githubCommitRef ?? d.gitSource?.ref ?? '';
     let stable: string | null = null;
+    let editing: string | null = null;
+    let superseded: string | null = null;
+    if (state === 'READY' && url && target === 'preview' && ref === INTEGRATION_BRANCH) {
+      // The integration preview is the editing host: move the fixed address onto it, unless a
+      // newer integration build (which has everything this one has) already holds it.
+      const alias = editingHost(facts.project);
+      const held = await this.request('GET', `/v4/aliases/${encodeURIComponent(alias)}`);
+      const current =
+        held.status === 200 ? (held.body as { deploymentId?: string }).deploymentId : null;
+      if (current && current !== d.id) {
+        const c = await this.request('GET', `/v13/deployments/${encodeURIComponent(current)}`);
+        const at = c.status === 200 ? (c.body as Deployment).createdAt : undefined;
+        if (at && d.createdAt && at > d.createdAt) superseded = current;
+      }
+      if (!superseded) {
+        const a = await this.request(
+          'POST',
+          `/v2/deployments/${encodeURIComponent(d.id)}/aliases`,
+          { alias },
+        );
+        if (a.status !== 200 && a.status !== 201) return fail(a, `pointing ${alias} at ${d.id}`);
+        editing = `https://${alias}`;
+      }
+    }
     if (state === 'READY' && url) {
-      stable = target === 'production' ? (d.alias?.[0] ? `https://${d.alias[0]}` : url) : url;
+      stable =
+        editing ?? (target === 'production' ? (d.alias?.[0] ? `https://${d.alias[0]}` : url) : url);
       await this.opts.record(projectId, {
         projectId,
         url: target === 'production' ? stable : null,
@@ -393,9 +421,10 @@ export class HostingToolServer implements ToolServer {
         target,
         ref,
         url: stable ?? url,
+        editingHost: editing,
         error: d.errorMessage ?? null,
       },
-      summary: `${d.id}: ${state}${state === 'ERROR' && d.errorMessage ? `, ${d.errorMessage}` : ''}${stable ? `, ${stable}` : ''}`,
+      summary: `${d.id}: ${state}${state === 'ERROR' && d.errorMessage ? `, ${d.errorMessage}` : ''}${editing ? `, live as the editing host at ${editing}` : superseded ? `; a newer integration build (${superseded}) is already the editing host` : stable ? `, ${stable}` : ''}`,
     };
   }
 
@@ -441,6 +470,7 @@ interface Deployment {
   errorMessage?: string;
   meta?: { githubCommitRef?: string; githubCommitSha?: string };
   gitSource?: { ref?: string };
+  createdAt?: number;
 }
 
 function productionUrl(p: VercelProject): string | null {

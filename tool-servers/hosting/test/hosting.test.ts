@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HostingToolServer, type HostingRecord } from '../src';
 
 function fakeVercel(opts: { existing?: { repo: string } } = {}) {
+  let editingAt: string | undefined;
   const calls: { method: string; path: string; body: unknown }[] = [];
   let project: Record<string, unknown> | null = opts.existing
     ? {
@@ -50,6 +51,23 @@ function fakeVercel(opts: { existing?: { repo: string } } = {}) {
       return json(201, { created: body, failed: [] });
     if (p === '/v13/deployments' && method === 'POST')
       return json(200, { id: 'dpl_9', url: 'acme-site-abc.vercel.app', readyState: 'QUEUED' });
+    if (p === '/v13/deployments/dpl_int')
+      return json(200, {
+        id: 'dpl_int',
+        name: 'acme-site',
+        url: 'acme-site-int.vercel.app',
+        readyState: 'READY',
+        createdAt: 2000,
+        meta: { githubCommitRef: 'launchworks/integration' },
+      });
+    if (p === '/v13/deployments/dpl_old')
+      return json(200, { id: 'dpl_old', name: 'acme-site', readyState: 'READY', createdAt: 1000 });
+    if (p === '/v13/deployments/dpl_new')
+      return json(200, { id: 'dpl_new', name: 'acme-site', readyState: 'READY', createdAt: 3000 });
+    if (p === '/v4/aliases/acme-site-editing.vercel.app')
+      return json(200, { deploymentId: editingAt });
+    if (p === '/v2/deployments/dpl_int/aliases' && method === 'POST')
+      return json(200, { alias: (body as { alias: string }).alias });
     if (p === '/v13/deployments/dpl_9')
       return json(200, {
         id: 'dpl_9',
@@ -62,7 +80,7 @@ function fakeVercel(opts: { existing?: { repo: string } } = {}) {
       });
     return json(404, { error: { message: `no ${method} ${p}` } });
   }) as typeof globalThis.fetch;
-  return { fetch, calls };
+  return { fetch, calls, editingAt: (id: string) => void (editingAt = id) };
 }
 
 const ctx = {
@@ -156,17 +174,35 @@ describe('HostingToolServer', () => {
     });
     const st = await s.call('deploy.status', { deploymentId: 'dpl_9' }, ctx);
     expect(st.body).toMatchObject({ state: 'READY', url: 'https://acme-site.vercel.app' });
-    expect(records).toEqual([
-      {
-        projectId: 'p1',
+    // A ready integration preview takes the editing host's fixed address.
+    v.editingAt('dpl_old');
+    const int = await s.call('deploy.status', { deploymentId: 'dpl_int' }, ctx);
+    expect(int.body).toMatchObject({
+      state: 'READY',
+      editingHost: 'https://acme-site-editing.vercel.app',
+      url: 'https://acme-site-editing.vercel.app',
+    });
+    expect(v.calls.at(-1)).toMatchObject({
+      method: 'POST',
+      path: '/v2/deployments/dpl_int/aliases',
+      body: { alias: 'acme-site-editing.vercel.app' },
+    });
+    // An older integration build never takes the address back from a newer one.
+    v.editingAt('dpl_new');
+    const late = await s.call('deploy.status', { deploymentId: 'dpl_int' }, ctx);
+    expect(late.body).toMatchObject({ editingHost: null });
+    expect(late.summary).toContain(
+      'a newer integration build (dpl_new) is already the editing host',
+    );
+    expect(records[0]).toEqual({
+      projectId: 'p1',
+      url: 'https://acme-site.vercel.app',
+      deployment: {
+        id: 'dpl_9',
         url: 'https://acme-site.vercel.app',
-        deployment: {
-          id: 'dpl_9',
-          url: 'https://acme-site.vercel.app',
-          target: 'production',
-          ref: 'main',
-        },
+        target: 'production',
+        ref: 'main',
       },
-    ]);
+    });
   });
 });
