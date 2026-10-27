@@ -25,9 +25,11 @@ tools:
       paths:
         - /sitecore/templates/Project/{project}/**
         - '{sitePath}/Presentation/**'
-      # Layouts refer to renderings and to the site's items (Data, the page tree): read only.
+      # Layouts refer to renderings, to the platform's own templates (SXA's, under Foundation)
+      # and to the site's items: read only. Other sites' content stays out of reach.
       readPaths:
-        - /sitecore/layout/Renderings/Project/{module}/**
+        - /sitecore/layout/**
+        - /sitecore/templates/**
         - '{sitePath}/**'
   sitecore-cli:
     ops:

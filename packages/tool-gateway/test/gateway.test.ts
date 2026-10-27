@@ -194,6 +194,14 @@ describe('resource scope', () => {
     expect(await go('item.update', '/sitecore/layout/Renderings/Project/Acme/Hero')).toMatchObject({
       denied: 'out_of_scope',
     });
+    expect(
+      (await go('item.read', '/sitecore/templates/Foundation/Experience Accelerator/Presentation'))
+        .ok,
+    ).toBe(true);
+    expect((await go('item.read', '/sitecore/content/Acme/Corporate')).ok).toBe(true);
+    expect(await go('item.update', '/sitecore/templates/Foundation/X')).toMatchObject({
+      denied: 'out_of_scope',
+    });
     expect(await go('item.read', '/sitecore/content/Acme/Other/Data')).toMatchObject({
       denied: 'out_of_scope',
     });

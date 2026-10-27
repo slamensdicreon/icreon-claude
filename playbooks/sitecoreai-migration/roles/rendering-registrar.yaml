@@ -29,6 +29,11 @@ tools:
         - /sitecore/layout/Renderings/Project/{module}/**
         - /sitecore/templates/Project/{project}/**
         - '{sitePath}/Presentation/Available Renderings/**'
+      # Definitions it registers against (SXA's templates, other renderings) and the site: read only.
+      readPaths:
+        - /sitecore/layout/**
+        - /sitecore/templates/**
+        - '{sitePath}/**'
   sitecore-cli:
     ops:
       - ser.pull
