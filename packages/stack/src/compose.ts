@@ -159,6 +159,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     return check({
       projectId,
       target: intake.target,
+      // The validators check the whole Blueprint.
+      scope: { collection: null, items: [] },
       blueprint,
       read: (server, op, args) => readOnly(projectId, server, op, args),
       credential: (id) => credential(projectId, id),

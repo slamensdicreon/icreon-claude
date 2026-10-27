@@ -56,8 +56,25 @@ async function findByName(ctx: PlatformCheckContext, root: string, names: string
   return found;
 }
 
-const inScope = (ctx: PlatformCheckContext, collection: string) =>
-  (ctx.blueprint?.collections[collection] ?? []).filter((i) => i.status !== 'drop');
+/** The collection's kept items, or only the task's own when it covers some of them. */
+const inScope = (ctx: PlatformCheckContext, collection: string) => {
+  const kept = (ctx.blueprint?.collections[collection] ?? []).filter((i) => i.status !== 'drop');
+  const own =
+    ctx.scope.collection === collection && ctx.scope.items.length ? ctx.scope.items : null;
+  return own ? kept.filter((i) => own.includes(i.key)) : kept;
+};
+
+/** The rendering item's name from a component's model contract: a name, or { name, componentName }. */
+export function renderingName(c: { name: string; attrs?: Record<string, unknown> }): string {
+  const r = c.attrs?.rendering;
+  if (typeof r === 'string' && r.trim()) return r.trim();
+  if (r && typeof r === 'object') {
+    const o = r as Record<string, unknown>;
+    for (const k of ['name', 'rendering', 'componentName'])
+      if (typeof o[k] === 'string' && (o[k] as string).trim()) return (o[k] as string).trim();
+  }
+  return c.name;
+}
 
 export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck> {
   /** Does each route resolve on Experience Edge with the given Context ID? */
@@ -142,7 +159,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       if (!components.length) return pending('The Blueprint has no components to check.');
       const b = sitecoreBindings(ctx.target);
       const root = `/sitecore/layout/Renderings/Project/${b.module}`;
-      const names = components.map((c) => String(c.attrs?.rendering ?? c.name));
+      const names = components.map(renderingName);
       const found = await findByName(ctx, root, names);
       const available = await item(ctx, `${b.sitePath}/Presentation/Available Renderings`, true);
       const offered = new Set<string>();

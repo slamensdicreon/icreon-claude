@@ -322,6 +322,7 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
         return check({
           projectId: req.projectId,
           target: state.intake.target,
+          scope: { collection: task.collection, items: task.itemKeys },
           blueprint,
           read: (server, op, args) => platform.read(req.projectId, server, op, args),
           credential: (id) => platform.credential(req.projectId, id),

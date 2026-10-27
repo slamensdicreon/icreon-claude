@@ -72,6 +72,11 @@ export interface PlatformPack {
 export interface PlatformCheckContext {
   projectId: string;
   target: TargetValues;
+  /**
+   * The Blueprint items the task covers, from its collection ("Register Hero Banner": the hero);
+   * empty for a task over the whole collection (validate every rendering).
+   */
+  scope: { collection: string | null; items: string[] };
   /** The approved Blueprint, parsed, or null. */
   blueprint: {
     collections: Record<

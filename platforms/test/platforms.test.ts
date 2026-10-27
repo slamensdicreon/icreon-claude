@@ -135,9 +135,14 @@ describe('SitecoreAI checks', () => {
     };
     return { read, reads };
   };
-  const ctx = (read: ReturnType<typeof tenant>['read'], blueprint: unknown) => ({
+  const ctx = (
+    read: ReturnType<typeof tenant>['read'],
+    blueprint: unknown,
+    scope: { collection: string | null; items: string[] } = { collection: null, items: [] },
+  ) => ({
     projectId: 'p',
     target,
+    scope,
     blueprint: blueprint as never,
     read,
     credential: async () => null,
@@ -167,6 +172,31 @@ describe('SitecoreAI checks', () => {
     const res = await pack.checks!['structural.renderings']!(ctx(t.read, bp));
     expect(res.status).toBe('fail');
     expect(res.detail).toBe("Cards isn't in Available Renderings.");
+
+    // A registration task is checked on its own component, whose rendering may be a
+    // { name, componentName } model contract rather than a plain name.
+    const contract = {
+      collections: {
+        components: [
+          {
+            key: 'hero',
+            name: 'Hero',
+            attrs: { rendering: { name: 'Hero', componentName: 'Hero' } },
+          },
+          { key: 'cards', name: 'Cards', attrs: { rendering: { componentName: 'Cards' } } },
+          { key: 'tabs', name: 'Tabs', attrs: { rendering: 'Tabs' } },
+        ],
+      },
+    };
+    const own = await pack.checks!['structural.renderings']!(
+      ctx(t.read, contract, { collection: 'components', items: ['hero'] }),
+    );
+    expect(own).toMatchObject({ status: 'pass' });
+    const all = await pack.checks!['structural.renderings']!(ctx(t.read, contract));
+    expect(all.detail).toBe(
+      "Cards isn't in Available Renderings; rendering Tabs not under " + r + '.',
+    );
+    expect(all.detail).not.toContain('[object Object]');
   });
 
   it("checks the site, Home and the project's own folders", async () => {
@@ -216,6 +246,7 @@ describe('SitecoreAI checks', () => {
     const res = await p.checks!['parity.page']!({
       projectId: 'p',
       target,
+      scope: { collection: null, items: [] },
       blueprint: {
         collections: {
           pages: [
