@@ -55,6 +55,7 @@ import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
+import { escalationsCsv } from './escalations-csv';
 
 export interface AppDeps {
   store: EventStore;
@@ -494,6 +495,37 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
       const page: ActivityPage = { items, nextBefore: before > 1 ? before : null };
       return page;
+    },
+  );
+
+  /**
+   * What waits on the Director as a CSV download: open and deferred cards by default, `status=all`
+   * for every card the project raised. Full context and options, oldest first.
+   */
+  app.get<P & { Querystring: { status?: string } }>(
+    '/projects/:id/escalations.csv',
+    async (req, reply) => {
+      const s = project(req.params.id);
+      if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+      const want =
+        req.query.status === 'all' ? null : (req.query.status ?? 'open,deferred').split(',');
+      const cards = Object.values(s.escalations).filter((e) => !want || want.includes(e.status));
+      const day = new Date().toISOString().slice(0, 10);
+      const name = `${(s.name ?? s.projectId).replace(/[^A-Za-z0-9-]+/g, '-')}-needs-you-${day}.csv`;
+      return reply
+        .header('content-type', 'text/csv; charset=utf-8')
+        .header('content-disposition', `attachment; filename="${name}"`)
+        .header('cache-control', 'no-store')
+        .send(
+          `\uFEFF${escalationsCsv(
+            cards,
+            (id) => {
+              const t = s.tasks[id];
+              return t ? { title: t.title, phase: t.phase, agentId: t.agentId } : undefined;
+            },
+            (id) => s.agents[id],
+          )}`,
+        );
     },
   );
 

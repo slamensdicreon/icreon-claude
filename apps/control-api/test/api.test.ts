@@ -198,6 +198,20 @@ describe('control-api', () => {
     expect((await fetch(`${h.base}/projects/nope/activity.csv`)).status).toBe(404);
   });
 
+  it('exports what waits on the Director as CSV', async () => {
+    const h = await start(100);
+    const card = await openEscalation(h, (x) => x.type === 'decision');
+    const r = await fetch(`${h.base}/projects/p1/escalations.csv`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-disposition')).toMatch(/-needs-you-\d{4}-\d{2}-\d{2}\.csv"$/);
+    const text = (await r.text()).replace(/^\uFEFF/, '');
+    expect(text.split('\r\n')[0]).toBe(
+      'escalation,raised,status,type,title,from,task,task_title,phase,context,impact,options,recommended,default_at,deferred_until,resolution,notes,resolved_at',
+    );
+    expect(text).toContain(card.escalationId);
+    expect(text).toContain(`A: ${card.options[0]!.label}`);
+  });
+
   it('resolves a Decision and records it in the Decision Log', async () => {
     const h = await start(100);
     const sot = await openEscalation(h, (x) => x.type === 'decision');

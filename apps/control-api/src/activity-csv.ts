@@ -1,7 +1,7 @@
 import type { ActivityItem } from '@lw/contracts';
 
 /** One CSV cell: quoted when it holds a comma, quote or line break; formulas neutralised. */
-function cell(v: string | number | null | undefined): string {
+export function cell(v: string | number | null | undefined): string {
   if (v === null || v === undefined) return '';
   let s = String(v);
   // A spreadsheet runs a cell starting with = + - @ as a formula; text from agents must not.

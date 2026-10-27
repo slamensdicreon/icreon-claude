@@ -1,5 +1,6 @@
 import type { EscalationView, PlanSnapshot } from '@lw/contracts';
 import { useEffect, useMemo, useRef } from 'react';
+import { API } from '../lib/api';
 import { age, clock, zoneLabel } from '../lib/fmt';
 import { Card, TYPE_LABEL } from '../parts/Card';
 import {
@@ -149,6 +150,16 @@ export function Inbox() {
               : 'Nothing is waiting on you.'}
           </p>
         </div>
+        {list.length > 0 && (
+          <a
+            className="btn"
+            href={`${API}/projects/${projectId}/escalations.csv`}
+            download
+            title="Everything waiting on you and deferred, with full context and options, oldest first"
+          >
+            Export CSV
+          </a>
+        )}
       </div>
       {list.length === 0 ? (
         <section className="panel">
