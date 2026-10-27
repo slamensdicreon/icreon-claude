@@ -186,6 +186,8 @@ describe('project workflow', () => {
 
     await p.commands.postMessage('status');
     expect(p.state()!.conversation.at(-1)!.kind).toBe('status');
+    // It says who is working, or that nobody is and why.
+    expect(p.state()!.conversation.at(-1)!.body).toMatch(/Working now \(\d+\)|Nobody is working/);
     assertLegalLog(await h.store.read(p.projectId));
     await p.handle.terminate();
   }, 60_000);

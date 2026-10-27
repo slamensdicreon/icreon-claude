@@ -1180,14 +1180,48 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     })();
   }
 
+  /** Titles for a status line: the first few, and how many more. */
+  const some = (ids: string[], n = 3) =>
+    `${ids.slice(0, n).map(titleOf).join('; ')}${ids.length > n ? `; and ${ids.length - n} more` : ''}`;
+
   function statusLine() {
     const current = [...started].filter((n) => !done.has(n)).sort((a, b) => a - b);
     if (!current.length)
       return done.size ? 'The project is complete.' : 'The project has not started a phase yet.';
-    return current
+    const phases = current
       .map(
         (n) => `Phase ${n} (${phaseInfo.get(n)!.name}) is ${phasePercent(plan, states, n)}% done.`,
       )
+      .join(' ');
+    const held = projectPaused
+      ? 'The project is paused: nothing starts until you resume it.'
+      : budgetHold
+        ? 'New work is held at the budget limit until you answer the budget card.'
+        : '';
+    const running = [...children.keys()];
+    const onYou = [...taskEscalation.keys()];
+    const onTasks = [...waitingOn.keys()];
+    // What the idle work waits for: unfinished prerequisites that nobody is working on.
+    const active = new Set(current);
+    const stuck = new Set<string>();
+    for (const t of plan.tasks) {
+      if (t.kind !== 'work' || !active.has(t.phase) || stateOf(t.taskId) !== 'planned') continue;
+      for (const d of t.dependsOn) {
+        const st = stateOf(d);
+        if (st !== 'done' && st !== 'cancelled' && !children.has(d) && st !== 'ready') stuck.add(d);
+      }
+    }
+    return [
+      held,
+      phases,
+      running.length
+        ? `Working now (${running.length}): ${some(running)}.`
+        : 'Nobody is working right now.',
+      onYou.length ? `Waiting on your answer (${onYou.length}): ${some(onYou)}.` : '',
+      onTasks.length ? `Waiting on other tasks (${onTasks.length}): ${some(onTasks)}.` : '',
+      !running.length && stuck.size ? `The rest waits on: ${some([...stuck])}.` : '',
+    ]
+      .filter(Boolean)
       .join(' ');
   }
 
