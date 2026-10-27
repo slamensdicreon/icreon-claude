@@ -38,6 +38,12 @@ export type RunOutcome =
       decision: NonNullable<SubmitInput['decision']>;
       spent: Spend;
     }
+  | {
+      kind: 'waiting';
+      summary: string;
+      waitingOn: NonNullable<SubmitInput['waitingOn']>;
+      spent: Spend;
+    }
   | { kind: 'access_denied'; message: string; spent: Spend }
   | { kind: 'failed'; reason: string; spent: Spend };
 
@@ -47,6 +53,8 @@ export interface RuntimeDeps {
   playbook: Playbook;
   store: EventStore;
   context?: ContextProvider;
+  /** The team plan for a task's brief: the other unfinished tasks, so it can name what it waits on. */
+  board?(projectId: string, task: PlannedTask): Promise<string | null>;
   /** System prompt text for a role, from the playbook's prompts folder; null to derive one. */
   prompt?: (role: RoleDef) => string | null;
   maxTurns?: number;
@@ -87,7 +95,8 @@ export class AgentRuntime {
     const model = role.model.id;
     const budget = role.budget?.tokens ?? Infinity;
     const spent: Spend = { tokens: 0, usd: 0 };
-    const messages: BetaMessageParam[] = [{ role: 'user', content: taskBrief(req) }];
+    const board = (await deps.board?.(req.projectId, req.task)) ?? null;
+    const messages: BetaMessageParam[] = [{ role: 'user', content: taskBrief({ ...req, board }) }];
     let stepIndex = 0;
     let maxTokens = deps.maxTokensPerTurn ?? DEFAULT_MAX_TOKENS;
 
@@ -166,14 +175,15 @@ export class AgentRuntime {
           const parsed = SubmitInput.safeParse(use.input);
           if (
             !parsed.success ||
-            (parsed.data.status === 'needs_decision' && !parsed.data.decision)
+            (parsed.data.status === 'needs_decision' && !parsed.data.decision) ||
+            (parsed.data.status === 'waiting' && !parsed.data.waitingOn)
           ) {
             results.push({
               type: 'tool_result',
               tool_use_id: use.id,
               is_error: true,
               content:
-                'Invalid submit_result: needs status and summary, and a decision when status is needs_decision.',
+                'Invalid submit_result: needs status and summary, a decision when status is needs_decision, and waitingOn when status is waiting.',
             });
           } else {
             submitted = parsed.data;
@@ -212,14 +222,26 @@ export class AgentRuntime {
       }
 
       if (submitted) {
-        return submitted.status === 'done'
-          ? { kind: 'done', summary: submitted.summary, metrics: submitted.metrics ?? {}, spent }
-          : {
-              kind: 'needs_decision',
-              summary: submitted.summary,
-              decision: submitted.decision!,
-              spent,
-            };
+        if (submitted.status === 'done')
+          return {
+            kind: 'done',
+            summary: submitted.summary,
+            metrics: submitted.metrics ?? {},
+            spent,
+          };
+        if (submitted.status === 'waiting')
+          return {
+            kind: 'waiting',
+            summary: submitted.summary,
+            waitingOn: submitted.waitingOn!,
+            spent,
+          };
+        return {
+          kind: 'needs_decision',
+          summary: submitted.summary,
+          decision: submitted.decision!,
+          spent,
+        };
       }
       // Every tool_use gets its result, all in one user message.
       messages.push({ role: 'user', content: results });

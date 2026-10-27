@@ -108,6 +108,7 @@ export type TaskOutcome = { state: TaskState; attempt: number } & (
       notConnected?: boolean;
     }
   | { outcome: 'needs_decision'; decision: AgentDecision; spent: AgentResult }
+  | { outcome: 'waiting'; waiting: AgentWaiting; spent: AgentResult }
   | { outcome: 'cancelled'; spent: AgentResult }
 );
 
@@ -117,8 +118,17 @@ export const ACCESS_DENIED = 'AccessDenied';
 export const NOT_CONNECTED = 'NotConnected';
 /** Error type for an agent that cannot continue without a Director decision. Details: AgentDecision. */
 export const NEEDS_DECISION = 'NeedsDecision';
+/** Error type for an agent waiting on other tasks in the plan. Details: AgentWaiting. */
+export const WAITING = 'WaitingOnTasks';
 /** Error type for an agent session that ended without finishing (refusal, budget, turn limit). */
 export const AGENT_FAILED = 'AgentFailed';
+
+/** Other tasks in the plan still have to produce what an agent needs. */
+export interface AgentWaiting {
+  summary: string;
+  taskIds: string[];
+  what: string;
+}
 
 export interface AgentDecision {
   summary: string;

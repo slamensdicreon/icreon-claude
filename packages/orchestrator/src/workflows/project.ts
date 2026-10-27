@@ -110,6 +110,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const retryFromBlocked = new Set<string>();
   /** Tasks the Director sent back: they run even if their phase has already exited. */
   const reruns = new Set<string>();
+  /** Tasks parked until other tasks make what they need, and how often each has waited. */
+  const waitingOn = new Map<string, { ids: string[]; what: string; prior: string | null }>();
+  const waits: Record<string, number> = {};
+  const MAX_WAITS = 3;
+  const titleOf = (id: string) => task(id)?.title ?? id;
   const taskEscalation = new Map<string, string>();
   const started = new Set<number>();
   const done = new Set<number>();
@@ -561,6 +566,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     running.get(t.role)?.delete(t.taskId);
     states[t.taskId] = outcome.state;
     attempts[t.taskId] = outcome.attempt;
+    const prior = instructions[t.taskId] ?? null;
     instructions[t.taskId] = null;
     const result: AgentResult = outcome.outcome === 'done' ? outcome.result : outcome.spent;
     const events: NewEvent[] = [];
@@ -597,6 +603,45 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     } else if (outcome.outcome === 'cancelled') {
       events.push(taskMove(t, 'cancelled', 'Removed from scope'), agentRefresh(t.role));
       await send(...events);
+    } else if (outcome.outcome === 'waiting') {
+      // Another task still has to make what this one needs: park it, no card, and start it again
+      // once those tasks finish. Only a wait no task can end comes to the Director.
+      const w = outcome.waiting;
+      const named = [...new Set(w.taskIds)].filter(
+        (id) => id !== t.taskId && task(id)?.kind === 'work',
+      );
+      const open = named.filter((id) => !SETTLED_STATES.has(stateOf(id)));
+      const cycle = open.some((id) => waitingOn.get(id)?.ids.includes(t.taskId));
+      const count = (waits[t.taskId] = (waits[t.taskId] ?? 0) + 1);
+      const problem = !named.length
+        ? `it named no task in the plan that makes it (${w.taskIds.join(', ')})`
+        : cycle
+          ? `${open.map(titleOf).join(', ')} wait on this task in turn`
+          : count > MAX_WAITS
+            ? `it has waited ${MAX_WAITS} times and it is still missing`
+            : null;
+      if (problem) {
+        await send(...events);
+        return onOutcome(t, {
+          outcome: 'needs_decision',
+          state: outcome.state,
+          attempt: outcome.attempt,
+          spent: { tokens: 0, usd: 0 },
+          decision: {
+            summary: `${w.summary} It waits on ${w.what}, but ${problem}.`,
+            question: clip(`${t.title}: what it needs is missing`),
+            options: ['Retry: look for it again', 'Retry, and work around what is missing'],
+            recommended: 'Retry: look for it again',
+          },
+        });
+      }
+      waitingOn.set(t.taskId, { ids: open, what: w.what, prior: prior ?? null });
+      events.push(
+        taskMove(t, 'waiting', `Waiting on ${named.map(titleOf).join(', ')}: ${w.what}`),
+        agentRefresh(t.role),
+      );
+      await send(...events);
+      poke();
     } else if (outcome.outcome === 'needs_decision') {
       // The agent's own decision flag: the Director sees its question, options and recommendation.
       const d = outcome.decision;
@@ -1296,6 +1341,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         taskEscalation.delete(id);
       }
       retryFromBlocked.delete(id);
+      waitingOn.delete(id);
       touched.add(t.role);
       // A running task stops at its next step boundary and reports itself cancelled.
       if (children.has(id)) void children.get(id)!.signal(cancelTask, id);
@@ -1614,6 +1660,22 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         await raiseGate(t.taskId, t.phase, t.dependsOn, t);
         progressed = true;
       }
+    }
+
+    // Parked tasks whose prerequisites finished go back in the queue.
+    for (const [id, w] of [...waitingOn]) {
+      if (!w.ids.every((d) => SETTLED_STATES.has(stateOf(d)))) continue;
+      waitingOn.delete(id);
+      const t = task(id);
+      if (!t || stateOf(id) !== 'waiting') continue;
+      instructions[id] = [
+        w.prior,
+        `What you waited for (${w.what}) should exist now: ${w.ids.length ? `${w.ids.map(titleOf).join(', ')} finished` : 'the tasks you named had finished'}. Check it, and carry on from where you stopped.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      await send(taskMove(t, 'ready', 'What it waited on is finished'));
+      progressed = true;
     }
 
     // Retries released by escalation answers.

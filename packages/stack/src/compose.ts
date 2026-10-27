@@ -307,6 +307,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           playbook: opts.playbook,
           store: opts.store,
           context: projectContext(opts.projections, opts.platform),
+          board: (projectId, task) => teamBoard(opts.projections, projectId, task.taskId),
           prompt: (role) => prompts[role.role] ?? null,
         }),
         (role) => live.includes(role),
@@ -353,6 +354,30 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   });
 
   return { activities, liveRoles: live, gateway, library, close: () => chromium.close() };
+}
+
+/**
+ * The team plan as a task sees it: every other unfinished task, with its owner and state, so an
+ * agent that needs something not made yet can name the task it waits on.
+ */
+async function teamBoard(projections: Projections, projectId: string, taskId: string) {
+  await projections.catchUp(projectId);
+  const tasks = Object.values(projections.get(projectId)?.tasks ?? {});
+  const open = tasks
+    .filter(
+      (t) =>
+        t.kind === 'work' &&
+        t.taskId !== taskId &&
+        !['done', 'cancelled', 'rolled_back'].includes(t.state),
+    )
+    .sort((a, b) => a.phase - b.phase);
+  if (!open.length) return null;
+  const lines = open
+    .slice(0, 150)
+    .map((t) => `- ${t.taskId} · ${t.title} · ${t.role} · ${t.state}`);
+  const more = open.length > 150 ? [`- and ${open.length - 150} more`] : [];
+  const done = tasks.filter((t) => t.kind === 'work' && t.state === 'done').length;
+  return [...lines, ...more, `(${done} other tasks are done.)`].join('\n');
 }
 
 /** What every agent is told about the project: its source site and the documents so far. */

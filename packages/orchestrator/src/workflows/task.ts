@@ -12,8 +12,10 @@ import {
   ACCESS_DENIED,
   AGENT_FAILED,
   NEEDS_DECISION,
+  WAITING,
   NOT_CONNECTED,
   type AgentDecision,
+  type AgentWaiting,
   type AgentRequest,
   type AgentResult,
   type TaskInput,
@@ -35,7 +37,7 @@ const agents = proxyActivities<Activities>({
   heartbeatTimeout: '5 minutes',
   retry: {
     maximumAttempts: 3,
-    nonRetryableErrorTypes: [ACCESS_DENIED, NEEDS_DECISION, AGENT_FAILED, NOT_CONNECTED],
+    nonRetryableErrorTypes: [ACCESS_DENIED, NEEDS_DECISION, WAITING, AGENT_FAILED, NOT_CONNECTED],
   },
 });
 
@@ -143,6 +145,15 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
           spent,
           notConnected: true,
         };
+      }
+      const waits = detail as Partial<AgentWaiting>;
+      if (app?.type === WAITING && waits.taskIds?.length && waits.what) {
+        const waiting: AgentWaiting = {
+          summary: waits.summary ?? message,
+          taskIds: waits.taskIds,
+          what: waits.what,
+        };
+        return { outcome: 'waiting', state, attempt, waiting, spent };
       }
       if (app?.type === NEEDS_DECISION && detail.question && detail.options && detail.recommended) {
         const decision: AgentDecision = {

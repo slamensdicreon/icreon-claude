@@ -4,9 +4,12 @@ import { z } from 'zod';
 
 export const SUBMIT = 'submit_result';
 
-/** How the agent ends its task: done, or blocked on a decision only the Director can make. */
+/**
+ * How the agent ends its task: done; waiting on other tasks in the plan to produce what it needs;
+ * or blocked on a decision only the Director can make.
+ */
 export const SubmitInput = z.object({
-  status: z.enum(['done', 'needs_decision']),
+  status: z.enum(['done', 'waiting', 'needs_decision']),
   summary: z.string().min(1),
   decision: z
     .object({
@@ -15,6 +18,9 @@ export const SubmitInput = z.object({
       recommended: z.string(),
     })
     .optional(),
+  waitingOn: z
+    .object({ taskIds: z.array(z.string()).min(1).max(10), what: z.string().min(1) })
+    .optional(),
   metrics: z.record(z.string(), z.number()).optional(),
 });
 export type SubmitInput = z.infer<typeof SubmitInput>;
@@ -22,14 +28,30 @@ export type SubmitInput = z.infer<typeof SubmitInput>;
 const submitTool: BetaTool = {
   name: SUBMIT,
   description:
-    'Call exactly once, when the task is finished (status "done") or cannot continue without a decision ' +
+    'Call exactly once, when the task is finished (status "done"); when what it needs is still to be ' +
+    'produced by other tasks in the team plan (status "waiting", naming those task ids and what you need: ' +
+    'you are restarted automatically when they finish); or when it cannot continue without a decision ' +
     'from the Director (status "needs_decision", with the question, two to four options and the option ' +
     'you recommend). The summary is one or two plain sentences on what changed.',
   input_schema: {
     type: 'object',
     properties: {
-      status: { type: 'string', enum: ['done', 'needs_decision'] },
+      status: { type: 'string', enum: ['done', 'waiting', 'needs_decision'] },
       summary: { type: 'string' },
+      waitingOn: {
+        type: 'object',
+        properties: {
+          taskIds: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+            maxItems: 10,
+            description: 'Ids of the unfinished tasks in the team plan that produce what you need.',
+          },
+          what: { type: 'string', description: 'What you need from them, in a few words.' },
+        },
+        required: ['taskIds', 'what'],
+      },
       decision: {
         type: 'object',
         properties: {

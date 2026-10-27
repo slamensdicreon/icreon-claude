@@ -107,7 +107,7 @@ function scriptedClaude(sourceUrl: () => string): ModelClient & { roles: string[
         if (turn === 3) {
           const crawl = lastResult(params).content as { pages: { url: string; title: string }[] };
           const pages = crawl.pages.map((p) => ({ path: new URL(p.url).pathname, title: p.title }));
-          const recrawl = (params.messages[0]!.content as string).includes('Re-crawl');
+          const recrawl = (params.messages[0]!.content as string).startsWith('Task: Re-crawl');
           return msg([
             call('artifacts__write', {
               artifactId: recrawl ? 'parity-inventory' : 'page-inventory',

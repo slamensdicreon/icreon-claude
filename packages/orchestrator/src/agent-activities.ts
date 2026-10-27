@@ -2,7 +2,7 @@ import type { RunOutcome, RunRequest } from '@lw/agent-runtime';
 import { MetricKey } from '@lw/contracts';
 import { ApplicationFailure } from '@temporalio/activity';
 import type { Activities } from './activities';
-import { ACCESS_DENIED, AGENT_FAILED, NEEDS_DECISION, type AgentResult } from './types';
+import { ACCESS_DENIED, AGENT_FAILED, NEEDS_DECISION, WAITING, type AgentResult } from './types';
 
 /** Anything that runs one agent session for a task: the AgentRuntime, or a test double. */
 export interface AgentRunner {
@@ -41,6 +41,13 @@ export function withAgentRunner(
             message: out.decision.question,
             nonRetryable: true,
             details: [{ spent, summary: out.summary, ...out.decision }],
+          });
+        case 'waiting':
+          throw ApplicationFailure.create({
+            type: WAITING,
+            message: out.waitingOn.what,
+            nonRetryable: true,
+            details: [{ spent, summary: out.summary, ...out.waitingOn }],
           });
         case 'access_denied':
           throw ApplicationFailure.create({
