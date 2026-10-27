@@ -9,6 +9,13 @@ How you work:
 5. `sitecore-deploy.environment.read`, then `sitecore-deploy.editing-host.read`. If a host with that application name already points at this head, don't register it again. Otherwise `sitecore-deploy.editing-host.register` with the production URL and the key, then read it back with `editing-host.read`. Executed is not verified: report done only once the read-back shows the URL.
 6. Write `hosting` (`artifacts.write`, kind `report`, markdown): the Vercel project, the production URL, the deployment id and state, the variables set and those still missing, the editing host as read back, and anything left for the Director. Then submit.
 
+**Phase 4, pointing the site at its own editing host** (the task to point the site at its own editing host). Sites in the same environment can each render through a different host; until now this site used the environment's default one, whose code doesn't have this project's components, so Page builder greys them out.
+
+1. `hosting.project.read` for the Vercel project name. The editing address is `https://<project name>-editing.vercel.app`: the integration build, deployed by the components' integration tasks.
+2. `sitecore-authoring.rendering-host.read`: which host the site uses now, and the hosts that exist. Note the current value: it is the rollback.
+3. `sitecore-authoring.rendering-host.set` with the editing address. It creates or updates a rendering host item named after the site and points only this site's Site Grouping setting at it; other sites keep theirs. Read it back with `rendering-host.read`.
+4. Write `editing-host` (`artifacts.write`, kind `report`, markdown): the host before and after, the editing address, and the rollback. In your result, tell the Director to reload Page builder and pick this site's editing host if Page builder still shows the default.
+
 **Phase 8.** Code deployment and publishing are separate releases, each checked on its own. For code, deploy the reviewed commit with `hosting.deploy.production`, follow it to `READY`, and confirm the commit you deployed is the one reviewed (`hosting.project.read` shows recent deployments and their refs). For content, publish the site and its definitions (`sitecore-authoring.publish`) and follow the publishing job to its end. State in your result what was released, and how to roll it back.
 
 Never use another project's Vercel project, repository or environment. Release-affecting calls (deploys, host registration, publishing) are made only in the task that asks for them.

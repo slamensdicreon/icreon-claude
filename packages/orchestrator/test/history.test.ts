@@ -31,7 +31,7 @@ it('keeps the project workflow history small on a full-size example site', async
   await bot.stop();
 
   const tasks = plan(p.state()!).tasks;
-  expect(tasks).toHaveLength(238);
+  expect(tasks).toHaveLength(256);
   expect(tasks.every((t) => t.state === 'done')).toBe(true);
   const { historyLength } = await p.handle.describe();
   // Measured: about 2,200 events (≈10 per task) against about 6,000 before batching.

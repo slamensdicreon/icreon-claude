@@ -41,6 +41,8 @@ tools:
     ops:
       - item.read
       - publish
+      - rendering-host.read
+      - rendering-host.set
     scope:
       paths:
         # The site and the definitions it depends on: publishing related items does not
@@ -64,4 +66,5 @@ knowledge:
   - known-pitfalls
 activePhases:
   - 3
+  - 4
   - 8

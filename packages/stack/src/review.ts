@@ -223,6 +223,30 @@ export const CHECKS: Record<string, Check> = {
         );
   },
 
+  // The accepted branches were integrated, and that build went live at the editing host's address.
+  'editing-host.deployed': async ({ steps }) => {
+    const merged = last(steps, 'sandbox', 'git.integrate');
+    if (!merged || !ok(merged)) return failed([merged?.data.summary ?? 'Nothing was integrated']);
+    const live = after(steps, merged).find(
+      (s) =>
+        s.data.toolServer === 'hosting' &&
+        s.data.operation === 'deploy.status' &&
+        ok(s) &&
+        s.data.summary.includes('editing host'),
+    );
+    return live
+      ? pass(`${merged.data.summary}; ${live.data.summary}.`)
+      : failed(['The integrated build was not followed to READY at the editing host address']);
+  },
+
+  // The site renders through its own host in Page builder, as read back.
+  'rendering-host.set': async ({ steps }) => {
+    const set = last(steps, 'sitecore-authoring', 'rendering-host.set');
+    return set && ok(set)
+      ? pass(set.data.summary)
+      : failed([set?.data.summary ?? "The site's rendering host was never set"]);
+  },
+
   // The head answers, and its editing endpoints exist (they refuse without the secret).
   'editing-host.responds': async ({ state, fetch }) => {
     const url = state.hosting?.url;

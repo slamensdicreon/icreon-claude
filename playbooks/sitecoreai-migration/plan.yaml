@@ -7,7 +7,8 @@ pilot:
   collection: components
   optionalGate: pilot-slice-review
   # The rest of the build waits until the slice is proven through publishing and Page builder.
-  verify: [prove-pilot-slice]
+  # The site moves to its own editing host once the pilot components are integrated into it.
+  verify: [switch-editing-host, prove-pilot-slice]
 
 templates:
   # 0 — Intake and access verification
@@ -84,11 +85,32 @@ templates:
     role: head-integrator
     title: Configure the head as the editing host
     dependsOn: [prepare-hosting]
+  # Each component is built on its own branch. Page builder only offers components the editing
+  # host's code has, so each accepted component joins one integration branch, deployed at the
+  # project's fixed editing address.
+  - id: integrate-{key}
+    phase: 4
+    role: head-integrator
+    forEach: components
+    title: Integrate {name} into the editing host
+    dependsOn: ['register-{key}', integrate-head]
+    acceptance: [validator:editing-host.deployed]
+  - id: switch-editing-host
+    phase: 4
+    role: deployment-engineer
+    title: Point the site at its own editing host
+    # And on the pilot components' integrations (the pilot's verify list adds them).
+    dependsOn: [integrate-head]
+    release:
+      rollback: >-
+        Set the site's Site Grouping rendering host back to the value the result names; the new
+        rendering host item can stay, nothing else uses it.
+    acceptance: [validator:rendering-host.set]
   - id: prove-pilot-slice
     phase: 4
     role: editor-experience-qa
     title: Prove the pilot slice end to end (publish, Experience Edge, Page builder)
-    dependsOn: [integrate-head]
+    dependsOn: [switch-editing-host]
     acceptance:
       [
         validator:edge.published,

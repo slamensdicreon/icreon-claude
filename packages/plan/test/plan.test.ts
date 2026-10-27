@@ -77,6 +77,7 @@ describe('compilePlan', () => {
     expect(placeholders).toEqual([
       'port-all',
       'register-all',
+      'integrate-all',
       'template-all',
       'migrate-pages-all',
       'upload-media-all',
@@ -132,16 +133,27 @@ describe('compilePlan', () => {
         'register-hero',
         'register-promo-card',
         'register-rich-text',
+        'integrate-hero',
+        'integrate-promo-card',
+        'integrate-rich-text',
+        'switch-editing-host',
         'prove-pilot-slice',
       ].sort(),
     );
     expect(byId.get('port-tabs')!.dependsOn).toEqual(['design-system', PILOT_CHECKPOINT]);
     expect(byId.get('register-tabs')!.dependsOn).toEqual(['port-tabs']);
     expect(byId.get('port-hero')!.dependsOn).toEqual(['design-system']);
-    // The end-to-end proof waits on the editing host and every pilot task, not on the rest.
+    const pilotWork = [...PILOT].flatMap((k) => [`port-${k}`, `register-${k}`, `integrate-${k}`]);
+    // The end-to-end proof waits on the site's own editing host and every pilot task, not on the rest.
     expect(byId.get('prove-pilot-slice')!.dependsOn.sort()).toEqual(
-      ['integrate-head', ...[...PILOT].flatMap((k) => [`port-${k}`, `register-${k}`])].sort(),
+      ['switch-editing-host', ...pilotWork].sort(),
     );
+    // The site moves to its own host once the pilot components are on it, after the Director approves.
+    expect(byId.get('switch-editing-host')!.dependsOn).toEqual(['approve-switch-editing-host']);
+    expect(byId.get('approve-switch-editing-host')!.dependsOn.sort()).toEqual(
+      ['integrate-head', ...pilotWork].sort(),
+    );
+    expect(byId.get('integrate-tabs')!.dependsOn).toEqual(['register-tabs', 'integrate-head']);
     // Wildcards never pick up the checkpoint itself.
     expect(byId.get('validate-components')!.dependsOn).not.toContain(PILOT_CHECKPOINT);
   });
@@ -287,6 +299,14 @@ describe('scheduling', () => {
 
     for (const k of PILOT) states[`port-${k}`] = states[`register-${k}`] = 'done';
     states['integrate-head'] = 'done';
+    expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual(
+      [...PILOT].map((k) => `integrate-${k}`),
+    );
+    for (const k of PILOT) states[`integrate-${k}`] = 'done';
+    expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual([
+      'approve-switch-editing-host',
+    ]);
+    states['approve-switch-editing-host'] = states['switch-editing-host'] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual(['prove-pilot-slice']);
     states['prove-pilot-slice'] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual([PILOT_CHECKPOINT]);
@@ -307,6 +327,7 @@ describe('scheduling', () => {
     // Designs bind registered renderings, so they depend on every registration.
     expect(dependentsOf(plan, 'port-tabs')).toEqual([
       'register-tabs',
+      'integrate-tabs',
       'validate-components',
       'partial-designs',
       'template-home',

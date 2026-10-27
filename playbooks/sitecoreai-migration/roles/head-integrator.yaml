@@ -24,6 +24,12 @@ tools:
       - exec.build
       - exec.content-sdk-cli
       - git.commit
+      - git.integrate
+  hosting:
+    ops:
+      - project.read
+      - deploy.preview
+      - deploy.status
   build-repo:
     ops:
       - tree.read
