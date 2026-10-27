@@ -68,10 +68,17 @@ function tenant(setting: string, field = 'RenderingHost') {
     const path = /path: "([^"]+)"/.exec(query)![1]!;
     const it = items.get(path);
     if (!it) return ok({ item: null });
+    const single = Object.fromEntries(
+      [...query.matchAll(/(f\d+): field\(name: "([^"]+)"\) \{ value \}/g)].map((m) => [
+        m[1]!,
+        m[2]! in it.fields ? { value: it.fields[m[2]!]! } : null,
+      ]),
+    );
     return ok({
       item: {
         itemId: it.id,
         path,
+        ...single,
         children: { nodes: children(path) },
         fields: { nodes: Object.entries(it.fields).map(([name, value]) => ({ name, value })) },
       },

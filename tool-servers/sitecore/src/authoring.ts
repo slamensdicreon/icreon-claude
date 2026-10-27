@@ -418,8 +418,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     );
     if (!d.item) return { code: 404, body: { error: `No item at ${a.data.path}` } };
     if (!named) return { code: 200, body: d.item, summary: `Read ${a.data.path}` };
-    // Named fields only, and say which the item doesn't have.
-    const nodes = d.item.fields.nodes.filter((f) => named.includes(f.name.toLowerCase()));
+    // Named fields only, asked for by name, and say which the item doesn't have.
+    const back = await readBack(q, a.data.path, lang(a.data.language), a.data.fields!);
+    const nodes = a.data.fields!.flatMap((name) => {
+      const value = back?.fields.get(name.toLowerCase());
+      return value === undefined ? [] : [{ name, value }];
+    });
     const absent = a.data.fields!.filter(
       (f) => !nodes.some((n) => n.name.toLowerCase() === f.toLowerCase()),
     );
@@ -460,7 +464,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       reconciled = true;
     }
     // Executed is not verified: read it back.
-    const back = await readBack(q, path, language);
+    const back = await readBack(
+      q,
+      path,
+      language,
+      fields.map((f) => f.name),
+    );
     if (!back) {
       return {
         code: 503,
@@ -499,7 +508,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       if (err instanceof GqlError) throw err;
       reconciled = true;
     }
-    const back = await readBack(q, a.data.path, language);
+    const back = await readBack(
+      q,
+      a.data.path,
+      language,
+      a.data.fields.map((f) => f.name),
+    );
     if (!back) return { code: 404, body: { error: `No item at ${a.data.path}` } };
     const mismatches = compare(a.data.fields, back.fields);
     if (reconciled && mismatches.length) {
@@ -901,13 +915,38 @@ type Lang = (l?: string) => string;
 
 /**
  * An item's field values, inherited ones included (a rendering's Datasource Template, a group's
- * Renderings), or null when there is no item at the path.
+ * Renderings), or null when there is no item at the path. Named fields are asked for one by one:
+ * the item's whole field list comes back in pages, and on an item with many standard fields (a
+ * template's standard values) the ones written can fall outside the first page.
  */
 async function readBack(
   q: Gql,
   path: string,
   language: string,
+  names: string[] = [],
 ): Promise<{ itemId: string; path: string; fields: Map<string, string> } | null> {
+  const where = `where: { database: "master", path: ${gql(path)}, language: ${gql(language)} }`;
+  if (names.length) {
+    try {
+      const d = await q.run<{
+        item: ({ itemId: string; path: string } & Record<string, { value: string } | null>) | null;
+      }>(
+        `query { item(${where}) {
+          itemId path ${names.map((n, i) => `f${i}: field(name: ${gql(n)}) { value }`).join(' ')}
+        } }`,
+      );
+      if (!d.item) return null;
+      const fields = new Map<string, string>();
+      names.forEach((n, i) => {
+        const f = d.item![`f${i}`] as { value: string } | null | undefined;
+        if (f) fields.set(n.toLowerCase(), f.value);
+      });
+      return { itemId: d.item.itemId, path: d.item.path, fields };
+    } catch (err) {
+      // An API without single-field reads: fall back to the field list.
+      if (!(err instanceof GqlError)) throw err;
+    }
+  }
   const d = await q.run<{
     item: {
       itemId: string;
@@ -915,7 +954,7 @@ async function readBack(
       fields: { nodes: { name: string; value: string }[] };
     } | null;
   }>(
-    `query { item(where: { database: "master", path: ${gql(path)}, language: ${gql(language)} }) {
+    `query { item(${where}) {
       itemId path fields(ownFields: false, excludeStandardFields: false) { nodes { name value } }
     } }`,
   );

@@ -79,20 +79,32 @@ function fakeCm(
     }
     const path = /path: "([^"]+)"/.exec(query)?.[1];
     if (/item\(where/.test(query)) {
-      if (path && items[path])
+      if (path && items[path]) {
+        const stored = values.get(path) ?? new Map<string, string>();
+        // Single fields by name, under the aliases asked for.
+        const single = Object.fromEntries(
+          [...query.matchAll(/(f\d+): field\(name: "([^"]+)"\) \{ value \}/g)].map((m) => [
+            m[1]!,
+            stored.has(m[2]!) ? { value: stored.get(m[2]!)! } : null,
+          ]),
+        );
         return ok({
           item: {
             itemId: items[path],
             name: 'n',
             path,
+            ...single,
             fields: {
-              // Fields from base templates come back only when inherited fields are asked for.
-              nodes: [...(values.get(path) ?? new Map())]
+              // Fields from base templates come back only when inherited fields are asked for;
+              // standard fields (__…) fall outside the first page of the list, as on a real item.
+              nodes: [...stored]
                 .filter(([name]) => !/ownFields: true/.test(query) || !INHERITED.has(name))
+                .filter(([name]) => !name.startsWith('__'))
                 .map(([name, value]) => ({ name, value })),
             },
           },
         });
+      }
       return ok({ item: null });
     }
     return new Response(JSON.stringify({ errors: [{ message: 'nope' }] }), { status: 200 });
