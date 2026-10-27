@@ -439,6 +439,7 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
             steps: trail,
             artifacts,
             checks: results,
+            director: req.instructions ?? null,
             previous: log
               .filter(
                 (e): e is Extract<LwEvent, { type: 'review.recorded' }> =>

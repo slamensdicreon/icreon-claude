@@ -31,6 +31,8 @@ export interface ReviewInput {
   artifacts: string[];
   /** Automated checks: passed, failed, or pending (no check exists yet). */
   checks: { id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[];
+  /** The Director's instructions for this attempt; what they say the Director did counts as done. */
+  director?: string | null;
   /** This Lead's earlier verdicts on the task, oldest first. */
   previous?: string[];
   /** What the specialist's role may change: its tools and write scope. */
@@ -62,6 +64,9 @@ export async function reviewTask(
       ? `Acceptance criteria:\n${input.task.acceptance.map((a) => `- ${a}`).join('\n')}`
       : 'Acceptance criteria: none beyond the task itself.',
     `Checks (run just now, on the final state):\n${input.checks.length ? input.checks.map((c) => `- ${c.id}: ${c.status}. ${c.detail}`).join('\n') : '- none'}`,
+    input.director
+      ? `The Director's instructions for this attempt (changes the Director says they made, such as an edit by hand, happened outside the steps and count as done):\n${input.director}`
+      : '',
     input.permissions?.length
       ? `The specialist's permissions:\n${input.permissions.map((p) => `- ${p}`).join('\n')}`
       : '',
