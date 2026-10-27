@@ -62,7 +62,16 @@ function fakeCm(
               .split('|')
               .map((g) => `{${g.replace(/[{}]/g, '').toUpperCase()}}`)
               .join('|')
-          : v;
+          : v.startsWith('<r')
+            ? // Layout: rewritten with uppercase IDs in braces, the s: prefix and its own ordering.
+              v
+                .replace(
+                  /([a-z]+)="\{?([0-9a-f-]{36})\}?"/gi,
+                  (_, a: string, g: string) => `s:${a}="{${g.toUpperCase()}}"`,
+                )
+                .replace(/ ph="([^"]*)"/g, ' s:ph="$1"')
+                .replace(/\/>/g, ' s:uid="{00000000-0000-4000-8000-0000000000AA}" />')
+            : v;
       if (!opts.ignoreUpdate)
         for (const [k, v] of fieldsOf(query)) values.get(path)?.set(k, stored(v));
       if (opts.drop) lost();
@@ -197,6 +206,27 @@ describe('SitecoreAuthoringToolServer', () => {
       },
       ctx,
     );
+    // Layout is compared by what it means: Sitecore rewrites the XML it stores.
+    const layout = (ds: string) =>
+      `<r xmlns:xsd="http://www.w3.org/2001/XMLSchema"><d id="{fe5d7fdf-89c0-4d99-9aa3-b5fbd009c9f3}" l="{96e5f4ba-a2cf-4a4c-a4e7-64da88226362}"><r id="{a1b2c3d4-0000-4000-8000-000000000004}" ph="headless-main" ds="${ds}" /></d></r>`;
+    const sv = await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [{ name: '__Renderings', value: layout('local:/Data/Hero') }],
+      },
+      ctx,
+    );
+    expect(sv).toMatchObject({ code: 200, body: { verified: true } });
+    expect(
+      (
+        await s3.call(
+          'item.update',
+          { path: `${home}/Contact`, fields: [{ name: '__Renderings', value: layout('') }] },
+          ctx,
+        )
+      ).code,
+    ).toBe(200);
     const masters = await s3.call(
       'item.read',
       { path: `${home}/Contact`, fields: ['__Masters', 'Nope'] },

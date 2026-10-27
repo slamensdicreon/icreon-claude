@@ -930,10 +930,37 @@ async function readBack(
 /** A stored value as written: IDs and ID lists Sitecore keeps uppercase in braces compare equal. */
 const canonical = (v: string) => {
   const t = v.trim();
+  if (/^<r[\s>]/i.test(t)) return layoutKey(t);
   return /^\{?[0-9a-f-]{36}\}?(\|\{?[0-9a-f-]{36}\}?)*$/i.test(t)
     ? t.replace(/[{}]/g, '').toLowerCase()
     : t;
 };
+
+/**
+ * Layout XML as what it means: each device's layout and its renderings (rendering, placeholder,
+ * datasource). Sitecore rewrites the XML it stores (braces, case, attribute order, attributes it
+ * adds), so comparing the text would call a good write a mismatch.
+ */
+function layoutKey(xml: string): string {
+  const attrs = (tag: string) =>
+    Object.fromEntries(
+      [...tag.matchAll(/(?:s:)?([a-z]+)="([^"]*)"/gi)].map((m) => [
+        m[1]!.toLowerCase(),
+        m[2]!.replace(/[{}]/g, '').toLowerCase(),
+      ]),
+    );
+  const devices = [...xml.matchAll(/<d\b([^>]*)>([\s\S]*?)<\/d>|<d\b([^>]*)\/>/gi)].map((m) => {
+    const d = attrs(m[1] ?? m[3] ?? '');
+    const renderings = [...(m[2] ?? '').matchAll(/<r\b([^>]*)>/gi)]
+      .map((r) => {
+        const a = attrs(r[1]!);
+        return [a.id ?? '', a.ph ?? '', a.ds ?? ''].join(' ');
+      })
+      .sort();
+    return `${d.id ?? ''} ${d.l ?? ''}: ${renderings.join('; ')}`;
+  });
+  return `layout ${devices.sort().join(' / ')}`;
+}
 
 /** Fields whose stored value isn't what was written, with what was read back. */
 function compare(

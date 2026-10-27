@@ -29,6 +29,8 @@ tools:
         - /sitecore/layout/Renderings/Project/{module}/**
         - /sitecore/templates/Project/{project}/**
         - '{sitePath}/Presentation/Available Renderings/**'
+        # A component's named variants (Default, and any the Blueprint lists) live here.
+        - '{sitePath}/Presentation/Headless Variants/**'
       # Definitions it registers against (SXA's templates, other renderings) and the site: read only.
       readPaths:
         - /sitecore/layout/**
