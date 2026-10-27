@@ -1672,6 +1672,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   await condition(allHandlersFinished);
 }
 
+/** A card title: the first sentence, cut at a word under ~100 characters. */
 function clip(s: string) {
-  return s.length <= 60 ? s : `${s.slice(0, 59)}…`;
+  const first = s.split(/(?<=[.?!])\s/)[0]!.trim();
+  if (first.length <= 100) return first;
+  const cut = first.slice(0, 99);
+  const at = cut.lastIndexOf(' ');
+  return `${(at > 60 ? cut.slice(0, at) : cut).replace(/[,;:]$/, '')}…`;
 }

@@ -125,7 +125,7 @@ export type EvidenceLink = z.infer<typeof EvidenceLink>;
 export const EscalationCard = z.object({
   escalationId: z.string(),
   type: EscalationType,
-  title: z.string().max(60),
+  title: z.string().max(120),
   context: z.string(),
   impact: z.string(),
   options: z.array(EscalationOption).min(1).max(4),

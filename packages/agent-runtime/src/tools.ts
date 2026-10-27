@@ -33,8 +33,18 @@ const submitTool: BetaTool = {
       decision: {
         type: 'object',
         properties: {
-          question: { type: 'string' },
-          options: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 4 },
+          question: {
+            type: 'string',
+            description:
+              'The decision as the Director will see it in a list: one short question, under 80 characters, no paths or IDs (put those in the summary).',
+          },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 2,
+            maxItems: 4,
+            description: 'Each option a short action, under 100 characters.',
+          },
           recommended: { type: 'string' },
         },
         required: ['question', 'options', 'recommended'],
