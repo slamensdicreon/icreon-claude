@@ -176,6 +176,11 @@ export const TaskTemplate = z.object({
    */
   canary: z.number().int().min(0).max(5).optional(),
   /**
+   * The tool servers this template's tasks use, when fewer than their role is granted (e.g.
+   * `[sitecore-authoring]`). The task then runs while the role's other servers aren't connected.
+   */
+  uses: z.array(Kebab).optional(),
+  /**
    * Task ids this task waits on. `{key}` binds to the same item; a trailing `*` matches every task
    * whose id starts with the prefix (e.g. `register-*`).
    */

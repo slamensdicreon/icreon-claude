@@ -28,7 +28,7 @@ describe('withLiveGuard', () => {
     const guarded = withLiveGuard(base, {
       store,
       isLive: async (id) => id === 'live',
-      missing: (role) => (role === 'repo-analyst' ? ['github.tree.read'] : []),
+      missing: (t) => (t.role === 'repo-analyst' ? ['github.tree.read'] : []),
       roleName: () => 'Repo Analyst',
     });
 

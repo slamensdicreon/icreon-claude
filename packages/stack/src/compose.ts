@@ -405,12 +405,14 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     store: opts.store,
     isLive,
     // Without Claude, nothing is connected: every specialist task on a live project blocks.
-    missing: (role) =>
-      live.includes(role)
-        ? []
-        : opts.model
-          ? (missing.get(role) ?? [])
-          : ['model.claude (AGENTS=claude)'],
+    missing: (task) => {
+      if (live.includes(task.role)) return [];
+      if (!opts.model) return ['model.claude (AGENTS=claude)'];
+      const uses = opts.playbook.plan.templates.find((t) => t.id === task.templateId)?.uses;
+      return (missing.get(task.role) ?? []).filter(
+        (op) => !uses || uses.includes(op.split('.')[0]!),
+      );
+    },
     roleName: (role) => roleOf(opts.playbook, role)?.name ?? role,
   });
 

@@ -2,14 +2,18 @@ import { randomUUID } from 'node:crypto';
 import type { EventStore } from '@lw/events';
 import { ApplicationFailure } from '@temporalio/activity';
 import type { Activities } from './activities';
+import type { AgentRequest } from './types';
 import { NOT_CONNECTED } from './types';
 
 export interface LiveGuardOptions {
   store: EventStore;
   /** True for a real engagement (from the New Project wizard); false for demos and simulations. */
   isLive(projectId: string): Promise<boolean>;
-  /** Operations a role is granted that no connected tool server provides ("github.repo.read"). */
-  missing(role: string): string[];
+  /**
+   * Operations the task's role is granted that no connected tool server provides
+   * ("github.repo.read"), limited to the servers the task uses.
+   */
+  missing(task: AgentRequest['task']): string[];
   /** Display name of a role, for the Activity line. */
   roleName(role: string): string;
 }
@@ -23,7 +27,7 @@ export function withLiveGuard(base: Activities, opts: LiveGuardOptions): Activit
   return {
     ...base,
     async runAgent(req) {
-      const missing = opts.missing(req.task.role);
+      const missing = opts.missing(req.task);
       if (!missing.length || !(await opts.isLive(req.projectId))) return base.runAgent(req);
       const reason = `${opts.roleName(req.task.role)} needs tools that aren't connected yet (${missing.join(', ')}). Nothing was run.`;
       await opts.store.append(req.projectId, [

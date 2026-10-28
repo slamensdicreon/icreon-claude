@@ -84,6 +84,10 @@ export function validatePlaybook({ manifest, roles, plan }: Playbook): string[] 
     if (t.batchSize && !t.forEach) problems.push(`plan: ${t.id} has batchSize without forEach`);
     if (t.canary !== undefined && !t.forEach)
       problems.push(`plan: ${t.id} has canary without forEach`);
+    for (const server of t.uses ?? []) {
+      if (role && !role.tools[server])
+        problems.push(`plan: ${t.id} uses ${server}, which ${t.role} is not granted`);
+    }
   }
   if (plan.pilot) {
     if (!phaseNumbers.has(plan.pilot.phase))

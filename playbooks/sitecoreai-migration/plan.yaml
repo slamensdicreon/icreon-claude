@@ -196,6 +196,8 @@ templates:
     phase: 7
     role: experience-enabler
     title: Redirects, SEO, sitemap, robots, error pages and dictionary
+    # Sitecore items only: it runs while Page builder (for the proof variant) isn't connected.
+    uses: [sitecore-authoring, blackboard, artifacts]
   - id: prove-personalization
     phase: 7
     role: experience-enabler

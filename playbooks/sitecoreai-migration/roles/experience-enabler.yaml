@@ -27,6 +27,13 @@ tools:
   browser:
     ops:
       - page-builder.drive
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
 acceptance:
   - validator:experience.variant-resolves
 escalateWhen:
