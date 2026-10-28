@@ -54,6 +54,14 @@ C1 comes first: it removes the freezes the other two would otherwise hit while t
   the task as waiting on it. When a deploy adds the capability, the backlog item closes and its tasks
   re-queue. The Director sees one line in status, not a card per task.
 
+  *As built:* `submit_result` status `capability_gap` with `gap.capability`. The task parks as
+  waiting with no card, a `capability.gap` event fills the backlog (Settings → Capability gaps,
+  keyed by the capability in lower case), and the status line counts the tasks waiting on it. A
+  canary waiting on a capability holds its batch. "Added: run its tasks again" (`POST
+  /projects/:id/capability-gaps/:key/close`) re-runs every waiting task, told what is now
+  available; the gap closes when its last task leaves waiting. Closing on deploy, by matching a
+  gap to a new tool operation, is still open.
+
 ### A2. Answer by policy before asking the Director
 
 - **Lead triage.** `needs_decision` goes to the task's Lead first (a short, cheap model call), with

@@ -48,6 +48,7 @@ export type RunOutcome =
       };
       spent: Spend;
     }
+  | { kind: 'capability_gap'; summary: string; capability: string; spent: Spend }
   | { kind: 'access_denied'; message: string; spent: Spend }
   | { kind: 'failed'; reason: string; spent: Spend };
 
@@ -185,14 +186,15 @@ export class AgentRuntime {
           if (
             !parsed.success ||
             (parsed.data.status === 'needs_decision' && !parsed.data.decision) ||
-            (parsed.data.status === 'waiting' && !parsed.data.waitingOn)
+            (parsed.data.status === 'waiting' && !parsed.data.waitingOn) ||
+            (parsed.data.status === 'capability_gap' && !parsed.data.gap)
           ) {
             results.push({
               type: 'tool_result',
               tool_use_id: use.id,
               is_error: true,
               content:
-                'Invalid submit_result: needs status and summary, a decision when status is needs_decision, and waitingOn when status is waiting.',
+                'Invalid submit_result: needs status and summary, a decision when status is needs_decision, waitingOn when status is waiting, and gap when status is capability_gap.',
             });
           } else {
             submitted = parsed.data;
@@ -236,6 +238,13 @@ export class AgentRuntime {
             kind: 'done',
             summary: submitted.summary,
             metrics: submitted.metrics ?? {},
+            spent,
+          };
+        if (submitted.status === 'capability_gap')
+          return {
+            kind: 'capability_gap',
+            summary: submitted.summary,
+            capability: submitted.gap!.capability,
             spent,
           };
         if (submitted.status === 'waiting')

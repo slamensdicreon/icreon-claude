@@ -83,6 +83,8 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
       return `${names(e.data.agentId)}: ${e.data.state}${e.data.now ? ` — ${e.data.now}` : ''}`;
     case 'agent.noted':
       return `${names(e.data.agentId)}: ${e.data.note}`;
+    case 'capability.gap':
+      return `${names(e.data.agentId)} can't: ${e.data.capability}. The task waits for engineering to add it`;
     case 'step.recorded':
       return `${names(e.data.agentId)} · ${e.data.operation} → ${e.data.outcome ?? e.data.resultCode} · ${e.data.summary}`;
     case 'review.recorded':

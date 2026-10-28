@@ -322,6 +322,53 @@ export function Settings() {
           </span>
         </section>
 
+        <section className="panel">
+          <h2>
+            Capability gaps <small>what the agents' tools couldn't do</small>
+          </h2>
+          {s.capabilityGaps.length ? (
+            <ul className="gaps">
+              {s.capabilityGaps.map((g) => (
+                <li key={g.key} className={g.closedAt ? 'closed' : ''}>
+                  <div className="row">
+                    <span className="l">
+                      {g.capability}
+                      <span className="muted">
+                        {' '}
+                        {g.closedAt
+                          ? `closed ${stamp(g.closedAt, tz)}`
+                          : `${g.tasks.length} ${g.tasks.length === 1 ? 'task waits' : 'tasks wait'} since ${stamp(g.firstAt, tz)}`}
+                      </span>
+                    </span>
+                    {!g.closedAt && (
+                      <button
+                        className="btn sm"
+                        onClick={() =>
+                          void run(() =>
+                            post(`${base}/capability-gaps/${encodeURIComponent(g.key)}/close`, {}),
+                          )
+                        }
+                      >
+                        Added: run {g.tasks.length === 1 ? 'its task' : 'its tasks'} again
+                      </button>
+                    )}
+                  </div>
+                  {g.tasks.map((t) => (
+                    <p key={t.taskId} className="muted gap-task">
+                      {t.title}: {t.summary}
+                    </p>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="quiet-line">
+              None. When an agent's tools can't do a step, its task waits here instead of asking
+              you.
+            </p>
+          )}
+        </section>
+
         <section className="panel danger">
           <h2>Danger zone</h2>
           <div className="row">

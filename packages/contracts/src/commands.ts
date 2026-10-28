@@ -188,6 +188,13 @@ export type Control = z.infer<typeof Control>;
 export const RerunTask = z.object({ instructions: z.string().min(1).max(4000) });
 export type RerunTask = z.infer<typeof RerunTask>;
 
+/**
+ * POST /projects/:id/capability-gaps/:key/close — engineering added the capability: every task
+ * waiting on it runs again, told what is now available.
+ */
+export const CloseCapabilityGap = z.object({ note: z.string().trim().max(2000).optional() });
+export type CloseCapabilityGap = z.infer<typeof CloseCapabilityGap>;
+
 /** POST /projects/:id/tasks/complete — work the team did outside the agents, recorded as done. */
 export const CompleteTasks = z.object({
   taskIds: z.array(z.string().min(1).max(200)).min(1).max(200),

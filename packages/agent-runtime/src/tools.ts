@@ -6,10 +6,10 @@ export const SUBMIT = 'submit_result';
 
 /**
  * How the agent ends its task: done; waiting on other tasks in the plan to produce what it needs;
- * or blocked on a decision only the Director can make.
+ * blocked on a decision only the Director can make; or unable because its tools can't do it.
  */
 export const SubmitInput = z.object({
-  status: z.enum(['done', 'waiting', 'needs_decision']),
+  status: z.enum(['done', 'waiting', 'needs_decision', 'capability_gap']),
   summary: z.string().min(1),
   decision: z
     .object({
@@ -29,6 +29,8 @@ export const SubmitInput = z.object({
     })
     .refine((w) => w.taskIds.length + w.sendBack.length > 0, 'name a task to wait on or send back')
     .optional(),
+  /** What the agent's tools can't do, for engineering's backlog. */
+  gap: z.object({ capability: z.string().min(1).max(200) }).optional(),
   metrics: z.record(z.string(), z.number()).optional(),
 });
 export type SubmitInput = z.infer<typeof SubmitInput>;
@@ -41,11 +43,13 @@ const submitTool: BetaTool = {
     'name the unfinished tasks in taskIds, and send finished ones back with sendBack and the exact fixes; ' +
     'you are restarted automatically when they finish); or when it cannot continue without a decision ' +
     'from the Director (status "needs_decision", with the question, two to four options and the option ' +
-    'you recommend). The summary is one or two plain sentences on what changed.',
+    'you recommend); or when none of your tools can do a step the task needs (status "capability_gap", ' +
+    'naming the missing capability in gap.capability; the task waits until engineering adds it). The ' +
+    'summary is one or two plain sentences on what changed.',
   input_schema: {
     type: 'object',
     properties: {
-      status: { type: 'string', enum: ['done', 'waiting', 'needs_decision'] },
+      status: { type: 'string', enum: ['done', 'waiting', 'needs_decision', 'capability_gap'] },
       summary: { type: 'string' },
       waitingOn: {
         type: 'object',
@@ -96,6 +100,17 @@ const submitTool: BetaTool = {
           recommended: { type: 'string' },
         },
         required: ['question', 'options', 'recommended'],
+      },
+      gap: {
+        type: 'object',
+        properties: {
+          capability: {
+            type: 'string',
+            description:
+              'The operation your tools lack, as engineering would build it, in a few words ("create personalization variants in Page builder"). The same wording for the same gap.',
+          },
+        },
+        required: ['capability'],
       },
       metrics: { type: 'object', additionalProperties: { type: 'number' } },
     },

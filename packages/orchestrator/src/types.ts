@@ -108,6 +108,8 @@ export interface ProjectSnapshot {
   retryFromBlocked: string[];
   reruns: string[];
   waitingOn: [string, { ids: string[]; what: string; prior: string | null; note?: string }][];
+  /** Absent in snapshots taken before capability gaps existed. */
+  capabilityWait?: [string, string][];
   waits: Record<string, number>;
   sentBack: Record<string, number>;
   taskEscalation: [string, string][];
@@ -199,6 +201,8 @@ export type TaskOutcome = { state: TaskState; attempt: number } & (
     }
   | { outcome: 'needs_decision'; decision: AgentDecision; spent: AgentResult }
   | { outcome: 'waiting'; waiting: AgentWaiting; spent: AgentResult }
+  /** The agent's tools can't do a step: the task waits for engineering to add the capability. */
+  | { outcome: 'capability_gap'; summary: string; capability: string; spent: AgentResult }
   | { outcome: 'cancelled'; spent: AgentResult }
 );
 
@@ -210,6 +214,8 @@ export const NOT_CONNECTED = 'NotConnected';
 export const NEEDS_DECISION = 'NeedsDecision';
 /** Error type for an agent waiting on other tasks in the plan. Details: AgentWaiting. */
 export const WAITING = 'WaitingOnTasks';
+/** Error type for an agent whose tools can't do a step. Details: { summary, capability }. */
+export const CAPABILITY_GAP = 'CapabilityGap';
 /** Error type for an agent session that ended without finishing (refusal, budget, turn limit). */
 export const AGENT_FAILED = 'AgentFailed';
 

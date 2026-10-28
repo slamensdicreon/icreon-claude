@@ -97,6 +97,17 @@ export interface ProjectState {
   buildRepo: BuildRepo | null;
   hosting: HostingState | null;
   conventions: { key: string; value: string }[];
+  /** What agents' tools couldn't do, by capability (lower case): engineering's backlog. */
+  capabilityGaps: Record<string, CapabilityGapRecord>;
+}
+
+export interface CapabilityGapRecord {
+  capability: string;
+  firstAt: string;
+  /** Tasks waiting on it now; a task that runs again leaves. */
+  tasks: Record<string, { agentId: string; summary: string; at: string }>;
+  /** When its last task left (the capability was added, or the tasks went another way). */
+  closedAt: string | null;
 }
 
 type AgentRecord = Omit<AgentView, 'modelClass' | 'next'> & { lastSteps: StepView[] };
@@ -167,6 +178,7 @@ export function createProjectState(projectId: string): ProjectState {
     hosting: null,
     settings: {},
     conventions: [],
+    capabilityGaps: {},
   };
 }
 
@@ -289,6 +301,13 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     case 'task.state': {
       const t = s.tasks[e.data.taskId];
       if (!t) break;
+      if (e.data.from === 'waiting' && e.data.to !== 'waiting') {
+        for (const g of Object.values(s.capabilityGaps)) {
+          if (!g.tasks[t.taskId]) continue;
+          delete g.tasks[t.taskId];
+          if (!Object.keys(g.tasks).length) g.closedAt = e.ts;
+        }
+      }
       t.state = e.data.to;
       t.attempt = e.data.attempt;
       t.lastReason = e.data.reason;
@@ -312,6 +331,18 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       a.taskId = e.data.taskId;
       a.step = e.data.step;
       a.since = e.ts;
+      break;
+    }
+    case 'capability.gap': {
+      const key = e.data.capability.trim().toLowerCase();
+      const g = (s.capabilityGaps[key] ??= {
+        capability: e.data.capability.trim(),
+        firstAt: e.ts,
+        tasks: {},
+        closedAt: null,
+      });
+      g.tasks[e.data.taskId] = { agentId: e.data.agentId, summary: e.data.summary, at: e.ts };
+      g.closedAt = null;
       break;
     }
     case 'agent.noted': {

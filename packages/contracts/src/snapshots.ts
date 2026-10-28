@@ -529,6 +529,25 @@ export const SettingsSnapshot = z.object({
   }),
   /** What rolling back the current phase would undo, in words; null when nothing would. */
   rollback: z.object({ phase: z.number().int(), name: z.string(), detail: z.string() }).nullable(),
+  /** What agents' tools couldn't do: open gaps first (tasks waiting on them), then closed ones. */
+  capabilityGaps: z
+    .array(
+      z.object({
+        key: z.string(),
+        capability: z.string(),
+        firstAt: z.iso.datetime(),
+        closedAt: z.iso.datetime().nullable(),
+        tasks: z.array(
+          z.object({
+            taskId: z.string(),
+            title: z.string(),
+            agentId: z.string(),
+            summary: z.string(),
+          }),
+        ),
+      }),
+    )
+    .default([]),
 });
 export type SettingsSnapshot = z.infer<typeof SettingsSnapshot>;
 

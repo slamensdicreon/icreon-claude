@@ -5,6 +5,7 @@ import type { Activities } from './activities';
 import {
   ACCESS_DENIED,
   AGENT_FAILED,
+  CAPABILITY_GAP,
   NEEDS_DECISION,
   WAITING,
   type AgentRequest,
@@ -55,6 +56,13 @@ export function withAgentRunner(
             message: out.waitingOn.what,
             nonRetryable: true,
             details: [{ spent, summary: out.summary, ...out.waitingOn }],
+          });
+        case 'capability_gap':
+          throw ApplicationFailure.create({
+            type: CAPABILITY_GAP,
+            message: out.capability,
+            nonRetryable: true,
+            details: [{ spent, summary: out.summary, capability: out.capability }],
           });
         case 'access_denied':
           throw ApplicationFailure.create({

@@ -130,6 +130,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** How often agents sent each finished task back; past the limit, the Director decides. */
   const sentBack: Record<string, number> = {};
   const MAX_SEND_BACKS = 2;
+  /** Tasks parked until engineering adds a capability their agent's tools lack, and which. */
+  const capabilityWait = new Map<string, string>();
   const titleOf = (id: string) => task(id)?.title ?? id;
   const taskEscalation = new Map<string, string>();
   const started = new Set<number>();
@@ -782,6 +784,28 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       );
       await send(...events);
       poke();
+    } else if (outcome.outcome === 'capability_gap') {
+      // The agent's tools can't do a step: no card. The gap goes to engineering's backlog and the
+      // task waits; adding the capability re-runs it (Settings → Capability gaps).
+      capabilityWait.set(t.taskId, outcome.capability);
+      events.push(
+        taskMove(t, 'waiting', `Waiting on a capability: ${outcome.capability}`),
+        {
+          type: 'capability.gap',
+          actor: { kind: 'agent', id: t.role },
+          subject: { kind: 'task', id: t.taskId },
+          severity: 'warning',
+          data: {
+            taskId: t.taskId,
+            agentId: t.role,
+            capability: outcome.capability,
+            summary: outcome.summary,
+          },
+        },
+        agentRefresh(t.role),
+      );
+      await send(...events);
+      poke();
     } else if (outcome.outcome === 'needs_decision') {
       // The agent's own decision flag: the Director sees its question, options and recommendation.
       const d = outcome.decision;
@@ -1012,6 +1036,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       for (const [id, e] of escalations)
         if (e.card.sourceTaskId === taskId && unresolved(e)) await supersede(id, by);
       waitingOn.delete(taskId);
+      capabilityWait.delete(taskId);
       retryFromBlocked.delete(taskId);
       instructions[taskId] = notes;
       if (st !== 'ready') await send(taskMove(t, 'ready', `Run again: ${by}`));
@@ -1368,7 +1393,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   // is through, so a tool failure costs one card, not one per item.
   const canaryPassed = (id: string) => {
     const s = stateOf(id);
-    if (s === 'done' || s === 'cancelled' || s === 'waiting') return true;
+    // Waiting on another task is fine; waiting on a capability means the siblings would too.
+    if (s === 'done' || s === 'cancelled') return true;
+    if (s === 'waiting') return !capabilityWait.has(id);
     // A decision about the item itself is content, not tools: it doesn't hold the batch.
     const esc = taskEscalation.get(id);
     return !!esc && escalations.get(esc)?.card.type === 'decision';
@@ -1407,6 +1434,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     const running = [...children.keys()];
     const onYou = [...taskEscalation.keys()];
     const onTasks = [...waitingOn.keys()];
+    const gaps = [...new Set(capabilityWait.values())];
     const canaryWait = plan.tasks.filter(
       (t) => t.kind === 'work' && stateOf(t.taskId) === 'ready' && behindCanary(t),
     );
@@ -1429,6 +1457,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       onYou.length ? `Waiting on your answer (${onYou.length}): ${some(onYou)}.` : '',
       onTasks.length ? `Waiting on other tasks (${onTasks.length}): ${some(onTasks)}.` : '',
       !running.length && stuck.size ? `The rest waits on: ${some([...stuck])}.` : '',
+      gaps.length
+        ? `${capabilityWait.size} task${capabilityWait.size === 1 ? ' waits' : 's wait'} for engineering to add: ${gaps.slice(0, 3).join('; ')}${gaps.length > 3 ? `; and ${gaps.length - 3} more` : ''}.`
+        : '',
       canaryWait.length
         ? `${canaryWait.length} more ${canaryWait.length === 1 ? 'item waits' : 'items wait'} for the first of their batch to get through.`
         : '',
@@ -1922,6 +1953,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
+    for (const [id, c] of r.capabilityWait ?? []) capabilityWait.set(id, c);
     for (const [taskId, escId] of r.taskEscalation) taskEscalation.set(taskId, escId);
     for (const n of r.started) started.add(n);
     for (const n of r.done) done.add(n);
@@ -1955,6 +1987,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       retryFromBlocked: [...retryFromBlocked],
       reruns: [...reruns],
       waitingOn: [...waitingOn],
+      capabilityWait: [...capabilityWait],
       waits: { ...waits },
       sentBack: { ...sentBack },
       taskEscalation: [...taskEscalation],

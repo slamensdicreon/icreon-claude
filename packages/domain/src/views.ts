@@ -67,6 +67,22 @@ export function settingsView(s: ProjectState, policyDefaults: PolicyRow[]): Sett
     gates: [...directorGates, ...optional],
     escalationPolicy: policyDefaults.map((row) => ({ ...row, ...overrides[row.type] })),
     conventions: { entries: s.conventions, lockedAt },
+    capabilityGaps: Object.entries(s.capabilityGaps)
+      .map(([key, g]) => ({
+        key,
+        capability: g.capability,
+        firstAt: g.firstAt,
+        closedAt: g.closedAt,
+        tasks: Object.entries(g.tasks).map(([taskId, t]) => ({
+          taskId,
+          title: s.tasks[taskId]?.title ?? taskId,
+          agentId: t.agentId,
+          summary: t.summary,
+        })),
+      }))
+      .sort(
+        (a, b) => Number(!!a.closedAt) - Number(!!b.closedAt) || b.firstAt.localeCompare(a.firstAt),
+      ),
     rollback: current
       ? {
           phase: current.number,

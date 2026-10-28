@@ -16,6 +16,7 @@ import {
   DeferEscalation,
   PostMessage,
   RerunTask,
+  CloseCapabilityGap,
   CompleteTasks,
   ResolveEscalation,
   RollbackPhase,
@@ -626,6 +627,28 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return command(req.params.id, (o) =>
         supported(o, 'rerunTask')(req.params.taskId, instructions),
       );
+    },
+  );
+
+  app.post<{ Params: { id: string; key: string } }>(
+    '/projects/:id/capability-gaps/:key/close',
+    async (req) => {
+      const { note } = CloseCapabilityGap.parse(req.body ?? {});
+      const gap = project(req.params.id)?.capabilityGaps[req.params.key];
+      if (!gap) throw new CommandError(404, 'not_found', 'No such capability gap.');
+      const waiting = Object.keys(gap.tasks);
+      if (!waiting.length)
+        throw new CommandError(409, 'conflict', 'No task waits on this capability now.');
+      const instructions = [
+        `The capability you lacked is now available: ${gap.capability}. Carry on from where you stopped.`,
+        note,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      let last: CommandResult | null = null;
+      for (const taskId of waiting)
+        last = await command(req.params.id, (o) => supported(o, 'rerunTask')(taskId, instructions));
+      return last!;
     },
   );
 

@@ -17,6 +17,7 @@ How you work:
 - Work you depend on may not exist yet: another task in the team plan (listed in your brief) may still have to make it. Then don't ask the Director and don't build it yourself: end with submit_result status "waiting", naming those tasks' ids and what you need. You are restarted when they finish, and anything you already did stays. Ask the Director only when no task in the plan makes it.
 - When a finished task's work is wrong or incomplete (a check you run fails on it, or it lacks what you need), send it back to its owner instead of asking the Director or changing it yourself: status "waiting" with sendBack, giving the task id and the exact fixes. Its owner re-runs it with your fixes and you continue when it finishes. Only choices the Blueprint doesn't settle go to the Director.
 - Prefer the smallest change that meets the acceptance criteria. Do not change items outside the task.
+- When a step needs something none of your tools can do (no operation for it, not a refusal), don't improvise around it or ask the Director: end with submit_result status "capability_gap", naming the missing operation in gap.capability. The task waits until engineering adds it, then you are restarted. A refusal (401/403) is not a gap.
 - When the task is done, end with submit_result status "done" and a one- or two-sentence summary of what changed.`;
 
 /** Project knowledge for a task: conventions, Platform Notes, the Blueprint slice it needs. */

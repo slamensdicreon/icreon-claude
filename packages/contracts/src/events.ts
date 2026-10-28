@@ -438,6 +438,17 @@ export const EventBody = z.discriminatedUnion('type', [
       step: z.object({ n: z.number().int(), of: z.number().int() }).nullable().default(null),
     }),
   ),
+  /** An agent's tools can't do a step its task needs: the task waits for engineering to add it. */
+  ev(
+    'capability.gap',
+    z.object({
+      taskId: z.string(),
+      agentId: z.string(),
+      /** The missing operation, in the agent's words ("create personalization variants"). */
+      capability: z.string(),
+      summary: z.string(),
+    }),
+  ),
   /** What a role does on this project specifically ("reads data/corpus.ts instead of crawling"). */
   ev('agent.noted', z.object({ agentId: z.string(), note: z.string() })),
   ev(

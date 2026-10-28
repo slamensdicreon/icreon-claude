@@ -11,6 +11,7 @@ import { cancelTask, pauseTask, resumeTask } from '../definitions';
 import {
   ACCESS_DENIED,
   AGENT_FAILED,
+  CAPABILITY_GAP,
   NEEDS_DECISION,
   WAITING,
   NOT_CONNECTED,
@@ -159,6 +160,18 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
           what: waits.what,
         };
         return { outcome: 'waiting', state, attempt, waiting, spent };
+      }
+      // Thrown non-retryable by the activity, so it ends the session at once.
+      const gap = detail as { summary?: string; capability?: string };
+      if (app?.type === CAPABILITY_GAP && gap.capability) {
+        return {
+          outcome: 'capability_gap',
+          state,
+          attempt,
+          summary: gap.summary ?? message,
+          capability: gap.capability,
+          spent,
+        };
       }
       if (app?.type === NEEDS_DECISION && detail.question && detail.options && detail.recommended) {
         const decision: AgentDecision = {
