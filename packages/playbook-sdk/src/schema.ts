@@ -170,6 +170,12 @@ export const TaskTemplate = z.object({
    */
   batchSize: z.number().int().positive().optional(),
   /**
+   * For a forEach template: how many of its first items run before the rest are dispatched
+   * (default 1; 0 turns it off). If a canary fails on its tools (access refused, a tool error),
+   * the rest wait for that one card instead of all failing the same way.
+   */
+  canary: z.number().int().min(0).max(5).optional(),
+  /**
    * Task ids this task waits on. `{key}` binds to the same item; a trailing `*` matches every task
    * whose id starts with the prefix (e.g. `register-*`).
    */

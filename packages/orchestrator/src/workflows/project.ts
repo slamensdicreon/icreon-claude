@@ -102,6 +102,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const startedAt = resume?.startedAt ?? Date.now();
   const phaseInfo = new Map(playbook.manifest.phases.map((p) => [p.number, p]));
   const roles = new Map(playbook.roles.map((r) => [r.role, r]));
+  const templates = new Map(playbook.plan.templates.map((t) => [t.id, t]));
   const lastDirectorGate = Math.max(
     ...playbook.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number),
   );
@@ -1363,6 +1364,28 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     );
   }
 
+  // Canary dispatch: a forEach template's first item(s) run alone; the rest wait until each canary
+  // is through, so a tool failure costs one card, not one per item.
+  const canaryPassed = (id: string) => {
+    const s = stateOf(id);
+    if (s === 'done' || s === 'cancelled' || s === 'waiting') return true;
+    // A decision about the item itself is content, not tools: it doesn't hold the batch.
+    const esc = taskEscalation.get(id);
+    return !!esc && escalations.get(esc)?.card.type === 'decision';
+  };
+  /** The canaries of a task's template, when it has some and this task isn't one of them. */
+  const canariesOf = (t: PlannedTask): PlannedTask[] => {
+    if (!t.collection) return [];
+    const n = templates.get(t.templateId)?.canary ?? 1;
+    if (n <= 0) return [];
+    const canaries = plan.tasks
+      .filter((x) => x.templateId === t.templateId && x.kind === 'work')
+      .slice(0, n);
+    return canaries.some((c) => c.taskId === t.taskId) ? [] : canaries;
+  };
+  /** Waits for its template's canary (side-effect free; dispatch also checks the patch). */
+  const behindCanary = (t: PlannedTask) => canariesOf(t).some((c) => !canaryPassed(c.taskId));
+
   /** Titles for a status line: the first few, and how many more. */
   const some = (ids: string[], n = 3) =>
     `${ids.slice(0, n).map(titleOf).join('; ')}${ids.length > n ? `; and ${ids.length - n} more` : ''}`;
@@ -1384,6 +1407,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     const running = [...children.keys()];
     const onYou = [...taskEscalation.keys()];
     const onTasks = [...waitingOn.keys()];
+    const canaryWait = plan.tasks.filter(
+      (t) => t.kind === 'work' && stateOf(t.taskId) === 'ready' && behindCanary(t),
+    );
     // What the idle work waits for: unfinished prerequisites that nobody is working on.
     const active = new Set(current);
     const stuck = new Set<string>();
@@ -1403,6 +1429,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       onYou.length ? `Waiting on your answer (${onYou.length}): ${some(onYou)}.` : '',
       onTasks.length ? `Waiting on other tasks (${onTasks.length}): ${some(onTasks)}.` : '',
       !running.length && stuck.size ? `The rest waits on: ${some([...stuck])}.` : '',
+      canaryWait.length
+        ? `${canaryWait.length} more ${canaryWait.length === 1 ? 'item waits' : 'items wait'} for the first of their batch to get through.`
+        : '',
     ]
       .filter(Boolean)
       .join(' ');
@@ -2067,7 +2096,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           (st === 'planned' || st === 'ready') &&
           !children.has(t.taskId) &&
           !held(t) &&
-          t.dependsOn.every((d) => stateOf(d) === 'done' || stateOf(d) === 'cancelled')
+          t.dependsOn.every((d) => stateOf(d) === 'done' || stateOf(d) === 'cancelled') &&
+          !(behindCanary(t) && patched('canary-dispatch'))
         );
       });
       const taken = new Set<string>();

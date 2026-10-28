@@ -35,6 +35,11 @@ C1 comes first: it removes the freezes the other two would otherwise hit while t
   `0` to turn off) runs before the rest are dispatched. If it ends in a **tool-class failure**
   (access refused, a tool error, a missing capability), the rest of the template is held and one
   card names the cause. Content-class outcomes (a real decision about this item) don't hold the batch.
+
+  *As built:* the template's `canary` field (playbook schema, default 1, `forEach` only). Dispatch
+  holds a sibling until each canary is done, cancelled, waiting on another task, or stopped on a
+  `decision` card; an access, failure or rejection card holds the rest (gated by the
+  `canary-dispatch` patch). The status line counts the held items. Test: `test/canary.test.ts`.
 - **Card clustering.** Open cards are grouped by a signature (template, role, outcome kind and a
   normalized reason with paths, IDs and file names stripped). A group shows as one card listing its
   tasks; one answer resolves all of them. Cards keep their identity underneath for the audit trail.

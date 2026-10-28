@@ -82,6 +82,8 @@ export function validatePlaybook({ manifest, roles, plan }: Playbook): string[] 
       problems.push(`plan: ${t.id} must use {key} exactly when it has forEach`);
     }
     if (t.batchSize && !t.forEach) problems.push(`plan: ${t.id} has batchSize without forEach`);
+    if (t.canary !== undefined && !t.forEach)
+      problems.push(`plan: ${t.id} has canary without forEach`);
   }
   if (plan.pilot) {
     if (!phaseNumbers.has(plan.pilot.phase))
