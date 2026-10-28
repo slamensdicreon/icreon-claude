@@ -308,6 +308,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           store: opts.store,
           context: projectContext(opts.projections, opts.platform),
           board: (projectId, task) => teamBoard(opts.projections, projectId, task.taskId),
+          items: (projectId, task) => blueprintEntries(library, projectId, task),
           prompt: (role) => prompts[role.role] ?? null,
         }),
         (role) => live.includes(role),
@@ -354,6 +355,31 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   });
 
   return { activities, liveRoles: live, gateway, library, close: () => chromium.close() };
+}
+
+/** The approved Blueprint's entries for a task's items, as JSON for its brief (capped). */
+async function blueprintEntries(
+  library: ArtifactLibrary,
+  projectId: string,
+  task: { collection: string | null; itemKeys: string[] },
+) {
+  if (!task.collection || !task.itemKeys.length) return null;
+  const doc = await library.read(projectId, 'blueprint');
+  if (!doc) return null;
+  try {
+    const bp = JSON.parse(doc.content) as {
+      collections?: Record<string, { key: string }[]>;
+    };
+    const wanted = new Set(task.itemKeys);
+    const entries = (bp.collections?.[task.collection] ?? []).filter((i) => wanted.has(i.key));
+    if (!entries.length) return null;
+    const text = JSON.stringify(entries, null, 1);
+    return text.length > 12_000
+      ? `${text.slice(0, 12_000)}\n… (cut; read the rest from the Blueprint)`
+      : text;
+  } catch {
+    return null;
+  }
 }
 
 /**

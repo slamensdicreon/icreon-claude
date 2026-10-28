@@ -59,6 +59,8 @@ export interface RuntimeDeps {
   context?: ContextProvider;
   /** The team plan for a task's brief: the other unfinished tasks, so it can name what it waits on. */
   board?(projectId: string, task: PlannedTask): Promise<string | null>;
+  /** The approved Blueprint's entries for the task's items (a page's URL, a media file's source). */
+  items?(projectId: string, task: PlannedTask): Promise<string | null>;
   /** System prompt text for a role, from the playbook's prompts folder; null to derive one. */
   prompt?: (role: RoleDef) => string | null;
   maxTurns?: number;
@@ -100,7 +102,10 @@ export class AgentRuntime {
     const budget = role.budget?.tokens ?? Infinity;
     const spent: Spend = { tokens: 0, usd: 0 };
     const board = (await deps.board?.(req.projectId, req.task)) ?? null;
-    const messages: BetaMessageParam[] = [{ role: 'user', content: taskBrief({ ...req, board }) }];
+    const items = (await deps.items?.(req.projectId, req.task)) ?? null;
+    const messages: BetaMessageParam[] = [
+      { role: 'user', content: taskBrief({ ...req, board, items }) },
+    ];
     let stepIndex = 0;
     let maxTokens = deps.maxTokensPerTurn ?? DEFAULT_MAX_TOKENS;
 

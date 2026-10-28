@@ -25,7 +25,20 @@ tools:
       paths:
         - '{sitePath}/Home/**'
         - '{sitePath}/Data/**'
+      # Template and rendering IDs to compose with, and media to link: read only.
+      readPaths:
+        - /sitecore/templates/**
+        - /sitecore/layout/**
+        - '{sitePath}/**'
+        - /sitecore/media library/Project/{project}/**
+  browser:
+    ops:
+      # The source page's copy and structure, so content is migrated, never invented.
+      - snapshot
   blackboard:
+    ops:
+      - read
+  artifacts:
     ops:
       - read
 acceptance:

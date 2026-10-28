@@ -23,9 +23,20 @@ tools:
     scope:
       paths:
         - /sitecore/media library/Project/{project}/**
+      # The site, to see where a file is used: read only.
+      readPaths:
+        - '{sitePath}/**'
   browser:
     ops:
       - fetch.asset
+      # A source page's images, to find a file's real URL when the Blueprint has none.
+      - snapshot
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
 acceptance:
   - validator:media.alt-text
 escalateWhen:

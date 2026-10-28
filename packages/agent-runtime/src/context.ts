@@ -85,6 +85,8 @@ export function taskBrief(req: {
   instructions: string | null;
   /** The team plan as this task sees it: the other unfinished tasks and their states. */
   board?: string | null;
+  /** The approved Blueprint's entries for this task's items. */
+  items?: string | null;
 }): string {
   const { task } = req;
   return [
@@ -96,6 +98,9 @@ export function taskBrief(req: {
       : '',
     req.feedback ? `Your Lead rejected the previous attempt: ${req.feedback}` : '',
     req.instructions ? `Instructions from the Director: ${req.instructions}` : '',
+    req.items
+      ? `Your Blueprint entries (the approved Blueprint's record for this task's items; use what they give, such as source URLs, before searching or asking):\n${req.items}`
+      : '',
     req.board ? `Team plan:\n${req.board}` : '',
   ]
     .filter(Boolean)
