@@ -1,6 +1,7 @@
 import type { EscalationView, PlanSnapshot } from '@lw/contracts';
-import { useEffect, useMemo, useRef } from 'react';
-import { API } from '../lib/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { API, post } from '../lib/api';
+import { Scrim } from '../overlays/Dialogs';
 import { age, clock, zoneLabel } from '../lib/fmt';
 import { Card, TYPE_LABEL } from '../parts/Card';
 import {
@@ -34,7 +35,7 @@ function until(ms: number): string {
  * card to act on at the right. Deciding moves to the next open item.
  */
 export function Inbox() {
-  const { ui, setUi, projects, projectId } = useApp();
+  const { ui, setUi, projects, projectId, openOverlay } = useApp();
   const conv = useConversation().data;
   const plan = useProjectResource<PlanSnapshot>('/plan').data;
   const mc = useMission().data;
@@ -150,6 +151,25 @@ export function Inbox() {
               : 'Nothing is waiting on you.'}
           </p>
         </div>
+        {open.length > 1 && (
+          <button
+            className="btn"
+            onClick={() =>
+              openOverlay(
+                <BulkAnswer
+                  cards={open}
+                  raiser={(x) => {
+                    const t = x.sourceTaskId ? tasks.get(x.sourceTaskId) : undefined;
+                    const a = t ? roster.byId(t.agentId) : undefined;
+                    return a ? `${a.persona ?? a.name}, ${a.name}` : 'Other';
+                  }}
+                />,
+              )
+            }
+          >
+            Answer in bulk
+          </button>
+        )}
         {list.length > 0 && (
           <a
             className="btn"
@@ -208,5 +228,104 @@ export function Inbox() {
         </div>
       )}
     </>
+  );
+}
+
+/** Cards that may be answered together: never gates, budgets or anything final. */
+const BULK = new Set(['decision', 'access', 'blocker', 'risk']);
+
+/**
+ * Answers a group of open cards at once, all from one raiser: each takes its recommended option
+ * (or its default) with the same note, so the agents retry with it.
+ */
+function BulkAnswer({
+  cards,
+  raiser,
+}: {
+  cards: EscalationView[];
+  raiser: (x: EscalationView) => string;
+}) {
+  const { projectId, run, closeOverlay } = useApp();
+  const eligible = cards.filter((x) => BULK.has(x.type) && !x.gate);
+  const groups = [...new Map(eligible.map((x) => [raiser(x), 0])).keys()].map((who) => ({
+    who,
+    cards: eligible.filter((x) => raiser(x) === who),
+  }));
+  const [who, setWho] = useState(groups[0]?.who ?? '');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const group = groups.find((g) => g.who === who)?.cards ?? [];
+  const answer = async () => {
+    let done = 0;
+    for (const x of group) {
+      const option =
+        x.options.find((o) => o.recommended) ??
+        x.options.find((o) => o.id === x.defaultOptionId) ??
+        x.options[0]!;
+      setBusy(`Answering ${++done} of ${group.length}…`);
+      await post(`/projects/${projectId}/escalations/${x.escalationId}/resolve`, {
+        optionId: option.id,
+        ...(note.trim() ? { notes: note.trim() } : {}),
+      });
+    }
+  };
+  return (
+    <Scrim>
+      <form
+        className="dialog"
+        role="dialog"
+        aria-labelledby="bulk-t"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(answer, `Answered ${group.length} cards from ${who}`).then(closeOverlay);
+        }}
+      >
+        <h2 id="bulk-t">Answer in bulk</h2>
+        <p>
+          Every open card from one agent takes its recommended option, with your note, and its task
+          retries. Gates and budget cards are never answered in bulk.
+        </p>
+        <label className="eyebrow" htmlFor="bulk-who" style={{ display: 'block', marginBottom: 6 }}>
+          Cards from
+        </label>
+        <select
+          id="bulk-who"
+          className="select"
+          style={{ marginBottom: 14 }}
+          value={who}
+          onChange={(e) => setWho(e.target.value)}
+        >
+          {groups.map((g) => (
+            <option key={g.who} value={g.who}>
+              {g.who} ({g.cards.length})
+            </option>
+          ))}
+        </select>
+        <label
+          className="eyebrow"
+          htmlFor="bulk-note"
+          style={{ display: 'block', marginBottom: 6 }}
+        >
+          Note for every card (optional)
+        </label>
+        <textarea
+          id="bulk-note"
+          className="notes"
+          style={{ marginTop: 0, marginBottom: 14, minHeight: 110 }}
+          placeholder="What changed, or what they should do differently"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        <div className="btn-row" style={{ justifyContent: 'flex-end' }}>
+          {busy && <span className="muted">{busy}</span>}
+          <button type="button" className="btn" onClick={closeOverlay} disabled={!!busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn primary" disabled={!group.length || !!busy}>
+            Answer {group.length} {group.length === 1 ? 'card' : 'cards'}
+          </button>
+        </div>
+      </form>
+    </Scrim>
   );
 }
