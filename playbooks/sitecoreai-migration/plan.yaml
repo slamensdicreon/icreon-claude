@@ -86,6 +86,7 @@ templates:
     role: head-integrator
     title: Configure the head as the editing host
     dependsOn: [prepare-hosting]
+    acceptance: [validator:head.editing-scripts]
   # Each component is built on its own branch. Page builder only offers components the editing
   # host's code has, so each accepted component joins one integration branch, deployed at the
   # project's fixed editing address.
@@ -95,7 +96,7 @@ templates:
     forEach: components
     title: Integrate {name} into the editing host
     dependsOn: ['register-{key}', integrate-head]
-    acceptance: [validator:editing-host.deployed]
+    acceptance: [validator:editing-host.deployed, validator:head.editing-scripts]
   - id: switch-editing-host
     phase: 4
     role: deployment-engineer

@@ -66,6 +66,8 @@ const last = (steps: StepEvent[], server: string, op: string) =>
   steps.filter((s) => s.data.toolServer === server && s.data.operation === op).at(-1);
 const after = (steps: StepEvent[], a: StepEvent) => steps.slice(steps.indexOf(a) + 1);
 /** Working-copy operations that change files. */
+/** The branch accepted components are integrated on: what the editing host runs. */
+const INTEGRATION_BRANCH = 'launchworks/integration';
 const CHANGES = new Set(['fs.write', 'exec.content-sdk-cli']);
 
 /**
@@ -237,6 +239,38 @@ export const CHECKS: Record<string, Check> = {
     return live
       ? pass(`${merged.data.summary}; ${live.data.summary}.`)
       : failed(['The integrated build was not followed to READY at the editing host address']);
+  },
+
+  // Page builder can edit what the head renders: the app's Layout loads Sitecore's editing scripts.
+  // Without them, each field's editing marker shows as raw JSON on the page instead of becoming
+  // click-to-edit chrome.
+  'head.editing-scripts': async ({ state, read }) => {
+    const app = (state.buildRepo?.appPath ?? '').replace(/^\/|\/$/g, '');
+    const at = (f: string) => (app ? `${app}/${f}` : f);
+    const paths = [at('src/Layout.tsx'), at('src/Scripts.tsx')];
+    let files: { path: string; content?: string }[] | null = null;
+    let ref = '';
+    for (const r of [INTEGRATION_BRANCH, undefined]) {
+      const res = await read('build-repo', 'repo.read', { paths, ...(r ? { ref: r } : {}) });
+      const got = (res.body as { files?: { path: string; content?: string }[] } | null)?.files;
+      if (res.code === 200 && got?.[0]?.content !== undefined) {
+        files = got;
+        ref = r ?? 'the default branch';
+        break;
+      }
+    }
+    if (!files) return { status: 'pending', detail: `${paths[0]} could not be read.` };
+    const layout = files[0]!.content!;
+    const scripts = files[1]?.content ?? '';
+    const direct = /<EditingScripts\b/.test(layout);
+    const viaScripts = /<Scripts\b/.test(layout) && /<EditingScripts\b/.test(scripts);
+    if (direct || viaScripts) return pass(`${paths[0]} loads Sitecore's editing scripts (${ref}).`);
+    return failed([
+      /<Scripts\b/.test(layout)
+        ? `${paths[1]} on ${ref} no longer renders <EditingScripts />`
+        : `${paths[0]} on ${ref} doesn't render <Scripts /> (Sitecore's <EditingScripts />)`,
+      "Page builder shows each field's editing marker as raw JSON: restore it as the starter has it",
+    ]);
   },
 
   // The site renders through its own host in Page builder, as read back.

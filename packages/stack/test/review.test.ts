@@ -9,7 +9,7 @@ import { loadPlaybook } from '@lw/playbook-sdk';
 import { MemoryBlobStore } from '@lw/tool-gateway';
 import { ArtifactLibrary } from '@lw/tool-workspace';
 import { describe, expect, it } from 'vitest';
-import { withReview } from '../src';
+import { CHECKS, withReview } from '../src';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 
@@ -260,5 +260,52 @@ describe('acceptance on live projects', () => {
       step('exec.build', 'Build green: type-check and build passed (uncommitted changes)'),
     ]);
     expect((await validate(t)).reason).toMatch(/not committed/);
+  });
+});
+
+describe('head.editing-scripts', () => {
+  const run = (layout: string | null, scripts = '<EditingScripts />') =>
+    CHECKS['head.editing-scripts']!({
+      projectId: 'p1',
+      state: {
+        ...createProjectState('p1'),
+        buildRepo: { appPath: 'examples/basic-nextjs' },
+      } as never,
+      library: null as never,
+      fetch,
+      steps: [],
+      read: async (_server, _op, args) => {
+        const paths = args.paths as string[];
+        expect(paths[0]).toBe('examples/basic-nextjs/src/Layout.tsx');
+        if (layout === null) return { code: 200, body: { files: [{ path: paths[0] }] } };
+        return {
+          code: 200,
+          body: {
+            files: [
+              { path: paths[0], content: layout },
+              { path: paths[1], content: scripts },
+            ],
+          },
+        };
+      },
+    });
+
+  it("passes when the app's Layout loads Sitecore's editing scripts", async () => {
+    expect((await run('<><Scripts /><main /></>')).status).toBe('pass');
+    expect((await run('<><EditingScripts /></>', '')).status).toBe('pass');
+  });
+
+  it('fails when the Layout dropped them, saying what Page builder shows', async () => {
+    const r = await run('<><main /></>');
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain("doesn't render <Scripts />");
+    expect(r.detail).toContain('raw JSON');
+    expect((await run('<><Scripts /></>', '<CdpPageView />')).detail).toContain(
+      'no longer renders <EditingScripts />',
+    );
+  });
+
+  it('is pending when the Layout cannot be read', async () => {
+    expect((await run(null)).status).toBe('pending');
   });
 });
