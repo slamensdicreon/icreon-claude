@@ -2,7 +2,14 @@ import type { RunOutcome, RunRequest } from '@lw/agent-runtime';
 import { MetricKey } from '@lw/contracts';
 import { ApplicationFailure } from '@temporalio/activity';
 import type { Activities } from './activities';
-import { ACCESS_DENIED, AGENT_FAILED, NEEDS_DECISION, WAITING, type AgentResult } from './types';
+import {
+  ACCESS_DENIED,
+  AGENT_FAILED,
+  NEEDS_DECISION,
+  WAITING,
+  type AgentRequest,
+  type AgentResult,
+} from './types';
 
 /** Anything that runs one agent session for a task: the AgentRuntime, or a test double. */
 export interface AgentRunner {
@@ -17,13 +24,13 @@ export interface AgentRunner {
 export function withAgentRunner(
   base: Activities,
   runner: AgentRunner,
-  /** Roles that run on the real runtime; everyone else keeps the base (stub) agents. */
-  only: (role: string) => boolean = () => true,
+  /** Tasks that run on the real runtime; the rest keep the base (stub) agents. */
+  only: (task: AgentRequest['task']) => boolean = () => true,
 ): Activities {
   return {
     ...base,
     async runAgent(req): Promise<AgentResult> {
-      if (!only(req.task.role)) return base.runAgent(req);
+      if (!only(req.task)) return base.runAgent(req);
       const out = await runner.run(req);
       const spent = { tokens: out.spent.tokens, usd: out.spent.usd };
       switch (out.kind) {

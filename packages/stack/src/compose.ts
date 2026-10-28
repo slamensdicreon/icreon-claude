@@ -18,7 +18,7 @@ import {
   withLiveGuard,
   type Activities,
 } from '@lw/orchestrator';
-import { Blueprint, releaseApprovalId } from '@lw/plan';
+import { Blueprint, releaseApprovalId, type PlannedTask } from '@lw/plan';
 import type { PlatformCheck, PlatformPack, ScreenComparison, ScreenPair } from '@lw/platforms';
 import { withReview } from './review';
 import { sliceScreenshot } from './screens';
@@ -98,6 +98,19 @@ export function missingOps(playbook: Playbook, servers: ToolServer[]): Map<strin
         ),
       ]),
   );
+}
+
+/**
+ * What a task's role lacks (from `missingOps`), limited to the tool servers its template says it
+ * uses: a task that needs none of the missing servers runs although its role isn't fully connected.
+ */
+export function missingForTask(
+  playbook: Playbook,
+  missing: Map<string, string[]>,
+  task: Pick<PlannedTask, 'role' | 'templateId'>,
+): string[] {
+  const uses = playbook.plan.templates.find((t) => t.id === task.templateId)?.uses;
+  return (missing.get(task.role) ?? []).filter((op) => !uses || uses.includes(op.split('.')[0]!));
 }
 
 /** Roles whose every granted operation is served by a connected tool server. */
@@ -355,6 +368,13 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
 
   const live = opts.model ? liveRoles(opts.playbook, servers) : [];
   const missing = missingOps(opts.playbook, servers);
+  const missingFor = (task: PlannedTask) => missingForTask(opts.playbook, missing, task);
+  /** A task runs on Claude when everything it uses is connected, even if its role isn't fully. */
+  const runsLive = (task: PlannedTask) =>
+    live.includes(task.role) ||
+    (!!opts.model &&
+      Object.keys(roleOf(opts.playbook, task.role).tools).length > 0 &&
+      !missingFor(task).length);
   const prompts = await loadRolePrompts(opts.playbookDir, opts.playbook, [
     opts.platform.knowledgeDir,
   ]);
@@ -371,7 +391,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           items: (projectId, task) => blueprintEntries(library, projectId, task),
           prompt: (role) => prompts[role.role] ?? null,
         }),
-        (role) => live.includes(role),
+        runsLive,
       )
     : base;
   // Locks keep two sessions off the same item at once; a session that ended holds nothing, so
@@ -405,14 +425,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     store: opts.store,
     isLive,
     // Without Claude, nothing is connected: every specialist task on a live project blocks.
-    missing: (task) => {
-      if (live.includes(task.role)) return [];
-      if (!opts.model) return ['model.claude (AGENTS=claude)'];
-      const uses = opts.playbook.plan.templates.find((t) => t.id === task.templateId)?.uses;
-      return (missing.get(task.role) ?? []).filter(
-        (op) => !uses || uses.includes(op.split('.')[0]!),
-      );
-    },
+    missing: (task) =>
+      runsLive(task) ? [] : opts.model ? missingFor(task) : ['model.claude (AGENTS=claude)'],
     roleName: (role) => roleOf(opts.playbook, role)?.name ?? role,
   });
 

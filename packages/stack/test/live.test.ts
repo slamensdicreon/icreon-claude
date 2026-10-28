@@ -17,8 +17,9 @@ import { loadPlaybook } from '@lw/playbook-sdk';
 import { Client } from '@temporalio/client';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { composeStack, liveRoles, type Stack } from '../src';
+import { composeStack, liveRoles, missingForTask, missingOps, type Stack } from '../src';
 import { SITECORE_DEFAULTS } from '@lw/connectors';
+import type { ToolServer } from '@lw/tool-gateway';
 import { createPlatforms } from '@lw/platforms';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
@@ -227,6 +228,20 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
   ]);
   // Connected servers are not enough: Editor Experience QA's Page builder operations don't exist yet.
   expect(liveRoles(playbook, [])).toEqual([]);
+  // A task needs only the servers its template uses: the Experience Enabler's Sitecore items run
+  // without Page builder; its proof variant does not.
+  const served = (name: string, ops: string[]) =>
+    ({ name, catalog: Object.fromEntries(ops.map((op) => [op, {}])) }) as unknown as ToolServer;
+  const missing = missingOps(playbook, [
+    served('sitecore-authoring', ['item.read', 'item.create', 'item.update']),
+    served('blackboard', ['read']),
+    served('artifacts', ['read', 'write']),
+  ]);
+  expect(missing.get('experience-enabler')).toEqual(['browser.page-builder.drive']);
+  const enabler = (templateId: string) =>
+    missingForTask(playbook, missing, { role: 'experience-enabler', templateId });
+  expect(enabler('enable-experience')).toEqual([]);
+  expect(enabler('prove-personalization')).toEqual(['browser.page-builder.drive']);
 
   const worker = await createWorker({
     connection: env.nativeConnection,
