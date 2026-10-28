@@ -8,6 +8,8 @@ import { TextForm, TypedConfirm } from './overlays/Dialogs';
 import { Chip, Who, personOf } from './parts/bits';
 import { useApp, useProjectResource, useRoster, useTz } from './state';
 
+const RERUNNABLE = new Set(['done', 'blocked', 'rejected', 'waiting', 'cancelled', 'rolled_back']);
+
 /** The drawer over the canvas: one agent or one task, read-only apart from its controls. */
 export function Inspector() {
   const { inspector, closeInspector } = useApp();
@@ -279,7 +281,9 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
         <div className="btn-row">
           <button
             className="btn"
-            disabled={t.state === 'planned' || t.kind !== 'work'}
+            // Anything that ran and isn't running now: finished, or stuck (blocked, rejected, waiting).
+            disabled={!RERUNNABLE.has(t.state) || t.kind !== 'work'}
+            title={RERUNNABLE.has(t.state) ? undefined : `Can't re-run while ${t.state}`}
             onClick={() =>
               openOverlay(
                 <TextForm

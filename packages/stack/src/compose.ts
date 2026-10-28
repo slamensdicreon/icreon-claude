@@ -270,8 +270,15 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
         list.map((i) => ({ collection, key: i.key, name: i.name, status: i.status })),
       );
       try {
-        const r = await opts.directives({ text: req.text, items });
+        const r = await opts.directives({ text: req.text, items, tasks: req.tasks ?? [] });
         if (r.kind === 'status') return { kind: 'status' };
+        if (r.kind === 'rerun')
+          return {
+            kind: 'rerun',
+            interpretation: r.interpretation,
+            taskIds: r.rerun,
+            notes: r.notes,
+          };
         if (r.kind === 'note' || !req.blueprint)
           return { kind: 'note', interpretation: r.interpretation };
         const drop = new Set(r.drop);

@@ -919,6 +919,49 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     await send(...events);
   }
 
+  /** States a task can be run again from: it ran, and isn't running now. */
+  const RERUNNABLE: TaskState[] = [
+    'done',
+    'blocked',
+    'rejected',
+    'waiting',
+    'cancelled',
+    'rolled_back',
+  ];
+
+  /**
+   * The Director's "run it again", from any state but in flight: a finished task is rolled back
+   * and queued; a stuck one (blocked, rejected, waiting, cancelled) has its card withdrawn and is
+   * queued. It runs even if its phase has exited.
+   */
+  async function rerunOne(taskId: string, notes: string | null, by: string) {
+    const t = task(taskId)!;
+    const st = stateOf(taskId);
+    if (st === 'done') await rerun([taskId], notes);
+    else {
+      // Every card still open about the task, including one raised a moment ago.
+      taskEscalation.delete(taskId);
+      for (const [id, e] of escalations)
+        if (e.card.sourceTaskId === taskId && unresolved(e)) await supersede(id, by);
+      waitingOn.delete(taskId);
+      retryFromBlocked.delete(taskId);
+      instructions[taskId] = notes;
+      await send(taskMove(t, 'ready', `Run again: ${by}`));
+    }
+    reruns.add(taskId);
+    await send(
+      decision(
+        `Re-run ${t.title}`,
+        notes || 'No new instructions',
+        `${by}; it was ${st}.`,
+        'director',
+        `rerun:${taskId}:${uuid4().slice(0, 8)}`,
+        null,
+      ),
+    );
+    poke();
+  }
+
   // -------------------------------------------------------------------------------------------
   // Gates and phases
   // -------------------------------------------------------------------------------------------
@@ -1140,9 +1183,40 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         data: { presence: 'thinking' },
       },
     );
-    const reading = await acts.interpretDirective({ projectId, text, blueprint });
+    const reading = await acts.interpretDirective({
+      projectId,
+      text,
+      blueprint,
+      tasks: plan.tasks
+        .filter((t) => t.kind === 'work')
+        .map((t) => ({ taskId: t.taskId, title: t.title, state: stateOf(t.taskId) })),
+    });
     if (reading.kind === 'status') {
       await send(...say('status', 'Status', statusLine(), { sections: statusSections() }));
+      return;
+    }
+    if (reading.kind === 'rerun') {
+      const can = reading.taskIds.filter(
+        (id) => task(id)?.kind === 'work' && RERUNNABLE.includes(stateOf(id)) && !children.has(id),
+      );
+      const busy = reading.taskIds.filter((id) => task(id) && !can.includes(id));
+      for (const id of can) await rerunOne(id, reading.notes.trim() || null, 'Asked of Cypher');
+      await send(
+        ...say(
+          'directive_ack',
+          'Directive',
+          [
+            can.length
+              ? `Re-running ${can.map(titleOf).join(', ')}${reading.notes.trim() ? `, with your instructions` : ''}.`
+              : `Nothing re-run.`,
+            busy.length
+              ? `${busy.map((id) => `${titleOf(id)} is ${stateOf(id)}`).join('; ')}: ask again once ${busy.length === 1 ? 'it stops' : 'they stop'}.`
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        ),
+      );
       return;
     }
     if (reading.kind === 'note' || !blueprint) {
@@ -1627,30 +1701,17 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   setHandler(
     rerunTask,
     async ({ taskId, instructions: notes }) => {
-      const t = task(taskId)!;
-      await rerun([taskId], notes.trim() || null);
-      reruns.add(taskId);
-      await send(
-        decision(
-          `Re-run ${t.title}`,
-          notes.trim() || 'No new instructions',
-          'Sent back by the Director for a fresh attempt.',
-          'director',
-          `rerun:${taskId}:${uuid4().slice(0, 8)}`,
-          null,
-        ),
-      );
-      poke();
+      await rerunOne(taskId, notes.trim() || null, 'Sent back by the Director for a fresh attempt');
       return { accepted: true };
     },
     {
       validator: ({ taskId }) => {
         const t = task(taskId);
         if (!t || t.kind !== 'work') return reject('not_found', `No task "${taskId}".`);
-        if (stateOf(taskId) !== 'done')
+        if (!RERUNNABLE.includes(stateOf(taskId)) || children.has(taskId))
           return reject(
             'conflict',
-            `Only a finished task can be re-run; ${t.title} is ${stateOf(taskId)}.`,
+            `${t.title} is ${stateOf(taskId)} right now; re-run it once it stops.`,
           );
       },
     },

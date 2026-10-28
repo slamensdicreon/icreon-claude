@@ -4,11 +4,15 @@ import { z } from 'zod';
 
 /** What the Chief of Staff makes of a Director message. */
 export const DirectiveReading = z.object({
-  kind: z.enum(['status', 'note', 'replan']),
+  kind: z.enum(['status', 'note', 'replan', 'rerun']),
   /** One plain sentence restating what the Director asked for, in their terms. */
   interpretation: z.string(),
   /** For a re-plan: Blueprint item keys to take out of scope. */
   drop: z.array(z.string()),
+  /** For a re-run: the ids of the tasks to run again. */
+  rerun: z.array(z.string()),
+  /** For a re-run: what the Director wants done this time, in their words. */
+  notes: z.string(),
 });
 export type DirectiveReading = z.infer<typeof DirectiveReading>;
 
@@ -16,12 +20,15 @@ export interface DirectiveInput {
   text: string;
   /** The project's Blueprint items, for a re-plan to name. Empty before one exists. */
   items: { collection: string; key: string; name: string; status: string }[];
+  /** The plan's tasks, for a re-run to name. */
+  tasks?: { taskId: string; title: string; state: string }[];
 }
 
 const SYSTEM = `You are the Chief of Staff of a website migration to SitecoreAI. The Director (the human in charge) sent a message. Classify it:
 
 - "status": they want to know where things stand.
 - "replan": they want Blueprint items taken out of scope. Put the exact keys of the items to drop in "drop", choosing only from the item list given. Only use this when the message clearly asks to skip, drop, remove or exclude something that is in the list.
+- "rerun": they want a task done again or done now: redo, retry, re-run, run again, or have an agent do a task's work again ("we need David to configure the head again"). Put the ids of the matching tasks in "rerun", choosing only from the task list given (match on the task's title and the role the message names), and put what they want done this time in "notes", in their words.
 - "note": anything else (an instruction, a fact, a preference, an answer). It is recorded for the team.
 
 "interpretation" restates what they asked for in one plain sentence without a trailing period, for example "the source site is https://example.com" or "skip the careers pages".`;
@@ -37,6 +44,9 @@ export async function readDirective(
   const items = input.items.length
     ? input.items.map((i) => `- ${i.collection}/${i.key}: ${i.name} (${i.status})`).join('\n')
     : '(no Blueprint yet)';
+  const tasks = input.tasks?.length
+    ? input.tasks.map((t) => `- ${t.taskId}: ${t.title} (${t.state})`).join('\n')
+    : '(no tasks)';
   const response = await client.messages.parse({
     model: 'claude-sonnet-5-5',
     max_tokens: 2000,
@@ -45,7 +55,7 @@ export async function readDirective(
     messages: [
       {
         role: 'user',
-        content: `Blueprint items:\n${items}\n\nDirector's message:\n${input.text}`,
+        content: `Blueprint items:\n${items}\n\nTasks:\n${tasks}\n\nDirector's message:\n${input.text}`,
       },
     ],
   });
@@ -53,8 +63,10 @@ export async function readDirective(
   if (!reading) throw new Error(`Directive not understood (stop reason ${response.stop_reason})`);
   const known = new Set(input.items.map((i) => i.key));
   const drop = reading.drop.filter((k) => known.has(k));
-  if (reading.kind === 'replan' && !drop.length) {
-    return { kind: 'note', interpretation: reading.interpretation, drop: [] };
+  const knownTasks = new Set((input.tasks ?? []).map((t) => t.taskId));
+  const rerun = reading.rerun.filter((id) => knownTasks.has(id));
+  if ((reading.kind === 'replan' && !drop.length) || (reading.kind === 'rerun' && !rerun.length)) {
+    return { ...reading, kind: 'note', drop: [], rerun: [] };
   }
-  return { ...reading, drop };
+  return { ...reading, drop, rerun };
 }

@@ -20,6 +20,8 @@ export interface Activities {
     projectId: string;
     text: string;
     blueprint: Blueprint | null;
+    /** The plan's work tasks, for a re-run to name. */
+    tasks?: { taskId: string; title: string; state: string }[];
   }): Promise<DirectiveInterpretation>;
   /** Runs the task's rollback recipe (delete created items, revert its commit). */
   rollbackTask(req: { projectId: string; task: PlannedTask }): Promise<void>;

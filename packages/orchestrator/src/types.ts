@@ -78,7 +78,9 @@ export interface ValidationResult {
 export type DirectiveInterpretation =
   | { kind: 'status' }
   | { kind: 'note'; interpretation: string }
-  | { kind: 'replan'; interpretation: string; blueprint: Blueprint };
+  | { kind: 'replan'; interpretation: string; blueprint: Blueprint }
+  /** Run these tasks again, with these instructions. */
+  | { kind: 'rerun'; interpretation: string; taskIds: string[]; notes: string };
 
 export interface TaskItem {
   task: PlannedTask;
