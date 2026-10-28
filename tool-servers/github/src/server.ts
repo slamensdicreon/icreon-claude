@@ -25,6 +25,11 @@ export interface GithubServerOptions {
 export const AGENT_BRANCH_PREFIX = 'launchworks/';
 const MAX_FILE_BYTES = 200_000;
 const MAX_TREE_ENTRIES = 4_000;
+/**
+ * Past this many entries a listing rolls up into folders with their file counts: thousands of
+ * paths cost an agent a large part of its token budget and say little.
+ */
+const MAX_LISTED = 300;
 
 const TreeArgs = z.object({
   path: z.string().max(500).optional(),
@@ -222,11 +227,18 @@ export class GithubToolServer implements ToolServer {
         sizeKb: repo.size,
         fileCount: files.length,
         truncated: body.truncated || entries.length > MAX_TREE_ENTRIES,
-        entries: entries
-          .slice(0, MAX_TREE_ENTRIES)
-          .map((e) => (e.type === 'tree' ? `${e.path}/ dir` : `${e.path} ${e.size ?? 0}`)),
+        ...(entries.length > MAX_LISTED
+          ? {
+              folders: rollUp(files, prefix),
+              hint: `${files.length} files: listed by folder (two levels below ${prefix || 'the root'}). Call again with a narrower path to see files.`,
+            }
+          : {
+              entries: entries.map((e) =>
+                e.type === 'tree' ? `${e.path}/ dir` : `${e.path} ${e.size ?? 0}`,
+              ),
+            }),
       },
-      summary: `Listed ${files.length} files in ${facts.repo}${prefix ? `/${prefix}` : ''} at ${ref}`,
+      summary: `Listed ${files.length} files in ${facts.repo}${prefix ? `/${prefix}` : ''} at ${ref}${entries.length > MAX_LISTED ? ', by folder' : ''}`,
     };
   }
 
@@ -398,4 +410,20 @@ function fail(r: { status: number; body: unknown }, doing: string): ToolResult {
     code: r.status,
     body: { error: `GitHub answered ${r.status} ${doing}${message ? `: ${message}` : ''}` },
   };
+}
+
+/** Files under `prefix` counted by folder, two levels down; files directly in it are listed. */
+function rollUp(files: { path: string }[], prefix: string): string[] {
+  const counts = new Map<string, number>();
+  for (const f of files) {
+    const parts = f.path.slice(prefix.length).split('/');
+    const key =
+      parts.length === 1
+        ? f.path
+        : `${prefix}${parts.slice(0, Math.min(2, parts.length - 1)).join('/')}/`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts]
+    .slice(0, MAX_LISTED)
+    .map(([k, n]) => (k.endsWith('/') ? `${k} ${n} file${n === 1 ? '' : 's'}` : k));
 }

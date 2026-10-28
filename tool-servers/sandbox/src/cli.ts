@@ -246,11 +246,12 @@ export class SitecoreCliToolServer implements ToolServer {
         });
         return {
           code: 200,
-          body: { valid: v.exitCode === 0, output: v.output },
+          // The end of the output is where the CLI says what is wrong; the start is progress.
+          body: { valid: v.exitCode === 0, output: v.output.slice(-6000) },
           summary:
             v.exitCode === 0
               ? `Serialization valid (${modules.length} modules)`
-              : 'Serialization has problems',
+              : `Serialization has problems (exit ${v.exitCode}): ${tail(v.output)}`,
         };
       }
 
@@ -295,6 +296,16 @@ export class SitecoreCliToolServer implements ToolServer {
     }
   }
 }
+
+/** The last few lines a command printed, in one line: enough to say why it failed. */
+const tail = (output: string) =>
+  output
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(-3)
+    .join(' | ')
+    .slice(-400) || 'no output';
 
 const bad = (error: string, code = 422): ToolResult => ({ code, body: { error }, summary: error });
 const fail = (doing: string, r: { exitCode: number; output: string }): ToolResult => ({

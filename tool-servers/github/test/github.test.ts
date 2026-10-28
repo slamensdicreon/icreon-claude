@@ -21,6 +21,18 @@ function fakeGithub() {
           { path: 'node_modules/x.js', type: 'blob', size: 1 },
         ],
       });
+    if (p === '/git/trees/big')
+      return json(200, {
+        truncated: false,
+        tree: [
+          { path: 'README.md', type: 'blob', size: 5 },
+          ...Array.from({ length: 400 }, (_, i) => ({
+            path: `items/${i % 2 ? 'site' : 'media'}/page-${i}/item.yml`,
+            type: 'blob',
+            size: 10,
+          })),
+        ],
+      });
     if (p === '/contents/src')
       return json(200, [
         { path: 'src/Hero.tsx', type: 'file' },
@@ -71,6 +83,14 @@ describe('GithubToolServer', () => {
       defaultBranch: 'main',
       fileCount: 1,
       entries: ['src/ dir', 'src/Hero.tsx 40'],
+    });
+    // Thousands of paths cost an agent its budget: a big listing comes back by folder.
+    const big = await server.call('tree.read', { ref: 'big' }, ctx);
+    expect(big.body).not.toHaveProperty('entries');
+    expect(big.body).toMatchObject({
+      fileCount: 401,
+      folders: ['README.md', 'items/media/ 200 files', 'items/site/ 200 files'],
+      hint: expect.stringContaining('narrower path'),
     });
     const read = await server.call('repo.read', { paths: ['src/Hero.tsx', 'missing.ts'] }, ctx);
     expect(read.body).toMatchObject({
