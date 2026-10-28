@@ -302,6 +302,39 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           );
     },
 
+    // Each kept page renders on the editing host. A green build doesn't prove it: a component that
+    // throws while rendering (a client hook in a server component) fails the whole page with 500,
+    // and Page builder shows "A rendering error occurred".
+    'head.pages-render': async (ctx) => {
+      if (!inScope(ctx, 'pages').length) return pending('The Blueprint has no pages to check.');
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      if (!project) return pending('No hosting project is recorded for the head.');
+      const host = `https://${project}-editing.vercel.app`;
+      const paths = pagePaths(ctx);
+      const problems: string[] = [];
+      for (const path of paths.slice(0, 40)) {
+        let status = 0;
+        try {
+          status = (
+            await cfg.fetch(`${host}${path}`, {
+              redirect: 'manual',
+              signal: AbortSignal.timeout(cfg.timeoutMs),
+            })
+          ).status;
+        } catch {
+          status = 0;
+        }
+        if (status === 0 || status >= 500)
+          problems.push(
+            `${path} answered ${status || 'nothing'} on ${host}: a component throws while rendering; the head's runtime log names it`,
+          );
+        else if (status === 404) problems.push(`${path} isn't found on ${host}`);
+      }
+      return problems.length
+        ? fail(problems)
+        : pass(`${paths.length} page${paths.length === 1 ? ' renders' : 's render'} on ${host}.`);
+    },
+
     // Published: the home route resolves on the live endpoint.
     'edge.published': async (ctx) => {
       const r = await routes(ctx, ['/'], 'edge-live');

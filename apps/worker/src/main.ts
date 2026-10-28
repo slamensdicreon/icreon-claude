@@ -273,10 +273,35 @@ if (
     teamId: env.VERCEL_PREVIEWS_TEAM_ID,
     projectId: env.VERCEL_SANDBOX_PROJECT_ID,
   });
+  // Agents commit as the GitHub App's bot account (its noreply address), which GitHub and Vercel
+  // recognise. Looked up once; until then, and if it fails, commits keep the placeholder.
+  let author: Promise<{ name: string; email: string } | undefined> | null = null;
+  const botAuthor = () =>
+    (author ??= (async () => {
+      const app = await github?.config();
+      if (!app) return undefined;
+      const login = `${app.slug}[bot]`;
+      const r = await fetch(`https://api.github.com/users/${encodeURIComponent(login)}`, {
+        headers: { accept: 'application/vnd.github+json', 'user-agent': 'launchworks' },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!r.ok) throw new Error(`GitHub answered ${r.status} for ${login}`);
+      const { id } = (await r.json()) as { id: number };
+      return { name: login, email: `${id}+${login}@users.noreply.github.com` };
+    })().catch((err: unknown) => {
+      author = null;
+      console.warn('No bot author for commits:', err);
+      return undefined;
+    }));
   const workspace = async (id: string) => {
     const s = await project(id);
     return s?.buildRepo
-      ? { repo: s.buildRepo.repo, branch: s.buildRepo.branch, appPath: s.buildRepo.appPath }
+      ? {
+          repo: s.buildRepo.repo,
+          branch: s.buildRepo.branch,
+          appPath: s.buildRepo.appPath,
+          author: await botAuthor(),
+        }
       : null;
   };
   const credential = async (id: string, credentialId: string) => {

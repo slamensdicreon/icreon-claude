@@ -1,6 +1,6 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
-import { basic, sandboxName, type BoxProvider, type WorkspaceFacts } from './server';
+import { authorOf, basic, sandboxName, type BoxProvider, type WorkspaceFacts } from './server';
 
 /**
  * The Sitecore CLI, for serialization only: pull the project's own items from its environment
@@ -271,9 +271,9 @@ export class SitecoreCliToolServer implements ToolServer {
         };
       await run('git', [
         '-c',
-        'user.name=Launchworks',
+        `user.name=${authorOf(facts).name}`,
         '-c',
-        'user.email=agents@launchworks.invalid',
+        `user.email=${authorOf(facts).email}`,
         'commit',
         '-q',
         '-m',

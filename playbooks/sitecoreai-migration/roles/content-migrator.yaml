@@ -49,6 +49,7 @@ tools:
       - read
 acceptance:
   - validator:structural.layouts
+  - validator:head.pages-render
   - validator:parity.page
 escalateWhen:
   - rejectedTwice

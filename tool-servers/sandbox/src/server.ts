@@ -33,7 +33,15 @@ export interface WorkspaceFacts {
   repo: string;
   branch: string;
   appPath: string;
+  /**
+   * Who agents' commits are by: the GitHub App's bot account, so GitHub and Vercel know the
+   * author. Without one, commits carry a placeholder address Vercel refuses to deploy.
+   */
+  author?: { name: string; email: string };
 }
+
+const PLACEHOLDER_AUTHOR = { name: 'Launchworks', email: 'agents@launchworks.invalid' };
+export const authorOf = (facts: WorkspaceFacts) => facts.author ?? PLACEHOLDER_AUTHOR;
 
 export interface SandboxServerOptions {
   provider: BoxProvider;
@@ -259,9 +267,10 @@ export class SandboxToolServer implements ToolServer {
     if (created) {
       // The clone's credentials don't stay in the machine.
       await run('git', ['remote', 'set-url', 'origin', `https://github.com/${facts.repo}.git`]);
-      await run('git', ['config', 'user.name', 'Launchworks']);
-      await run('git', ['config', 'user.email', 'agents@launchworks.invalid']);
     }
+    // Set on every call, so a working copy made before the author was known commits as it now.
+    await run('git', ['config', 'user.name', authorOf(facts).name]);
+    await run('git', ['config', 'user.email', authorOf(facts).email]);
     const auth = ['-c', `http.extraHeader=${basic(ctx.token)}`];
 
     /** Installs dependencies when the working copy has none. */

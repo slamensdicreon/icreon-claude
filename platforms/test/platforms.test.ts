@@ -298,6 +298,40 @@ describe('SitecoreAI checks', () => {
     });
   });
 
+  it('loads each page on the editing host and names the ones that fail to render', async () => {
+    const seen: string[] = [];
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async (url: string | URL | Request) => {
+          seen.push(String(url));
+          return new Response('', { status: String(url).endsWith('/about') ? 500 : 200 });
+        }) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const bp = {
+      collections: {
+        pages: [
+          { key: 'home', name: 'Home', attrs: { path: '/' } },
+          { key: 'about', name: 'About', attrs: { path: '/about' } },
+        ],
+      },
+    };
+    const res = await checks['head.pages-render']!({
+      ...ctx(tenant({}).read, bp),
+      target: { ...target, hostingProject: 'Ansco-Site' },
+    });
+    expect(seen).toEqual([
+      'https://ansco-site-editing.vercel.app/',
+      'https://ansco-site-editing.vercel.app/about',
+    ]);
+    expect(res).toEqual({
+      status: 'fail',
+      detail:
+        "/about answered 500 on https://ansco-site-editing.vercel.app: a component throws while rendering; the head's runtime log names it.",
+    });
+  });
+
   it("checks the site, Home and the project's own folders", async () => {
     const site = '/sitecore/content/Brands/ansco';
     const t = tenant({
