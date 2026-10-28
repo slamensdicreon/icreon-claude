@@ -17,6 +17,23 @@ pnpm --filter @lw/platforms exec tsx scripts/parity-report.ts \
 Done: every page passes when it prints `PASS` (90% of the source text and headings, list items
 rendered, no placeholder copy, header and footer present).
 
+## Handoff to the agents (2026-10-28, night)
+
+Launchworks was brought up to date and the project resumed:
+
+- Marked done outside the agents (`completeTasks`, operator API key): `register-site-header`,
+  `register-site-footer` (their cards had expired) and `partial-designs` (waiting on them). We
+  built the header and footer datasources, Component Queries, partial designs and page designs
+  by hand.
+- `enable-experience` was blocked "not connected" for Page builder, which only the proof variant
+  needs. The template now says `uses: [sitecore-authoring, blackboard, artifacts]`, so it runs; its
+  card was answered "retry".
+- The hand fixes on `launchworks/integration` are also on `launchworks/director`, which every
+  integration merges last (a `fresh` rebuild included), so phase 8's final integration keeps them.
+- What the agents do next: phase 7 (redirects, SEO, sitemap, robots, error pages, dictionary),
+  then 8–10. `final-visual` and
+  `final-parity` check the small differences below.
+
 ## Status (2026-10-28, evening): every page matches the live site section by section
 
 All 15 pages pass `parity.render` (98–100% of the text) and were compared with anscollc.com by
