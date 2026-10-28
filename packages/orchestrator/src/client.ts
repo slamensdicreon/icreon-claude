@@ -98,8 +98,66 @@ export class ProjectCommandsClient {
       if (cause instanceof ApplicationFailure && cause.type && STATUS[cause.type]) {
         throw new CommandError(STATUS[cause.type]!, cause.type, cause.message);
       }
+      // The workflow can't take commands while its last step failed: say so, not "unexpected".
+      if (
+        String((err as Error)?.message ?? '').includes('Workflow Task in failed state') ||
+        String((err as { cause?: Error })?.cause?.message ?? '').includes(
+          'Workflow Task in failed state',
+        )
+      )
+        throw new CommandError(
+          503,
+          'orchestrator_stalled',
+          `This project's orchestrator is stuck on a failed step, so it can't take commands. Details: /projects/${this.projectId}/diagnostics`,
+        );
       throw err;
     }
+  }
+
+  /**
+   * The project workflow's health, read-only: its status, the last failed steps (with their error
+   * and stack) and the latest events, for diagnosing a stuck project.
+   */
+  async diagnose() {
+    const d = await this.handle.describe();
+    const res = await this.client.workflowService.getWorkflowExecutionHistoryReverse({
+      namespace: this.client.options.namespace,
+      execution: { workflowId: d.workflowId, runId: d.runId },
+      maximumPageSize: 300,
+    });
+    const events = res.history?.events ?? [];
+    const time = (t?: { seconds?: unknown; nanos?: number | null } | null) =>
+      t?.seconds != null ? new Date(Number(t.seconds) * 1000).toISOString() : null;
+    const kind = (e: (typeof events)[number]) =>
+      Object.keys(e).find(
+        (k) => k.endsWith('EventAttributes') && (e as Record<string, unknown>)[k],
+      ) ?? '';
+    return {
+      workflowId: d.workflowId,
+      status: d.status.name,
+      historyLength: d.historyLength,
+      failures: events
+        .filter((e) => e.workflowTaskFailedEventAttributes)
+        .slice(0, 3)
+        .map((e) => ({
+          event: String(e.eventId),
+          at: time(e.eventTime),
+          cause: e.workflowTaskFailedEventAttributes!.cause,
+          message: e.workflowTaskFailedEventAttributes!.failure?.message ?? null,
+          stack: (e.workflowTaskFailedEventAttributes!.failure?.stackTrace ?? '').slice(0, 4000),
+        })),
+      recent: events.slice(0, 40).map((e) => ({
+        event: String(e.eventId),
+        at: time(e.eventTime),
+        type: kind(e).replace(/EventAttributes$/, ''),
+        detail:
+          e.activityTaskScheduledEventAttributes?.activityType?.name ??
+          e.workflowExecutionUpdateAcceptedEventAttributes?.acceptedRequest?.input?.name ??
+          e.markerRecordedEventAttributes?.markerName ??
+          e.startChildWorkflowExecutionInitiatedEventAttributes?.workflowId ??
+          null,
+      })),
+    };
   }
 
   resolve(

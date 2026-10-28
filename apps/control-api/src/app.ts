@@ -262,6 +262,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---- Snapshots --------------------------------------------------------------------------
 
+  /** Read-only: why a project's orchestrator is stuck, if it is (its last failed steps). */
+  app.get<P>('/projects/:id/diagnostics', async (req, reply) => {
+    if (!project(req.params.id))
+      return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+    return supported(orchestrator(req.params.id), 'diagnose')();
+  });
+
   app.get<P>('/projects/:id/mission-control', async (req, reply) => {
     const s = project(req.params.id);
     return s
