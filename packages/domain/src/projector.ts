@@ -41,6 +41,7 @@ import type {
 import { IntakeFacts } from '@lw/contracts';
 import { isLogEvent, toActivityItem } from './describe';
 import { compareEscalations, UNRESOLVED } from './escalations';
+import { clusterQueue } from './clusters';
 import { computeHealth } from './health';
 import { nextForAgents } from './schedule';
 import { ACTIVE_TASK_STATES } from './task-fsm';
@@ -774,7 +775,7 @@ export function missionControl(s: ProjectState): MissionControlSnapshot {
   return {
     seq: s.seq,
     project: projectSummary(s),
-    waitingOnYou: unresolvedEscalations(s),
+    waitingOnYou: clusterQueue(unresolvedEscalations(s), s.tasks),
     phases: phaseViews(s),
     teamNow: leadRows(s),
     metrics: Object.values(s.metrics),
@@ -827,7 +828,7 @@ export function conversation(s: ProjectState, now = Date.now()): ConversationSna
     seq: s.seq,
     presence: s.presence,
     items: s.conversation,
-    queue: [...unresolvedEscalations(s), ...undoable],
+    queue: [...clusterQueue(unresolvedEscalations(s), s.tasks), ...undoable],
   };
 }
 

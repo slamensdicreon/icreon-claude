@@ -43,6 +43,12 @@ C1 comes first: it removes the freezes the other two would otherwise hit while t
 - **Card clustering.** Open cards are grouped by a signature (template, role, outcome kind and a
   normalized reason with paths, IDs and file names stripped). A group shows as one card listing its
   tasks; one answer resolves all of them. Cards keep their identity underneath for the audit trail.
+
+  *As built:* `@lw/domain` `clusterQueue` / `cardGroups`. Open access, blocker and decision cards
+  from tasks of one `forEach` template group when their options match and their title and context
+  match once names, paths, URLs, IDs, numbers and quoted text are stripped. Mission Control and the
+  queue show the oldest card with `group` (its siblings' tasks); answering it sends `all: true`, and
+  the API answers each sibling the same way. Gates, budget, risk and deferred cards never group.
 - **Capability gaps go to engineering.** A new agent outcome, `capability_gap` ("my tools can't do
   X"), records the gap in a backlog (Settings → Capability gaps, with the tasks it blocks) and parks
   the task as waiting on it. When a deploy adds the capability, the backlog item closes and its tasks

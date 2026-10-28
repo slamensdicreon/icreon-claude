@@ -35,6 +35,7 @@ import {
   missionControl,
   plan,
   projectListItem,
+  cardGroups,
   isLogEvent,
   preview,
   scheduleSnapshot,
@@ -796,17 +797,31 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post<{ Params: { id: string; escalationId: string } }>(
     '/projects/:id/escalations/:escalationId/resolve',
     async (req) => {
-      const { optionId, notes } = ResolveEscalation.parse(req.body);
-      const x = project(req.params.id)?.escalations[req.params.escalationId];
+      const { optionId, notes, all } = ResolveEscalation.parse(req.body);
+      const s = project(req.params.id);
+      const x = s?.escalations[req.params.escalationId];
       if (x?.type === 'gate')
         throw new CommandError(
           422,
           'use_gate_endpoint',
           'This is a gate: use approve or send-back.',
         );
-      return command(req.params.id, (o) =>
+      // Read the group before answering: an answered card leaves it.
+      const group =
+        all && s
+          ? cardGroups(Object.values(s.escalations), s.tasks).get(req.params.escalationId)
+          : undefined;
+      const result = await command(req.params.id, (o) =>
         o.resolve(req.params.escalationId, optionId, notes || null),
       );
+      // The rest of its group, the same way; a card answered meanwhile is left as it is.
+      for (const id of group?.escalationIds ?? []) {
+        if (id === req.params.escalationId) continue;
+        await command(req.params.id, (o) => o.resolve(id, optionId, notes || null)).catch((e) => {
+          if (!(e instanceof CommandError && e.status === 409)) throw e;
+        });
+      }
+      return result;
     },
   );
 

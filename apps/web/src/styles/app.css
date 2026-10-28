@@ -718,6 +718,15 @@
 .opt .otext {
   overflow-wrap: anywhere;
 }
+/* A card standing for the same problem on several tasks. */
+.card .card-group {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--web-accent, currentColor);
+  font-size: 13px;
+  color: var(--web-fg-2);
+  overflow-wrap: anywhere;
+}
 @media (max-width: 1100px) {
   .inbox {
     grid-template-columns: minmax(0, 1fr);

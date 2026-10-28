@@ -40,6 +40,8 @@ export function useCardActions(x: EscalationView) {
         post(`${base}/escalations/${x.escalationId}/resolve`, {
           optionId,
           ...(notes?.trim() ? { notes: notes.trim() } : {}),
+          // A grouped card stands for its siblings: one answer for all of them.
+          ...(x.group ? { all: true } : {}),
         }),
       ),
     defer: () =>
@@ -201,6 +203,14 @@ export function Card({
       <p className="ctx">
         <Who text={x.context} />
       </p>
+      {x.group && (
+        <p className="card-group">
+          The same problem on {x.group.taskIds.length} tasks:{' '}
+          {x.group.taskTitles.slice(0, 4).join('; ')}
+          {x.group.taskTitles.length > 4 ? `; and ${x.group.taskTitles.length - 4} more` : ''}. Your
+          answer applies to all of them.
+        </p>
+      )}
       <div className="impact">
         <span>Impact</span>
         <p>

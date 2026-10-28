@@ -63,6 +63,17 @@ export const EscalationView = EscalationCard.extend({
   resolvedAt: z.iso.datetime().nullable(),
   /** While set, the choice can be undone (POST …/undo) and has not taken effect yet. */
   undoUntil: z.iso.datetime().nullable(),
+  /**
+   * Open cards with the same cause on sibling tasks (same template, options and problem), shown
+   * as this one card; answering it with `all` answers each of them.
+   */
+  group: z
+    .object({
+      escalationIds: z.array(z.string()),
+      taskIds: z.array(z.string()),
+      taskTitles: z.array(z.string()),
+    })
+    .optional(),
 });
 export type EscalationView = z.infer<typeof EscalationView>;
 

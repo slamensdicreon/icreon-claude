@@ -101,6 +101,8 @@ export const ResolveEscalation = z.object({
   optionId: z.string(),
   /** What the agent needs beyond the option: a URL, a name, a correction. */
   notes: z.string().trim().max(2000).optional(),
+  /** For a grouped card: answer every card in its group the same way. */
+  all: z.boolean().optional(),
 });
 export type ResolveEscalation = z.infer<typeof ResolveEscalation>;
 

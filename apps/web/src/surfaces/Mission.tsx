@@ -72,7 +72,10 @@ export function Mission() {
                     onClick={() => go('inbox', { expanded: x.escalationId })}
                   >
                     <span className={`type ${x.type}`}>{x.typeLabel ?? TYPE_LABEL[x.type]}</span>
-                    <span className="wl-title">{x.title}</span>
+                    <span className="wl-title">
+                      {x.title}
+                      {x.group && <small> and {x.group.taskIds.length - 1} more like it</small>}
+                    </span>
                     <span className="age">{age(x.raisedAt, now)}</span>
                   </button>
                 </li>
