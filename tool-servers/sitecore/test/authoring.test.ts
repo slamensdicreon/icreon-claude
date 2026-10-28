@@ -82,8 +82,10 @@ function fakeCm(
                 .replace(/ ph="([^"]*)"/g, ' s:ph="$1"')
                 .replace(/\/>/g, ' s:uid="{00000000-0000-4000-8000-0000000000AA}" />')
             : v;
-      if (!opts.ignoreUpdate)
-        for (const [k, v] of fieldsOf(query)) values.get(path)?.set(k, stored(v));
+      if (!opts.ignoreUpdate) {
+        if (!values.has(path)) values.set(path, new Map());
+        for (const [k, v] of fieldsOf(query)) values.get(path)!.set(k, stored(v));
+      }
       if (opts.drop) lost();
       return ok({ updateItem: { item: { itemId: items[path], name: 'n' } } });
     }
@@ -273,6 +275,52 @@ describe('SitecoreAuthoringToolServer', () => {
       },
     });
     expect((await s.call('item.rename', { path: tpl, name: 'a/b' }, ctx)).code).toBe(422);
+  });
+
+  it('places components on a page from paths, with valid layout XML, and reads it back', async () => {
+    const page = '/sitecore/content/Brands/ansco/Home/about';
+    const hero = '/sitecore/layout/Renderings/Project/Brands/ansco/Hero Banner';
+    const ds = `${page}/Data/Hero`;
+    const cm = fakeCm({
+      [page]: 'page-id',
+      [hero]: 'a1b2c3d4-0000-4000-8000-0000000000aa',
+      [ds]: 'a1b2c3d4-0000-4000-8000-0000000000bb',
+    });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    const r = await s.call(
+      'layout.compose',
+      {
+        path: page,
+        renderings: [
+          { rendering: hero, placeholder: 'headless-main', datasource: ds },
+          {
+            rendering: '{A1B2C3D4-0000-4000-8000-0000000000CC}',
+            placeholder: 'headless-main',
+            parameters: { Styles: 'compact' },
+          },
+        ],
+      },
+      ctx,
+    );
+    expect(r).toMatchObject({ code: 200, body: { renderings: 2, verified: true } });
+    const written = cm.queries.find((q) => q.includes('updateItem'))!;
+    expect(written).toContain(
+      'id=\\"{A1B2C3D4-0000-4000-8000-0000000000AA}\\" par=\\"\\" ph=\\"headless-main\\"',
+    );
+    expect(written).toContain('ds=\\"{A1B2C3D4-0000-4000-8000-0000000000BB}\\"');
+    expect(written).toContain('par=\\"Styles=compact\\"');
+    expect(written).toContain('{ name: \"__Final Renderings\", value: \"\" }');
+    // Hand-written XML without rendering IDs is refused: Page builder would show nothing.
+    const bare = await s.call(
+      'layout.compose',
+      {
+        path: page,
+        renderingsXml:
+          '<r><d id="{FE5D7FDF-89C0-4D99-9AA3-B5FBD009C9F3}"><r uid="{1}" s="{2}" ph="headless-main" /></d></r>',
+      },
+      ctx,
+    );
+    expect(bare).toMatchObject({ code: 422 });
   });
 
   it('reports a missing item and refuses hosts outside SitecoreAI', async () => {

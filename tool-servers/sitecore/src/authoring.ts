@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   BlobStore,
   OperationCatalog,
@@ -102,12 +103,36 @@ const RenderingArgs = z.object({
   datasourceLocation: z.string().max(500).optional(),
   parametersTemplatePath: Path.optional(),
 });
-const LayoutArgs = z.object({
-  path: Path,
-  renderingsXml: z.string().min(1).max(500_000),
-  shared: z.boolean().optional(),
-  language: z.string().optional(),
-});
+const LayoutArgs = z
+  .object({
+    path: Path,
+    /** The page's components in order: what Page builder shows, top to bottom per placeholder. */
+    renderings: z
+      .array(
+        z.object({
+          /** The rendering item: its path or ID. */
+          rendering: z.string().min(1),
+          placeholder: z.string().min(1).max(200),
+          /** The datasource item: its path or ID (omit for none). */
+          datasource: z.string().min(1).optional(),
+          /** Rendering parameters, as name/value pairs. */
+          parameters: z.record(z.string(), z.string()).optional(),
+        }),
+      )
+      .min(1)
+      .max(100)
+      .optional(),
+    /** Layout definition XML instead of `renderings`: `<r><d id=… l=…><r uid=… id=… ph=… ds=…/></d></r>`. */
+    renderingsXml: z.string().min(1).max(500_000).optional(),
+    language: z.string().optional(),
+  })
+  .refine(
+    (a) => Boolean(a.renderings) !== Boolean(a.renderingsXml),
+    'give renderings or renderingsXml',
+  );
+/** The Default device, and the JSS/SXA headless layout every headless page uses. */
+const DEFAULT_DEVICE = '{FE5D7FDF-89C0-4D99-9AA3-B5FBD009C9F3}';
+const HEADLESS_LAYOUT = '{96E5F4BA-A2CF-4A4C-A4E7-64DA88226362}';
 const MediaArgs = z
   .object({
     itemPath: z.string().startsWith(MEDIA_ROOT).max(500),
@@ -287,16 +312,28 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'layout.compose': {
       description:
-        "Set a page's presentation: renderingsXml is the layout definition XML (<r><d id=... l=...><r uid=... s=... ph=... ds=... /></d></r>). Writes Final Renderings unless shared:true.",
+        "Place components on a page, so Page builder opens with them in place. Give `renderings` in order: each `rendering` (its path or ID), `placeholder` (e.g. headless-main), `datasource` (its path or ID) and optional `parameters`. The tool resolves the IDs, writes the page's layout (Default device, headless layout), clears the page's own layout edits so they don't override it, and reads it back.",
       inputSchema: {
         type: 'object',
         properties: {
           path: { type: 'string' },
+          renderings: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                rendering: { type: 'string' },
+                placeholder: { type: 'string' },
+                datasource: { type: 'string' },
+                parameters: { type: 'object', additionalProperties: { type: 'string' } },
+              },
+              required: ['rendering', 'placeholder'],
+            },
+          },
           renderingsXml: { type: 'string' },
-          shared: { type: 'boolean' },
           language: { type: 'string' },
         },
-        required: ['path', 'renderingsXml'],
+        required: ['path'],
         additionalProperties: false,
       },
       mutates: true,
@@ -664,17 +701,59 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
   private async layout(q: Gql, a: Parsed<typeof LayoutArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
-    const field = a.data.shared ? '__Renderings' : '__Final Renderings';
+    const braced = (id: string) => `{${id.replace(/[{}]/g, '').toUpperCase()}}`;
+    const isId = (v: string) =>
+      /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i.test(v);
+    const resolve = async (v: string) => (isId(v) ? braced(v) : braced(await this.idOf(q, v)));
+    let xml: string;
+    if (a.data.renderings) {
+      const parts: string[] = [];
+      for (const r of a.data.renderings) {
+        const id = await resolve(r.rendering);
+        const ds = r.datasource ? await resolve(r.datasource) : '';
+        const par = r.parameters
+          ? Object.entries(r.parameters)
+              .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+              .join('&')
+          : '';
+        parts.push(
+          `<r ds="${ds}" id="${id}" par="${xmlAttr(par)}" ph="${xmlAttr(r.placeholder)}" uid="${braced(randomUUID())}" />`,
+        );
+      }
+      xml = `<r xmlns:xsd="http://www.w3.org/2001/XMLSchema"><d id="${DEFAULT_DEVICE}" l="${HEADLESS_LAYOUT}">${parts.join('')}</d></r>`;
+    } else {
+      xml = a.data.renderingsXml!;
+      // Each rendering needs its rendering ID (`id`, or `s:id` in a delta); without it Page builder shows nothing.
+      const inner = [...xml.matchAll(/<d\b[^>]*>([\s\S]*?)<\/d>/gi)].flatMap((m) =>
+        [...m[1]!.matchAll(/<r\b([^>]*)>/gi)].map((r) => r[1]!),
+      );
+      const missing = inner.filter((attrs) => !/(?:^|\s)(?:s:)?id="/i.test(attrs));
+      if (!inner.length || missing.length)
+        return bad(
+          `${missing.length || 'No'} rendering${missing.length === 1 ? '' : 's'} in renderingsXml ${inner.length ? 'lack a rendering ID (id="{…}")' : 'found under a <d> device'}. Give renderings instead and the tool writes the XML.`,
+        );
+    }
+    // The whole layout on the page's shared presentation; the page's own (final) layout edits are
+    // cleared so they can't override it. Page builder's later edits go on top as usual.
     const r = await this.update(
       q,
       UpdateArgs.safeParse({
         path: a.data.path,
         language: a.data.language,
-        fields: [{ name: field, value: a.data.renderingsXml }],
+        fields: [
+          { name: '__Renderings', value: xml },
+          { name: '__Final Renderings', value: '' },
+        ],
       }),
       lang,
     );
-    return r.code === 200 ? { ...r, summary: `Set ${field} on ${a.data.path}` } : r;
+    if (r.code !== 200) return r;
+    const count = (xml.match(/<r\b[^>]*\bph=/gi) ?? []).length;
+    return {
+      ...r,
+      body: { ...(r.body as object), renderings: count },
+      summary: `Placed ${count} component${count === 1 ? '' : 's'} on ${a.data.path}, read back`,
+    };
   }
 
   private async media(
@@ -1073,6 +1152,10 @@ async function readBack(
   for (const [k, v] of found?.fields ?? []) fields.set(k, v);
   return { itemId: d.item.itemId, path: d.item.path, fields };
 }
+
+/** A value inside a double-quoted XML attribute. */
+const xmlAttr = (v: string) =>
+  v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** A stored value as written: IDs and ID lists Sitecore keeps uppercase in braces compare equal. */
 const canonical = (v: string) => {
