@@ -17,251 +17,61 @@ pnpm --filter @lw/platforms exec tsx scripts/parity-report.ts \
 Done: every page passes when it prints `PASS` (90% of the source text and headings, list items
 rendered, no placeholder copy, header and footer present).
 
-## Done (head code, `icreon-launchworks/dycom-ansco-associates-sitecoreai2`)
+## Status (2026-10-28): every page passes
 
-On `launchworks/integration` (commit d9d8beb), deployed to the editing host:
+All 15 pages print `PASS` (98–100% of the source text) on the editing host, deployment
+`dpl_FXgFPsCDEAF5Cz6kUZVdytoV8mQZ` (head d3caeea). Nothing is published; Page builder and the editing host
+read the preview (master).
 
-- `components/ui/Section.tsx`: every content component renders in a section band driven by
-  rendering parameters: `tone` (`none` | `faint` | `primary` | `navy`), `diagonal`
-  (`none` | `left` | `right`), `spacing` (`both` | `top` | `bottom` | `none`, so two adjacent
-  components share one band).
-- RichText (`Default`, `Centered`, `Legal`; parameter `heading=primary` colours the heading red),
-  ImageText (fields `image` and optional `image2`; parameter `split=5-7`), JobList and JobSearch
-  rebuilt on the source's markup and CSS.
-- List components read fields and items from the layout service or a Component Query
-  (`components/ui/fields.ts`). Each has its `<Name>.graphql` beside it.
+### Head code (`icreon-launchworks/dycom-ansco-associates-sitecoreai2`, `launchworks/integration`)
 
-## Remaining (Sitecore content; needs authoring API access)
+- d9d8beb: `ui/Section` bands from rendering parameters (`tone`, `diagonal`, `spacing`);
+  RichText, ImageText, JobList and JobSearch on the source's markup; list components read both
+  field shapes (`ui/fields.ts`), each with its `<Name>.graphql`.
+- 5958f40: LocationsList's query selects each office's fields as one list
+  (`fields(ownFields: true) { name jsonValue }`, read by `itemFields`), since six aliased fields on
+  fifty offices exceed the query complexity limit; SiteHeader's nested children have no `first`
+  (same limit); the contact form's state list matches the source's.
+- d3caeea: on `bg-primary` / `bg-navy` bands `.primary` headings and buttons take the light
+  treatment; CardGrid `Tile` variant (image, heading, copy stacked).
 
-The CM host is `xmc-icreonpartn775e-newbranddem8eb3-newbranddem12b2.sitecorecloud.io`, site
-`/sitecore/content/brands/ansco` (a shared collection: change only Ansco's own items). Token:
-`POST https://auth.sitecorecloud.io/oauth/token` (`client_credentials`, audience
-`https://api.sitecorecloud.io`); authoring GraphQL at `https://<cm>/sitecore/api/authoring/graphql/v1/`.
-Layout XML IDs must be `{8-4-4-4-12}` (the API returns bare hex).
+The `.graphql` files there are the queries set on the renderings
+(`/sitecore/layout/Renderings/Project/brands/ansco/*` → `ComponentQuery`).
 
-1. **Component Queries.** Set each list rendering's `ComponentQuery` field (under
-   `/sitecore/layout/Renderings/Project/brands/ansco`) to its `.graphql` on
-   `launchworks/integration`: CardGrid, StatsCounter, Accordion, JobList, LocationsList,
-   BenefitsCarousel, ContactForm, SubcontractorForm, SiteHeader, SiteFooter. Keep the aliases;
-   change `field(name: …)` only where the template's field name differs (read the template).
-2. **Header and footer.** Datasources under `<site>/Data` from the source's `SiteHeader` and
-   `SiteFooter` (`src/content/site.ts`: nav in order with submenus, address, phone, links,
-   social); `Header` and `Footer` partial designs under `<site>/Presentation/Partial Designs`
-   with the renderings in `headless-header` / `headless-footer`; page designs `Default` (and
-   `Careers`, footer variant `Careers`) with both in `PartialDesigns`; every page template mapped
-   in the Page Designs item's `TemplatesMapping`.
-3. **Pages, section by section from the source page files** (`app/(corporate)/*/page.tsx`,
-   `app/(careers)/*/page.tsx`; copy in `src/content/*.ts`): one component per source section,
-   with its variant and parameters (`tone`, `diagonal`, `spacing`, `heading`, `split`), every list
-   item created as a child of its datasource, every field filled, no placeholder copy. Add
-   `image2` (Image) to the ImageText datasource template where a section has two images.
-4. Publish nothing; Page builder and the editing host read the preview.
-5. Re-run the parity report until every page passes.
+### Sitecore content (`/sitecore/content/brands/ansco`)
 
-## Lessons already in the playbook
+- Component Queries on all ten list, header and footer renderings.
+- Header and footer: `Data/Navigation/Main Navigation` (nav in source order, About Us and Careers
+  submenus) and `Data/Footer/Footer` (quick links, social, address, phone, careers assistance and
+  EEO links). Partial designs `Header`, `Footer`, `Careers Footer` (variant `Careers`), recreated on
+  the JSS Partial Design template; the MVC-template originals are in the recycle bin. Page designs
+  `Corporate Page` and `Careers Page`, mapped with `configurePageDesigns`.
+- Headless variants added: HeroBanner (Default, Home, Compact), CardGrid (Default, Panel,
+  PanelTall, FancyBox, IconCircle, Contact, Tile), ImageText (Default, ImageLeft, ImageRight).
+- Every page's layout rewritten from its source page, section by section, with variant and band
+  parameters. Content filled from the source where it was missing: Life@Ansco (values, work with
+  us, growth cards, workforce), Opportunities (live featured jobs, category copy, talent network
+  CTA), contact request types, subcontractor work types and consent, hero images. Image Text
+  template has `image2`. File Download `file` fields hold `<file mediaid=…/>`.
 
-`platforms/sitecoreai/knowledge/known-pitfalls.md` (Component Queries, both field shapes,
-Section bands, section-by-section mapping, partial designs, layout ID format) and the checks
-`parity.render`, `structural.component-queries`, `head.sections`, `head.header-footer`.
-## Component Queries (one `<Name>.graphql` per list component)
+### How the editing host refreshes
 
-### CardGrid.graphql
-```graphql
-query CardGrid($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    heading: field(name: "heading") { jsonValue }
-    intro: field(name: "intro") { jsonValue }
-    children(first: 12) {
-      results {
-        id
-        title: field(name: "title") { jsonValue }
-        text: field(name: "text") { jsonValue }
-        image: field(name: "image") { jsonValue }
-        link: field(name: "link") { jsonValue }
-      }
-    }
-  }
-}
-```
+Pages render once per deployment and stay cached, so content changes show only on a new
+deployment: redeploy the editing alias's deployment (`POST /v13/deployments` with its
+`deploymentId`) and move `dycom-ansco-associates-sitecoreai-v2-editing.vercel.app` onto it.
 
-### StatsCounter.graphql
-```graphql
-query StatsCounter($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    heading: field(name: "heading") { jsonValue }
-    children(first: 6) {
-      results {
-        id
-        value: field(name: "value") { jsonValue }
-        suffix: field(name: "suffix") { jsonValue }
-        label: field(name: "label") { jsonValue }
-      }
-    }
-  }
-}
-```
+### Left as is
 
-### Accordion.graphql
-```graphql
-query Accordion($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    heading: field(name: "heading") { jsonValue }
-    intro: field(name: "intro") { jsonValue }
-    children(first: 40) {
-      results {
-        id
-        question: field(name: "question") { jsonValue }
-        answer: field(name: "answer") { jsonValue }
-      }
-    }
-  }
-}
-```
+- Unused duplicates kept (not on any page): `Home/about/Data/Linking`, `Home/life/Data/Talent
+  Development Grid`, `Home/opportunities/Data/Jobs` and `Job Categories`, `Home/contact/Data/Locations`,
+  `Data/CTAs/Talent Network`, `Data/Forms/*` (its work types are not the source's). Their
+  placeholder copy is cleared.
+- The source's "Linking-Southeast" upper photo (About) and the careers CTA background image are
+  not in the media library.
+- Opportunities' featured jobs are a snapshot of the live site on 2026-10-28.
 
-### JobList.graphql
-```graphql
-query JobList($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    heading: field(name: "heading") { jsonValue }
-    intro: field(name: "intro") { jsonValue }
-    allJobsLink: field(name: "allJobsLink") { jsonValue }
-    children(first: 10) {
-      results {
-        id
-        title: field(name: "title") { jsonValue }
-        location: field(name: "location") { jsonValue }
-        link: field(name: "link") { jsonValue }
-      }
-    }
-  }
-}
-```
+## Lessons now in the playbook
 
-### LocationsList.graphql
-```graphql
-query LocationsList($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    heading: field(name: "heading") { jsonValue }
-    intro: field(name: "intro") { jsonValue }
-    hqMapUrl: field(name: "hqMapUrl") { jsonValue }
-    children(first: 60) {
-      results {
-        id
-        name: field(name: "name") { jsonValue }
-        address: field(name: "address") { jsonValue }
-        city: field(name: "city") { jsonValue }
-        state: field(name: "state") { jsonValue }
-        postalCode: field(name: "postalCode") { jsonValue }
-        phone: field(name: "phone") { jsonValue }
-      }
-    }
-  }
-}
-```
-
-### BenefitsCarousel.graphql
-```graphql
-query BenefitsCarousel($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    label: field(name: "label") { jsonValue }
-    children(first: 20) {
-      results {
-        id
-        icon: field(name: "icon") { jsonValue }
-        title: field(name: "title") { jsonValue }
-        text: field(name: "text") { jsonValue }
-      }
-    }
-  }
-}
-```
-
-### ContactForm.graphql
-```graphql
-query ContactForm($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    heading: field(name: "heading") { jsonValue }
-    intro: field(name: "intro") { jsonValue }
-    consentText: field(name: "consentText") { jsonValue }
-    submitLabel: field(name: "submitLabel") { jsonValue }
-    successMessage: field(name: "successMessage") { jsonValue }
-    errorMessage: field(name: "errorMessage") { jsonValue }
-    children(first: 10) {
-      results {
-        id
-        label: field(name: "label") { jsonValue }
-        redirectLink: field(name: "redirectLink") { jsonValue }
-      }
-    }
-  }
-}
-```
-
-### SubcontractorForm.graphql
-```graphql
-query SubcontractorForm($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    heading: field(name: "heading") { jsonValue }
-    intro: field(name: "intro") { jsonValue }
-    consentText: field(name: "consentText") { jsonValue }
-    submitLabel: field(name: "submitLabel") { jsonValue }
-    successMessage: field(name: "successMessage") { jsonValue }
-    errorMessage: field(name: "errorMessage") { jsonValue }
-    children(first: 30) {
-      results {
-        id
-        label: field(name: "label") { jsonValue }
-      }
-    }
-  }
-}
-```
-
-### SiteHeader.graphql
-```graphql
-query SiteHeader($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    logo: field(name: "logo") { jsonValue }
-    logoLink: field(name: "logoLink") { jsonValue }
-    children(first: 8) {
-      results {
-        id
-        title: field(name: "title") { jsonValue }
-        link: field(name: "link") { jsonValue }
-        children(first: 5) {
-          results {
-            id
-            title: field(name: "title") { jsonValue }
-            link: field(name: "link") { jsonValue }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-### SiteFooter.graphql
-```graphql
-query SiteFooter($datasource: String!, $language: String!) {
-  datasource: item(path: $datasource, language: $language) {
-    logo: field(name: "logo") { jsonValue }
-    address: field(name: "address") { jsonValue }
-    phone: field(name: "phone") { jsonValue }
-    quickLinksHeading: field(name: "quickLinksHeading") { jsonValue }
-    socialHeading: field(name: "socialHeading") { jsonValue }
-    facebookLink: field(name: "facebookLink") { jsonValue }
-    instagramLink: field(name: "instagramLink") { jsonValue }
-    linkedinLink: field(name: "linkedinLink") { jsonValue }
-    careersText: field(name: "careersText") { jsonValue }
-    copyright: field(name: "copyright") { jsonValue }
-    children(first: 8) {
-      results {
-        id
-        link: field(name: "link") { jsonValue }
-      }
-    }
-  }
-}
-```
-
+`platforms/sitecoreai/knowledge/known-pitfalls.md` (JSS partial design template, page-design
+mapping, variants as items, query complexity, editing-host caching, File fields, coloured bands);
+the Layout Engineer maps page designs with the new `sitecore-authoring.page-designs.map`.

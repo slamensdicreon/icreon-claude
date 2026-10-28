@@ -153,6 +153,15 @@ const SiteArgs = z.object({
   collection: z.string().min(1).optional(),
   site: z.string().min(1).optional(),
 });
+const PageDesignsArgs = z.object({
+  /** The site's Page Designs item, `<site>/Presentation/Page Designs`. */
+  pageDesignsPath: Path,
+  /** Every page template and its page design: the mapping replaces the site's whole mapping. */
+  mappings: z
+    .array(z.object({ templatePath: Path, pageDesignPath: Path }))
+    .min(1)
+    .max(50),
+});
 const LanguageArgs = z.object({
   /** e.g. "es-US" */
   code: z.string().regex(/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/),
@@ -255,6 +264,28 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       },
       mutates: true,
       pathArgs: ['path'],
+    },
+    'page-designs.map': {
+      description:
+        "Map page templates to page designs on the project's site (Sitecore's configurePageDesigns): each page template's pages then show its page design's partial designs (header, footer). Give every page template: the mapping replaces the site's whole mapping. Reads the Page Designs item back to confirm each pair. Don't write TemplatesMapping by hand: Sitecore ignores a value not in its URL-encoded form.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pageDesignsPath: { type: 'string' },
+          mappings: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { templatePath: { type: 'string' }, pageDesignPath: { type: 'string' } },
+              required: ['templatePath', 'pageDesignPath'],
+            },
+          },
+        },
+        required: ['pageDesignsPath', 'mappings'],
+        additionalProperties: false,
+      },
+      mutates: true,
+      pathArgs: ['pageDesignsPath'],
     },
     'template.create': {
       description:
@@ -454,6 +485,8 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           return await this.update(q, UpdateArgs.safeParse(args), lang);
         case 'item.rename':
           return await this.rename(q, RenameArgs.safeParse(args));
+        case 'page-designs.map':
+          return await this.pageDesigns(q, PageDesignsArgs.safeParse(args), facts);
         case 'template.create':
           return await this.template(q, TemplateArgs.safeParse(args));
         case 'rendering.create':
@@ -648,6 +681,46 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           code: 409,
           body: { itemId, path: a.data.path, expected: target },
           summary: `Renamed ${a.data.path}, but ${target} doesn't read back as the same item`,
+        };
+  }
+
+  private async pageDesigns(
+    q: Gql,
+    a: Parsed<typeof PageDesignsArgs>,
+    facts: TenantFacts,
+  ): Promise<ToolResult> {
+    if (!a.success) return bad(a.error.issues[0]!.message);
+    const root = a.data.pageDesignsPath.replace(/\/$/, '');
+    const outside = a.data.mappings.find((m) => !m.pageDesignPath.startsWith(`${root}/`));
+    if (outside) return bad(`${outside.pageDesignPath} is not a page design under ${root}`);
+    const pairs: { templateId: string; pageDesignId: string }[] = [];
+    for (const m of a.data.mappings) {
+      pairs.push({
+        templateId: braced(await this.idOf(q, m.templatePath)),
+        pageDesignId: braced(await this.idOf(q, m.pageDesignPath)),
+      });
+    }
+    await q.run<{ configurePageDesigns: boolean }>(
+      `mutation { configurePageDesigns(input: { siteName: ${gql(facts.site)}, mapping: [${pairs
+        .map((p) => `{ templateId: ${gql(p.templateId)}, pageDesignId: ${gql(p.pageDesignId)} }`)
+        .join(', ')}] }) }`,
+    );
+    // Executed is not verified: every pair is in the stored (URL-encoded) mapping.
+    const back = await readBack(q, root, 'en', ['TemplatesMapping']);
+    const stored = templatesMapping(back?.fields.get('templatesmapping') ?? '');
+    const missing = a.data.mappings.filter(
+      (_, i) => stored.get(bare(pairs[i]!.templateId)) !== bare(pairs[i]!.pageDesignId),
+    );
+    return missing.length
+      ? {
+          code: 409,
+          body: { mapped: pairs.length - missing.length, missing },
+          summary: `Mapped page designs, but ${missing.map((m) => m.templatePath).join(', ')} doesn't read back`,
+        }
+      : {
+          code: 200,
+          body: { mapped: pairs.length },
+          summary: `Mapped ${pairs.length} page template${pairs.length === 1 ? '' : 's'} to their page designs, read back`,
         };
   }
 
@@ -1095,6 +1168,28 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 }
 
 type Lang = (l?: string) => string;
+
+const bare = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
+const braced = (id: string) => {
+  const h = bare(id).toUpperCase();
+  return `{${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}}`;
+};
+
+/**
+ * TemplatesMapping as template → page design (bare IDs). Sitecore stores it URL-encoded twice over:
+ * `%7b<template>%7d%3d%257B<design>%257D%26…`.
+ */
+function templatesMapping(value: string): Map<string, string> {
+  let v = value;
+  for (let i = 0; i < 2 && /%[0-9a-f]{2}/i.test(v); i++) v = decodeURIComponent(v);
+  return new Map(
+    v
+      .split(/[&|]/)
+      .map((pair) => pair.split('='))
+      .filter((kv): kv is [string, string] => kv.length === 2)
+      .map(([t, d]) => [bare(t), bare(d)]),
+  );
+}
 
 /**
  * An item's field values, inherited ones included (a rendering's Datasource Template, a group's
