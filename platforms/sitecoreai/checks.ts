@@ -335,6 +335,44 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         : pass(`${paths.length} page${paths.length === 1 ? ' renders' : 's render'} on ${host}.`);
     },
 
+    // The header and footer render on the editing host's pages: their partial designs exist, hold
+    // the renderings in headless-header / headless-footer, and every page design includes them.
+    'head.header-footer': async (ctx) => {
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      if (!project) return pending('No hosting project is recorded for the head.');
+      const host = `https://${project}-editing.vercel.app`;
+      const problems: string[] = [];
+      const paths = inScope(ctx, 'pages').length ? pagePaths(ctx).slice(0, 5) : ['/'];
+      for (const path of paths) {
+        let html = '';
+        try {
+          const res = await cfg.fetch(`${host}${path}`, {
+            signal: AbortSignal.timeout(cfg.timeoutMs),
+          });
+          if (!res.ok) {
+            problems.push(`${path} answered ${res.status} on ${host}`);
+            continue;
+          }
+          html = await res.text();
+        } catch {
+          problems.push(`${path} didn't answer on ${host}`);
+          continue;
+        }
+        // The app's Layout renders the placeholders inside these wrappers; empty means no partial design.
+        const empty = (id: string) => new RegExp(`<div id="${id}">\\s*</div>`).test(html);
+        if (empty('header')) problems.push(`${path} has no header`);
+        if (empty('footer')) problems.push(`${path} has no footer`);
+      }
+      return problems.length
+        ? fail([
+            ...problems,
+            'nothing is placed in headless-header / headless-footer: create the Header and Footer partial designs, add them to the page designs and map the page templates',
+          ])
+        : pass(
+            `The header and footer render on ${paths.length} page${paths.length === 1 ? '' : 's'} of ${host}.`,
+          );
+    },
+
     // Published: the home route resolves on the live endpoint.
     'edge.published': async (ctx) => {
       const r = await routes(ctx, ['/'], 'edge-live');

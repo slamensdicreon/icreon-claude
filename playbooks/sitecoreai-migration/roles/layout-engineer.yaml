@@ -22,10 +22,16 @@ tools:
       - item.update
       - item.rename
       - template.create
+      # Places the header and footer on their partial designs.
+      - layout.compose
     scope:
       paths:
         - /sitecore/templates/Project/{project}/**
         - '{sitePath}/Presentation/**'
+        # The header's and footer's datasources (navigation, contact details, links).
+        - '{sitePath}/Data/**'
+        # A header or footer rendering's Component Query, which feeds it its datasource and children.
+        - /sitecore/layout/Renderings/Project/{module}/**
       # Layouts refer to renderings, to the platform's own templates (SXA's, under Foundation)
       # and to the site's items: read only. Other sites' content stays out of reach.
       readPaths:

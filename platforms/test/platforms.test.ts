@@ -332,6 +332,29 @@ describe('SitecoreAI checks', () => {
     });
   });
 
+  it('fails pages whose header or footer slot renders empty on the editing host', async () => {
+    const page = (header: string) =>
+      `<header><div id="header">${header}</div></header><main></main><footer><div id="footer"><nav>links</nav></div></footer>`;
+    let html = page('');
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async () => new Response(html, { status: 200 })) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const run = () =>
+      checks['head.header-footer']!({
+        ...ctx(tenant({}).read, null),
+        target: { ...target, hostingProject: 'ansco-site' },
+      });
+    const res = await run();
+    expect(res.status).toBe('fail');
+    expect(res.detail).toContain('/ has no header');
+    expect(res.detail).not.toContain('no footer');
+    html = page('<nav class="SiteHeader">Home</nav>');
+    expect((await run()).status).toBe('pass');
+  });
+
   it("checks the site, Home and the project's own folders", async () => {
     const site = '/sitecore/content/Brands/ansco';
     const t = tenant({

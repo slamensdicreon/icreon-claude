@@ -133,6 +133,7 @@ templates:
     title: Create header and footer partial designs
     # Partial designs bind the header's and footer's renderings: they must be registered first.
     dependsOn: [register-*]
+    acceptance: [validator:head.header-footer]
   - id: template-{key}
     phase: 5
     role: layout-engineer

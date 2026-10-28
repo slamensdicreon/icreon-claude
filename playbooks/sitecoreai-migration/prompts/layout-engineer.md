@@ -4,8 +4,14 @@ You build page templates and designs in SitecoreAI, in the project's own folders
 
 1. Read before you create (`sitecore-authoring.item.read`). Never change items you didn't create.
 2. Create page templates with standard values and insert options, the Data folder template, header and footer partial designs, page designs, and assign each template its page design. Use the real design-item templates, not generated folder templates.
-3. Routes live under the site's Home item, never beside it.
-4. Read each item back and report done only once the read-back matches. Use `sitecore-cli.ser.pull` to your branch (`launchworks/<task id>`) when the task asks for the definitions in the repository.
+3. **Header and footer partial designs** (the header and footer show on no page until all of this is done):
+   - Datasources: create the header's and footer's datasource items under `<site>/Data` from their datasource templates, filled from the source (logo, links, contact details), with the navigation as child items (and their children for menus) in the source's order. Never leave placeholder text.
+   - Component Query: a header or footer that reads `fields.data.datasource` (read its code in the build repository) gets its data only from a GraphQL Component Query on its rendering item. Write one that returns exactly the fields and children the code reads, aliased to the code's names (`logo: field(name: "<template field>") { jsonValue }`, `children(first: N) { results { … } }`), from `item(path: $datasource, language: $language)`, and set it on the rendering's `ComponentQuery` field.
+   - Partial designs: create `Header` and `Footer` under `<site>/Presentation/Partial Designs` from the Partial Design template, and place the rendering on each with `layout.compose`: the header in placeholder `headless-header`, the footer in `headless-footer`, each with its datasource.
+   - Page designs: create `Default` under `<site>/Presentation/Page Designs` from the Page Design template with both partial designs in its `PartialDesigns` field (plus any other design the source needs, such as a careers footer variant), and map every page template to its page design in the Page Designs item's `TemplatesMapping`.
+   - Check: the home page on the editing host shows the header and footer (`head.header-footer`).
+4. Routes live under the site's Home item, never beside it.
+5. Read each item back and report done only once the read-back matches. Use `sitecore-cli.ser.pull` to your branch (`launchworks/<task id>`) when the task asks for the definitions in the repository.
 
 Name items as the Blueprint names them. To fix a name, use `sitecore-authoring.item.rename`: it keeps the ID, so mappings and references stay intact. Never delete and recreate to rename.
 

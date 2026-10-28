@@ -190,8 +190,12 @@ describe('resource scope', () => {
     const go = (op: string, path: string) =>
       gateway.call(call('layout-engineer', 'sitecore-authoring', op, { path }));
     expect((await go('item.read', '/sitecore/layout/Renderings/Project/Acme/Hero')).ok).toBe(true);
-    expect((await go('item.read', '/sitecore/content/Acme/Corporate/Data/Heroes')).ok).toBe(true);
-    expect(await go('item.update', '/sitecore/layout/Renderings/Project/Acme/Hero')).toMatchObject({
+    // The header's and footer's datasources, and a rendering's Component Query in its own folder.
+    expect((await go('item.create', '/sitecore/content/Acme/Corporate/Data/Header')).ok).toBe(true);
+    expect((await go('item.update', '/sitecore/layout/Renderings/Project/Acme/Hero')).ok).toBe(
+      true,
+    );
+    expect(await go('item.update', '/sitecore/layout/Renderings/Feature/Hero')).toMatchObject({
       denied: 'out_of_scope',
     });
     expect(
