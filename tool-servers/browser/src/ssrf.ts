@@ -43,10 +43,35 @@ export function isPrivateAddress(ip: string): boolean {
 export class BlockedUrlError extends Error {}
 
 export interface UrlPolicy {
-  /** Hostnames the project declared as its source site (and its asset CDNs). */
+  /**
+   * Hostnames the project may visit: its source site, the hosts its records point media at, and
+   * its own new site. An entry may start with one `*` label prefix wildcard (`acme-site*.vercel.app`)
+   * for a hosting provider's per-deployment addresses.
+   */
   allowedHosts: string[];
   /** Tests run a fixture site on 127.0.0.1; production never sets this. */
   allowPrivateNetworks?: boolean;
+}
+
+/** Whether a hostname is one the policy allows: an exact entry, or a `prefix*.suffix` pattern. */
+export function hostAllowed(host: string, policy: UrlPolicy): boolean {
+  const h = host.toLowerCase();
+  return policy.allowedHosts.some((raw) => {
+    const e = raw.toLowerCase();
+    const star = e.indexOf('*');
+    if (star < 0) return e === h;
+    const prefix = e.slice(0, star);
+    const suffix = e.slice(star + 1);
+    // The wildcard stays inside the first label: `acme*.vercel.app` never matches `x.acme.vercel.app`.
+    const middle = h.slice(prefix.length, h.length - suffix.length);
+    return (
+      prefix.length >= 8 &&
+      h.length > prefix.length + suffix.length &&
+      h.startsWith(prefix) &&
+      h.endsWith(suffix) &&
+      !middle.includes('.')
+    );
+  });
 }
 
 /** Checks a URL the agent asked for: scheme, declared host, and every address it resolves to. */
@@ -62,9 +87,9 @@ export async function assertNavigable(raw: string, policy: UrlPolicy): Promise<U
   if (url.username || url.password)
     throw new BlockedUrlError('URLs with credentials are not allowed');
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (!policy.allowedHosts.map((h) => h.toLowerCase()).includes(host)) {
+  if (!hostAllowed(host, policy)) {
     throw new BlockedUrlError(
-      `${host} is not one of this project's source hosts (the source site, and hosts its Blueprint and inventories point media at)`,
+      `${host} is not one of this project's hosts (the source site, hosts its Blueprint and inventories point media at, and the project's own new site)`,
     );
   }
   if (!policy.allowPrivateNetworks) {

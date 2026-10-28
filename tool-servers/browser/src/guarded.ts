@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { EgressProxy } from './egress';
-import { isBlockedSubresource, type UrlPolicy } from './ssrf';
+import { hostAllowed, isBlockedSubresource, type UrlPolicy } from './ssrf';
 
 export const BREAKPOINTS = {
   desktop: { width: 1440, height: 900 },
@@ -60,8 +60,7 @@ export class GuardedBrowser {
       // Navigations (and redirects) must stay on the project's hosts.
       if (req.isNavigationRequest()) {
         const host = new URL(req.url()).hostname.toLowerCase();
-        if (!policy.allowedHosts.map((h) => h.toLowerCase()).includes(host))
-          return route.abort('blockedbyclient');
+        if (!hostAllowed(host, policy)) return route.abort('blockedbyclient');
       }
       return route.continue();
     });

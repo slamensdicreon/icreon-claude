@@ -231,7 +231,7 @@ describe('network safety', () => {
       code: 422,
       body: {
         error:
-          "elsewhere.example is not one of this project's source hosts (the source site, and hosts its Blueprint and inventories point media at)",
+          "elsewhere.example is not one of this project's hosts (the source site, hosts its Blueprint and inventories point media at, and the project's own new site)",
       },
     });
     expect((await browser.call('crawl', { url: 'file:///etc/passwd' }, ctx)).code).toBe(422);

@@ -117,11 +117,17 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   // One Chromium behind one egress proxy for every browser-driven server.
   const chromium = new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });
   const policy = (projectId: string): UrlPolicy => {
-    const url = opts.projections.get(projectId)?.sourceUrl;
+    const s = opts.projections.get(projectId);
+    const url = s?.sourceUrl;
     const host = url ? new URL(url).hostname : null;
     return {
-      // The site and its www form: one usually redirects to the other.
-      allowedHosts: host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : [],
+      allowedHosts: [
+        // The site and its www form: one usually redirects to the other.
+        ...(host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : []),
+        // The new site, for visual QA and parity: its production URL, its fixed editing address,
+        // and the provider's other addresses for it (team and per-deployment URLs).
+        ...projectHosts(s?.hosting ?? null),
+      ],
       allowPrivateNetworks: opts.allowPrivateNetworks,
     };
   };
@@ -379,6 +385,29 @@ async function assetHosts(projections: Projections, library: ArtifactLibrary, pr
       hosts.add(m[1]!.toLowerCase());
   }
   return [...hosts];
+}
+
+/**
+ * The project's own new site on its hosting provider. Vercel serves a project at its production
+ * alias, `<project>-editing` (the integration build), `<project>-<team>` and one address per
+ * deployment, all on vercel.app and all starting with the project's name (cut to fit a label):
+ * those are matched by a prefix pattern no other project's addresses share.
+ */
+export function projectHosts(hosting: { project: string; url: string | null } | null): string[] {
+  if (!hosting) return [];
+  const out: string[] = [];
+  if (hosting.url) {
+    try {
+      out.push(new URL(hosting.url).hostname);
+    } catch {
+      /* not a URL */
+    }
+  }
+  const name = hosting.project.toLowerCase();
+  out.push(`${name}-editing.vercel.app`);
+  // Long names are cut in generated addresses; the first 24 characters still identify it.
+  if (name.length >= 8) out.push(`${name.slice(0, 24)}*.vercel.app`);
+  return out;
 }
 
 /** The approved Blueprint's entries for a task's items, as JSON for its brief (capped). */
