@@ -12,7 +12,20 @@ export interface BrowserServerOptions {
   /** Shared with other browser-driven servers; one is launched if not given. */
   browser?: GuardedBrowser;
   navigationTimeoutMs?: number;
+  /**
+   * Hosts a project's own records point media at (a CDN, an uploads host): downloads may come
+   * from them as well as from the source site.
+   */
+  assetHosts?: (projectId: string) => Promise<string[]>;
 }
+
+/** What a browser sends for an image, so sites that turn away bare clients serve the file. */
+const BROWSER_HEADERS = {
+  'user-agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+  'accept-language': 'en-US,en;q=0.9',
+};
 
 const CATALOG: OperationCatalog = {
   crawl: {
@@ -129,8 +142,9 @@ export class BrowserToolServer implements ToolServer {
           return { code: 400, body: { error: `Unknown operation ${op}` } };
       }
     } catch (err) {
+      // A refused URL is the agent's to correct (another URL), not an access problem.
       if (err instanceof BlockedUrlError)
-        return { code: 403, body: { error: err.message }, summary: `Blocked: ${err.message}` };
+        return { code: 422, body: { error: err.message }, summary: `Blocked: ${err.message}` };
       throw err;
     }
   }
@@ -272,12 +286,62 @@ export class BrowserToolServer implements ToolServer {
     };
   }
 
-  private async fetchAsset(projectId: string, policy: UrlPolicy, raw: string): Promise<ToolResult> {
-    const url = await assertNavigable(raw, policy);
-    const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30_000) });
-    if (!res.ok) return { code: res.status, body: { error: `HTTP ${res.status}` } };
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    const contentType = res.headers.get('content-type') ?? 'application/octet-stream';
+  private async fetchAsset(projectId: string, base: UrlPolicy, raw: string): Promise<ToolResult> {
+    const extra = (await this.opts.assetHosts?.(projectId)) ?? [];
+    const policy: UrlPolicy = {
+      ...base,
+      allowedHosts: [...new Set([...base.allowedHosts, ...extra].map((h) => h.toLowerCase()))],
+    };
+    let url = await assertNavigable(raw, policy);
+    let res: Response | null = null;
+    // Follow redirects one hop at a time, each checked like the first.
+    for (let hop = 0; hop < 5; hop++) {
+      res = await fetch(url, {
+        redirect: 'manual',
+        headers: BROWSER_HEADERS,
+        signal: AbortSignal.timeout(30_000),
+      });
+      const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!to) break;
+      url = await assertNavigable(new URL(to, url).toString(), policy);
+    }
+    let bytes: Uint8Array | null = null;
+    let contentType = 'application/octet-stream';
+    let status = res?.status ?? 0;
+    if (res?.ok) {
+      bytes = new Uint8Array(await res.arrayBuffer());
+      contentType = res.headers.get('content-type') ?? contentType;
+    } else if ([401, 403, 429, 503].includes(status)) {
+      // Some sites turn away anything but a browser: ask the real one.
+      const got = await this.withPage(policy, async (context) => {
+        const page = await context.newPage();
+        try {
+          const r = await page.goto(url.toString(), {
+            timeout: this.opts.navigationTimeoutMs ?? 30_000,
+          });
+          return {
+            status: r?.status() ?? 0,
+            body: r?.ok() ? new Uint8Array(await r.body()) : null,
+            type: r?.headers()['content-type'] ?? null,
+          };
+        } finally {
+          await page.close();
+        }
+      });
+      status = got.status;
+      if (got.body) {
+        bytes = got.body;
+        contentType = got.type ?? contentType;
+      }
+    }
+    if (!bytes)
+      return {
+        // Not found, or refused even to a browser: the agent's to handle (another URL, or report
+        // it), never a credential problem.
+        code: status === 404 ? 404 : 422,
+        body: { error: `HTTP ${status} from ${url.host}`, url: url.toString() },
+        summary: `Couldn't download ${url.pathname}: HTTP ${status} from ${url.host}${status === 403 ? ' (the site refused it, also to a real browser)' : ''}`,
+      };
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const ext = (/\.([a-z0-9]{2,5})$/i.exec(url.pathname)?.[1] ?? 'bin').toLowerCase();
     const ref = await this.opts.blobs.put(projectId, `assets/${sha256}.${ext}`, bytes, contentType);

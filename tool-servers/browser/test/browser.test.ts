@@ -39,7 +39,15 @@ let guarded: GuardedBrowser;
 
 beforeAll(async () => {
   http = createServer(async (req, res) => {
-    const path = new URL(req.url!, 'http://x').pathname;
+    let path = new URL(req.url!, 'http://x').pathname;
+    // A redirect, and a file only a real browser gets (a firewall turning away bare clients).
+    if (path === '/moved/hero.png')
+      return res.writeHead(302, { location: '/media/hero.png' }).end();
+    if (path === '/browser-only/hero.png') {
+      if (!String(req.headers['user-agent']).includes('HeadlessChrome'))
+        return res.writeHead(403).end('Forbidden');
+      path = '/media/hero.png';
+    }
     const candidates = path === '/' ? ['index.html'] : [path.slice(1), `${path.slice(1)}.html`];
     for (const c of candidates) {
       try {
@@ -62,6 +70,8 @@ beforeAll(async () => {
     policy: () => ({ allowedHosts: ['127.0.0.1'], allowPrivateNetworks: true }),
     blobs: new LocalBlobStore(blobDir),
     browser: guarded,
+    // As if the Blueprint pointed media at another host.
+    assetHosts: async () => ['localhost'],
   });
 }, 60_000);
 
@@ -163,6 +173,28 @@ describe('snapshot, screenshot, fetch.asset', () => {
     }
   }, 60_000);
 
+  it('follows redirects, asks a real browser when refused, and takes the Blueprint’s media hosts', async () => {
+    const moved = await browser.call('fetch.asset', { url: `${origin}/moved/hero.png` }, ctx);
+    expect(moved).toMatchObject({ code: 200, body: { url: `${origin}/media/hero.png` } });
+    const guardedFile = await browser.call(
+      'fetch.asset',
+      { url: `${origin}/browser-only/hero.png` },
+      ctx,
+    );
+    expect(guardedFile).toMatchObject({ code: 200, body: { contentType: 'image/png' } });
+    const cdn = await browser.call(
+      'fetch.asset',
+      { url: origin.replace('127.0.0.1', 'localhost') + '/media/hero.png' },
+      ctx,
+    );
+    expect(cdn.code).toBe(200);
+    // Elsewhere is refused as the agent's to correct, not as an access problem.
+    const other = await browser.call('fetch.asset', { url: 'http://elsewhere.example/a.png' }, ctx);
+    expect(other.code).toBe(422);
+    const missing = await browser.call('fetch.asset', { url: `${origin}/media/nope.png` }, ctx);
+    expect(missing.code).toBe(404);
+  }, 60_000);
+
   it('fetches an asset with its content hash for de-duplication', async () => {
     const r = await browser.call('fetch.asset', { url: `${origin}/media/hero.png` }, ctx);
     const expected = createHash('sha256')
@@ -180,10 +212,13 @@ describe('network safety', () => {
   it('only goes to the project’s source hosts', async () => {
     const r = await browser.call('snapshot', { url: 'http://elsewhere.example/' }, ctx);
     expect(r).toMatchObject({
-      code: 403,
-      body: { error: "elsewhere.example is not one of this project's source hosts" },
+      code: 422,
+      body: {
+        error:
+          "elsewhere.example is not one of this project's source hosts (the source site, and hosts its Blueprint and inventories point media at)",
+      },
     });
-    expect((await browser.call('crawl', { url: 'file:///etc/passwd' }, ctx)).code).toBe(403);
+    expect((await browser.call('crawl', { url: 'file:///etc/passwd' }, ctx)).code).toBe(422);
   });
 
   it('refuses private addresses unless explicitly allowed (tests only)', async () => {
@@ -193,7 +228,7 @@ describe('network safety', () => {
     });
     const r = await strict.call('snapshot', { url: `${origin}/` }, ctx);
     expect(r).toMatchObject({
-      code: 403,
+      code: 422,
       body: { error: '127.0.0.1 resolves to a private address' },
     });
     await strict.close();

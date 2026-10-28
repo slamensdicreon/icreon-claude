@@ -176,7 +176,12 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   };
   const STRUCTURE = ['site', 'templates', 'renderings'] as const;
   const servers: ToolServer[] = [
-    new BrowserToolServer({ blobs, policy, browser: chromium }),
+    new BrowserToolServer({
+      blobs,
+      policy,
+      browser: chromium,
+      assetHosts: (projectId) => assetHosts(opts.projections, library, projectId),
+    }),
     new ValidatorsToolServer({
       blobs,
       policy,
@@ -355,6 +360,25 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   });
 
   return { activities, liveRoles: live, gateway, library, close: () => chromium.close() };
+}
+
+/**
+ * Hosts the project's own records (the Blueprint and the inventories) point media at, such as an
+ * uploads CDN: a media download may come from them as well as from the source site.
+ */
+async function assetHosts(projections: Projections, library: ArtifactLibrary, projectId: string) {
+  await projections.catchUp(projectId);
+  const docs = Object.values(projections.get(projectId)?.artifacts ?? {}).filter((a) =>
+    ['blueprint', 'inventory'].includes(a.kind),
+  );
+  const hosts = new Set<string>();
+  for (const a of docs) {
+    const d = await library.read(projectId, a.artifactId);
+    for (const m of d?.content.matchAll(/https?:\/\/([a-z0-9.-]+\.[a-z]{2,})(?=[/:"'\s?#]|$)/gi) ??
+      [])
+      hosts.add(m[1]!.toLowerCase());
+  }
+  return [...hosts];
 }
 
 /** The approved Blueprint's entries for a task's items, as JSON for its brief (capped). */

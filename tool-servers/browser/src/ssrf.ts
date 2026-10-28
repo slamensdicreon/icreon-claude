@@ -63,7 +63,9 @@ export async function assertNavigable(raw: string, policy: UrlPolicy): Promise<U
     throw new BlockedUrlError('URLs with credentials are not allowed');
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (!policy.allowedHosts.map((h) => h.toLowerCase()).includes(host)) {
-    throw new BlockedUrlError(`${host} is not one of this project's source hosts`);
+    throw new BlockedUrlError(
+      `${host} is not one of this project's source hosts (the source site, and hosts its Blueprint and inventories point media at)`,
+    );
   }
   if (!policy.allowPrivateNetworks) {
     const addresses = isIP(host)
