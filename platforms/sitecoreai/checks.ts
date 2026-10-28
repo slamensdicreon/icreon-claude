@@ -366,7 +366,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       return problems.length
         ? fail([
             ...problems,
-            'nothing is placed in headless-header / headless-footer: create the Header and Footer partial designs, add them to the page designs and map the page templates',
+            'nothing is placed in headless-header / headless-footer: create the Header and Footer partial designs (from the JSS Partial Design template), add them to the page designs and map the page templates with page-designs.map',
           ])
         : pass(
             `The header and footer render on ${paths.length} page${paths.length === 1 ? '' : 's'} of ${host}.`,

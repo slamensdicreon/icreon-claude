@@ -63,6 +63,16 @@ function fakeCm(
       values.set(to, values.get(from) ?? new Map());
       return ok({ renameItem: { item: { itemId: id } } });
     }
+    if (/configurePageDesigns\(/.test(query)) {
+      // As Sitecore stores it: URL-encoded, the design IDs encoded twice.
+      const pairs = [...query.matchAll(/templateId: "([^"]+)", pageDesignId: "([^"]+)"/g)];
+      const value = pairs
+        .map(([, t, d]) => `%7b${t!.slice(1, -1)}%7d%3d%257B${d!.slice(1, -1)}%257D`)
+        .join('%26');
+      const at = Object.keys(items).find((k) => k.endsWith('/Page Designs'))!;
+      if (!opts.ignoreUpdate) values.set(at, new Map([['TemplatesMapping', value]]));
+      return ok({ configurePageDesigns: true });
+    }
     if (/updateItem\(/.test(query)) {
       const path = /path: "([^"]+)"/.exec(query)![1]!;
       // As Sitecore does: IDs are stored uppercase, in braces.
@@ -279,6 +289,36 @@ describe('SitecoreAuthoringToolServer', () => {
       },
     });
     expect((await s.call('item.rename', { path: tpl, name: 'a/b' }, ctx)).code).toBe(422);
+  });
+
+  it('maps page templates to page designs and reads the encoded mapping back', async () => {
+    const designs = '/sitecore/content/Brands/ansco/Presentation/Page Designs';
+    const tpl = '/sitecore/templates/Project/Brands/ansco/Pages/Corporate Page';
+    const items = {
+      [designs]: 'aaaaaaaabbbbccccddddeeeeeeeeeeee',
+      [`${designs}/Default`]: '5f0f6f34b74849f38338f1aeacee43ee',
+      [tpl]: 'c029d916f6ed4cba9bcb2c679fd14800',
+    };
+    const mappings = [{ templatePath: tpl, pageDesignPath: `${designs}/Default` }];
+    const cm = fakeCm({ ...items });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    const r = await s.call('page-designs.map', { pageDesignsPath: designs, mappings }, ctx);
+    expect(r).toMatchObject({ code: 200, body: { mapped: 1 } });
+    expect(cm.queries.find((q) => q.includes('configurePageDesigns'))).toContain(
+      'siteName: "ansco", mapping: [{ templateId: "{C029D916-F6ED-4CBA-9BCB-2C679FD14800}", pageDesignId: "{5F0F6F34-B748-49F3-8338-F1AEACEE43EE}" }]',
+    );
+    // A mapping that doesn't stick is reported, not called done.
+    const lost = fakeCm({ ...items }, { ignoreUpdate: true });
+    const s2 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: lost.fetch });
+    expect(
+      (await s2.call('page-designs.map', { pageDesignsPath: designs, mappings }, ctx)).code,
+    ).toBe(409);
+    // Page designs come from the site's own Page Designs item.
+    const elsewhere = [{ templatePath: tpl, pageDesignPath: '/sitecore/content/Other/Default' }];
+    expect(
+      (await s.call('page-designs.map', { pageDesignsPath: designs, mappings: elsewhere }, ctx))
+        .code,
+    ).toBe(422);
   });
 
   it('places components on a page from paths, with valid layout XML, and reads it back', async () => {

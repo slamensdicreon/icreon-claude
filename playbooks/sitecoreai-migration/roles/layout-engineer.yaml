@@ -24,6 +24,8 @@ tools:
       - template.create
       # Places the header and footer on their partial designs.
       - layout.compose
+      # Maps each page template to its page design (the site's TemplatesMapping).
+      - page-designs.map
     scope:
       paths:
         - /sitecore/templates/Project/{project}/**
