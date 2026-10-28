@@ -312,15 +312,18 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const host = `https://${project}-editing.vercel.app`;
       const paths = pagePaths(ctx);
       const problems: string[] = [];
+      const cached: string[] = [];
       for (const path of paths.slice(0, 40)) {
         let status = 0;
         try {
-          status = (
-            await cfg.fetch(`${host}${path}`, {
-              redirect: 'manual',
-              signal: AbortSignal.timeout(cfg.timeoutMs),
-            })
-          ).status;
+          const res = await cfg.fetch(`${host}${path}`, {
+            redirect: 'manual',
+            signal: AbortSignal.timeout(cfg.timeoutMs),
+          });
+          status = res.status;
+          const cache = res.headers.get('x-vercel-cache')?.toUpperCase();
+          if (status === 200 && (cache === 'HIT' || cache === 'STALE' || cache === 'PRERENDER'))
+            cached.push(path);
         } catch {
           status = 0;
         }
@@ -330,6 +333,12 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           );
         else if (status === 404) problems.push(`${path} isn't found on ${host}`);
       }
+      // An editing host serves unpublished content: a cached render hides Sitecore edits and keeps
+      // signed CM media links that expire (every image breaks).
+      if (cached.length)
+        problems.push(
+          `${cached.length} page${cached.length === 1 ? ' is' : 's are'} served from a cached render on ${host} (${cached.slice(0, 3).join(', ')}): the editing host must render per request. Set SITECORE_RENDER_ON_REQUEST=true and leave generateStaticParams out of the page route when it is set`,
+        );
       return problems.length
         ? fail(problems)
         : pass(`${paths.length} page${paths.length === 1 ? ' renders' : 's render'} on ${host}.`);

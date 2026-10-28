@@ -65,6 +65,11 @@ describe('platform packs', () => {
       });
     const withStored = await env('stored-editing-secret-123');
     expect(withStored.vars).toContainEqual({
+      key: 'SITECORE_RENDER_ON_REQUEST',
+      value: 'true',
+      sensitive: false,
+    });
+    expect(withStored.vars).toContainEqual({
       key: 'SITECORE_EDITING_SECRET',
       value: 'stored-editing-secret-123',
       sensitive: true,
@@ -330,6 +335,24 @@ describe('SitecoreAI checks', () => {
       detail:
         "/about answered 500 on https://ansco-site-editing.vercel.app: a component throws while rendering; the head's runtime log names it.",
     });
+  });
+
+  it('fails an editing host that serves pages from a cached render', async () => {
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async () =>
+          new Response('', { status: 200, headers: { 'x-vercel-cache': 'HIT' } })) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const bp = { collections: { pages: [{ key: 'home', name: 'Home', attrs: { path: '/' } }] } };
+    const res = await checks['head.pages-render']!({
+      ...ctx(tenant({}).read, bp),
+      target: { ...target, hostingProject: 'Ansco-Site' },
+    });
+    expect(res.status).toBe('fail');
+    expect(res.detail).toContain('served from a cached render');
+    expect(res.detail).toContain('SITECORE_RENDER_ON_REQUEST=true');
   });
 
   it('fails pages whose header or footer slot renders empty on the editing host', async () => {

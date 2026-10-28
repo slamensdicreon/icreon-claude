@@ -243,6 +243,9 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
       const vars = [
         { key: 'NEXT_PUBLIC_DEFAULT_SITE_NAME', value: s.site, sensitive: false },
         { key: 'NEXT_PUBLIC_DEFAULT_LANGUAGE', value: s.languages[0] ?? 'en', sensitive: false },
+        // Draft content renders per request: edits show at once, and its signed media links
+        // never sit in a cached page past their expiry.
+        { key: 'SITECORE_RENDER_ON_REQUEST', value: 'true', sensitive: false },
       ];
       const missing: string[] = [];
       const preview = await deps.credential('edge-preview');
