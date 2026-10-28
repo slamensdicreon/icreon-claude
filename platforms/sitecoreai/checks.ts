@@ -622,10 +622,11 @@ export function visibleText(html: string): string {
 export const wordsOf = (text: string) =>
   new Set((text.toLowerCase().match(/\p{L}{5,}/gu) ?? []) as string[]);
 
-/** The page's h1–h3 text. */
+/** The page's visible h1–h3 text (headings only screen readers get are left out). */
 export const headingsOf = (html: string) =>
-  [...html.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi)]
-    .map((m) => visibleText(m[1]!))
+  [...html.matchAll(/<h[1-3]\b([^>]*)>([\s\S]*?)<\/h[1-3]>/gi)]
+    .filter((m) => !/class="[^"]*(screen-reader-text|sr-only|visually-hidden)/i.test(m[1]!))
+    .map((m) => visibleText(m[2]!))
     .filter((h) => h.length > 2);
 
 /**
