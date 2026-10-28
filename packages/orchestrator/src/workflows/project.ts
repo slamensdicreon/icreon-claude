@@ -919,7 +919,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     await send(...events);
   }
 
-  /** States a task can be run again from: it ran, and isn't running now. */
+  /**
+   * States a task can be run again from: it ran and isn't running now, or it is queued but not
+   * started (a queued task whose phase has ended starts only once it is re-run).
+   */
   const RERUNNABLE: TaskState[] = [
     'done',
     'blocked',
@@ -927,6 +930,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     'waiting',
     'cancelled',
     'rolled_back',
+    'ready',
   ];
 
   /**
@@ -946,7 +950,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       waitingOn.delete(taskId);
       retryFromBlocked.delete(taskId);
       instructions[taskId] = notes;
-      await send(taskMove(t, 'ready', `Run again: ${by}`));
+      if (st !== 'ready') await send(taskMove(t, 'ready', `Run again: ${by}`));
     }
     reruns.add(taskId);
     await send(
@@ -1829,6 +1833,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       ]
         .filter(Boolean)
         .join('\n\n');
+      // Released after its phase ended, it still runs (only active phases' tasks start otherwise).
+      if (patched('released-waits-run')) reruns.add(id);
       await send(taskMove(t, 'ready', 'What it waited on is finished'));
       progressed = true;
     }
@@ -1892,6 +1898,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         ]
           .filter(Boolean)
           .join('\n\n');
+        // Released after its phase ended, it still runs (only active phases' tasks start otherwise).
+        if (patched('released-waits-run')) reruns.add(id);
         await send(taskMove(t, 'ready', 'Released: what it waited on could not move'));
         progressed = true;
       }

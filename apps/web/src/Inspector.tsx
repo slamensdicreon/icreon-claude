@@ -8,7 +8,15 @@ import { TextForm, TypedConfirm } from './overlays/Dialogs';
 import { Chip, Who, personOf } from './parts/bits';
 import { useApp, useProjectResource, useRoster, useTz } from './state';
 
-const RERUNNABLE = new Set(['done', 'blocked', 'rejected', 'waiting', 'cancelled', 'rolled_back']);
+const RERUNNABLE = new Set([
+  'done',
+  'blocked',
+  'rejected',
+  'waiting',
+  'cancelled',
+  'rolled_back',
+  'ready',
+]);
 
 /** The drawer over the canvas: one agent or one task, read-only apart from its controls. */
 export function Inspector() {
