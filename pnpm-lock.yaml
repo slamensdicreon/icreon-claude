@@ -382,6 +382,9 @@ importers:
       '@lw/tool-workspace':
         specifier: workspace:*
         version: link:../../tool-servers/workspace
+      pngjs:
+        specifier: 7.0.0
+        version: 7.0.0
     devDependencies:
       '@anthropic-ai/sdk':
         specifier: ^1.1.0
@@ -392,6 +395,9 @@ importers:
       '@temporalio/testing':
         specifier: ^1.24.0
         version: 1.24.0(esbuild@0.28.2)
+      '@types/pngjs':
+        specifier: 6.0.5
+        version: 6.0.5
 
   packages/tool-gateway:
     dependencies:
@@ -2194,8 +2200,8 @@ packages:
   layout-base@2.0.1:
     resolution: {integrity: sha512-dp3s92+uNI1hWIpPGH3jK2kxE2lMjdXdr+DH8ynZHpd6PUlH6x6cbuXnoMmiNumznqaNO31xu9e79F0uuZ0JFg==}
 
-  legacy-javascript@0.0.3:
-    resolution: {integrity: sha512-1r6MT4dVaJyXt4G07Cm2cQ0AUaLJdefiEp4SmIAylA++gnEQ82YvmzE58RkM5EP0fk5hROLCslUPGnwIYdZQVA==}
+  legacy-javascript@0.0.4:
+    resolution: {integrity: sha512-UTmeKBVxnfJcpmpOvzzNnLsQT99BXHpPlc/ZKddIRmWmrR0fw6335I3lq4+sJoP60UTbBNaYsGYVPc65YB1x3A==}
 
   light-my-request@6.8.0:
     resolution: {integrity: sha512-5Q8PjoSEdtGIB8fikZsTem5vgRo4F2mR6vUKTDW/H1g6MtAt8e3duQbg/QxL5yzg6BZhor2KOUm3hhWMWLTZwg==}
@@ -3504,7 +3510,7 @@ snapshots:
 
   '@paulirish/trace_engine@0.0.65':
     dependencies:
-      legacy-javascript: 0.0.3
+      legacy-javascript: 0.0.4
       third-party-web: 0.30.0
 
   '@pinojs/redact@0.4.0': {}
@@ -4750,7 +4756,7 @@ snapshots:
 
   layout-base@2.0.1: {}
 
-  legacy-javascript@0.0.3: {}
+  legacy-javascript@0.0.4: {}
 
   light-my-request@6.8.0:
     dependencies:

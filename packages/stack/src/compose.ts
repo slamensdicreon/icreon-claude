@@ -7,6 +7,8 @@ import {
   type ModelClient,
   type ReviewInput,
   type ReviewVerdict,
+  type ScreenInput,
+  type ScreenVerdict,
 } from '@lw/agent-runtime';
 import type { EventStore, Projections } from '@lw/events';
 import {
@@ -17,8 +19,9 @@ import {
   type Activities,
 } from '@lw/orchestrator';
 import { Blueprint, releaseApprovalId } from '@lw/plan';
-import type { PlatformCheck, PlatformPack } from '@lw/platforms';
+import type { PlatformCheck, PlatformPack, ScreenComparison, ScreenPair } from '@lw/platforms';
 import { withReview } from './review';
+import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
 import {
@@ -57,6 +60,8 @@ export interface StackOptions {
   directives?: ((input: DirectiveInput) => Promise<DirectiveReading>) | null;
   /** A Lead's review of each finished task on live projects (Claude); without it, checks only. */
   review?: ((input: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null;
+  /** Judges a migrated page against its source from screenshots (Claude); without it, the visual check is pending. */
+  screens?: ((input: ScreenInput) => Promise<ScreenVerdict & { tokens: number }>) | null;
   /** Extra servers (tests); the browser and workspace servers are always connected. */
   servers?: ToolServer[];
   /** Credentials for tool calls (the vault-backed provider in the worker). */
@@ -150,6 +155,42 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   };
   const credential = async (projectId: string, credentialId: string) =>
     opts.credential ? opts.credential(projectId, credentialId) : null;
+  // The Quality Lead's model looks at the pages, as the client will.
+  const judge =
+    opts.playbook.roles.find((r) => r.role === 'quality-lead') ??
+    opts.playbook.roles.find((r) => r.role === 'chief-of-staff');
+  const screens = opts.screens;
+  /** Desktop screenshots of both pages, sliced, judged side by side. */
+  const compareScreens =
+    screens && judge
+      ? async (projectId: string, page: ScreenPair): Promise<ScreenComparison> => {
+          const shoot = async (url: string) => {
+            const r = await readOnly(projectId, 'browser', 'screenshot', {
+              url,
+              breakpoints: ['desktop'],
+            });
+            const ref = (r.body as { shots?: { ref?: string }[] } | null)?.shots?.[0]?.ref;
+            if (r.code !== 200 || !ref)
+              throw new Error(`no screenshot of ${url} (${JSON.stringify(r.body).slice(0, 200)})`);
+            return sliceScreenshot(await blobs.get(ref));
+          };
+          try {
+            const [source, candidate] = await Promise.all([
+              shoot(page.source),
+              shoot(page.candidate),
+            ]);
+            return await screens({
+              path: page.path,
+              source,
+              candidate,
+              model: judge.model.id,
+              effort: judge.model.effort,
+            });
+          } catch (err) {
+            return { error: (err as Error).message };
+          }
+        }
+      : undefined;
   /** One of the platform's checks, with the project's target, Blueprint and read access. */
   const runPlatformCheck = async (projectId: string, check: PlatformCheck) => {
     await opts.projections.catchUp(projectId);
@@ -170,6 +211,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       blueprint,
       read: (server, op, args) => readOnly(projectId, server, op, args),
       credential: (id) => credential(projectId, id),
+      compareScreens: compareScreens && ((page) => compareScreens(projectId, page)),
       document: async (id) => {
         const d = await library.read(projectId, id);
         try {
@@ -357,7 +399,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       return !spec ? null : spec.releases ? 'release' : spec.mutates ? 'write' : 'read';
     },
     onAccepted: (projectId, taskId) => locks.release(projectId, taskId),
-    platform: { checks: opts.platform.checks, read: readOnly, credential },
+    platform: { checks: opts.platform.checks, read: readOnly, credential, compareScreens },
   });
   const activities = withLiveGuard(reviewed, {
     store: opts.store,

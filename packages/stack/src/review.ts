@@ -4,7 +4,12 @@ import type { ProjectState } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
 import type { Activities } from '@lw/orchestrator';
 import type { Playbook } from '@lw/playbook-sdk';
-import type { PlatformCheck, PlatformCheckContext } from '@lw/platforms';
+import type {
+  PlatformCheck,
+  PlatformCheckContext,
+  ScreenComparison,
+  ScreenPair,
+} from '@lw/platforms';
 import type { ArtifactLibrary } from '@lw/tool-workspace';
 
 /**
@@ -374,6 +379,8 @@ export interface ReviewDeps {
       args: Record<string, unknown>,
     ): Promise<{ code: number; body: unknown }>;
     credential(projectId: string, credentialId: string): Promise<Record<string, string> | null>;
+    /** Screenshots of a source page and its migration, judged side by side (when connected). */
+    compareScreens?(projectId: string, page: ScreenPair): Promise<ScreenComparison>;
   };
   fetch?: typeof fetch;
   /** Called when a task's result is accepted (its write locks go). */
@@ -438,6 +445,8 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
           blueprint,
           read: (server, op, args) => platform.read(req.projectId, server, op, args),
           credential: (id) => platform.credential(req.projectId, id),
+          compareScreens:
+            platform.compareScreens && ((page) => platform.compareScreens!(req.projectId, page)),
           document: async (id) => {
             const d = await deps.library.read(req.projectId, id);
             try {

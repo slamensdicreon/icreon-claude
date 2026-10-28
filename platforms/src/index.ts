@@ -100,7 +100,23 @@ export interface PlatformCheckContext {
   credential(credentialId: string): Promise<Record<string, string> | null>;
   /** A project document's latest JSON content (page-inventory, parity-inventory), or null. */
   document(artifactId: string): Promise<unknown>;
+  /**
+   * Compares two pages as a visitor sees them: full-page screenshots of each, judged by a model
+   * section by section. Absent when no model is connected.
+   */
+  compareScreens?(page: ScreenPair): Promise<ScreenComparison>;
 }
+
+/** A source page and the new site's rendering of it. */
+export interface ScreenPair {
+  path: string;
+  source: string;
+  candidate: string;
+}
+
+/** What the comparison saw: the differences a visitor would notice, or why it couldn't look. */
+export type ScreenComparison =
+  { verdict: 'match' | 'differs'; differences: string[]; tokens: number } | { error: string };
 
 export interface CheckResult {
   status: 'pass' | 'fail' | 'pending';

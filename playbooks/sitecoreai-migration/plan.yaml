@@ -160,7 +160,13 @@ templates:
     batchSize: 8
     title: Migrate {name}
     metric: pages_migrated
-    acceptance: [validator:structural.layouts, validator:head.pages-render, validator:parity.render]
+    acceptance:
+      [
+        validator:structural.layouts,
+        validator:head.pages-render,
+        validator:parity.render,
+        validator:parity.visual,
+      ]
   - id: upload-media-{key}
     phase: 6
     role: media-migrator
@@ -177,12 +183,13 @@ templates:
     role: parity-auditor
     title: Audit content parity
     dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
-    acceptance: [validator:parity.render, validator:parity.page]
+    acceptance: [validator:parity.render, validator:parity.visual, validator:parity.page]
   - id: visual-sample
     phase: 6
     role: visual-qa
     title: Screenshot-diff a page sample
     dependsOn: [migrate-pages-*]
+    acceptance: [validator:parity.visual]
 
   # 7 — Experience enablement
   - id: enable-experience

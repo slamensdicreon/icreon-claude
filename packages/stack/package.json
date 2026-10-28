@@ -23,11 +23,13 @@
     "@lw/tool-browser": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
     "@lw/tool-validators": "workspace:*",
-    "@lw/tool-workspace": "workspace:*"
+    "@lw/tool-workspace": "workspace:*",
+    "pngjs": "7.0.0"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
     "@temporalio/client": "^1.24.0",
-    "@temporalio/testing": "^1.24.0"
+    "@temporalio/testing": "^1.24.0",
+    "@types/pngjs": "6.0.5"
   }
 }

@@ -1,5 +1,11 @@
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient, checkModels, readDirective, reviewTask } from '@lw/agent-runtime';
+import {
+  anthropicModelClient,
+  checkModels,
+  compareScreens,
+  readDirective,
+  reviewTask,
+} from '@lw/agent-runtime';
 import { GithubApp, SITECORE_DEFAULTS, VaultCredentials } from '@lw/connectors';
 import {
   masterKey,
@@ -363,6 +369,7 @@ for (const { playbook, dir } of catalog.values()) {
     model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
     directives: env.AGENTS === 'claude' ? (input) => readDirective(input) : null,
     review: env.AGENTS === 'claude' ? (input) => reviewTask(input) : null,
+    screens: env.AGENTS === 'claude' ? (input) => compareScreens(input) : null,
     servers,
     credentials,
     credential: async (id, credentialId) => {

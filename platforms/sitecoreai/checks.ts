@@ -452,6 +452,46 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       );
     },
 
+    // Visual parity: each kept page, as the editing host renders it, looks like the source page.
+    // Text parity can't see layouts, images or colours; a model compares screenshots of both, as
+    // the client will, and names each difference.
+    'parity.visual': async (ctx) => {
+      if (!inScope(ctx, 'pages').length) return pending('The Blueprint has no pages to check.');
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      if (!project) return pending('No hosting project is recorded for the head.');
+      const host = `https://${project}-editing.vercel.app`;
+      const inv = ((await ctx.document('page-inventory')) ??
+        (await ctx.document('parity-inventory'))) as { origin?: string } | null;
+      const origin = inv?.origin?.replace(/\/$/, '') ?? null;
+      if (!origin) return pending('No source inventory gives the source site to compare with.');
+      if (!ctx.compareScreens) return pending('No model is connected to compare screenshots.');
+      const problems: string[] = [];
+      const matched: string[] = [];
+      const unread: string[] = [];
+      for (const path of pagePaths(ctx).slice(0, 20)) {
+        const r = await ctx.compareScreens({
+          path,
+          source: `${origin}${path === '/' ? '/' : `${path}/`}`,
+          candidate: `${host}${path}`,
+        });
+        if ('error' in r) unread.push(`${path} (${r.error})`);
+        else if (r.verdict === 'match') matched.push(path);
+        else {
+          const shown = r.differences.slice(0, 6);
+          const more = r.differences.length - shown.length;
+          problems.push(
+            `${path} doesn't look like the source: ${shown.join('; ') || 'the layout differs'}${more > 0 ? ` (and ${more} more)` : ''}`,
+          );
+        }
+      }
+      if (problems.length) return fail(problems);
+      if (!matched.length)
+        return pending(`The pages couldn't be compared: ${unread.slice(0, 3).join('; ')}`);
+      return pass(
+        `${matched.length} page${matched.length === 1 ? ' looks' : 's look'} like the source on ${host}${unread.length ? `; ${unread.length} couldn't be compared` : ''}.`,
+      );
+    },
+
     // A component whose model has child items gets them only through a GraphQL Component Query on
     // its rendering: without one the head receives its own fields and an empty list.
     'structural.component-queries': async (ctx) => {

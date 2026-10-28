@@ -428,6 +428,72 @@ describe('SitecoreAI checks', () => {
     expect(ok).toEqual({ status: 'pass', detail: 'Rendered parity with the source: /about 100%.' });
   });
 
+  it('compares each page with the source as a visitor sees it, and names the differences', async () => {
+    const bp = {
+      collections: {
+        pages: [
+          { key: 'home', name: 'Home', attrs: { path: '/' } },
+          { key: 'about', name: 'About', attrs: { path: '/about' } },
+        ],
+      },
+    };
+    const asked: unknown[] = [];
+    const base = {
+      ...ctx(tenant({}).read, bp),
+      target: { ...target, hostingProject: 'Ansco-Site' },
+      document: async (id: string) =>
+        id === 'page-inventory' ? { origin: 'https://src.example/' } : null,
+    };
+    const check = pack.checks!['parity.visual']!;
+    expect((await check(base)).status).toBe('pending');
+
+    const res = await check({
+      ...base,
+      compareScreens: async (page) => {
+        asked.push(page);
+        return page.path === '/about'
+          ? {
+              verdict: 'differs',
+              differences: [
+                'Mission section: source shows three filled cards; new page shows empty white boxes',
+              ],
+              tokens: 10,
+            }
+          : { verdict: 'match', differences: [], tokens: 10 };
+      },
+    });
+    expect(asked).toEqual([
+      {
+        path: '/',
+        source: 'https://src.example/',
+        candidate: 'https://ansco-site-editing.vercel.app/',
+      },
+      {
+        path: '/about',
+        source: 'https://src.example/about/',
+        candidate: 'https://ansco-site-editing.vercel.app/about',
+      },
+    ]);
+    expect(res).toEqual({
+      status: 'fail',
+      detail:
+        "/about doesn't look like the source: Mission section: source shows three filled cards; new page shows empty white boxes.",
+    });
+
+    const ok = await check({
+      ...base,
+      compareScreens: async (page) =>
+        page.path === '/about'
+          ? { error: 'no screenshot' }
+          : { verdict: 'match', differences: [], tokens: 10 },
+    });
+    expect(ok).toEqual({
+      status: 'pass',
+      detail:
+        "1 page looks like the source on https://ansco-site-editing.vercel.app; 1 couldn't be compared.",
+    });
+  });
+
   it('requires a Component Query on every rendering whose component lists child items', async () => {
     const r = '/sitecore/layout/Renderings/Project/Brands/ansco';
     const items: Record<string, { id?: string; fields?: Record<string, string> }> = {
