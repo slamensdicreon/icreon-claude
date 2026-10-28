@@ -7,7 +7,9 @@ import {
   type CSSProperties,
   type RefObject,
 } from 'react';
+import { post } from '../lib/api';
 import { clock, localDate, shortDay } from '../lib/fmt';
+import { TextForm } from '../overlays/Dialogs';
 import { AgentCell, Chip } from '../parts/bits';
 import { useApp, useNow, useProjectResource, useRoster } from '../state';
 
@@ -557,9 +559,32 @@ function Engagement({
 }
 
 function List({ s }: { s: ScheduleSnapshot }) {
-  const { ui, setUi, inspect } = useApp();
+  const { ui, setUi, inspect, projectId, run, openOverlay, closeOverlay } = useApp();
   const tz = s.timezone;
   const titles = new Map(s.tasks.map((t) => [t.taskId, t.title]));
+  const stateOf = new Map(s.tasks.map((t) => [t.taskId, t.state]));
+  // Every finished task in a group back to its agent, with the same instructions.
+  const rerunAll = (title: string, ids: string[]) => {
+    const done = ids.filter((id) => stateOf.get(id) === 'done');
+    openOverlay(
+      <TextForm
+        title={`Re-run ${done.length} of ${title}`}
+        body={`The ${done.length} finished task${done.length === 1 ? '' : 's'} in this group start a fresh attempt with these instructions. Unfinished ones aren't touched.`}
+        label="Instructions"
+        placeholder="What should change this time?"
+        submitLabel={`Re-run ${done.length}`}
+        onSubmit={(instructions) => {
+          closeOverlay();
+          void run(async () => {
+            for (const id of done)
+              await post(`/projects/${projectId}/tasks/${encodeURIComponent(id)}/rerun`, {
+                instructions,
+              });
+          }, `Re-running ${done.length} tasks`);
+        }}
+      />,
+    );
+  };
   const all = s.phases.flatMap((p) =>
     p.activities.map((a) => ({ ...a, phase: p.phase, phaseName: p.name })),
   );
@@ -634,6 +659,15 @@ function List({ s }: { s: ScheduleSnapshot }) {
                               {titles.get(id) ?? id}
                             </button>
                           ))}
+                          {a.taskIds.some((id) => stateOf.get(id) === 'done') && (
+                            <button
+                              className="btn sm"
+                              style={{ marginTop: 6 }}
+                              onClick={() => rerunAll(a.title, a.taskIds)}
+                            >
+                              Re-run all finished…
+                            </button>
+                          )}
                         </details>
                       )}
                     </td>
