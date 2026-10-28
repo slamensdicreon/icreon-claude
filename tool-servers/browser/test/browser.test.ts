@@ -308,8 +308,8 @@ describe('through the tool gateway', () => {
       ok: true,
       body: { quarantined: true },
     });
-    // Visual QA's tool is not the Content Analyst's.
-    expect(await call('screenshot', `${origin}/`, 3)).toMatchObject({
+    // The Media Migrator's download tool is not the Content Analyst's.
+    expect(await call('fetch.asset', `${origin}/`, 3)).toMatchObject({
       ok: false,
       denied: 'not_allowed',
     });

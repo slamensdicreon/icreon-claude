@@ -276,6 +276,7 @@ export class BrowserToolServer implements ToolServer {
           waitUntil: 'load',
           timeout: this.opts.navigationTimeoutMs ?? 30_000,
         });
+        await settleForScreenshot(page);
         const png = await page.screenshot({ fullPage: true, type: 'png' });
         await page.close();
         const sha256 = createHash('sha256').update(png).digest('hex');
@@ -378,4 +379,30 @@ function safeCanonical(raw: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Readies a page for a full-page comparison: scrolls through it so lazy images and reveal-on-scroll
+ * sections load, then hides overlays fixed mid-screen (cookie and chat banners), which otherwise
+ * cover whatever content sits under them in the capture. A header pinned to the top stays.
+ */
+async function settleForScreenshot(page: {
+  evaluate<T>(fn: () => Promise<T> | T): Promise<T>;
+  waitForTimeout(ms: number): Promise<void>;
+}) {
+  await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 600) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    window.scrollTo(0, 0);
+  });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
+      const position = getComputedStyle(el).position;
+      if ((position === 'fixed' || position === 'sticky') && el.getBoundingClientRect().top > 40)
+        el.style.setProperty('visibility', 'hidden', 'important');
+    }
+  });
 }

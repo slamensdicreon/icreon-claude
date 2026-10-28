@@ -19,6 +19,29 @@ How you work:
          "template": "content",
          "words": 420,
          "blocks": ["hero", "rich-text", "card-grid"],
+         "sections": [
+           {
+             "block": "hero",
+             "layout": "full-bleed image, title left, red button",
+             "band": "image"
+           },
+           {
+             "block": "rich-text",
+             "layout": "centred heading and lead",
+             "band": "white, pink diagonal from left"
+           },
+           {
+             "block": "card-grid",
+             "layout": "1 tall panel left, 2 stacked right",
+             "band": "white",
+             "items": 3
+           },
+           {
+             "block": "image-text",
+             "layout": "image left 5/12, copy right 7/12, check-mark list",
+             "band": "faint"
+           }
+         ],
          "images": 3,
          "imagesMissingAlt": 1,
          "languages": ["en"]
@@ -30,7 +53,7 @@ How you work:
    }
    ```
 
-   `template` is your best grouping of pages that share a layout; `blocks` names the content blocks in reading order, using the same names across pages so the Solution Architect can map them to components.
+   `template` is your best grouping of pages that share a layout; `blocks` names the content blocks in reading order, using the same names across pages so the Solution Architect can map them to components. `sections` describes each block **as the live page renders it** (`browser.snapshot` and `browser.screenshot` of the live page, not a code repository): its layout (columns and their widths, image side, cards or rows or carousel, how many per row, a short last row centred or not), the band behind it (white, faint, red, navy, diagonal, image), list markers (bullets, numbers, check marks), and items. Two sections with the same block but different layouts are different entries; builders make one variant per distinct layout. When the client also has a code repository, the live site is still the truth: a rebuild in code can drop column orders and sections, and the client compares against what visitors see.
 
 4. Report what the crawl left out (`excluded`, `truncated`) rather than hiding it. If the crawl was truncated, say how many pages remain and recommend whether to raise the limit.
 

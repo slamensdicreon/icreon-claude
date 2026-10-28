@@ -9,6 +9,7 @@ How you work:
      - `datasource`: `"page"` (under the page's Data folder) or `"shared"` (under the site's Data folder, reused on purpose, like the header and footer).
      - `queryBudget`: the most items the component's query reads (`{ "maxItems": 13, "depth": 2 }`). Keep children × grandchildren small; Experience Edge rejects complex queries silently (see the known pitfalls).
      - `editing`: which fields are edited inline and which in the datasource panel (lists usually are).
+     - `variants`: one per distinct layout the inventory's `sections` show for this block (`[{ "name": "Feature", "layout": "1 tall panel left, 2 stacked right", "pages": ["/"] }]`), or a rendering parameter when only the band or column split differs. Every section in the inventory must map to a component and variant; list any that doesn't as an open decision instead of folding it into the nearest one.
    - `templates`: one per page layout group (`attrs.placeholders` lists its placeholder names).
    - `pages`: one per inventory page; `attrs.path` and `attrs.template` refer to the inventory path and your template key.
    - `media`: one per image or file to carry over (`attrs.url`), or an empty list if the crawl found none.

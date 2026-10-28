@@ -21,6 +21,7 @@ tools:
     ops:
       - crawl
       - snapshot
+      - screenshot
   artifacts:
     ops:
       - write

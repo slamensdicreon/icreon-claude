@@ -17,7 +17,59 @@ pnpm --filter @lw/platforms exec tsx scripts/parity-report.ts \
 Done: every page passes when it prints `PASS` (90% of the source text and headings, list items
 rendered, no placeholder copy, header and footer present).
 
-## Status (2026-10-28): every page passes
+## Status (2026-10-28, evening): every page matches the live site section by section
+
+All 15 pages pass `parity.render` (98–100% of the text) and were compared with anscollc.com by
+screenshot, page by page. The target is the **live site**: the source repository's rebuild differs
+from it (footer column order, the contact and privacy layouts, list markers), and the client
+compares against what visitors see.
+
+### Editing host
+
+- Renders every page per request (`SITECORE_RENDER_ON_REQUEST=true` on the Vercel project, no
+  `generateStaticParams` export then): Sitecore edits show at once and signed CM media links never
+  sit in a cached page. No redeploys to refresh content.
+- `https://dycom-ansco-associates-sitecoreai-v2-editing.vercel.app` → the latest
+  `launchworks/integration` build.
+
+### Head code (`launchworks/integration`, after d3caeea)
+
+- a25ac65, 4619d6c: per-request rendering; white cards keep dark text on coloured bands.
+- 0914355 and later: footer in the live order (company, logo, links) with `careersCompany`;
+  hero heights, title position and the red `.btn`; authored list markers (Tailwind preflight
+  stripped them) and check-mark lists; dark headings unless `heading=primary`.
+- New layouts: CardGrid `Feature`, `Service`, `Aside`, `Slider` (and `heading=none`,
+  `align=left`, IconCircle as plain icon art, tile grid three to a row); CtaBanner red
+  `TalentNetwork` and `Split`; LocationsList `Pins`; ContactForm, Accordion and VideoEmbed
+  `layout=aside`; BenefitsCarousel `layout=split` (`imageSide=right`); ImageText `split=4-8|5-7`
+  and `image=plain`; legal pages without a banner.
+- Hidden content stays in the page: the contact form's address (hidden and disabled until a
+  request type is chosen), every slide, the states list.
+
+### Sitecore (`/sitecore/content/brands/ansco`)
+
+- Every page's layout rewritten from the live page; new datasources where a section had none
+  (Home `Contact`; About `Linking History`, `Linking Network`, `MVV Intro`, `MVV Values`, five
+  `Service …` rows; Safety `Training Phases`, `Training Specialized`; Quality `Rightway Video`,
+  `Committed Text`). Unused originals are kept (Home `Data/Unused`).
+- Template fields added: Site Footer `careersCompany` (copyright now multi-line), Accordion
+  `aside`, Benefits Carousel `image`; their Component Queries updated (mirrored in the
+  `.graphql` files). Variant items for every new variant.
+- Media added: `Heroes/banner-subcontractor-requests`, `Photos/Linking-Southeast`,
+  `Careers/RS163__CGC2944`.
+
+### Left for the agents (small)
+
+- FAQ intro buttons are side by side (the live page stacks them); the FAQ installation band is
+  faint (white on the live page).
+- Contact form: the live page has a CAPTCHA and a small outlined submit button.
+- Opportunities job titles: the live list uses a larger, lighter title and shows "Apply Now" on
+  hover.
+- Stats labels on About break onto two lines on the live page.
+- Section paddings differ by a few pixels in places.
+
+## Earlier status (2026-10-28, afternoon)
+
 
 All 15 pages print `PASS` (98–100% of the source text) on the editing host, deployment
 `dpl_FXgFPsCDEAF5Cz6kUZVdytoV8mQZ` (head d3caeea). Nothing is published; Page builder and the editing host
@@ -54,12 +106,6 @@ The `.graphql` files there are the queries set on the renderings
   CTA), contact request types, subcontractor work types and consent, hero images. Image Text
   template has `image2`. File Download `file` fields hold `<file mediaid=…/>`.
 
-### How the editing host refreshes
-
-Pages render once per deployment and stay cached, so content changes show only on a new
-deployment: redeploy the editing alias's deployment (`POST /v13/deployments` with its
-`deploymentId`) and move `dycom-ansco-associates-sitecoreai-v2-editing.vercel.app` onto it.
-
 ### Left as is
 
 - Unused duplicates kept (not on any page): `Home/about/Data/Linking`, `Home/life/Data/Talent
@@ -71,6 +117,14 @@ deployment: redeploy the editing alias's deployment (`POST /v13/deployments` wit
 - Opportunities' featured jobs are a snapshot of the live site on 2026-10-28.
 
 ## Lessons now in the playbook
+
+The evening pass added: the live site is the truth over the repository; the content inventory
+records each section's layout and builders make one variant per layout; `parity.visual` judges
+screenshots; new items set every field (template defaults like "Section heading" leak);
+authored lists keep their markers; hidden content stays in the page; screenshots hide cookie
+banners. See `known-pitfalls.md` and the Content Analyst, Solution Architect, Component Engineer
+and Content Migrator prompts.
+
 
 `platforms/sitecoreai/knowledge/known-pitfalls.md` (JSS partial design template, page-design
 mapping, variants as items, query complexity, editing-host caching, File fields, coloured bands);

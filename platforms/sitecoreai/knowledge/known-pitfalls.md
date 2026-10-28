@@ -65,3 +65,9 @@ Working rules:
 
 Never: reset or clear a tenant or Experience Edge to recover one component; push serialization
 into a shared collection; change items outside the project's own paths.
+| Pages pass text parity (98–100%) but look nothing like the source | Each section was rebuilt from its copy, not its layout: wrong variant, column split, image side, band or list style | Build from the inventory's `sections` (the live page's layout per section), one variant per distinct layout; `parity.visual` compares screenshots and lists each difference |
+| The new site copies the source repository faithfully and still differs from the live site | The client's code rebuild isn't the live site (Ansco's dropped the footer's `order-lg-*` columns, the contact page's layout) | The live site is the truth. Inventory and compare against it; use the repository only to find copy and assets |
+| A new datasource item shows "Section heading" (or another default) | Fields left unset show the template's standard value | Create items with every field set, empty ones as an empty string; `parity.render` fails pages showing placeholder copy |
+| Rich-text bullets and numbers are missing | The starter's Tailwind preflight sets `list-style: none` on every list | The design system restores authored lists (`.component ul:not([class])`, `ol`) and the source's list styles (check marks) |
+| Text parity drops after making a section conditional (a form's address, a carousel) | The hidden content was left out of the markup, so its copy isn't on the page | Keep it in the page, hidden (`hidden`, plus `disabled` for form fields), as the source does |
+| Screenshots miss content near the top of the page | A cookie or chat banner fixed mid-screen covers it in the capture | `browser.screenshot` scrolls the page and hides mid-screen fixed overlays before capturing; when comparing by eye, dismiss the banner |
