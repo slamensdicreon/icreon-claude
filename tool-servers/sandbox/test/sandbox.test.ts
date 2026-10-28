@@ -130,6 +130,59 @@ describe('working copies', () => {
     expect(fake.runs.filter((x) => x.args[0] === 'merge')).toHaveLength(2);
   });
 
+  it("says a refused push isn't a merge conflict, and why GitHub refused it", async () => {
+    const refused = fakeBox(
+      { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },
+      (cmd, args) =>
+        cmd === 'git' && args.includes('push')
+          ? {
+              exitCode: 1,
+              output: [
+                ' ! [remote rejected] HEAD -> launchworks/integration (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)',
+                "error: failed to push some refs to 'https://github.com/icreon-launchworks/ansco'",
+              ].join('\n'),
+            }
+          : null,
+    );
+    const s = new SandboxToolServer({
+      provider: refused.provider,
+      facts,
+      buildEnv: async () => ({}),
+    });
+    const r = await s.call(
+      'git.integrate',
+      { branches: ['launchworks/port-hero'], fresh: true },
+      ctx,
+    );
+    expect(r.code).toBe(403);
+    expect(r.summary).toContain('All 1 branches merged with no conflict and built green');
+    expect(r.summary).toContain('without `workflows` permission');
+    expect(r.summary).toContain('needs the Workflows permission');
+    // Refused, not raced: no second rebuild.
+    expect(refused.runs.filter((x) => x.args.includes('push'))).toHaveLength(1);
+
+    const busy = fakeBox(
+      { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },
+      (cmd, args) =>
+        cmd === 'git' && args.includes('push')
+          ? { exitCode: 1, output: ' ! [rejected] HEAD -> launchworks/integration (stale info)' }
+          : null,
+    );
+    const s2 = new SandboxToolServer({
+      provider: busy.provider,
+      facts,
+      buildEnv: async () => ({}),
+    });
+    const r2 = await s2.call(
+      'git.integrate',
+      { branches: ['launchworks/port-hero'], fresh: true },
+      ctx,
+    );
+    expect(r2.code).toBe(503);
+    expect(r2.summary).toContain('integrate again once they finish');
+    expect(busy.runs.filter((x) => x.args.includes('push'))).toHaveLength(3);
+  });
+
   it('stops on a source conflict, and regenerates a conflicted component map', async () => {
     const conflict = (files: string) =>
       fakeBox({ 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' }, (cmd, args) =>

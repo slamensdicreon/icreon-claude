@@ -558,12 +558,23 @@ export class SandboxToolServer implements ToolServer {
             { timeoutMs: 120_000 },
           );
           if (push.exitCode === 0) break;
-          // Another component's integration pushed first: start again from what it pushed.
-          if (!/rejected|fetch first|non-fast-forward/.test(push.output) || attempt === 3)
+          // Every merge went in and the build is green: only the push failed. Say so, so it isn't
+          // taken for a merge conflict (409).
+          const merged = `All ${branches.length} branches merged with no conflict and built green, but`;
+          if (!raced(push.output)) {
+            const why = pushRefusal(push.output);
             return {
-              code: 409,
-              body: { error: push.output },
-              summary: `Couldn't push ${INTEGRATION_BRANCH}: ${lastError(push.output)}`,
+              code: 403,
+              body: { error: push.output, reason: why },
+              summary: `${merged} GitHub refused the push to ${INTEGRATION_BRANCH}: ${why}${/workflow/i.test(why) ? ' (the GitHub App needs the Workflows permission to change .github/workflows)' : ''}. Nothing pushed.`,
+            };
+          }
+          // Another component's integration pushed first: start again from what it pushed.
+          if (attempt === 3)
+            return {
+              code: 503,
+              body: { error: push.output, reason: pushRefusal(push.output) },
+              summary: `${merged} other integrations pushed ${INTEGRATION_BRANCH} while this one built, three times. Nothing pushed: integrate again once they finish.`,
             };
         }
         const sha = (await run('git', ['rev-parse', '--short=7', 'HEAD'])).output.trim();
@@ -666,6 +677,21 @@ export class SandboxToolServer implements ToolServer {
 
 /** A git header carrying the token for one command, never written to the repository's config. */
 /** The line of command output that says what went wrong, for a step's summary. */
+/** A push refused only because the branch moved meanwhile: integrating again settles it. */
+const raced = (output: string) =>
+  /\[rejected\][^\n]*\((?:fetch first|non-fast-forward|stale info)\)/.test(output);
+
+/** Why git refused a push: its `! [rejected] … (reason)` line and what the remote said. */
+const pushRefusal = (output: string) => {
+  const lines = output.split('\n').map((l) => l.trim());
+  const bang = lines.find((l) => /^!\s*\[/.test(l));
+  const remote = lines
+    .filter((l) => /^remote:\s*\S/.test(l))
+    .map((l) => l.replace(/^remote:\s*/, ''))
+    .slice(0, 3);
+  return [bang, ...remote].filter(Boolean).join(' ') || lastError(output);
+};
+
 const lastError = (output: string) =>
   (
     output
