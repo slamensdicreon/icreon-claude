@@ -10,7 +10,7 @@ import type {
   PullRequestDocument,
   WorkbenchSnapshot,
 } from '@lw/contracts';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { API, blobUrl } from '../lib/api';
 import { clock, shortDay, stamp } from '../lib/fmt';
 import { Chip } from '../parts/bits';
@@ -20,57 +20,199 @@ import { useApp, useMission, useProjectResource, useRoster, useTz } from '../sta
 
 const DECISIONS = 'decisions';
 
+/** Rail sections, in order: which artifact kinds each holds. */
+const SECTIONS: { label: string; kinds: string[] | null }[] = [
+  { label: 'Blueprint and plans', kinds: ['blueprint', 'platform_notes', 'charter', 'plan'] },
+  { label: 'Inventories', kinds: ['inventory'] },
+  { label: 'Reports', kinds: ['report'] },
+  { label: 'Handover', kinds: ['handover_pack'] },
+  { label: 'Decision Log', kinds: [] },
+  { label: 'Pull requests', kinds: ['pull_request'] },
+  { label: 'Other documents', kinds: null },
+];
+
+const updatedAt = (a: ArtifactView) =>
+  a.versions.reduce((m, v) => (v.ts > m ? v.ts : m), a.versions[0]?.ts ?? '');
+
 export function Workbench() {
   const { ui, setUi } = useApp();
+  const tz = useTz();
   const wb = useProjectResource<WorkbenchSnapshot>('/workbench').data;
+  const [query, setQuery] = useState('');
+  const page = useRef<HTMLDivElement>(null);
+  const [toc, setToc] = useState<{ id: string; text: string; level: number }[]>([]);
+  const docs = (wb?.artifacts ?? []).filter((a) => !['screenshot', 'video'].includes(a.kind));
+  const ids = [...docs.map((a) => a.artifactId), DECISIONS];
+  const current = ids.includes(ui.wbArtifact ?? '')
+    ? ui.wbArtifact!
+    : (docs[0]?.artifactId ?? DECISIONS);
+  const artifact = docs.find((a) => a.artifactId === current);
+
+  // "On this page": the open document's headings, linked.
+  useEffect(() => {
+    const el = page.current;
+    if (!el) return;
+    const read = () => {
+      const hs = [...el.querySelectorAll<HTMLElement>('.wiki-doc h2, .wiki-doc h3')].filter(
+        (h) => !h.closest('.viewer-head, .vh'),
+      );
+      setToc(
+        hs.map((h, i) => {
+          if (!h.id)
+            h.id = `s-${i}-${(h.textContent ?? '')
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .slice(0, 40)}`;
+          return { id: h.id, text: h.textContent ?? '', level: h.tagName === 'H3' ? 3 : 2 };
+        }),
+      );
+    };
+    read();
+    const mo = new MutationObserver(read);
+    mo.observe(el, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, [current]);
+
   if (!wb) return <p className="quiet-line">Loading the Workbench…</p>;
-  // The Decision Log sits after the reports, before pull requests.
-  const docs = wb.artifacts.filter((a) => !['screenshot', 'video'].includes(a.kind));
-  const prs = docs
-    .filter((a) => a.kind === 'pull_request')
-    .sort((a, b) => b.versions[0]!.ts.localeCompare(a.versions[0]!.ts));
-  const tabs: { id: string; short: string }[] = [
-    ...docs
-      .filter((a) => a.kind !== 'pull_request')
-      .map((a) => ({ id: a.artifactId, short: a.shortTitle })),
-    { id: DECISIONS, short: 'Decision Log' },
-    ...prs.map((a) => ({ id: a.artifactId, short: a.shortTitle })),
-  ];
-  const current = tabs.some((t) => t.id === ui.wbArtifact) ? ui.wbArtifact! : tabs[0]!.id;
-  const artifact = wb.artifacts.find((a) => a.artifactId === current);
+  const q = query.trim().toLowerCase();
+  const match = (title: string) => !q || title.toLowerCase().includes(q);
+  const placed = new Set<string>();
+  const sections = SECTIONS.map((sec) => {
+    if (sec.label === 'Decision Log')
+      return {
+        label: sec.label,
+        items: match('Decision Log')
+          ? [{ id: DECISIONS, title: 'Decision Log', meta: 'append-only' }]
+          : [],
+      };
+    const list = docs
+      .filter((a) => (sec.kinds ? sec.kinds.includes(a.kind) : !placed.has(a.artifactId)))
+      .sort((x, y) =>
+        sec.label === 'Pull requests'
+          ? updatedAt(y).localeCompare(updatedAt(x))
+          : x.title.localeCompare(y.title, undefined, { numeric: true }),
+      );
+    for (const a of list) placed.add(a.artifactId);
+    return {
+      label: sec.label,
+      items: list
+        .filter((a) => match(a.title))
+        .map((a) => ({
+          id: a.artifactId,
+          title: a.title,
+          meta: `v${a.latest} · ${shortDay(updatedAt(a), tz)}`,
+        })),
+    };
+  }).filter((sec) => sec.items.length);
+  const recent = q
+    ? []
+    : [...docs].sort((x, y) => updatedAt(y).localeCompare(updatedAt(x))).slice(0, 5);
+  const sectionOf = (id: string) =>
+    sections.find((sec) => sec.items.some((i) => i.id === id))?.label;
+  const open = (id: string) => setUi({ wbArtifact: id, bpFilter: 'all' });
+
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Workbench</h1>
-          <p>
-            The artifacts the team produces and the evidence behind each claim. Everything Cypher
-            cites links here.
-          </p>
-        </div>
-      </div>
-      <nav className="wtabs" aria-label="Artifacts">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            className={`wtab ${current === t.id ? 'on' : ''}`}
-            aria-current={current === t.id}
-            onClick={() => setUi({ wbArtifact: t.id, bpFilter: 'all' })}
-          >
-            {t.short}
-          </button>
+    <div className={`wiki ${toc.length > 2 ? 'has-toc' : ''}`}>
+      <aside className="wiki-rail" aria-label="Workbench pages">
+        <input
+          className="wiki-search"
+          type="search"
+          placeholder="Search pages"
+          aria-label="Search pages"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {recent.length > 0 && (
+          <div className="wiki-sec">
+            <h3>Recently updated</h3>
+            <ul>
+              {recent.map((a) => (
+                <li key={a.artifactId}>
+                  <button
+                    aria-current={current === a.artifactId}
+                    onClick={() => open(a.artifactId)}
+                  >
+                    <span>{a.title}</span>
+                    <small>{shortDay(updatedAt(a), tz)}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {sections.map((sec) => (
+          <details className="wiki-sec" key={sec.label} open>
+            <summary>
+              {sec.label} <small>{sec.items.length}</small>
+            </summary>
+            <ul>
+              {sec.items.map((i) => (
+                <li key={i.id}>
+                  <button aria-current={current === i.id} onClick={() => open(i.id)}>
+                    <span>{i.title}</span>
+                    <small>{i.meta}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
         ))}
-      </nav>
-      <div className="viewer clean">
-        {current === DECISIONS ? (
-          <DecisionLog />
-        ) : artifact?.kind === 'blueprint' ? (
-          <BlueprintViewer />
-        ) : artifact ? (
-          <ArtifactViewer key={artifact.artifactId} a={artifact} />
-        ) : null}
-      </div>
-    </>
+        {!sections.length && <p className="quiet-line">No page matches “{query}”.</p>}
+      </aside>
+      <select
+        className="select wiki-pick"
+        aria-label="Workbench page"
+        value={current}
+        onChange={(e) => open(e.target.value)}
+      >
+        {sections.map((sec) => (
+          <optgroup key={sec.label} label={sec.label}>
+            {sec.items.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.title}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      <main className="wiki-main" ref={page}>
+        <nav className="wiki-crumbs" aria-label="Breadcrumb">
+          <span>Workbench</span>
+          <span>{sectionOf(current) ?? ''}</span>
+        </nav>
+        <div className="viewer clean wiki-doc">
+          {current === DECISIONS ? (
+            <DecisionLog />
+          ) : artifact?.kind === 'blueprint' ? (
+            <BlueprintViewer />
+          ) : artifact ? (
+            <ArtifactViewer key={artifact.artifactId} a={artifact} />
+          ) : null}
+        </div>
+      </main>
+      {toc.length > 2 && (
+        <aside className="wiki-toc" aria-label="On this page">
+          <h3>On this page</h3>
+          <ul>
+            {toc.map((t) => (
+              <li key={t.id} className={t.level === 3 ? 'sub' : ''}>
+                <a
+                  href={`#${t.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document
+                      .getElementById(t.id)
+                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  {t.text}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
+    </div>
   );
 }
 

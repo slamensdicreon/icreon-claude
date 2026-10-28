@@ -1,5 +1,12 @@
 import type { ScheduleActivity, ScheduledTask, ScheduleSnapshot } from '@lw/contracts';
-import { useEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react';
 import { clock, localDate, shortDay } from '../lib/fmt';
 import { AgentCell, Chip } from '../parts/bits';
 import { useApp, useNow, useProjectResource, useRoster } from '../state';
@@ -91,11 +98,122 @@ const barClass = (state: string) =>
     state
   ] ?? state;
 
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 8;
+const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
+
+/** The timeline's zoom, remembered per browser. */
+function useZoom() {
+  const [zoom, setZoomState] = useState(() => {
+    try {
+      return clampZoom(Number(localStorage.getItem('lw.planZoom')) || 1);
+    } catch {
+      return 1;
+    }
+  });
+  const setZoom = (z: number) => {
+    const next = clampZoom(z);
+    setZoomState(next);
+    try {
+      localStorage.setItem('lw.planZoom', String(next));
+    } catch {
+      /* not remembered */
+    }
+  };
+  return [zoom, setZoom] as const;
+}
+
+/**
+ * Keeps the point under the cursor (or the middle) in place as the timeline zooms, and zooms with
+ * Ctrl or ⌘ and the scroll wheel.
+ */
+function useZoomScroll(
+  ref: RefObject<HTMLDivElement | null>,
+  zoom: number,
+  setZoom: (z: number) => void,
+) {
+  const anchor = useRef<{ frac: number; offset: number } | null>(null);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const a = anchor.current;
+    if (!el || !a) return;
+    el.scrollLeft = a.frac * el.scrollWidth - a.offset;
+    anchor.current = null;
+  }, [zoom, ref]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const offset = e.clientX - el.getBoundingClientRect().left;
+      anchor.current = { frac: (el.scrollLeft + offset) / el.scrollWidth, offset };
+      setZoom(zoomRef.current * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref]);
+  /** Zoom about the middle of what is in view. */
+  return (z: number) => {
+    const el = ref.current;
+    if (el) {
+      const offset = el.clientWidth / 2;
+      anchor.current = { frac: (el.scrollLeft + offset) / el.scrollWidth, offset };
+    }
+    setZoom(z);
+  };
+}
+
+function ZoomControl({ zoom, set }: { zoom: number; set: (z: number) => void }) {
+  return (
+    <div className="zoom" role="group" aria-label="Timeline zoom">
+      <button
+        className="btn sm"
+        aria-label="Zoom out"
+        onClick={() => set(zoom / 1.5)}
+        disabled={zoom <= ZOOM_MIN}
+      >
+        −
+      </button>
+      <input
+        type="range"
+        aria-label="Zoom"
+        min={Math.log2(ZOOM_MIN)}
+        max={Math.log2(ZOOM_MAX)}
+        step={0.05}
+        value={Math.log2(zoom)}
+        onChange={(e) => set(2 ** Number(e.target.value))}
+      />
+      <button
+        className="btn sm"
+        aria-label="Zoom in"
+        onClick={() => set(zoom * 1.5)}
+        disabled={zoom >= ZOOM_MAX}
+      >
+        +
+      </button>
+      <button
+        className="btn sm"
+        onClick={() => set(1)}
+        disabled={zoom === 1}
+        title="Back to the default zoom"
+      >
+        Fit
+      </button>
+      <span className="muted zoom-v">{Math.round(zoom * 100)}%</span>
+    </div>
+  );
+}
+
 export function Plan() {
   const { ui } = useApp();
   const sched = useProjectResource<ScheduleSnapshot>('/schedule').data;
   const phone = useIsPhone();
   const v = ui.planView;
+  const [zoom, setZoom] = useZoom();
   if (!sched) return <p className="quiet-line">Loading the plan…</p>;
   if (phone && v !== 'list') return <PlanPhone s={sched} v={v} />;
   return (
@@ -111,9 +229,9 @@ export function Plan() {
         <ViewTabs v={v} />
       </div>
       {v === 'today' ? (
-        <Today s={sched} />
+        <Today s={sched} zoom={zoom} setZoom={setZoom} />
       ) : v === 'engagement' ? (
-        <Engagement s={sched} />
+        <Engagement s={sched} zoom={zoom} setZoom={setZoom} />
       ) : (
         <List s={sched} />
       )}
@@ -121,7 +239,15 @@ export function Plan() {
   );
 }
 
-function Today({ s }: { s: ScheduleSnapshot }) {
+function Today({
+  s,
+  zoom,
+  setZoom,
+}: {
+  s: ScheduleSnapshot;
+  zoom: number;
+  setZoom: (z: number) => void;
+}) {
   const { inspect } = useApp();
   const { byId } = useRoster();
   const tz = s.timezone;
@@ -132,7 +258,10 @@ function Today({ s }: { s: ScheduleSnapshot }) {
   const X = (t: number) => Math.max(0, Math.min(100, ((t - from) / (to - from)) * 100));
   const todays = s.tasks.filter((t) => Date.parse(t.end) > from && Date.parse(t.start) < to);
   const nowIn = now >= from && now <= to;
-  const hours = Array.from({ length: 13 }, (_, i) => 8 + i);
+  // Hour marks; half hours once there's room, quarter hours further in.
+  const step = zoom >= 4 ? 0.25 : zoom >= 2 ? 0.5 : 1;
+  const hours = Array.from({ length: Math.round(12 / step) + 1 }, (_, i) => 8 + i * step);
+  const zoomTo = useZoomScroll(scroll, zoom, setZoom);
 
   useEffect(() => {
     const el = scroll.current;
@@ -169,14 +298,24 @@ function Today({ s }: { s: ScheduleSnapshot }) {
         activities across {new Set(todays.map((t) => t.agentId)).size} agents: {done} done,{' '}
         {running} running, {left} to go.
       </p>
+      <ZoomControl zoom={zoom} set={zoomTo} />
       <div className="plan-scroll" ref={scroll}>
-        <div className="plan pl-today">
+        <div
+          className="plan pl-today"
+          style={{ '--zoom': zoom, '--cells': 12 / step } as CSSProperties}
+        >
           <div className="pl-head">
             <div />
             <div className="pl-ticks">
               {hours.map((h) => (
-                <span key={h} style={{ left: `${((h - 8) / 12) * 100}%` }}>
-                  {h % 12 || 12} {h < 12 ? 'AM' : 'PM'}
+                <span
+                  key={h}
+                  className={h % 1 ? 'minor' : ''}
+                  style={{ left: `${((h - 8) / 12) * 100}%` }}
+                >
+                  {h % 1
+                    ? `:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
+                    : `${Math.floor(h) % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`}
                 </span>
               ))}
               {nowIn && (
@@ -275,7 +414,17 @@ const phaseState = (a: ScheduleActivity[]) =>
       ? 'running'
       : 'planned';
 
-function Engagement({ s }: { s: ScheduleSnapshot }) {
+function Engagement({
+  s,
+  zoom,
+  setZoom,
+}: {
+  s: ScheduleSnapshot;
+  zoom: number;
+  setZoom: (z: number) => void;
+}) {
+  const scroll = useRef<HTMLDivElement>(null);
+  const zoomTo = useZoomScroll(scroll, zoom, setZoom);
   const { byId } = useRoster();
   const tz = s.timezone;
   const now = useNow(60_000);
@@ -288,6 +437,17 @@ function Engagement({ s }: { s: ScheduleSnapshot }) {
     <i key={d.date} style={{ left: `${(i / N) * 100}%` }} className={d.weekStart ? 'wk' : ''} />
   ));
   const todayFrac = X(now) / 100;
+  // Zoomed in far enough, each working day (8 AM to 6 PM) shows its hours.
+  const dayPx = (1400 * zoom - 300) / Math.max(1, N);
+  const hourStep = dayPx >= 700 ? 1 : dayPx >= 360 ? 2 : 0;
+  const hourTicks = hourStep
+    ? s.days.flatMap((d, i) =>
+        Array.from({ length: 10 / hourStep - 1 }, (_, k) => {
+          const h = 8 + (k + 1) * hourStep;
+          return { key: `${d.date}-${h}`, left: ((i + (h - 8) / 10) / N) * 100, h };
+        }),
+      )
+    : [];
   return (
     <>
       <p className="plan-sum">
@@ -298,8 +458,12 @@ function Engagement({ s }: { s: ScheduleSnapshot }) {
           ? ` ${nextGate.gateLabel?.split(':')[0]} is planned for ${shortDay(nextGate.gateAt, tz)}.`
           : ''}
       </p>
-      <div className="plan-scroll">
-        <div className="plan pl-eng">
+      <ZoomControl zoom={zoom} set={zoomTo} />
+      <div className="plan-scroll" ref={scroll}>
+        <div
+          className={`plan pl-eng ${hourStep ? 'hours' : ''}`}
+          style={{ '--zoom': zoom, '--cells': N * (hourStep ? 10 / hourStep : 1) } as CSSProperties}
+        >
           <div className="eg-head">
             <div />
             <div className="eg-days">
@@ -311,6 +475,12 @@ function Engagement({ s }: { s: ScheduleSnapshot }) {
                 >
                   {d.label}
                   {d.today ? ', today' : ''}
+                </span>
+              ))}
+              {hourTicks.map((t) => (
+                <span key={t.key} className="hr" style={{ left: `${t.left}%` }}>
+                  {t.h % 12 || 12}
+                  {t.h < 12 ? 'a' : 'p'}
                 </span>
               ))}
             </div>

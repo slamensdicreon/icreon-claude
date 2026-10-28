@@ -825,3 +825,232 @@
   font-weight: var(--fw-medium);
   color: var(--web-accent-text);
 }
+
+/* ---------- workbench as a wiki: page rail, page, contents ---------- */
+.wiki {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.wiki.has-toc {
+  grid-template-columns: 240px minmax(0, 1fr) 190px;
+}
+.wiki-rail {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.wiki-search {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  margin-bottom: 14px;
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-1);
+  background: var(--web-surface);
+  color: var(--web-fg);
+  font: inherit;
+  font-size: 13.5px;
+}
+.wiki-sec {
+  margin-bottom: 12px;
+}
+.wiki-sec h3,
+.wiki-sec summary {
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--web-fg-2);
+  margin: 0 0 4px;
+  padding: 4px 8px;
+  cursor: default;
+}
+.wiki-sec summary {
+  cursor: pointer;
+  list-style: none;
+}
+.wiki-sec summary::-webkit-details-marker {
+  display: none;
+}
+.wiki-sec summary::before {
+  content: '▾';
+  display: inline-block;
+  width: 12px;
+  transition: transform 0.15s;
+}
+.wiki-sec:not([open]) summary::before {
+  transform: rotate(-90deg);
+}
+.wiki-sec summary small {
+  font-weight: normal;
+  margin-left: 4px;
+}
+.wiki-sec ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wiki-sec li button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px 6px 20px;
+  border: 0;
+  border-radius: var(--web-radius-1);
+  background: none;
+  color: var(--web-fg);
+  font-size: 13.5px;
+}
+.wiki-sec li button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wiki-sec li button small {
+  font-size: 11.5px;
+  color: var(--web-fg-2);
+}
+.wiki-sec li button:hover {
+  background: var(--web-surface-2);
+}
+.wiki-sec li button[aria-current='true'] {
+  background: var(--info-bg);
+  color: var(--web-accent-text);
+  font-weight: var(--fw-medium);
+}
+.wiki-pick {
+  display: none;
+}
+.wiki-crumbs {
+  display: flex;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--web-fg-2);
+  margin-bottom: 8px;
+}
+.wiki-crumbs span + span::before {
+  content: '/';
+  margin-right: 6px;
+}
+.wiki-doc h2,
+.wiki-doc h3 {
+  scroll-margin-top: 16px;
+}
+.wiki-toc {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  font-size: 13px;
+}
+.wiki-toc h3 {
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  color: var(--web-fg-2);
+  margin: 0 0 8px;
+}
+.wiki-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--web-border);
+}
+.wiki-toc li {
+  margin: 0 0 6px;
+}
+.wiki-toc li.sub {
+  padding-left: 10px;
+}
+.wiki-toc a {
+  color: var(--web-fg-2);
+  text-decoration: none;
+}
+.wiki-toc a:hover {
+  color: var(--web-accent-text);
+}
+@media (max-width: 1599px) {
+  .wiki.has-toc {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+  .wiki-toc {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .wiki {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wiki-rail {
+    display: none;
+  }
+  .wiki-pick {
+    display: block;
+    width: 100%;
+  }
+}
+
+/* ---------- plan zoom ---------- */
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.zoom input[type='range'] {
+  width: 180px;
+  accent-color: var(--web-accent);
+}
+.zoom .btn.sm {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+}
+.zoom-v {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 44px;
+}
+.pl-today {
+  min-width: calc(1680px * var(--zoom, 1));
+}
+.pl-track {
+  background-size: calc(100% / var(--cells, 12)) 100%;
+}
+.pl-ticks span:first-child {
+  transform: none;
+}
+.pl-ticks span.minor {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.pl-eng {
+  min-width: calc(1400px * var(--zoom, 1));
+}
+.pl-eng.hours .eg-track {
+  background-image: linear-gradient(to right, var(--web-border) 1px, transparent 1px);
+  background-size: calc(100% / var(--cells, 1)) 100%;
+}
+.eg-days span.hr {
+  width: auto;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--web-fg-2);
+  background: none;
+  border: 0;
+}
+.pl-eng.hours .eg-days {
+  height: 48px;
+}
+.pl-eng.hours .eg-days span:not(.hr):not(.now-tag) {
+  top: 5px;
+}
+.pl-eng.hours .eg-days span.hr {
+  top: 28px;
+}
