@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/tool-gateway';
 import type { BrowserContext } from 'playwright-core';
 import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
-import { extractPage, type PageExtract } from './extract';
+import { extractContent, extractPage, type PageExtract } from './extract';
 import { assertNavigable, BlockedUrlError, type UrlPolicy } from './ssrf';
 
 export interface BrowserServerOptions {
@@ -45,7 +45,7 @@ const CATALOG: OperationCatalog = {
   },
   snapshot: {
     description:
-      'Structure of one source page: headings, content blocks in order, images, links and regions.',
+      "One source page: headings, content blocks, images (src, alt), links and regions, plus `content`, the page's whole text in reading order (paragraphs, list items, accordion answers, table cells), for migrating its copy word for word.",
     inputSchema: {
       type: 'object',
       properties: { url: { type: 'string' } },
@@ -122,11 +122,11 @@ export class BrowserToolServer implements ToolServer {
           return await this.crawl(policy, String(args.url), Number(args.maxPages ?? 200));
         case 'snapshot':
           return await this.withPage(policy, async (context) => {
-            const r = await this.load(context, policy, String(args.url));
+            const r = await this.load(context, policy, String(args.url), true);
             return {
               code: r.status,
               body: r.page,
-              summary: `Snapshot of ${r.page.url}: ${r.page.blocks.length} blocks`,
+              summary: `Snapshot of ${r.page.url}: ${r.page.blocks.length} blocks, ${r.page.content?.length ?? 0} text items in full`,
             };
           });
         case 'screenshot':
@@ -149,7 +149,7 @@ export class BrowserToolServer implements ToolServer {
     }
   }
 
-  private async load(context: BrowserContext, policy: UrlPolicy, raw: string) {
+  private async load(context: BrowserContext, policy: UrlPolicy, raw: string, full = false) {
     const url = await assertNavigable(raw, policy);
     const page = await context.newPage();
     const response = await page.goto(url.toString(), {
@@ -163,8 +163,18 @@ export class BrowserToolServer implements ToolServer {
       return { status, page: null as never, contentType };
     }
     const extract = (await page.evaluate(`(${extractPage.toString()})()`)) as PageExtract;
+    // The full text only where it's asked for (a snapshot): a crawl keeps the short form.
+    const text = full
+      ? ((await page.evaluate(`(${extractContent.toString()})()`)) as ReturnType<
+          typeof extractContent
+        >)
+      : null;
     await page.close();
-    return { status, contentType, page: { url: canonical(page.url()), status, ...extract } };
+    return {
+      status,
+      contentType,
+      page: { url: canonical(page.url()), status, ...extract, ...(text ?? {}) },
+    };
   }
 
   private async crawl(policy: UrlPolicy, start: string, maxPages: number): Promise<ToolResult> {

@@ -1,4 +1,10 @@
-import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
+import type {
+  BlobStore,
+  OperationCatalog,
+  ToolCallContext,
+  ToolResult,
+  ToolServer,
+} from '@lw/tool-gateway';
 import { z } from 'zod';
 
 /** What the server knows about the project's SitecoreAI target, from intake. */
@@ -17,12 +23,25 @@ export interface AuthoringServerOptions {
   fetch?: typeof fetch;
   /** CM hosts this server may call. */
   hostSuffixes?: string[];
+  /** Where downloads are stored: media.upload takes a file the browser already fetched. */
+  blobs?: BlobStore;
 }
 
 const MEDIA_ROOT = '/sitecore/media library/';
 const JSON_RENDERING = '/sitecore/templates/Foundation/JavaScript Services/Json Rendering';
 const LANGUAGE_TEMPLATE = '/sitecore/templates/System/Language';
 const MAX_MEDIA_BYTES = 25_000_000;
+const MEDIA_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  avif: 'image/avif',
+  pdf: 'application/pdf',
+  mp4: 'video/mp4',
+};
 
 const Path = z.string().startsWith('/sitecore/').max(500);
 const Field = z.object({ name: z.string().min(1), value: z.string() });
@@ -89,11 +108,16 @@ const LayoutArgs = z.object({
   shared: z.boolean().optional(),
   language: z.string().optional(),
 });
-const MediaArgs = z.object({
-  itemPath: z.string().startsWith(MEDIA_ROOT).max(500),
-  sourceUrl: z.url({ protocol: /^https$/ }),
-  alt: z.string().max(500).optional(),
-});
+const MediaArgs = z
+  .object({
+    itemPath: z.string().startsWith(MEDIA_ROOT).max(500),
+    sourceUrl: z.url({ protocol: /^https$/ }).optional(),
+    /** A file browser.fetch.asset stored (its `ref`), so it isn't downloaded twice. */
+    ref: z.string().startsWith('blob://').max(500).optional(),
+    fileName: z.string().min(1).max(200).optional(),
+    alt: z.string().max(500).optional(),
+  })
+  .refine((a) => Boolean(a.sourceUrl) !== Boolean(a.ref), 'give either ref or sourceUrl');
 const PublishArgs = z.object({
   paths: z.array(Path).min(1).max(50),
   subItems: z.boolean().optional(),
@@ -280,15 +304,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'media.upload': {
       description:
-        'Upload an image or file from the source site into the media library. itemPath is the absolute media item path (under /sitecore/media library/); sourceUrl must be on the source site.',
+        "Upload an image or file into the media library. itemPath is the absolute media item path (under /sitecore/media library/). Give `ref`, the stored file browser.fetch.asset returned (preferred: it may come from the site's CDN or the Blueprint's URL), with `fileName`; or `sourceUrl` on the source site itself.",
       inputSchema: {
         type: 'object',
         properties: {
           itemPath: { type: 'string' },
+          ref: { type: 'string' },
+          fileName: { type: 'string' },
           sourceUrl: { type: 'string' },
           alt: { type: 'string' },
         },
-        required: ['itemPath', 'sourceUrl'],
+        required: ['itemPath'],
         additionalProperties: false,
       },
       mutates: true,
@@ -398,7 +424,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         case 'layout.compose':
           return await this.layout(q, LayoutArgs.safeParse(args), lang);
         case 'media.upload':
-          return await this.media(q, MediaArgs.safeParse(args), facts, ctx.token, lang);
+          return await this.media(q, MediaArgs.safeParse(args), facts, ctx, lang);
         case 'publish':
           return await this.publish(q, PublishArgs.safeParse(args), facts);
         case 'site.verify':
@@ -655,35 +681,57 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     q: Gql,
     a: Parsed<typeof MediaArgs>,
     facts: TenantFacts,
-    token: string,
+    ctx: ToolCallContext,
     lang: Lang,
   ): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
-    const source = new URL(a.data.sourceUrl);
-    if (!facts.sourceHosts.includes(source.hostname)) {
-      return bad(
-        `${source.hostname} is not the project's source site; media comes only from there.`,
-      );
+    const { projectId, token } = ctx;
+    let bytes: Uint8Array;
+    let type: string;
+    let name: string;
+    let from: string;
+    if (a.data.ref) {
+      // A file the browser downloaded for this project; its host was checked there.
+      if (!a.data.ref.startsWith(`blob://${projectId}/assets/`))
+        return bad(`${a.data.ref} isn't a file downloaded for this project.`);
+      if (!this.opts.blobs) return bad('Stored files are not available here; give sourceUrl.', 501);
+      try {
+        bytes = await this.opts.blobs.get(a.data.ref);
+      } catch {
+        return bad(
+          `No stored file at ${a.data.ref}; download it again with browser.fetch.asset.`,
+          404,
+        );
+      }
+      const ext = /\.([a-z0-9]{2,5})$/i.exec(a.data.ref)?.[1]?.toLowerCase() ?? 'bin';
+      type = MEDIA_TYPES[ext] ?? 'application/octet-stream';
+      name = a.data.fileName ?? `${a.data.itemPath.split('/').pop() || 'file'}.${ext}`;
+      from = a.data.ref;
+    } else {
+      const source = new URL(a.data.sourceUrl!);
+      if (!facts.sourceHosts.includes(source.hostname)) {
+        return bad(
+          `${source.hostname} is not the project's source site. Download it with browser.fetch.asset and upload its ref instead.`,
+        );
+      }
+      const file = await this.fetch(source, { signal: AbortSignal.timeout(60_000) });
+      if (!file.ok)
+        return {
+          code: 424,
+          body: { error: `The source answered ${file.status} for ${source.href}` },
+        };
+      bytes = new Uint8Array(await file.arrayBuffer());
+      type = file.headers.get('content-type') ?? 'application/octet-stream';
+      name = decodeURIComponent(source.pathname.split('/').pop() || 'file');
+      from = source.href;
     }
-    const file = await this.fetch(source, { signal: AbortSignal.timeout(60_000) });
-    if (!file.ok)
-      return {
-        code: 424,
-        body: { error: `The source answered ${file.status} for ${source.href}` },
-      };
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    if (bytes.length > MAX_MEDIA_BYTES) return bad(`${source.href} is larger than 25 MB.`);
+    if (bytes.length > MAX_MEDIA_BYTES) return bad(`${from} is larger than 25 MB.`);
     const relative = a.data.itemPath.slice(MEDIA_ROOT.length);
     const d = await q.run<{ uploadMedia: { presignedUploadUrl: string } }>(
       `mutation { uploadMedia(input: { itemPath: ${gql(relative)} }) { presignedUploadUrl } }`,
     );
-    const name = decodeURIComponent(source.pathname.split('/').pop() || 'file');
     const form = new FormData();
-    form.append(
-      'file',
-      new Blob([bytes], { type: file.headers.get('content-type') ?? 'application/octet-stream' }),
-      name,
-    );
+    form.append('file', new Blob([new Uint8Array(bytes)], { type }), name);
     const up = await this.fetch(d.uploadMedia.presignedUploadUrl, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },

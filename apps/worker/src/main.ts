@@ -68,6 +68,8 @@ const opened = await openStore('postgres', {
   databaseUrl: env.DATABASE_URL,
   listenUrl: env.DATABASE_URL_UNPOOLED,
 });
+// Shared by the tool servers and the stacks (one folder in dev; object storage when deployed).
+const blobs = openBlobStore(env.BLOB_STORE, env.DATA_DIR);
 // Tool servers read per-project facts (the source site) from the read models.
 const projections = new Projections(opened.store);
 await projections.start();
@@ -134,6 +136,7 @@ if (env.AGENTS === 'claude') {
   if (vault) {
     servers.push(
       new SitecoreAuthoringToolServer({
+        blobs,
         facts: async (id) => {
           const s = await project(id);
           if (s?.intake?.platform !== 'sitecoreai') return null;
@@ -320,8 +323,6 @@ if (
 console.log(
   `Connected tool servers: ${servers.map((s) => s.name).join(', ') || 'none'}${vault ? '' : ' (CREDENTIALS_KEY not set: no project credentials)'}`,
 );
-
-const blobs = openBlobStore(env.BLOB_STORE, env.DATA_DIR);
 
 // One stack per playbook: its roles, prompts, grants and platform pack.
 const stacks = [];

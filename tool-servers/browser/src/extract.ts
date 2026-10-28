@@ -48,3 +48,51 @@ export function extractPage() {
 }
 
 export type PageExtract = ReturnType<typeof extractPage>;
+
+/**
+ * A page's whole text in reading order, for migrating its copy: headings, paragraphs, list items,
+ * accordion answers (collapsed ones too), table cells, and loose text in layout wrappers. Runs
+ * inside the page, like extractPage.
+ */
+export function extractContent() {
+  const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+  const BLOCK = 'h1,h2,h3,h4,h5,h6,p,li,dt,dd,blockquote,figcaption,summary,th,td,label,pre';
+  const main = document.querySelector('main') ?? document.body;
+  const out: { tag: string; text: string; href?: string }[] = [];
+  let total = 0;
+  const walk = (el: Element) => {
+    if (total > 60_000) return;
+    if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG'].includes(el.tagName)) return;
+    if (el.matches(BLOCK)) {
+      const text = clean(el.textContent);
+      if (text) {
+        const a = el.tagName === 'LI' ? el.querySelector('a[href]') : null;
+        out.push({
+          tag: el.tagName.toLowerCase(),
+          text,
+          ...(a ? { href: (a as HTMLAnchorElement).href } : {}),
+        });
+        total += text.length;
+      }
+      return;
+    }
+    // Text sitting directly in a wrapper (page builders often do this).
+    const own = clean(
+      Array.from(el.childNodes)
+        .filter((n) => n.nodeType === 3)
+        .map((n) => n.textContent)
+        .join(' '),
+    );
+    if (own.length >= 20) {
+      out.push({ tag: el.tagName.toLowerCase(), text: own });
+      total += own.length;
+    }
+    if (el.tagName === 'A' && clean(el.textContent) && !el.closest(BLOCK)) {
+      const text = clean(el.textContent);
+      if (text !== own) out.push({ tag: 'a', text, href: (el as HTMLAnchorElement).href });
+    }
+    for (const c of Array.from(el.children)) walk(c);
+  };
+  walk(main);
+  return { content: out, truncated: total > 60_000 };
+}

@@ -35,6 +35,12 @@ tools:
     ops:
       # The source page's copy and structure, so content is migrated, never invented.
       - snapshot
+  # The source repository, where a site built from code keeps its copy (content files).
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
   blackboard:
     ops:
       - read

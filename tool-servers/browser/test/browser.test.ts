@@ -155,6 +155,22 @@ describe('snapshot, screenshot, fetch.asset', () => {
     ]);
   }, 30_000);
 
+  it('gives a snapshot the page’s whole text, collapsed answers included', async () => {
+    const r = await browser.call('snapshot', { url: `${origin}/faq-long` }, ctx);
+    const page = r.body as {
+      blocks: { text: string }[];
+      content: { tag: string; text: string; href?: string }[];
+    };
+    const answer = page.content.find((c) => c.tag === 'p')!;
+    expect(answer.text.length).toBeGreaterThan(900);
+    expect(page.blocks[0]!.text.length).toBeLessThanOrEqual(500);
+    expect(page.content.map((c) => c.tag)).toEqual(['h2', 'summary', 'p', 'div', 'li']);
+    expect(page.content.at(-1)).toMatchObject({
+      text: 'Florida contact: 555-0100',
+      href: `${origin}/contact`,
+    });
+  }, 30_000);
+
   it('screenshots at three breakpoints and stores the images', async () => {
     const r = await browser.call('screenshot', { url: `${origin}/services` }, ctx);
     const shots = (
