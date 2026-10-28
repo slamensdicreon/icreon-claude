@@ -24,6 +24,10 @@ tools:
     scope:
       paths:
         - '{sitePath}/**'
+      # Option lists its settings point at (sitemap change frequency, robots): read only.
+      readPaths:
+        - '{sitePath}/**'
+        - /sitecore/system/Settings/**
   browser:
     ops:
       - page-builder.drive
