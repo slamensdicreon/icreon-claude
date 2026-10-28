@@ -48,6 +48,7 @@ tools:
     ops:
       - read
 acceptance:
+  - validator:structural.layouts
   - validator:parity.page
 escalateWhen:
   - rejectedTwice

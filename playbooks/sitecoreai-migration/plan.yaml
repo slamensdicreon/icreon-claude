@@ -153,6 +153,7 @@ templates:
     batchSize: 8
     title: Migrate {name}
     metric: pages_migrated
+    acceptance: [validator:structural.layouts]
   - id: upload-media-{key}
     phase: 6
     role: media-migrator

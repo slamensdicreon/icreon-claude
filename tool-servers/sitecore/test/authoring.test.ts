@@ -89,7 +89,11 @@ function fakeCm(
       if (opts.drop) lost();
       return ok({ updateItem: { item: { itemId: items[path], name: 'n' } } });
     }
-    const path = /path: "([^"]+)"/.exec(query)?.[1];
+    const bare = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
+    const byId = /where: \{ database: "master", itemId: "([^"]+)"/.exec(query)?.[1];
+    const path = byId
+      ? Object.keys(items).find((k) => bare(items[k]!) === bare(byId))
+      : /path: "([^"]+)"/.exec(query)?.[1];
     if (/item\(where/.test(query)) {
       if (path && items[path]) {
         const stored = values.get(path) ?? new Map<string, string>();
@@ -281,10 +285,12 @@ describe('SitecoreAuthoringToolServer', () => {
     const page = '/sitecore/content/Brands/ansco/Home/about';
     const hero = '/sitecore/layout/Renderings/Project/Brands/ansco/Hero Banner';
     const ds = `${page}/Data/Hero`;
+    // The authoring API answers with IDs as 32 bare hex digits.
     const cm = fakeCm({
       [page]: 'page-id',
-      [hero]: 'a1b2c3d4-0000-4000-8000-0000000000aa',
-      [ds]: 'a1b2c3d4-0000-4000-8000-0000000000bb',
+      [hero]: 'a1b2c3d40000400080000000000000aa',
+      [ds]: 'a1b2c3d40000400080000000000000bb',
+      '/sitecore/layout/Renderings/Project/Brands/ansco/Stats': 'a1b2c3d40000400080000000000000cc',
     });
     const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
     const r = await s.call(
@@ -310,6 +316,31 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(written).toContain('ds=\\"{A1B2C3D4-0000-4000-8000-0000000000BB}\\"');
     expect(written).toContain('par=\\"Styles=compact\\"');
     expect(written).toContain('{ name: \"__Final Renderings\", value: \"\" }');
+    // An ID no item has is refused rather than written as a reference to nothing.
+    const ghost = await s.call(
+      'layout.compose',
+      {
+        path: page,
+        renderings: [
+          { rendering: 'ffffffff000040008000000000000000', placeholder: 'headless-main' },
+        ],
+      },
+      ctx,
+    );
+    expect(ghost).toMatchObject({ code: 404 });
+    // Hand-written XML with bare-hex IDs is written with IDs Sitecore can read.
+    await s.call(
+      'layout.compose',
+      {
+        path: page,
+        renderingsXml:
+          '<r><d id="{FE5D7FDF-89C0-4D99-9AA3-B5FBD009C9F3}" l="{96E5F4BA-A2CF-4A4C-A4E7-64DA88226362}"><r uid="{9a1c0000-0000-4000-8000-000000000001}" id="a1b2c3d40000400080000000000000aa" ph="headless-main" /></d></r>',
+      },
+      ctx,
+    );
+    expect(cm.queries.filter((q) => q.includes('updateItem')).at(-1)).toContain(
+      'id=\\\"{A1B2C3D4-0000-4000-8000-0000000000AA}\\\"',
+    );
     // Hand-written XML without rendering IDs is refused: Page builder would show nothing.
     const bare = await s.call(
       'layout.compose',

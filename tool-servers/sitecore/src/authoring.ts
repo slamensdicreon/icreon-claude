@@ -685,7 +685,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     if (a.data.parametersTemplatePath)
       fields.push({
         name: 'Parameters Template',
-        value: await this.idOf(q, a.data.parametersTemplatePath),
+        value: sitecoreId(await this.idOf(q, a.data.parametersTemplatePath)),
       });
     return this.create(
       q,
@@ -701,10 +701,9 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
   private async layout(q: Gql, a: Parsed<typeof LayoutArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
-    const braced = (id: string) => `{${id.replace(/[{}]/g, '').toUpperCase()}}`;
-    const isId = (v: string) =>
-      /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i.test(v);
-    const resolve = async (v: string) => (isId(v) ? braced(v) : braced(await this.idOf(q, v)));
+    // Paths and IDs alike must name an item that exists: a layout pointing at nothing renders nothing.
+    const resolve = async (v: string) =>
+      sitecoreId(HEX_ID.test(v) ? await this.idExists(q, v) : await this.idOf(q, v));
     let xml: string;
     if (a.data.renderings) {
       const parts: string[] = [];
@@ -717,12 +716,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
               .join('&')
           : '';
         parts.push(
-          `<r ds="${ds}" id="${id}" par="${xmlAttr(par)}" ph="${xmlAttr(r.placeholder)}" uid="${braced(randomUUID())}" />`,
+          `<r ds="${ds}" id="${id}" par="${xmlAttr(par)}" ph="${xmlAttr(r.placeholder)}" uid="${sitecoreId(randomUUID())}" />`,
         );
       }
       xml = `<r xmlns:xsd="http://www.w3.org/2001/XMLSchema"><d id="${DEFAULT_DEVICE}" l="${HEADLESS_LAYOUT}">${parts.join('')}</d></r>`;
     } else {
-      xml = a.data.renderingsXml!;
+      xml = stored(a.data.renderingsXml!);
       // Each rendering needs its rendering ID (`id`, or `s:id` in a delta); without it Page builder shows nothing.
       const inner = [...xml.matchAll(/<d\b[^>]*>([\s\S]*?)<\/d>/gi)].flatMap((m) =>
         [...m[1]!.matchAll(/<r\b([^>]*)>/gi)].map((r) => r[1]!),
@@ -1077,6 +1076,15 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   /** An item's ID by path, or a 404 the agent can act on. */
+  /** The item's ID when an item has it, else 404. */
+  private async idExists(q: Gql, id: string): Promise<string> {
+    const d = await q.run<{ item: { itemId: string } | null }>(
+      `query { item(where: { database: "master", itemId: ${gql(sitecoreId(id))} }) { itemId } }`,
+    );
+    if (!d.item) throw new GqlError(404, `No item with ID ${id}`);
+    return d.item.itemId;
+  }
+
   private async idOf(q: Gql, path: string): Promise<string> {
     const d = await q.run<{ item: { itemId: string } | null }>(
       `query { item(where: { database: "master", path: ${gql(path)} }) { itemId } }`,
@@ -1161,9 +1169,7 @@ const xmlAttr = (v: string) =>
 const canonical = (v: string) => {
   const t = v.trim();
   if (/^<r[\s>]/i.test(t)) return layoutKey(t);
-  return /^\{?[0-9a-f-]{36}\}?(\|\{?[0-9a-f-]{36}\}?)*$/i.test(t)
-    ? t.replace(/[{}]/g, '').toLowerCase()
-    : t;
+  return t.split('|').every((p) => HEX_ID.test(p)) ? t.replace(/[{}-]/g, '').toLowerCase() : t;
 };
 
 /**
@@ -1176,7 +1182,7 @@ function layoutKey(xml: string): string {
     Object.fromEntries(
       [...tag.matchAll(/(?:s:)?([a-z]+)="([^"]*)"/gi)].map((m) => [
         m[1]!.toLowerCase(),
-        m[2]!.replace(/[{}]/g, '').toLowerCase(),
+        HEX_ID.test(m[2]!) ? m[2]!.replace(/[{}-]/g, '').toLowerCase() : m[2]!.toLowerCase(),
       ]),
     );
   const devices = [...xml.matchAll(/<d\b([^>]*)>([\s\S]*?)<\/d>|<d\b([^>]*)\/>/gi)].map((m) => {
@@ -1209,7 +1215,31 @@ function compare(
 type Parsed<S extends z.ZodType> = z.ZodSafeParseResult<z.infer<S>>;
 
 const fieldsOf = (fields: { name: string; value: string }[]) =>
-  `[${fields.map((f) => `{ name: ${gql(f.name)}, value: ${gql(f.value)} }`).join(', ')}]`;
+  `[${fields.map((f) => `{ name: ${gql(f.name)}, value: ${gql(stored(f.value))} }`).join(', ')}]`;
+
+const HEX_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
+
+/**
+ * An ID as Sitecore keeps it in a field: `{8-4-4-4-12}`, uppercase. The authoring API answers with
+ * 32 bare hex digits; written into a field or a layout that way, Sitecore can't read it as an ID,
+ * and a layout's renderings point at nothing (an empty Controls list, an empty page in Page builder).
+ */
+function sitecoreId(id: string): string {
+  const h = id.replace(/[{}-]/g, '').toUpperCase();
+  if (!/^[0-9A-F]{32}$/.test(h)) throw new GqlError(422, `${id} is not an item ID`);
+  return `{${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}}`;
+}
+
+/** A field value with its IDs in the form Sitecore reads: a single ID, an ID list, layout XML. */
+function stored(value: string): string {
+  const t = value.trim();
+  if (/^<r[\s>]/i.test(t))
+    return value.replace(/(\s(?:s:)?(?:id|ds|l|uid)=")([^"]*)"/gi, (m, pre: string, v: string) =>
+      HEX_ID.test(v) ? `${pre}${sitecoreId(v)}"` : m,
+    );
+  const parts = t.split('|');
+  return t && parts.every((p) => HEX_ID.test(p)) ? parts.map(sitecoreId).join('|') : value;
+}
 
 class GqlError extends Error {
   constructor(

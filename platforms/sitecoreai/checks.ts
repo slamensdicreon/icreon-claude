@@ -259,6 +259,49 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         : pass(`${names.length} renderings exist and are offered in Page builder.`);
     },
 
+    // Each kept page has components on its layout, pointing at renderings by IDs Sitecore can read.
+    'structural.layouts': async (ctx) => {
+      if (!inScope(ctx, 'pages').length) return pending('The Blueprint has no pages to check.');
+      const b = sitecoreBindings(ctx.target);
+      const problems: string[] = [];
+      const paths = pagePaths(ctx);
+      for (const route of paths) {
+        const path = `${b.sitePath}/Home${route === '/' ? '' : route}`;
+        const r = await ctx.read('sitecore-authoring', 'item.read', {
+          path,
+          fields: ['__Renderings', '__Final Renderings'],
+        });
+        if (r.code === 404) {
+          problems.push(`no page at ${path}`);
+          continue;
+        }
+        if (r.code !== 200) throw new Error(`reading ${path} answered ${r.code}`);
+        const xml = ((r.body as Item).fields?.nodes ?? []).map((f) => f.value).join('');
+        const refs = [...xml.matchAll(/<d\b[^>]*>([\s\S]*?)<\/d>/gi)].flatMap((d) =>
+          [...d[1]!.matchAll(/<r\b[^>]*>/gi)].map((m) => m[0]),
+        );
+        if (!refs.length) {
+          problems.push(`${route} has no components on its layout`);
+          continue;
+        }
+        // An ID written as 32 bare hex digits isn't an ID to Sitecore: the rendering shows nowhere.
+        const unreadable = refs.filter((tag) =>
+          [...tag.matchAll(/\b(?:s:)?(?:id|ds)="([^"]*)"/gi)].some((m) =>
+            /^\{?[0-9a-f]{32}\}?$/i.test(m[1]!),
+          ),
+        ).length;
+        if (unreadable)
+          problems.push(
+            `${route}: ${unreadable} of ${refs.length} components point at their rendering or datasource by an ID Sitecore can't read (32 bare hex digits); place them again with layout.compose`,
+          );
+      }
+      return problems.length
+        ? fail(problems)
+        : pass(
+            `${paths.length} page${paths.length === 1 ? ' has' : 's have'} components on a layout Sitecore can read.`,
+          );
+    },
+
     // Published: the home route resolves on the live endpoint.
     'edge.published': async (ctx) => {
       const r = await routes(ctx, ['/'], 'edge-live');

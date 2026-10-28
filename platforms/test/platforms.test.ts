@@ -268,6 +268,36 @@ describe('SitecoreAI checks', () => {
     });
   });
 
+  it('checks each page has components on a layout Sitecore can read', async () => {
+    const home = '/sitecore/content/Brands/ansco/Home';
+    const layout = (id: string) =>
+      `<r><d id="{FE5D7FDF-89C0-4D99-9AA3-B5FBD009C9F3}" l="{96E5F4BA-A2CF-4A4C-A4E7-64DA88226362}"><r uid="{9A1C0000-0000-4000-8000-000000000001}" id="${id}" ph="headless-main" /></d></r>`;
+    const items: Record<string, { fields?: Record<string, string> }> = {
+      [`${home}/about`]: { fields: { __Renderings: layout('{A1B2C3D40000400080000000000000AA}') } },
+      [`${home}/careers`]: { fields: { __Renderings: layout('').replace(/<r uid[^>]*\/>/, '') } },
+    };
+    const bp = {
+      collections: {
+        pages: [
+          { key: 'about', name: 'About', attrs: { path: '/about' } },
+          { key: 'careers', name: 'Careers', attrs: { path: '/careers' } },
+        ],
+      },
+    };
+    const res = await pack.checks!['structural.layouts']!(ctx(tenant(items).read, bp));
+    expect(res).toEqual({
+      status: 'fail',
+      detail:
+        "/about: 1 of 1 components point at their rendering or datasource by an ID Sitecore can't read (32 bare hex digits); place them again with layout.compose; /careers has no components on its layout.",
+    });
+    items[`${home}/about`]!.fields!.__Renderings = layout('{A1B2C3D4-0000-4000-8000-0000000000AA}');
+    items[`${home}/careers`] = items[`${home}/about`]!;
+    expect(await pack.checks!['structural.layouts']!(ctx(tenant(items).read, bp))).toEqual({
+      status: 'pass',
+      detail: '2 pages have components on a layout Sitecore can read.',
+    });
+  });
+
   it("checks the site, Home and the project's own folders", async () => {
     const site = '/sitecore/content/Brands/ansco';
     const t = tenant({
