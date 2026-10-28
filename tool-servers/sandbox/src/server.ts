@@ -106,6 +106,11 @@ const CliArgs = z.object({
 });
 /** Where accepted components come together; the editing host deploys it. */
 export const INTEGRATION_BRANCH = 'launchworks/integration';
+/**
+ * The Director's own fixes, made outside any task. Every integration merges it when it exists,
+ * a rebuild included, so hand fixes never drop out; agents don't commit to it.
+ */
+export const DIRECTOR_BRANCH = 'launchworks/director';
 /** Files the build generates: a conflict in them is settled by generating them again. */
 const GENERATED = /(^|\/)(\.sitecore\/component-map(\.client)?\.ts|package-lock\.json)$/;
 const IntegrateArgs = z.object({
@@ -125,7 +130,10 @@ const IntegrateArgs = z.object({
   fresh: z.boolean().optional(),
 });
 const CommitArgs = z.object({
-  branch: z.string().regex(AGENT_BRANCH, 'must start with launchworks/'),
+  branch: z
+    .string()
+    .regex(AGENT_BRANCH, 'must start with launchworks/')
+    .refine((b) => b !== DIRECTOR_BRANCH, `${DIRECTOR_BRANCH} holds the Director's own fixes`),
   message: z.string().min(1).max(2000),
 });
 
@@ -133,7 +141,7 @@ export class SandboxToolServer implements ToolServer {
   readonly name = 'sandbox';
   readonly catalog: OperationCatalog = {
     'git.integrate': {
-      description: `Bring accepted agent branches (launchworks/design-system, launchworks/port-…) into ${INTEGRATION_BRANCH}, which the editing host deploys: starts from the integration branch as pushed (or the default branch the first time), merges each branch in order, settles conflicts in generated files (the component map, package-lock.json) by generating them again, builds once, and pushes only if the build is green. Branches that don't exist are skipped and listed; one already merged changes nothing. A conflict in source files stops it before anything is pushed, naming the branch and files: integrate again without that branch. If another integration pushes first, it starts again from that, up to three times.`,
+      description: `Bring accepted agent branches (launchworks/design-system, launchworks/port-…) into ${INTEGRATION_BRANCH}, which the editing host deploys: starts from the integration branch as pushed (or the default branch the first time), merges each branch in order, settles conflicts in generated files (the component map, package-lock.json) by generating them again, builds once, and pushes only if the build is green. Branches that don't exist are skipped and listed; one already merged changes nothing. The Director's fixes (${DIRECTOR_BRANCH}) are always merged last when that branch exists. A conflict in source files stops it before anything is pushed, naming the branch and files: integrate again without that branch. If another integration pushes first, it starts again from that, up to three times.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -469,6 +477,15 @@ export class SandboxToolServer implements ToolServer {
         }
         if (!branches.length)
           return bad(`None of these branches exist: ${missing.join(', ')}`, 404);
+        if (!branches.includes(DIRECTOR_BRANCH)) {
+          const got = await run('git', [
+            ...auth,
+            'fetch',
+            'origin',
+            `+refs/heads/${DIRECTOR_BRANCH}:refs/remotes/origin/${DIRECTOR_BRANCH}`,
+          ]);
+          if (got.exitCode === 0) branches.push(DIRECTOR_BRANCH);
+        }
         // No lock: integrations run side by side, and the push says when another got there first.
         const regenerated = new Set<string>();
         for (let attempt = 1; ; attempt++) {

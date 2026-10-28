@@ -55,7 +55,7 @@ describe('working copies', () => {
       (cmd, args) =>
         cmd === 'git' && args[0] === 'rev-parse'
           ? { exitCode: 0, output: 'abc1234\n' }
-          : cmd === 'git' && args.at(-1)?.includes('port-gone')
+          : cmd === 'git' && /port-gone|launchworks\/director/.test(args.at(-1) ?? '')
             ? { exitCode: 128, output: "fatal: couldn't find remote ref" }
             : null,
     );
@@ -107,6 +107,10 @@ describe('working copies', () => {
       .filter((x) => x.cmd === 'git')
       .map((x) => x.args.filter((a) => !a.startsWith('http.extraHeader') && a !== '-c').join(' '));
     expect(git).toContain('checkout -q -B launchworks/integration origin/main');
+    // A rebuild keeps the Director's own fixes.
+    expect(git.filter((x) => x.startsWith('merge ')).at(-1)).toContain(
+      'origin/launchworks/director',
+    );
     expect(git).toContain(
       'push --force-with-lease=refs/heads/launchworks/integration:def5678 origin HEAD:refs/heads/launchworks/integration',
     );
@@ -127,7 +131,8 @@ describe('working copies', () => {
     const r = await s.call('git.integrate', { branches: ['launchworks/port-hero'] }, ctx);
     expect(r.code).toBe(200);
     expect(pushes).toBe(2);
-    expect(fake.runs.filter((x) => x.args[0] === 'merge')).toHaveLength(2);
+    // The branch and the Director's fixes, on each of the two attempts.
+    expect(fake.runs.filter((x) => x.args[0] === 'merge')).toHaveLength(4);
   });
 
   it("says a refused push isn't a merge conflict, and why GitHub refused it", async () => {
@@ -155,7 +160,8 @@ describe('working copies', () => {
       ctx,
     );
     expect(r.code).toBe(403);
-    expect(r.summary).toContain('All 1 branches merged with no conflict and built green');
+    // The branch and the Director's fixes.
+    expect(r.summary).toContain('All 2 branches merged with no conflict and built green');
     expect(r.summary).toContain('without `workflows` permission');
     expect(r.summary).toContain('needs the Workflows permission');
     // Refused, not raced: no second rebuild.
