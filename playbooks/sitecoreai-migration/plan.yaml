@@ -72,14 +72,19 @@ templates:
     forEach: components
     title: Port {name} to Content SDK
     dependsOn: [design-system]
-    acceptance: [validator:build.green, validator:component-map.registered]
+    acceptance: [validator:build.green, validator:component-map.registered, validator:head.sections]
   - id: register-{key}
     phase: 4
     role: rendering-registrar
     forEach: components
     title: Register {name}
     dependsOn: ['port-{key}']
-    acceptance: [validator:structural.renderings, validator:editor.component-enabled]
+    acceptance:
+      [
+        validator:structural.renderings,
+        validator:editor.component-enabled,
+        validator:structural.component-queries,
+      ]
     metric: components_registered
   - id: integrate-head
     phase: 4
@@ -155,7 +160,7 @@ templates:
     batchSize: 8
     title: Migrate {name}
     metric: pages_migrated
-    acceptance: [validator:structural.layouts, validator:head.pages-render]
+    acceptance: [validator:structural.layouts, validator:head.pages-render, validator:parity.render]
   - id: upload-media-{key}
     phase: 6
     role: media-migrator
@@ -172,6 +177,7 @@ templates:
     role: parity-auditor
     title: Audit content parity
     dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
+    acceptance: [validator:parity.render, validator:parity.page]
   - id: visual-sample
     phase: 6
     role: visual-qa

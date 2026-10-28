@@ -373,6 +373,114 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           );
     },
 
+    // Rendered parity: each kept page, as the editing host renders it, against the source page.
+    // The page as a visitor sees it, not its items: a component that renders nothing, a list with
+    // no items, placeholder copy or a missing header fails here even when every item exists.
+    'parity.render': async (ctx) => {
+      if (!inScope(ctx, 'pages').length) return pending('The Blueprint has no pages to check.');
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      if (!project) return pending('No hosting project is recorded for the head.');
+      const host = `https://${project}-editing.vercel.app`;
+      const inv = ((await ctx.document('page-inventory')) ??
+        (await ctx.document('parity-inventory'))) as { origin?: string } | null;
+      const origin = inv?.origin?.replace(/\/$/, '') ?? null;
+      // Components whose model has child items, by the name the head registers them under.
+      const lists = new Set(
+        (ctx.blueprint?.collections.components ?? [])
+          .filter((c) => c.status !== 'drop' && c.attrs?.children)
+          .map((c) => renderingName(c).replace(/\s+/g, '')),
+      );
+      const problems: string[] = [];
+      const notes: string[] = [];
+      let unread = 0;
+      for (const path of pagePaths(ctx).slice(0, 20)) {
+        const page = await getText(cfg, `${host}${path}`);
+        if (page.status !== 200) {
+          problems.push(`${path} answered ${page.status || 'nothing'} on the editing host`);
+          continue;
+        }
+        const text = visibleText(page.body);
+        const empty = (id: string) => new RegExp(`<div id="${id}">\\s*</div>`).test(page.body);
+        if (empty('header') || empty('footer'))
+          problems.push(
+            `${path} has no ${empty('header') ? 'header' : 'footer'}${empty('header') && empty('footer') ? ' or footer' : ''}`,
+          );
+        const placeholders = PLACEHOLDERS.filter((p) => text.includes(p));
+        if (placeholders.length)
+          problems.push(`${path} shows placeholder copy: "${placeholders.join('", "')}"`);
+        for (const c of layoutComponents(page.body))
+          if (lists.has(c.name) && !itemCount(c.fields))
+            problems.push(
+              `${path}: ${c.name} renders no items (its rendering needs a Component Query returning its children, and its datasource needs child items)`,
+            );
+        if (!origin) continue;
+        const source = await getText(cfg, `${origin}${path === '/' ? '/' : `${path}/`}`);
+        if (source.status !== 200) {
+          unread++;
+          continue;
+        }
+        const want = wordsOf(visibleText(source.body));
+        const have = wordsOf(text);
+        const shared = [...want].filter((w) => have.has(w)).length;
+        const coverage = want.size ? Math.round((shared / want.size) * 100) : 100;
+        const heads = headingsOf(source.body);
+        const lower = text.toLowerCase();
+        const missing = heads.filter((h) => !lower.includes(h.toLowerCase()));
+        notes.push(`${path} ${coverage}%`);
+        if (coverage < 90)
+          problems.push(
+            `${path} shows ${coverage}% of the source page's text (90% needed)${missing.length ? `; missing headings: ${missing.slice(0, 5).join(' | ')}` : ''}`,
+          );
+        else if (heads.length && missing.length / heads.length > 0.1)
+          problems.push(`${path} misses source headings: ${missing.slice(0, 5).join(' | ')}`);
+      }
+      if (problems.length) return fail(problems);
+      if (!origin) return pending('No source inventory gives the source site to compare with.');
+      if (unread && !notes.length)
+        return pending("The source pages couldn't be read to compare with.");
+      return pass(
+        `Rendered parity with the source: ${notes.join(', ')}${unread ? `; ${unread} source page${unread === 1 ? '' : 's'} unreadable` : ''}.`,
+      );
+    },
+
+    // A component whose model has child items gets them only through a GraphQL Component Query on
+    // its rendering: without one the head receives its own fields and an empty list.
+    'structural.component-queries': async (ctx) => {
+      const lists = inScope(ctx, 'components').filter((c) => c.attrs?.children);
+      if (!lists.length) return pass('No component in scope lists child items.');
+      const b = sitecoreBindings(ctx.target);
+      const root = `/sitecore/layout/Renderings/Project/${b.module}`;
+      const all = new Map<string, Child[]>();
+      await findByName(ctx, root, lists.map(renderingName), all);
+      const problems: string[] = [];
+      for (const c of lists) {
+        const name = renderingName(c);
+        const hit = all.get(name.toLowerCase())?.[0];
+        if (!hit) {
+          problems.push(`rendering ${name} not under ${root}`);
+          continue;
+        }
+        const r = await ctx.read('sitecore-authoring', 'item.read', {
+          path: hit.path,
+          fields: ['ComponentQuery'],
+        });
+        const q =
+          (r.body as Item | null)?.fields?.nodes.find((f) => f.name === 'ComponentQuery')?.value ??
+          '';
+        if (!q.trim())
+          problems.push(
+            `${name} lists child items but its rendering has no Component Query: set one returning the fields and children its code reads`,
+          );
+        else if (!/children\s*\(/.test(q))
+          problems.push(`${name}'s Component Query doesn't read the datasource's children`);
+      }
+      return problems.length
+        ? fail(problems)
+        : pass(
+            `${lists.length} list component${lists.length === 1 ? ' has' : 's have'} a Component Query reading their children.`,
+          );
+    },
+
     // Published: the home route resolves on the live endpoint.
     'edge.published': async (ctx) => {
       const r = await routes(ctx, ['/'], 'edge-live');
@@ -470,6 +578,117 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         : pass(`${images} images, each with alt text.`);
     },
   };
+}
+
+/** Copy a component shows when its fields are empty or its datasource is missing. */
+const PLACEHOLDERS = [
+  'Section heading',
+  'Describe this section',
+  'Add a short introduction',
+  'Page heading',
+  '[No text in field]',
+  'choose a datasource',
+  'set a datasource',
+  'Lorem ipsum',
+];
+
+async function getText(cfg: VerifyConfig, url: string): Promise<{ status: number; body: string }> {
+  try {
+    const res = await cfg.fetch(url, {
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; Launchworks parity check)' },
+      signal: AbortSignal.timeout(Math.max(cfg.timeoutMs, 20_000)),
+    });
+    return { status: res.status, body: await res.text() };
+  } catch {
+    return { status: 0, body: '' };
+  }
+}
+
+/** What a visitor reads on an HTML page: scripts, styles and markup removed. */
+export function visibleText(html: string): string {
+  return html
+    .replace(/<(script|style|noscript|svg|template)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&#x27;|&#39;|&rsquo;|&lsquo;/g, "'")
+    .replace(/&quot;|&ldquo;|&rdquo;/g, '"')
+    .replace(/&[a-z]+;|&#\d+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Distinct words of five letters or more: what a page says, not its glue words. */
+export const wordsOf = (text: string) =>
+  new Set((text.toLowerCase().match(/\p{L}{5,}/gu) ?? []) as string[]);
+
+/** The page's h1–h3 text. */
+export const headingsOf = (html: string) =>
+  [...html.matchAll(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/gi)]
+    .map((m) => visibleText(m[1]!))
+    .filter((h) => h.length > 2);
+
+/**
+ * The components in a Content SDK page's layout data, with the fields each received: read from
+ * the React Server Components payload the page carries.
+ */
+export function layoutComponents(html: string): { name: string; fields: unknown }[] {
+  const payload = [...html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)]
+    .map((m) => {
+      try {
+        return JSON.parse(m[1]!) as string;
+      } catch {
+        return '';
+      }
+    })
+    .join('');
+  const out: { name: string; fields: unknown }[] = [];
+  for (const m of payload.matchAll(/"componentName":"([A-Za-z0-9]+)"/g)) {
+    const at = payload.indexOf('"fields":', m.index!);
+    const next = payload.indexOf('"componentName":', m.index! + 1);
+    if (at < 0 || (next >= 0 && at > next)) {
+      out.push({ name: m[1]!, fields: null });
+      continue;
+    }
+    const obj = balanced(payload, at + '"fields":'.length);
+    let fields: unknown = null;
+    try {
+      fields = obj ? JSON.parse(obj) : null;
+    } catch {
+      fields = null;
+    }
+    out.push({ name: m[1]!, fields });
+  }
+  return out;
+}
+
+/** The JSON object starting at `from`, by matching braces outside strings. */
+function balanced(s: string, from: number): string | null {
+  if (s[from] !== '{') return null;
+  let depth = 0;
+  let inStr = false;
+  for (let i = from; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (ch === '\\') i++;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return s.slice(from, i + 1);
+  }
+  return null;
+}
+
+/** How many child items a component received: by its Component Query, or as a list field. */
+export function itemCount(fields: unknown): number {
+  const f = (fields ?? {}) as {
+    items?: unknown[];
+    data?: { datasource?: { children?: { results?: unknown[] } } };
+  };
+  return (
+    (f.data?.datasource?.children?.results?.length ?? 0) +
+    (Array.isArray(f.items) ? f.items.length : 0)
+  );
 }
 
 /** The text a rendered Content SDK layout shows: every field value, in its placeholders. */

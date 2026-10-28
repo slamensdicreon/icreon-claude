@@ -16,7 +16,7 @@ const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration'
 const task = (over: Partial<PlannedTask>): PlannedTask =>
   ({
     taskId: 'draft-blueprint',
-    templateId: 'draft-blueprint',
+    templateId: 'test-template',
     phase: 2,
     role: 'solution-architect',
     workstream: 'discovery',
@@ -122,6 +122,21 @@ describe('acceptance on live projects', () => {
     expect((await reviews())[0]!.data).toMatchObject({
       reviewerId: 'discovery-lead',
       verdict: 'reject',
+    });
+  });
+
+  it("judges a task on its template's current checks too, so checks added later apply to running projects", async () => {
+    const { write, validate } = await setup(async () => ({
+      verdict: 'accept',
+      reason: 'ok',
+      tokens: 10,
+    }));
+    await write('page-inventory', { pages: [{ path: '/' }] });
+    // Compiled before the template had checks: the playbook's blueprint.coverage still runs.
+    const r = await validate(task({ templateId: 'draft-blueprint', acceptance: [] }));
+    expect(r).toEqual({
+      pass: false,
+      reason: 'blueprint.coverage: No Blueprint has been written.',
     });
   });
 
@@ -307,5 +322,65 @@ describe('head.editing-scripts', () => {
 
   it('is pending when the Layout cannot be read', async () => {
     expect((await run(null)).status).toBe('pending');
+  });
+});
+
+describe('head.sections', () => {
+  const dir = 'examples/basic-nextjs/src/components';
+  const run = (files: Record<string, string>, taskId?: string, refs: string[] = []) =>
+    CHECKS['head.sections']!({
+      projectId: 'p1',
+      state: {
+        ...createProjectState('p1'),
+        buildRepo: { appPath: 'examples/basic-nextjs' },
+      } as never,
+      library: null as never,
+      fetch,
+      steps: [],
+      taskId,
+      read: async (_server, op, args) => {
+        refs.push(String(args.ref ?? ''));
+        if (op === 'tree.read')
+          return {
+            code: 200,
+            body: { entries: Object.keys(files).map((f) => `${dir}/${f} 100`) },
+          };
+        return {
+          code: 200,
+          body: {
+            files: (args.paths as string[]).map((p) => ({
+              path: p,
+              content: files[p.slice(dir.length + 1)],
+            })),
+          },
+        };
+      },
+    });
+
+  it('fails components that render outside Section or ignore the tone parameter', async () => {
+    const r = await run({
+      'CardGrid.tsx':
+        "import { Section } from 'components/ui/Section';\n<Section tone={params.tone}>",
+      'RichText.tsx': '<div className="w-full">',
+      'Stats.tsx': "import { Section } from './ui/Section';\n<Section>",
+      'HeroBanner.tsx': '<section>',
+      'ui/Section.tsx': 'export const Section',
+    });
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain("RichText.tsx doesn't render inside ui/Section");
+    expect(r.detail).toContain("Stats.tsx doesn't pass a tone");
+    expect(r.detail).not.toContain('CardGrid');
+    expect(r.detail).not.toContain('HeroBanner');
+  });
+
+  it('judges a port on its own branch', async () => {
+    const refs: string[] = [];
+    const r = await run(
+      { 'CardGrid.tsx': "import { Section } from 'components/ui/Section'; tone" },
+      'port-card-grid',
+      refs,
+    );
+    expect(r.status).toBe('pass');
+    expect(refs[0]).toBe('launchworks/port-card-grid');
   });
 });

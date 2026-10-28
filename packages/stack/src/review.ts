@@ -27,6 +27,8 @@ export interface CheckContext {
   fetch: typeof fetch;
   /** The task's own steps, oldest first: the audit trail checks read. */
   steps: StepEvent[];
+  /** The task being judged; an agent's branch is launchworks/<taskId>. */
+  taskId?: string;
   /** A read operation on one of the project's tool servers (never a write). */
   read(
     server: string,
@@ -68,6 +70,9 @@ const after = (steps: StepEvent[], a: StepEvent) => steps.slice(steps.indexOf(a)
 /** Working-copy operations that change files. */
 /** The branch accepted components are integrated on: what the editing host runs. */
 const INTEGRATION_BRANCH = 'launchworks/integration';
+/** Components that are their own full-width band (hero, header, footer) and the app's plumbing. */
+const SECTION_EXEMPT =
+  /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(HeroBanner|SiteHeader|SiteFooter|Header|Footer|Nav)[^/]*\.tsx$/i;
 const CHANGES = new Set(['fs.write', 'exec.content-sdk-cli']);
 
 /**
@@ -273,6 +278,48 @@ export const CHECKS: Record<string, Check> = {
     ]);
   },
 
+  // Every content component sits in the design system's Section: the source's container width,
+  // section padding and band (tone), set per placement by a rendering parameter. Without it, every
+  // section renders full width with no background and the page looks nothing like the source.
+  'head.sections': async ({ state, read, taskId }) => {
+    const app = (state.buildRepo?.appPath ?? '').replace(/^\/|\/$/g, '');
+    const dir = `${app ? `${app}/` : ''}src/components`;
+    // A port is judged on its own branch; an integration on what the editing host runs.
+    let ref = taskId?.startsWith('port-') ? `launchworks/${taskId}` : INTEGRATION_BRANCH;
+    let t = await read('build-repo', 'tree.read', { path: dir, ref });
+    if (t.code !== 200) {
+      ref = '';
+      t = await read('build-repo', 'tree.read', { path: dir });
+    }
+    if (t.code !== 200) return { status: 'pending', detail: `${dir} could not be listed.` };
+    const files = ((t.body as { entries?: string[] }).entries ?? [])
+      .map((e) => e.replace(/ \d+$/, ''))
+      .filter((f) => /\.tsx$/.test(f) && !/\.(props|test|stories)\.tsx$/.test(f))
+      .filter((f) => !SECTION_EXEMPT.test(f.slice(dir.length + 1)));
+    if (!files.length) return { status: 'pending', detail: `No components under ${dir}.` };
+    const problems: string[] = [];
+    for (let i = 0; i < files.length; i += 20) {
+      const r = await read('build-repo', 'repo.read', {
+        paths: files.slice(i, i + 20),
+        ...(ref ? { ref } : {}),
+      });
+      for (const f of (r.body as { files?: { path: string; content?: string }[] } | null)?.files ??
+        []) {
+        if (f.content === undefined) continue;
+        const name = f.path.slice(dir.length + 1);
+        if (!/from ['"][^'"]*ui\/Section['"]/.test(f.content))
+          problems.push(`${name} doesn't render inside ui/Section`);
+        else if (!/tone/.test(f.content))
+          problems.push(`${name} doesn't pass a tone from its rendering parameters to Section`);
+      }
+    }
+    return problems.length
+      ? failed(problems.slice(0, 10), Math.max(0, problems.length - 10))
+      : pass(
+          `${files.length} components render inside Section with a tone (${ref || 'default branch'}).`,
+        );
+  },
+
   // The site renders through its own host in Page builder, as read back.
   'rendering-host.set': async ({ steps }) => {
     const set = last(steps, 'sitecore-authoring', 'rendering-host.set');
@@ -336,6 +383,12 @@ export interface ReviewDeps {
 export function withReview(base: Activities, deps: ReviewDeps): Activities {
   const checks = deps.checks ?? CHECKS;
   const roles = new Map(deps.playbook.roles.map((r) => [r.role, r]));
+  // A project's plan is compiled when it starts. Checks the playbook adds to a task template later
+  // still apply to that project's tasks: a task is judged on the union.
+  const templates = new Map(deps.playbook.plan.templates.map((t) => [t.id, t]));
+  const acceptanceOf = (task: { templateId: string; acceptance: string[] }) => [
+    ...new Set([...task.acceptance, ...(templates.get(task.templateId)?.acceptance ?? [])]),
+  ];
   // Marked from the tool's definition, so the Lead judges what a call did, not what it's called.
   const effect = (e: StepEvent) => {
     const kind = deps.effect?.(e.data.toolServer, e.data.operation);
@@ -361,6 +414,7 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
         library: deps.library,
         fetch: deps.fetch ?? ((...a) => fetch(...a)),
         steps,
+        taskId: task.taskId,
         read: (server, op, args) =>
           deps.platform
             ? deps.platform.read(req.projectId, server, op, args)
@@ -397,7 +451,8 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
 
       // 1. Automated checks.
       const results: { id: string; status: CheckResult['status']; detail: string }[] = [];
-      for (const a of task.acceptance) {
+      const acceptance = acceptanceOf(task);
+      for (const a of acceptance) {
         const id = a.startsWith('validator:') ? a.slice('validator:'.length) : null;
         if (!id) continue;
         const check = checks[id];
@@ -468,7 +523,7 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
             },
             specialist: role?.name ?? task.role,
             charter: deps.playbook.manifest.charter,
-            task: { title: task.title, acceptance: task.acceptance },
+            task: { title: task.title, acceptance },
             summary: req.result.summary ?? '',
             steps: trail,
             artifacts,

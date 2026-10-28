@@ -355,6 +355,89 @@ describe('SitecoreAI checks', () => {
     expect((await run()).status).toBe('pass');
   });
 
+  it('compares each rendered page with its source: text, headings, items, placeholders, header', async () => {
+    const rsc = (fields: unknown) =>
+      `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ componentName: 'CardGrid', fields }))}])</script>`;
+    const pages: Record<string, string> = {
+      'https://src.example/about/':
+        '<h1>About Ansco</h1><h2>Our Services</h2><p>Telecommunications engineering construction wireless splicing</p>',
+      'https://ansco-site-editing.vercel.app/about': `<header><div id="header"><nav>Home</nav></div></header><h1>About Ansco</h1><p>Section heading</p>${rsc({ heading: { value: 'x' } })}<footer><div id="footer"></div></footer>`,
+    };
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async (url: string | URL | Request) =>
+          new Response(pages[String(url)] ?? '', {
+            status: pages[String(url)] ? 200 : 404,
+          })) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const bp = {
+      collections: {
+        pages: [{ key: 'about', name: 'About', attrs: { path: '/about' } }],
+        components: [
+          {
+            key: 'cards',
+            name: 'Card Grid',
+            attrs: { rendering: 'CardGrid', children: { max: 8 } },
+          },
+        ],
+      },
+    };
+    const run = () =>
+      checks['parity.render']!({
+        ...ctx(tenant({}).read, bp),
+        target: { ...target, hostingProject: 'ansco-site' },
+        document: async (id: string) =>
+          id === 'page-inventory' ? { origin: 'https://src.example' } : null,
+      });
+    const res = await run();
+    expect(res.status).toBe('fail');
+    expect(res.detail).toContain('/about has no footer');
+    expect(res.detail).toContain('placeholder copy: "Section heading"');
+    expect(res.detail).toContain('/about: CardGrid renders no items');
+    expect(res.detail).toMatch(/shows \d+% of the source page's text/);
+    expect(res.detail).toContain('missing headings: Our Services');
+
+    pages['https://ansco-site-editing.vercel.app/about'] =
+      `<header><div id="header"><nav>Home</nav></div></header><h1>About Ansco</h1><h2>Our Services</h2><p>Telecommunications engineering construction wireless splicing</p>${rsc({ data: { datasource: { children: { results: [{}] } } } })}<footer><div id="footer"><p>Ansco</p></div></footer>`;
+    const ok = await run();
+    expect(ok).toEqual({ status: 'pass', detail: 'Rendered parity with the source: /about 100%.' });
+  });
+
+  it('requires a Component Query on every rendering whose component lists child items', async () => {
+    const r = '/sitecore/layout/Renderings/Project/Brands/ansco';
+    const items: Record<string, { id?: string; fields?: Record<string, string> }> = {
+      [r]: {},
+      [`${r}/CardGrid`]: { id: '{C1}', fields: {} },
+      [`${r}/Hero`]: { id: '{H1}' },
+    };
+    const bp = {
+      collections: {
+        components: [
+          {
+            key: 'cards',
+            name: 'Card Grid',
+            attrs: { rendering: 'CardGrid', children: { max: 8 } },
+          },
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero' } },
+        ],
+      },
+    };
+    const res = await pack.checks!['structural.component-queries']!(ctx(tenant(items).read, bp));
+    expect(res.status).toBe('fail');
+    expect(res.detail).toContain(
+      'CardGrid lists child items but its rendering has no Component Query',
+    );
+    items[`${r}/CardGrid`]!.fields = {
+      ComponentQuery:
+        'query { datasource: item(path: $datasource) { children(first: 8) { results { id } } } }',
+    };
+    expect(
+      (await pack.checks!['structural.component-queries']!(ctx(tenant(items).read, bp))).status,
+    ).toBe('pass');
+  });
+
   it("checks the site, Home and the project's own folders", async () => {
     const site = '/sitecore/content/Brands/ansco';
     const t = tenant({
