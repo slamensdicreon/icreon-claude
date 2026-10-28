@@ -53,6 +53,8 @@ export async function startProject(
     taskQueue,
     workflowId: projectWorkflowId(input.projectId),
     args: [input],
+    // Room to replay a long project after a worker restart (the default is 10 seconds).
+    workflowTaskTimeout: '60 seconds',
   });
 }
 

@@ -1,2 +1,4 @@
 pnpm-lock.yaml
 docs/
+# Recorded workflow histories: replayed byte for byte.
+packages/orchestrator/test/replay/histories/

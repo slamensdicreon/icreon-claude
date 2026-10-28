@@ -149,15 +149,24 @@ wake from idle, restarts it, and the next step must replay the whole history wit
      a full activity.
    - **One write per workflow step:** changes made during a step are buffered and written once.
    - Together: a re-run from ~36 events to ~4. Faster for the team too: fewer round trips per action.
-2. **C2. Bounded history.**
-   - The project workflow **continues as new** at each phase exit, and whenever history passes ~3,000
-     events or Temporal suggests it.
-   - The new run **rebuilds its state from the project's event log**, which already records every task
-     state, card, wait and decision, plus a small snapshot of what only the workflow holds (waiting
-     entries, re-run marks, counters).
-   - Running projects switch over safely: a run started on old code replays unchanged and continues
-     as new into the new code at its next live step (gated by a workflow patch).
-   - New runs get a **60-second** workflow-task timeout.
+   - *As built:* not shipped. With local activities, a Director command's completion and a task
+     start that it releases can land in either order, and the replay test caught the resulting
+     nondeterminism. C2 bounds the history instead; batching writes stays open.
+2. **C2. Bounded history.** *Built.*
+   - Past 4,000 events (`policy.continueAsNewAt`), or when Temporal suggests it, the project
+     workflow starts no new agent sessions. It waits until nothing is in flight: no session running,
+     no undo or directive window open, no card default or Director command mid-way. Then it
+     **continues as new**.
+   - It hands the next run a **snapshot** of its state: plan, Blueprint, task states, attempts,
+     waits, re-run marks, gates, holds, spend and open cards. Cards carry what answering them does
+     as data, so an open card keeps its deadline and its effect across runs. The event log is not
+     re-read; it stays the Director's record.
+   - Running projects switch over safely: a run started on earlier code replays unchanged, and from
+     its next live step continues as new into the new code (gated by the `continue-as-new` patch).
+   - Projects start, and new runs continue, with a **60-second** workflow-task timeout. A run that
+     started before this keeps its 10 seconds until it hands over.
+   - `test/replay` keeps histories recorded on the earlier code and replays them in CI, along with
+     a project that switches code mid-run and hands over on the way (the start of C5).
 3. **C3. A worker that stays up.**
    - Run the Temporal worker as its own always-on service, separate from the API, so API deploys and
      idle sleeps don't touch orchestration.

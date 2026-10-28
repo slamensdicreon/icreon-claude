@@ -32,12 +32,14 @@ import {
   allHandlersFinished,
   ApplicationFailure,
   condition,
+  makeContinueAsNewFunc,
   patched,
   proxyActivities,
   setHandler,
   startChild,
   uuid4,
   type ChildWorkflowHandle,
+  workflowInfo,
 } from '@temporalio/workflow';
 import type { Activities } from '../activities';
 import {
@@ -53,7 +55,7 @@ import {
   stopDirective,
   undoResolution,
 } from '../definitions';
-import type { AgentResult, ProjectInput, TaskOutcome } from '../types';
+import type { AgentResult, ProjectInput, ProjectSnapshot, Resolver, TaskOutcome } from '../types';
 import { taskWorkflow } from './task';
 
 const acts = proxyActivities<Activities>({
@@ -74,7 +76,8 @@ interface Escalation {
   deferredUntil: number | null;
   /** A Director's choice inside its undo window. */
   pending: { optionId: string; notes: string | null; undone: boolean } | null;
-  onResolve: (optionId: string, notes: string | null) => Promise<void>;
+  /** What answering it does (see `applyResolution`). */
+  resolver: Resolver;
 }
 
 interface Gate {
@@ -93,18 +96,22 @@ interface Gate {
  */
 export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const { projectId, playbook, policy } = input;
-  const startedAt = Date.now();
+  /** The previous run's state, when this run continues one. */
+  const resume = input.resume;
+  const startedAt = resume?.startedAt ?? Date.now();
   const phaseInfo = new Map(playbook.manifest.phases.map((p) => [p.number, p]));
   const roles = new Map(playbook.roles.map((r) => [r.role, r]));
   const lastDirectorGate = Math.max(
     ...playbook.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number),
   );
 
-  let blueprint: Blueprint | null = null;
-  let plan: Plan = compilePlan(playbook, null, {
-    enabledGates: policy.enabledGates,
-    features: policy.features,
-  });
+  let blueprint: Blueprint | null = resume?.blueprint ?? null;
+  let plan: Plan =
+    resume?.plan ??
+    compilePlan(playbook, null, {
+      enabledGates: policy.enabledGates,
+      features: policy.features,
+    });
   const states: Record<string, TaskState> = {};
   const attempts: Record<string, number> = {};
   const instructions: Record<string, string | null> = {};
@@ -150,6 +157,19 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
 
   const send = (...events: NewEvent[]) => acts.emit(projectId, events);
   const poke = () => void (wake = true);
+  /** Background work in progress that a handover to a new run must not cut short. */
+  let busy = 0;
+  /** Counts a background job without awaiting it, so its scheduling stays as it was. */
+  const track = (job: Promise<unknown>) => {
+    busy += 1;
+    const finished = () => void (busy -= 1);
+    void job.then(finished, finished);
+  };
+  /** The same, for a job the caller awaits. */
+  const tracked = <T>(job: Promise<T>): Promise<T> => {
+    track(job);
+    return job;
+  };
   const task = (id: string) => plan.tasks.find((t) => t.taskId === id);
   const stateOf = (id: string): TaskState => states[id] ?? 'planned';
   /** Paused by the Director at any level that covers this task. */
@@ -324,7 +344,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
 
   async function raise(
     card: Omit<EscalationCardInput, 'escalationId' | 'deadline'>,
-    onResolve: Escalation['onResolve'],
+    resolver: Resolver,
   ): Promise<string> {
     const escalationId = `esc-${uuid4().slice(0, 8)}`;
     const windowMs = card.defaultOptionId
@@ -349,7 +369,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       windowMs,
       deferredUntil: null,
       pending: null,
-      onResolve,
+      resolver,
     });
     await send({
       type: 'escalation.raised',
@@ -375,13 +395,15 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           e.status = 'open';
           e.deferredUntil = null;
           if (e.windowMs) e.deadlineAt = Date.now() + e.windowMs;
-          await send({
-            type: 'escalation.updated',
-            actor: CHIEF,
-            subject: { kind: 'escalation', id },
-            severity: 'warning',
-            data: { escalationId: id, status: 'open', deferredUntil: null, resolution: null },
-          });
+          await tracked(
+            send({
+              type: 'escalation.updated',
+              actor: CHIEF,
+              subject: { kind: 'escalation', id },
+              severity: 'warning',
+              data: { escalationId: id, status: 'open', deferredUntil: null, resolution: null },
+            }),
+          );
         }
         continue;
       }
@@ -391,7 +413,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           Math.max(1, e.deadlineAt - Date.now()),
         );
         if (!changed && e.status === 'open')
-          await settle(id, e.card.defaultOptionId!, null, 'default');
+          await tracked(settle(id, e.card.defaultOptionId!, null, 'default'));
         continue;
       }
       await condition(() => !unresolved(e) || e.status === 'deferred');
@@ -431,12 +453,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         },
       ),
     );
-    void (async () => {
-      const undone = await condition(() => pending.undone, policy.undoWindowMs);
-      if (undone) return;
-      e.pending = null;
-      await commit(id, optionId, notes, by);
-    })();
+    track(
+      (async () => {
+        const undone = await condition(() => pending.undone, policy.undoWindowMs);
+        if (undone) return;
+        e.pending = null;
+        await commit(id, optionId, notes, by);
+      })(),
+    );
   }
 
   async function commit(
@@ -461,8 +485,58 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         id,
       ),
     );
-    await e.onResolve(optionId, notes);
+    await applyResolution(e.resolver, optionId, notes);
     poke();
+  }
+
+  /** What an answered card does, by the kind of card it is. */
+  async function applyResolution(r: Resolver, optionId: string, notes: string | null) {
+    switch (r.kind) {
+      case 'agent-decision': {
+        taskEscalation.delete(r.taskId);
+        const chosen = r.options.find((o) => o.id === optionId)!.label;
+        instructions[r.taskId] =
+          `Decision on "${r.question}": ${chosen}.${notes ? ` ${notes}` : ''}`;
+        retryFromBlocked.add(r.taskId);
+        return;
+      }
+      case 'blocked': {
+        taskEscalation.delete(r.taskId);
+        const t = task(r.taskId)!;
+        if (optionId === 'accept') {
+          await send(
+            taskMove(t, 'running', 'Accepted by the Director'),
+            taskMove(t, 'validating'),
+            taskMove(t, 'done', 'Accepted as is'),
+            agentRefresh(t.role),
+          );
+        } else {
+          instructions[r.taskId] = notes;
+          retryFromBlocked.add(r.taskId);
+        }
+        return;
+      }
+      case 'budget': {
+        budgetHold = false;
+        if (optionId === 'pause') await setProjectPaused(true);
+        return;
+      }
+      case 'gate': {
+        const gate = gates.get(r.key)!;
+        const checkpoint = r.checkpointTaskId ? task(r.checkpointTaskId)! : null;
+        if (optionId === 'approve') {
+          gate.status = 'approved';
+          if (checkpoint) await send(...completeCheckpoint(checkpoint, 'Approved by the Director'));
+          if (!blueprint && plan.tasks.some((t) => t.kind === 'placeholder'))
+            await adoptBlueprint();
+        } else {
+          gate.status = 'none';
+          await rerun(r.coveredTasks, notes);
+          if (checkpoint) states[checkpoint.taskId] = 'ready';
+        }
+        return;
+      }
+    }
   }
 
   const updated = (
@@ -550,21 +624,24 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       // never dispatched twice.
       states[t.taskId] = 'running';
     }
-    handle.result().then(
-      async (outcomes) => {
-        for (const [i, outcome] of outcomes.entries()) await onOutcome(batch[i]!, outcome);
-      },
-      async (err: unknown) => {
-        for (const t of batch) {
-          await onOutcome(t, {
-            outcome: 'escalate',
-            state: stateOf(t.taskId),
-            attempt: attempts[t.taskId] ?? 0,
-            reason: `Task workflow failed: ${err instanceof Error ? err.message : String(err)}`,
-            spent: { tokens: 0, usd: 0 },
-          });
-        }
-      },
+    // Tracked: its task leaves `children` before its outcome is recorded.
+    track(
+      handle.result().then(
+        async (outcomes) => {
+          for (const [i, outcome] of outcomes.entries()) await onOutcome(batch[i]!, outcome);
+        },
+        async (err: unknown) => {
+          for (const t of batch) {
+            await onOutcome(t, {
+              outcome: 'escalate',
+              state: stateOf(t.taskId),
+              attempt: attempts[t.taskId] ?? 0,
+              reason: `Task workflow failed: ${err instanceof Error ? err.message : String(err)}`,
+              spent: { tokens: 0, usd: 0 },
+            });
+          }
+        },
+      ),
     );
   }
 
@@ -727,12 +804,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           sourceTaskId: t.taskId,
           gate: null,
         },
-        async (optionId, notes) => {
-          taskEscalation.delete(t.taskId);
-          const chosen = options.find((o) => o.id === optionId)!.label;
-          instructions[t.taskId] =
-            `Decision on "${d.question}": ${chosen}.${notes ? ` ${notes}` : ''}`;
-          retryFromBlocked.add(t.taskId);
+        {
+          kind: 'agent-decision',
+          taskId: t.taskId,
+          question: d.question,
+          options: options.map((o) => ({ id: o.id, label: o.label })),
         },
       );
       taskEscalation.set(t.taskId, escalationId);
@@ -796,20 +872,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
                 sourceTaskId: t.taskId,
                 gate: null,
               },
-        async (optionId, notes) => {
-          taskEscalation.delete(t.taskId);
-          if (optionId === 'accept') {
-            await send(
-              taskMove(t, 'running', 'Accepted by the Director'),
-              taskMove(t, 'validating'),
-              taskMove(t, 'done', 'Accepted as is'),
-              agentRefresh(t.role),
-            );
-          } else {
-            instructions[t.taskId] = notes;
-            retryFromBlocked.add(t.taskId);
-          }
-        },
+        { kind: 'blocked', taskId: t.taskId },
       );
       taskEscalation.set(t.taskId, escalationId);
     }
@@ -850,25 +913,24 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     } else if (ratio >= BUDGET_SOFT && !softWarned) {
       softWarned = true;
       budgetHold = true;
-      void raise(
-        {
-          type: 'budget',
-          title: `Budget at ${Math.round(ratio * 100)}%`,
-          context: `The project has used ${Math.round(ratio * 100)}% of its budget ($${spent.usd.toFixed(2)}, ${spent.tokens.toLocaleString('en-US')} tokens). New tasks wait until you acknowledge.`,
-          impact: 'Running tasks finish; nothing new starts.',
-          options: [
-            { id: 'continue', label: 'Continue to the hard limit', recommended: true },
-            { id: 'pause', label: 'Pause the project', recommended: false },
-          ],
-          defaultOptionId: null,
-          evidence: [],
-          sourceTaskId: null,
-          gate: null,
-        },
-        async (optionId) => {
-          budgetHold = false;
-          if (optionId === 'pause') await setProjectPaused(true);
-        },
+      track(
+        raise(
+          {
+            type: 'budget',
+            title: `Budget at ${Math.round(ratio * 100)}%`,
+            context: `The project has used ${Math.round(ratio * 100)}% of its budget ($${spent.usd.toFixed(2)}, ${spent.tokens.toLocaleString('en-US')} tokens). New tasks wait until you acknowledge.`,
+            impact: 'Running tasks finish; nothing new starts.',
+            options: [
+              { id: 'continue', label: 'Continue to the hard limit', recommended: true },
+              { id: 'pause', label: 'Pause the project', recommended: false },
+            ],
+            defaultOptionId: null,
+            evidence: [],
+            sourceTaskId: null,
+            gate: null,
+          },
+          { kind: 'budget' },
+        ),
       );
     }
   }
@@ -1042,17 +1104,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
               requiresConfirmation: final,
             },
           },
-      async (optionId, notes) => {
-        if (optionId === 'approve') {
-          gate.status = 'approved';
-          if (checkpoint) await send(...completeCheckpoint(checkpoint, 'Approved by the Director'));
-          if (!blueprint && plan.tasks.some((t) => t.kind === 'placeholder'))
-            await adoptBlueprint();
-        } else {
-          gate.status = 'none';
-          await rerun(coveredTasks, notes);
-          if (checkpoint) states[checkpoint.taskId] = 'ready';
-        }
+      {
+        kind: 'gate',
+        key,
+        phase,
+        coveredTasks,
+        checkpointTaskId: checkpoint?.taskId ?? null,
       },
     );
   }
@@ -1273,34 +1330,36 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         },
       ),
     );
-    void (async () => {
-      const stopped = await condition(() => d.stopped, policy.directiveWindowMs);
-      d.settled = true;
-      if (stopped) {
-        await send(...say('text', null, 'Stopped. Nothing changed.'));
-        return;
-      }
-      // The team kept working during the window: measure the impact again as it applies now
-      // (pages migrated meanwhile become rollbacks rather than cancellations).
-      const applied = impactOf(
-        diffPlans(plan, newPlan),
-        states,
-        diffBlueprints(blueprint!, nextBlueprint),
-      );
-      await applyPlan(newPlan, nextBlueprint, directiveId);
-      await send(
-        ...metricEvents(),
-        decision(
-          text,
-          reading.interpretation,
-          applied.summary,
-          'director',
-          `directive:${directiveId}`,
-          null,
-        ),
-        ...say('text', null, `Applied: ${reading.interpretation}. ${applied.summary}`),
-      );
-    })();
+    track(
+      (async () => {
+        const stopped = await condition(() => d.stopped, policy.directiveWindowMs);
+        d.settled = true;
+        if (stopped) {
+          await send(...say('text', null, 'Stopped. Nothing changed.'));
+          return;
+        }
+        // The team kept working during the window: measure the impact again as it applies now
+        // (pages migrated meanwhile become rollbacks rather than cancellations).
+        const applied = impactOf(
+          diffPlans(plan, newPlan),
+          states,
+          diffBlueprints(blueprint!, nextBlueprint),
+        );
+        await applyPlan(newPlan, nextBlueprint, directiveId);
+        await send(
+          ...metricEvents(),
+          decision(
+            text,
+            reading.interpretation,
+            applied.summary,
+            'director',
+            `directive:${directiveId}`,
+            null,
+          ),
+          ...say('text', null, `Applied: ${reading.interpretation}. ${applied.summary}`),
+        );
+      })(),
+    );
   }
 
   /** Titles for a status line: the first few, and how many more. */
@@ -1756,44 +1815,120 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const rosterEntries = roster(playbook);
   for (const r of rosterEntries)
     agentStates.set(r.agentId, r.tier === 'specialist' ? 'inactive' : 'idle');
-  const created: NewEvent[] = input.registered
-    ? []
-    : [
-        {
-          type: 'project.created',
-          actor: SYSTEM,
-          subject: { kind: 'project', id: projectId },
-          severity: 'notable',
-          data: {
-            name: input.name,
-            client: input.client,
-            playbook: { id: playbook.manifest.id, version: playbook.manifest.version },
-            budgets: policy.budgets,
-            phases: phaseDefs(playbook),
-            roster: rosterEntries,
-            site: { sourceUrl: input.site?.sourceUrl ?? null },
+  if (resume) restore(resume);
+  else await announce();
+
+  /** Takes over from the previous run: its state, and the deadlines of its open cards. */
+  function restore(r: ProjectSnapshot) {
+    Object.assign(states, r.states);
+    Object.assign(attempts, r.attempts);
+    Object.assign(instructions, r.instructions);
+    Object.assign(waits, r.waits);
+    Object.assign(sentBack, r.sentBack);
+    for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
+    for (const id of r.reruns) reruns.add(id);
+    for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
+    for (const [taskId, escId] of r.taskEscalation) taskEscalation.set(taskId, escId);
+    for (const n of r.started) started.add(n);
+    for (const n of r.done) done.add(n);
+    for (const [key, g] of r.gates) gates.set(key, { ...g });
+    for (const [role, st] of r.agentStates) agentStates.set(role, st);
+    for (const role of r.pausedRoles) pausedRoles.add(role);
+    for (const n of r.pausedPhases) pausedPhases.add(n);
+    for (const id of r.pausedTasks) pausedTasks.add(id);
+    for (const n of r.cancelledPhases) cancelledPhases.add(n);
+    for (const [id, v] of r.artifactVersions) artifactVersions.set(id, v);
+    for (const [n, a] of r.phaseArtifact) phaseArtifact.set(n, a);
+    spent.tokens = r.spent.tokens;
+    spent.usd = r.spent.usd;
+    ({ projectPaused, budgetHold, softWarned, hardStopped, budgetPaused } = r.flags);
+    childRuns = r.childRuns;
+    for (const e of r.escalations) {
+      escalations.set(e.card.escalationId, { ...e, pending: null });
+      void watch(e.card.escalationId);
+    }
+  }
+
+  /** Everything the next run needs, taken when nothing is in flight. */
+  function snapshot(): ProjectSnapshot {
+    return {
+      startedAt,
+      blueprint,
+      plan,
+      states: { ...states },
+      attempts: { ...attempts },
+      instructions: { ...instructions },
+      retryFromBlocked: [...retryFromBlocked],
+      reruns: [...reruns],
+      waitingOn: [...waitingOn],
+      waits: { ...waits },
+      sentBack: { ...sentBack },
+      taskEscalation: [...taskEscalation],
+      started: [...started],
+      done: [...done],
+      gates: [...gates].map(([key, g]) => [key, { ...g }]),
+      escalations: [...escalations.values()].filter(unresolved).map((e) => ({
+        card: e.card,
+        status: e.status,
+        deadlineAt: e.deadlineAt,
+        windowMs: e.windowMs,
+        deferredUntil: e.deferredUntil,
+        resolver: e.resolver,
+      })),
+      agentStates: [...agentStates],
+      pausedRoles: [...pausedRoles],
+      pausedPhases: [...pausedPhases],
+      pausedTasks: [...pausedTasks],
+      cancelledPhases: [...cancelledPhases],
+      artifactVersions: [...artifactVersions],
+      phaseArtifact: [...phaseArtifact],
+      spent: { ...spent },
+      flags: { projectPaused, budgetHold, softWarned, hardStopped, budgetPaused },
+      childRuns,
+      run: (resume?.run ?? 1) + 1,
+    };
+  }
+
+  async function announce() {
+    const created: NewEvent[] = input.registered
+      ? []
+      : [
+          {
+            type: 'project.created',
+            actor: SYSTEM,
+            subject: { kind: 'project', id: projectId },
+            severity: 'notable',
+            data: {
+              name: input.name,
+              client: input.client,
+              playbook: { id: playbook.manifest.id, version: playbook.manifest.version },
+              budgets: policy.budgets,
+              phases: phaseDefs(playbook),
+              roster: rosterEntries,
+              site: { sourceUrl: input.site?.sourceUrl ?? null },
+            },
           },
-        },
-      ];
-  await send(
-    ...created,
-    {
-      type: 'project.status',
-      actor: SYSTEM,
-      subject: { kind: 'project', id: projectId },
-      severity: 'notable',
-      data: { status: 'running' },
-    },
-    ...plan.tasks.map(planned),
-    ...rosterEntries
-      .filter((r) => r.tier !== 'specialist')
-      .map((r) => agent(r.agentId, 'idle', null, null)),
-    ...say(
-      'text',
-      'Intake brief',
-      `${input.name} for ${input.client} is set up on playbook ${playbook.manifest.id} ${playbook.manifest.version}. The plan has ${plan.phases.length} phases; the team starts with access verification.`,
-    ),
-  );
+        ];
+    await send(
+      ...created,
+      {
+        type: 'project.status',
+        actor: SYSTEM,
+        subject: { kind: 'project', id: projectId },
+        severity: 'notable',
+        data: { status: 'running' },
+      },
+      ...plan.tasks.map(planned),
+      ...rosterEntries
+        .filter((r) => r.tier !== 'specialist')
+        .map((r) => agent(r.agentId, 'idle', null, null)),
+      ...say(
+        'text',
+        'Intake brief',
+        `${input.name} for ${input.client} is set up on playbook ${playbook.manifest.id} ${playbook.manifest.version}. The plan has ${plan.phases.length} phases; the team starts with access verification.`,
+      ),
+    );
+  }
 
   /** One pass of scheduling. Returns true when it changed something, so the caller loops again. */
   async function step(): Promise<boolean> {
@@ -1953,11 +2088,42 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     return progressed;
   }
 
+  const continueAt = policy.continueAsNewAt ?? 4_000;
+  /**
+   * Past the history threshold, the run hands over to a fresh one so a restarted worker never
+   * replays a long history. Patch-gated: runs started on earlier code replay as they ran.
+   */
+  const historyFull = () => {
+    const info = workflowInfo();
+    return (
+      (info.continueAsNewSuggested || info.historyLength >= continueAt) &&
+      patched('continue-as-new')
+    );
+  };
+  /** Nothing in flight: no agent session, no undo or directive window. */
+  const quiet = () =>
+    busy === 0 &&
+    children.size === 0 &&
+    ![...escalations.values()].some((e) => e.pending) &&
+    [...directives.values()].every((d) => d.settled);
+  const continueAsNew = makeContinueAsNewFunc<typeof projectWorkflow>({
+    workflowTaskTimeout: '60 seconds',
+  });
+
   while (!completed) {
+    if (historyFull()) {
+      // Nothing new starts; the run waits for what is in flight, then hands over.
+      await condition(() => quiet() || completed);
+      await condition(allHandlersFinished);
+      if (!completed && quiet())
+        await continueAsNew({ ...input, policy, registered: true, resume: snapshot() });
+      continue;
+    }
     while (await step()) {
       /* keep scheduling until nothing changes */
     }
     if (completed) break;
+    if (historyFull()) continue;
     await condition(() => wake);
     wake = false;
   }

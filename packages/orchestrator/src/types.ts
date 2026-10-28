@@ -1,6 +1,15 @@
 // Types shared by workflows, activities and the client. Workflow-safe: no Node imports.
-import type { Budgets, EscalationType, MetricKey, NewEvent, TaskState } from '@lw/contracts';
-import type { Blueprint, PlannedTask } from '@lw/plan';
+import type {
+  AgentState,
+  Budgets,
+  EscalationCard,
+  EscalationStatus,
+  EscalationType,
+  MetricKey,
+  NewEvent,
+  TaskState,
+} from '@lw/contracts';
+import type { Blueprint, Plan, PlannedTask } from '@lw/plan';
 import type { Playbook } from '@lw/playbook-sdk';
 
 export const TASK_QUEUE = 'launchworks-orchestration';
@@ -30,6 +39,11 @@ export interface ProjectPolicy {
   directiveWindowMs: number;
   /** How long a reversible Director choice can be undone before it takes effect. Spec: 10 s. */
   undoWindowMs: number;
+  /**
+   * History length at which the project workflow starts a fresh run (continue-as-new) at its next
+   * quiet moment, so a restarted worker never replays a long history. Default 4,000 events.
+   */
+  continueAsNewAt?: number;
 }
 
 export interface ProjectInput {
@@ -45,6 +59,80 @@ export interface ProjectInput {
    * workflow starts it rather than creating it.
    */
   registered?: boolean;
+  /** Set when a run continues as new: the state the previous run handed over. */
+  resume?: ProjectSnapshot;
+}
+
+/**
+ * What a project card does once answered. Data, not a callback, so an open card survives the
+ * workflow continuing as new.
+ */
+export type Resolver =
+  | {
+      kind: 'agent-decision';
+      taskId: string;
+      question: string;
+      options: { id: string; label: string }[];
+    }
+  | { kind: 'blocked'; taskId: string }
+  | { kind: 'budget' }
+  | {
+      kind: 'gate';
+      key: string;
+      phase: number;
+      coveredTasks: string[];
+      checkpointTaskId: string | null;
+    };
+
+/** An unanswered card carried into the next run. */
+export interface EscalationSnapshot {
+  card: EscalationCard;
+  status: EscalationStatus;
+  deadlineAt: number | null;
+  windowMs: number | null;
+  deferredUntil: number | null;
+  resolver: Resolver;
+}
+
+/**
+ * The project workflow's state at a quiet moment (no agent session running, no undo or directive
+ * window open), handed to its next run. Everything else the workflow knows is in the event log.
+ */
+export interface ProjectSnapshot {
+  startedAt: number;
+  blueprint: Blueprint | null;
+  plan: Plan;
+  states: Record<string, TaskState>;
+  attempts: Record<string, number>;
+  instructions: Record<string, string | null>;
+  retryFromBlocked: string[];
+  reruns: string[];
+  waitingOn: [string, { ids: string[]; what: string; prior: string | null; note?: string }][];
+  waits: Record<string, number>;
+  sentBack: Record<string, number>;
+  taskEscalation: [string, string][];
+  started: number[];
+  done: number[];
+  gates: [string, { status: 'none' | 'pending' | 'approved'; escalationId: string | null }][];
+  escalations: EscalationSnapshot[];
+  agentStates: [string, AgentState][];
+  pausedRoles: string[];
+  pausedPhases: number[];
+  pausedTasks: string[];
+  cancelledPhases: number[];
+  artifactVersions: [string, number][];
+  phaseArtifact: [number, { artifactId: string; title: string; version: number }][];
+  spent: { tokens: number; usd: number };
+  flags: {
+    projectPaused: boolean;
+    budgetHold: boolean;
+    softWarned: boolean;
+    hardStopped: boolean;
+    budgetPaused: boolean;
+  };
+  childRuns: number;
+  /** Which run of the project this is, from 1. */
+  run: number;
 }
 
 export interface AgentRequest {
