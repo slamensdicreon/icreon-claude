@@ -1200,8 +1200,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       return;
     }
     if (reading.kind === 'rerun') {
+      // Queued tasks became re-runnable later: a directive read before that replays as it ran.
+      const queued = patched('rerun-queued-tasks');
       const can = reading.taskIds.filter(
-        (id) => task(id)?.kind === 'work' && RERUNNABLE.includes(stateOf(id)) && !children.has(id),
+        (id) =>
+          task(id)?.kind === 'work' &&
+          RERUNNABLE.includes(stateOf(id)) &&
+          (stateOf(id) !== 'ready' || queued) &&
+          !children.has(id),
       );
       const busy = reading.taskIds.filter((id) => task(id) && !can.includes(id));
       for (const id of can) await rerunOne(id, reading.notes.trim() || null, 'Asked of Cypher');
