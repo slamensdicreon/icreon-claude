@@ -179,3 +179,43 @@ describe('pause and cancel below the project', () => {
     assertLegalLog(await h.store.read(p.projectId));
   }, 60_000);
 });
+
+describe('work done outside the agents', () => {
+  it('records named tasks as done on the record; they never run, and the project carries on', async () => {
+    const p = await launch(h);
+    const bot = directorBot(p);
+    await gate1(p);
+    await expect(p.commands.completeTasks(['nope'], 'x')).rejects.toMatchObject({ status: 404 });
+    await expect(p.commands.completeTasks(['recrawl-source'], ' ')).rejects.toMatchObject({
+      status: 422,
+    });
+    await p.commands.completeTasks(
+      ['recrawl-source', 'enable-experience'],
+      'Re-crawled and enabled by hand on the CM',
+    );
+    for (const id of ['recrawl-source', 'enable-experience'])
+      expect(p.state()!.tasks[id]!.state).toBe('done');
+    await expect(p.commands.completeTasks(['recrawl-source'], 'again')).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(p.state()!.decisions.find((d) => d.answer === 'Done outside the agents')).toMatchObject({
+      decidedBy: 'director',
+    });
+
+    await p.handle.result();
+    await bot.stop();
+    expect(p.state()!.status).toBe('completed');
+    const events = await h.store.read(p.projectId);
+    assertLegalLog(events);
+    // Never dispatched: the only moves are the ones the command recorded.
+    const moves = events.filter(
+      (e) => e.type === 'task.state' && e.data.taskId === 'recrawl-source',
+    );
+    expect(moves.map((e) => e.type === 'task.state' && e.data.to)).toEqual([
+      'ready',
+      'running',
+      'validating',
+      'done',
+    ]);
+  }, 120_000);
+});

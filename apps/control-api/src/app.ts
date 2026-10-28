@@ -16,6 +16,7 @@ import {
   DeferEscalation,
   PostMessage,
   RerunTask,
+  CompleteTasks,
   ResolveEscalation,
   RollbackPhase,
   SendBackGate,
@@ -626,6 +627,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       );
     },
   );
+
+  app.post<{ Params: { id: string } }>('/projects/:id/tasks/complete', async (req) => {
+    const { taskIds, note } = CompleteTasks.parse(req.body);
+    return command(req.params.id, (o) => supported(o, 'completeTasks')(taskIds, note));
+  });
 
   app.post<{ Params: { id: string; taskId: string } }>(
     '/projects/:id/tasks/:taskId/rollback',

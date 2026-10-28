@@ -6,6 +6,7 @@ import { WorkflowNotFoundError, WorkflowUpdateFailedError, type Client } from '@
 import {
   changeBudgets,
   rerunTask,
+  completeTasks,
   control,
   deferEscalation,
   postMessage,
@@ -207,5 +208,9 @@ export class ProjectCommandsClient {
     return this.run(() =>
       this.handle.executeUpdate(rerunTask, { args: [{ taskId, instructions }] }),
     );
+  }
+
+  completeTasks(taskIds: string[], note: string) {
+    return this.run(() => this.handle.executeUpdate(completeTasks, { args: [{ taskIds, note }] }));
   }
 }

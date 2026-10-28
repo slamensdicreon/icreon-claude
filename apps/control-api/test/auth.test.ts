@@ -157,6 +157,20 @@ describe('GitHub sign-in', () => {
     ).toBe(401);
   });
 
+  it('lets an operator API key through by its hash, and nothing that only resembles one', async () => {
+    const { createHash } = await import('node:crypto');
+    const key = `lwk_${'a1'.repeat(20)}`;
+    const a = await start(fakeGithub('slamensdicreon'), {
+      apiKeys: [{ login: 'claude-code', sha256: createHash('sha256').update(key).digest('hex') }],
+    });
+    const as = (authorization: string) =>
+      a.inject({ url: '/projects', headers: { authorization } });
+    expect((await as(`Bearer ${key}`)).statusCode).toBe(200);
+    expect((await as(`Bearer lwk_${'b2'.repeat(20)}`)).statusCode).toBe(401);
+    expect((await as(`Bearer ${key.slice(0, -1)}x`)).statusCode).toBe(401);
+    expect((await as(key)).statusCode).toBe(401);
+  });
+
   it('rejects a callback whose state does not match, and a failed code exchange', async () => {
     const a = await start(fakeGithub('slamensdicreon'));
     expect(

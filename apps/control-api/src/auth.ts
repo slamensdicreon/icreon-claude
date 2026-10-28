@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface GithubAuthOptions {
@@ -10,6 +10,11 @@ export interface GithubAuthOptions {
   appUrl: string;
   /** GitHub logins allowed in. Checked on every request, so removal is immediate on redeploy. */
   operators: string[];
+  /**
+   * API keys for scripts and agents acting as an operator (`Authorization: Bearer lwk_…`): the
+   * SHA-256 of each key, hex, with the name its actions are recorded under. Only hashes are kept.
+   */
+  apiKeys?: { login: string; sha256: string }[];
   /** If set, the account must also be an active member of this org (where 2FA is enforced). */
   requiredOrg?: string;
   /** At least 32 characters; signs session cookies. */
@@ -70,9 +75,25 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
   const deny = (reply: FastifyReply, status: number, code: string, message: string) =>
     reply.status(status).send({ error: { code, message } });
 
+  const keys = (opts.apiKeys ?? []).map((k) => ({
+    login: k.login,
+    hash: Buffer.from(k.sha256.toLowerCase(), 'hex'),
+  }));
+  const byKey = (header: string | undefined) => {
+    const key = /^Bearer (lwk_[A-Za-z0-9_-]{32,})$/.exec(header ?? '')?.[1];
+    if (!key) return null;
+    const hash = createHash('sha256').update(key).digest();
+    return keys.find((k) => k.hash.length === hash.length && timingSafeEqual(k.hash, hash)) ?? null;
+  };
+
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS' || OPEN_PATHS.some((p) => req.url === p || req.url.startsWith(p)))
       return;
+    const key = byKey(req.headers.authorization);
+    if (key) {
+      req.operator = { login: key.login, name: `${key.login} (API key)`, avatarUrl: null };
+      return;
+    }
     const session = read<{
       login: string;
       name: string | null;

@@ -29,6 +29,14 @@ export const rerunTask = defineUpdate<CommandAck, [{ taskId: string; instruction
   'rerunTask',
 );
 
+/**
+ * Records tasks the Director's team finished outside the agents as done, with a note: they move
+ * to done on the record and never run, so the plan picks up from where the work really is.
+ */
+export const completeTasks = defineUpdate<CommandAck, [{ taskIds: string[]; note: string }]>(
+  'completeTasks',
+);
+
 /** Takes back a reversible choice while its undo window is open; the card re-opens. */
 export const undoResolution = defineUpdate<CommandAck, [{ escalationId: string }]>(
   'undoResolution',

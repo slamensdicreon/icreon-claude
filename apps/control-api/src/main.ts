@@ -96,6 +96,8 @@ const env = z
     GITHUB_CLIENT_SECRET: z.string().optional(),
     /** Comma-separated GitHub logins allowed in. */
     OPERATORS: z.string().default(''),
+    /** `login:sha256hex` pairs, comma-separated: operator API keys, stored as hashes only. */
+    OPERATOR_API_KEYS: z.string().default(''),
     GITHUB_ORG: z.string().optional(),
     SESSION_SECRET: z.string().optional(),
     /** This API's public URL (for the OAuth callback) and the Control Center's URL. */
@@ -147,6 +149,10 @@ const auth =
         operators: env.OPERATORS.split(',')
           .map((s) => s.trim())
           .filter(Boolean),
+        apiKeys: env.OPERATOR_API_KEYS.split(',')
+          .map((s) => s.trim().split(':'))
+          .filter((p): p is [string, string] => p.length === 2 && /^[0-9a-f]{64}$/i.test(p[1]!))
+          .map(([login, sha256]) => ({ login, sha256 })),
         requiredOrg: env.GITHUB_ORG,
         secureCookies: required('PUBLIC_URL', publicUrl).startsWith('https://'),
       }

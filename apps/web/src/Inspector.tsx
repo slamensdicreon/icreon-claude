@@ -18,6 +18,17 @@ const RERUNNABLE = new Set([
   'ready',
 ]);
 
+/** States a task can be recorded as done from, when the team did the work outside the agents. */
+const COMPLETABLE = new Set([
+  'planned',
+  'ready',
+  'blocked',
+  'paused',
+  'rejected',
+  'waiting',
+  'rolled_back',
+]);
+
 /** The drawer over the canvas: one agent or one task, read-only apart from its controls. */
 export function Inspector() {
   const { inspector, closeInspector } = useApp();
@@ -312,6 +323,39 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
             }
           >
             Re-run with instructions
+          </button>
+          <button
+            className="btn"
+            disabled={!COMPLETABLE.has(t.state) || t.kind !== 'work'}
+            title={
+              COMPLETABLE.has(t.state)
+                ? 'The team did this outside the agents: record it as done so it never runs'
+                : `Can't record as done while ${t.state}`
+            }
+            onClick={() =>
+              openOverlay(
+                <TextForm
+                  title={`Mark ${t.title} done`}
+                  body="Record that the team did this outside the agents. It moves to done on the record and never runs; the note goes in the Decision Log."
+                  label="What was done, and where"
+                  placeholder="e.g. Layouts rebuilt by hand on the CM from the live site"
+                  submitLabel="Mark done"
+                  onSubmit={(note) => {
+                    closeOverlay();
+                    void run(
+                      () =>
+                        post(`/projects/${projectId}/tasks/complete`, {
+                          taskIds: [t.taskId],
+                          note,
+                        }),
+                      `Recorded ${t.title} as done`,
+                    );
+                  }}
+                />,
+              )
+            }
+          >
+            Mark done
           </button>
           <button
             className="btn danger"

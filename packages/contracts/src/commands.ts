@@ -186,6 +186,13 @@ export type Control = z.infer<typeof Control>;
 export const RerunTask = z.object({ instructions: z.string().min(1).max(4000) });
 export type RerunTask = z.infer<typeof RerunTask>;
 
+/** POST /projects/:id/tasks/complete — work the team did outside the agents, recorded as done. */
+export const CompleteTasks = z.object({
+  taskIds: z.array(z.string().min(1).max(200)).min(1).max(200),
+  note: z.string().min(1).max(4000),
+});
+export type CompleteTasks = z.infer<typeof CompleteTasks>;
+
 /** POST /projects/:id/phases/:phase/rollback — destructive: type ROLL BACK. */
 export const RollbackPhase = z.object({ confirmation: z.literal('ROLL BACK') });
 export type RollbackPhase = z.infer<typeof RollbackPhase>;

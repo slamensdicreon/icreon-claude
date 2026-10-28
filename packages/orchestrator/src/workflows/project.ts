@@ -45,6 +45,7 @@ import type { Activities } from '../activities';
 import {
   cancelTask,
   changeBudgets,
+  completeTasks,
   rerunTask,
   control,
   deferEscalation,
@@ -1782,6 +1783,70 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             'conflict',
             `${t.title} is ${stateOf(taskId)} right now; re-run it once it stops.`,
           );
+      },
+    },
+  );
+
+  /** The path a task takes to done from where it stands, each step legal on the record. */
+  const PATH_TO_DONE: Partial<Record<TaskState, TaskState[]>> = {
+    planned: ['ready', 'running', 'validating', 'done'],
+    ready: ['running', 'validating', 'done'],
+    blocked: ['running', 'validating', 'done'],
+    paused: ['running', 'validating', 'done'],
+    rejected: ['running', 'validating', 'done'],
+    waiting: ['running', 'validating', 'done'],
+    rolled_back: ['ready', 'running', 'validating', 'done'],
+  };
+  setHandler(
+    completeTasks,
+    async ({ taskIds, note }) => {
+      const why = note.trim();
+      for (const id of [...new Set(taskIds)]) {
+        const t = task(id)!;
+        const path = PATH_TO_DONE[stateOf(id)] ?? [];
+        const esc = taskEscalation.get(id);
+        if (esc) {
+          await supersede(esc, 'done outside the agents');
+          taskEscalation.delete(id);
+        }
+        retryFromBlocked.delete(id);
+        reruns.delete(id);
+        waitingOn.delete(id);
+        await send(
+          ...path.map((to) =>
+            taskMove(t, to, to === 'done' ? `Done outside the agents: ${why}` : null),
+          ),
+          agentRefresh(t.role),
+        );
+        states[id] = 'done';
+      }
+      await send(
+        decision(
+          `Record ${taskIds.length} task${taskIds.length === 1 ? '' : 's'} as done`,
+          'Done outside the agents',
+          `${why} (${taskIds.map(titleOf).join('; ')})`,
+          'director',
+          `tasks:${taskIds.join(',')}`.slice(0, 200),
+          null,
+        ),
+      );
+      poke();
+      return { accepted: true };
+    },
+    {
+      validator: ({ taskIds, note }) => {
+        if (!taskIds.length || taskIds.length > 200)
+          return reject('invalid', 'Name between 1 and 200 tasks.');
+        if (!note.trim()) return reject('invalid', 'Say what was done and where.');
+        for (const id of taskIds) {
+          const t = task(id);
+          if (!t || t.kind !== 'work') return reject('not_found', `No task "${id}".`);
+          if (children.has(id) || !PATH_TO_DONE[stateOf(id)])
+            return reject(
+              'conflict',
+              `${t.title} is ${stateOf(id)}; it can't be recorded as done.`,
+            );
+        }
       },
     },
   );

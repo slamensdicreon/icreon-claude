@@ -29,6 +29,8 @@ export interface ProjectCommands {
   /** Ends a deferral early ("Resume now"). */
   resume?(escalationId: string): Promise<unknown>;
   rerunTask?(taskId: string, instructions: string): Promise<unknown>;
+  /** Records tasks the team finished outside the agents as done. */
+  completeTasks?(taskIds: string[], note: string): Promise<unknown>;
   /** The orchestrator's health for this project (read-only). */
   diagnose?(): Promise<unknown>;
   rollbackTask?(taskId: string): Promise<unknown>;
