@@ -1,4 +1,12 @@
-import type { LwEvent, PolicyRow, SettingsSnapshot, SinceSummary } from '@lw/contracts';
+import type {
+  AutonomyLevel,
+  DecisionCategory,
+  LwEvent,
+  PolicyRow,
+  SettingsSnapshot,
+  SinceSummary,
+} from '@lw/contracts';
+import { autonomyOf } from './autonomy';
 import { phaseViews, type ProjectState } from './projector';
 
 /** The optional reviews a Director can switch on, by setting key. */
@@ -15,7 +23,11 @@ export function optionalGateEnabled(
   return typeof v === 'boolean' ? v : OPTIONAL_GATES.find((g) => g.key === key)!.default;
 }
 
-export function settingsView(s: ProjectState, policyDefaults: PolicyRow[]): SettingsSnapshot {
+export function settingsView(
+  s: ProjectState,
+  policyDefaults: PolicyRow[],
+  autonomyDefaults: Partial<Record<DecisionCategory, AutonomyLevel>> = {},
+): SettingsSnapshot {
   const phases = phaseViews(s);
   const overrides = (s.settings.escalationPolicy ?? {}) as Record<string, Partial<PolicyRow>>;
   const directorGates = phases
@@ -66,6 +78,7 @@ export function settingsView(s: ProjectState, policyDefaults: PolicyRow[]): Sett
     spent: s.spent,
     gates: [...directorGates, ...optional],
     escalationPolicy: policyDefaults.map((row) => ({ ...row, ...overrides[row.type] })),
+    autonomy: autonomyOf(s, autonomyDefaults),
     conventions: { entries: s.conventions, lockedAt },
     capabilityGaps: Object.entries(s.capabilityGaps)
       .map(([key, g]) => ({

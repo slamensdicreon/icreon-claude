@@ -363,6 +363,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       typeLabel: card.typeLabel ?? null,
       waitNote: card.waitNote ?? null,
       reversible: card.reversible ?? true,
+      category: card.category ?? null,
+      triage: card.triage ? { ruleIds: [], ...card.triage } : null,
       escalationId,
       deadline: deadlineAt ? new Date(deadlineAt).toISOString() : null,
     };

@@ -3,6 +3,7 @@ export * from './escalations';
 export * from './clusters';
 export * from './categories';
 export * from './scorecard';
+export * from './autonomy';
 export * from './health';
 export * from './describe';
 export * from './projector';

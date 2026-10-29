@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ControlVerb, ScopeKind } from './enums';
+import { AutonomyLevel, ControlVerb, DecisionCategory, ScopeKind } from './enums';
 
 /**
  * POST /projects — intake. `sourceUrl` is the live site being migrated; the crawl tools may only
@@ -217,6 +217,10 @@ export type ArchiveProject = z.infer<typeof ArchiveProject>;
 
 /** PUT /projects/:id/settings/:key */
 export const ChangeSetting = z.object({ value: z.json() });
+
+/** The value of the `autonomy` setting: a level per category; categories left out keep the default. */
+export const AutonomySetting = z.partialRecord(DecisionCategory, AutonomyLevel);
+export type AutonomySetting = z.infer<typeof AutonomySetting>;
 export type ChangeSetting = z.infer<typeof ChangeSetting>;
 
 /** Every command answers with the seq of the last event it produced, so the UI can reconcile. */

@@ -34,7 +34,7 @@ with A1 and A2 together. The scorecard (step 1) measures it, so we don't guess.
 | Step | Build | Size | Why here |
 | --- | --- | --- | --- |
 | 0 | **P1 Dashboard + P2 saved connections and remix** (see Portfolio below) (**built**) | 3 sessions | The next sites are remixes of Ansco on the same tenant |
-| 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline | 1 session | Every later step claims fewer cards or rejections; this proves it |
+| 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline (**built**) | 1 session | Every later step claims fewer cards or rejections; this proves it |
 | 2 | **No-repo mode**: start from the public website alone, no source repository (**built**) | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
 | 3 | **A2a Lead triage + autonomy settings** (+ the rules table) | 1½ sessions | Biggest cut left in cards |
 | 4 | **A2b Rules from answers** ("Make this a rule", Settings → Rules, harvest Ansco's answers) | 1 session | Makes triage smarter every time the Director answers |
@@ -64,6 +64,39 @@ upgrade in place, and deploys at a quiet moment (a deploy restarts the worker).
 its baseline at once). `GET /projects/:id/scorecard` and `GET /playbooks/:id/scorecard`
 (projects side by side). A tile on Mission Control (cards per task, % settled without the
 Director); a Scorecard page under Reports.
+
+**As built (2026-10-29):** `categoryOf` (ten categories, tuned on Ansco's cards), a per-task
+ledger in the projector, `scorecard(state)`, `GET /projects/:id/scorecard` and
+`GET /playbooks/:id/scorecard`, a Scorecard page (G then C), a line on Mission Control, and a
+comparison on the Dashboard's Playbooks tab.
+
+**Ansco's baseline** (playbook 0.3, read from production on 2026-10-29):
+
+| Measure | Ansco |
+| --- | --- |
+| Cards | 353 over 203 tasks: **1.74 per task** |
+| Settled without the Director | **26.6%** (92, all by their default) |
+| Recommendation taken | **93.9%** of settled cards with one |
+| Lead rejection rate | **37.5%** (149 of 397 reviews) |
+| Repeated cards (same cause) | **101**; the top cause, refused media downloads, repeated 77 times |
+| Waits / re-runs / capability gaps | 65 / 63 / 2 |
+| Cost and time | $98.79, 73.4M tokens, 62.5 hours |
+
+| Category | Cards | Director | Default | Recommendation taken |
+| --- | --- | --- | --- | --- |
+| Media sources | 237 | 165 | 72 | 234 of 237 |
+| Tool problems | 30 | 26 | 3 | 21 of 29 |
+| Retries after rejection | 25 | 18 | 3 | 18 of 21 |
+| Ownership and missing work | 19 | 11 | 8 | 16 of 19 |
+| Naming and structure | 10 | 9 | 1 | 8 of 10 |
+| Other | 9 | 9 | 0 | 7 of 9 |
+| Access | 8 | 6 | 2 | 8 of 8 |
+| Releases, gates, budget | 7 | 6 | 0 | 6 of 6 |
+| Content | 5 | 2 | 3 | 5 of 5 |
+| Scope | 3 | 2 | 0 | 2 of 2 |
+
+Phase 6 (content and media) raised 261 of the cards; phase 4 (components) had the most
+rejections (65 of 137 reviews). Those are where triage, rules and facts should show first.
 
 ## Step 2 — No-repo mode
 

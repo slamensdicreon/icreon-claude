@@ -29,7 +29,7 @@ function settledBy(x: EscalationView): SettledBy | null {
 
 /** A card's category: recorded on it once triage tags cards, else read from its words. */
 export function cardCategory(x: EscalationView): DecisionCategory {
-  return (x as EscalationView & { category?: DecisionCategory }).category ?? categoryOf(x);
+  return x.category ?? categoryOf(x);
 }
 
 /**

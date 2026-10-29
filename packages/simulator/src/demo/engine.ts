@@ -856,6 +856,8 @@ export class DemoProject {
   private gateCard(id: string): EscalationCard {
     return {
       escalationId: id,
+      category: null,
+      triage: null,
       type: 'gate',
       typeLabel: 'Gate 1',
       title: 'Approve Blueprint v1',
@@ -1168,6 +1170,8 @@ export class DemoProject {
         : null;
     const card: EscalationCard = {
       escalationId: id,
+      category: null,
+      triage: null,
       type: def.type,
       typeLabel: def.typeLabel ?? null,
       title: def.title,

@@ -4,6 +4,7 @@ import {
   AgentTier,
   Breakpoint,
   CosPresence,
+  DecisionCategory,
   EscalationStatus,
   EscalationType,
   ProjectStatus,
@@ -122,6 +123,19 @@ export const EvidenceLink = LinkTarget.extend({ label: z.string() });
 export type EvidenceLink = z.infer<typeof EvidenceLink>;
 
 /** Escalation card, as specified in design spec §5. Gate approvals are escalations of type `gate`. */
+/** What a Lead made of a card before it reached the Director. */
+export const LeadTriage = z.object({
+  leadId: z.string(),
+  /** shadow: the Lead answered, for comparison; forwarded: the Lead passed it on. */
+  mode: z.enum(['shadow', 'forwarded']),
+  /** The option the Lead chose; null when forwarded. */
+  optionId: z.string().nullable(),
+  reasoning: z.string(),
+  /** Rules the Lead applied. */
+  ruleIds: z.array(z.string()).default([]),
+});
+export type LeadTriage = z.infer<typeof LeadTriage>;
+
 export const EscalationCard = z.object({
   escalationId: z.string(),
   type: EscalationType,
@@ -139,6 +153,10 @@ export const EscalationCard = z.object({
   waitNote: z.string().nullable().default(null),
   /** Whether a choice can be undone during the undo window. */
   reversible: z.boolean().default(true),
+  /** What the card asks about; read from its words when absent (cards raised before triage). */
+  category: DecisionCategory.nullable().default(null),
+  /** The Lead's answer when triage saw the card first: in shadow, or why it was forwarded. */
+  triage: LeadTriage.nullable().default(null),
   /** Set for gate escalations. */
   gate: z
     .object({
@@ -157,7 +175,7 @@ export type EscalationCardInput = z.input<typeof EscalationCard>;
 export const Resolution = z.object({
   optionId: z.string().nullable(),
   notes: z.string().nullable().default(null),
-  by: z.enum(['director', 'default', 'chief_of_staff']),
+  by: z.enum(['director', 'default', 'chief_of_staff', 'lead', 'rule']),
   supersededBy: z.string().nullable().default(null),
 });
 export type Resolution = z.infer<typeof Resolution>;
@@ -322,6 +340,7 @@ export const SettingKey = z.enum([
   'gates.publishReview',
   'escalationPolicy',
   'notifications',
+  'autonomy',
 ]);
 export type SettingKey = z.infer<typeof SettingKey>;
 
@@ -515,7 +534,7 @@ export const EventBody = z.discriminatedUnion('type', [
       question: z.string(),
       answer: z.string(),
       rationale: z.string(),
-      decidedBy: z.enum(['director', 'chief_of_staff', 'default']),
+      decidedBy: z.enum(['director', 'chief_of_staff', 'default', 'lead', 'rule']),
       scopeKey: z.string(),
       escalationId: z.string().nullable(),
       /** Display id, "D-07". Assigned in order when absent. */

@@ -67,6 +67,15 @@ export const DecisionCategory = z.enum([
 ]);
 export type DecisionCategory = z.infer<typeof DecisionCategory>;
 
+/**
+ * Who may settle a category of card. agents: the agent proceeds with its recommendation (logged).
+ * lead: the task's Lead answers; the card reaches the Director only if the Lead forwards it.
+ * shadow: the Lead answers for the record, and the card still goes to the Director, so the two
+ * can be compared before the Lead is trusted with it. ask: always the Director.
+ */
+export const AutonomyLevel = z.enum(['agents', 'lead', 'shadow', 'ask']);
+export type AutonomyLevel = z.infer<typeof AutonomyLevel>;
+
 export const DECISION_CATEGORY_LABEL: Record<DecisionCategory, string> = {
   media: 'Media sources',
   tool: 'Tool problems',

@@ -1,5 +1,11 @@
 import { fileURLToPath } from 'node:url';
-import { PlaybookScorecard, PortfolioDiagnostics, PortfolioItem, Scorecard } from '@lw/contracts';
+import {
+  PlaybookScorecard,
+  PortfolioDiagnostics,
+  PortfolioItem,
+  Scorecard,
+  SettingsSnapshot,
+} from '@lw/contracts';
 import { InMemoryEventStore, Projections } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { Simulation, sitecoreScenario } from '@lw/simulator';
@@ -115,4 +121,28 @@ it("scores a project's work from its log, and compares only real projects on a p
     (await app.inject({ method: 'GET', url: '/playbooks/sitecoreai-migration/scorecard' })).json(),
   );
   expect(pb).toEqual({ playbookId: 'sitecoreai-migration', projects: [] });
+});
+
+it('shows who may settle each kind of card, and keeps releases and scope with the Director', async () => {
+  const app = await start();
+  const settings = SettingsSnapshot.parse(
+    (await app.inject({ method: 'GET', url: '/projects/p1/settings' })).json(),
+  );
+  const row = (c: string) => settings.autonomy.find((r) => r.category === c);
+  expect(row('media')).toMatchObject({ level: 'shadow', default: 'shadow', locked: false });
+  expect(row('release')).toMatchObject({ level: 'ask', locked: true });
+  expect(row('scope')).toMatchObject({ level: 'ask', locked: true });
+  const r = await app.inject({
+    method: 'PUT',
+    url: '/projects/p1/settings/autonomy',
+    payload: { value: { media: 'lead', release: 'lead' } },
+  });
+  expect(r.statusCode).toBe(422);
+  expect(r.json().error.message).toMatch(/Releases, gates and budget always come to you/);
+  const bad = await app.inject({
+    method: 'PUT',
+    url: '/projects/p1/settings/autonomy',
+    payload: { value: { media: 'sometimes' } },
+  });
+  expect(bad.statusCode).toBe(400);
 });

@@ -381,6 +381,8 @@ export class Simulation {
         : null;
     const full: EscalationCard = {
       escalationId,
+      category: null,
+      triage: null,
       type: card.type,
       title: card.title,
       context: card.context,

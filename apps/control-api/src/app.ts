@@ -20,6 +20,8 @@ import {
   CompleteTasks,
   CreateConnection,
   AskCypher,
+  AutonomySetting,
+  DECISION_CATEGORY_LABEL,
   RotateConnectionCredential,
   ResolveEscalation,
   RollbackPhase,
@@ -46,6 +48,7 @@ import {
   isLogEvent,
   portfolioItem,
   scorecard,
+  LOCKED_CATEGORIES,
   preview,
   scheduleSnapshot,
   settingsView,
@@ -967,6 +970,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.put<{ Params: { id: string; key: string } }>('/projects/:id/settings/:key', async (req) => {
     const key = SettingKey.parse(req.params.key);
     const { value } = ChangeSetting.parse(req.body);
+    if (key === 'autonomy') {
+      const levels = AutonomySetting.parse(value);
+      const locked = LOCKED_CATEGORIES.find((c) => levels[c] && levels[c] !== 'ask');
+      if (locked)
+        throw new CommandError(
+          422,
+          'locked',
+          `${DECISION_CATEGORY_LABEL[locked]} always come to you: they can't be handed to agents or Leads.`,
+        );
+    }
     return command(req.params.id, (o) => supported(o, 'changeSetting')(key, value));
   });
 

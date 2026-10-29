@@ -328,10 +328,12 @@ function BlueprintViewer() {
 function DecisionLog() {
   const tz = useTz();
   const list = useProjectResource<DecisionView[]>('/decisions').data ?? [];
-  const by = {
+  const by: Record<DecisionView['decidedBy'], string> = {
     director: 'Director',
     chief_of_staff: 'Cypher (convention)',
     default: 'Default action (Cypher)',
+    lead: 'Lead (triage)',
+    rule: 'Rule',
   };
   return (
     <>

@@ -3,6 +3,7 @@ import {
   AgentState,
   AgentTier,
   Breakpoint,
+  AutonomyLevel,
   CosPresence,
   DecisionCategory,
   EscalationType,
@@ -321,7 +322,7 @@ export const DecisionView = z.object({
   question: z.string(),
   answer: z.string(),
   rationale: z.string(),
-  decidedBy: z.enum(['director', 'chief_of_staff', 'default']),
+  decidedBy: z.enum(['director', 'chief_of_staff', 'default', 'lead', 'rule']),
   scopeKey: z.string(),
   escalationId: z.string().nullable(),
   /** "D-07". */
@@ -666,6 +667,19 @@ export const SettingsSnapshot = z.object({
     }),
   ),
   escalationPolicy: z.array(PolicyRow),
+  /** Who may settle each category of card: the playbook's default and this project's choice. */
+  autonomy: z
+    .array(
+      z.object({
+        category: DecisionCategory,
+        label: z.string(),
+        level: AutonomyLevel,
+        default: AutonomyLevel,
+        /** Releases, gates and budget always reach the Director. */
+        locked: z.boolean(),
+      }),
+    )
+    .default([]),
   conventions: z.object({
     entries: z.array(z.object({ key: z.string(), value: z.string() })),
     lockedAt: z.iso.datetime().nullable(),
