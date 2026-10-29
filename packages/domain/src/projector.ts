@@ -301,7 +301,9 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     case 'task.state': {
       const t = s.tasks[e.data.taskId];
       if (!t) break;
-      if (e.data.from === 'waiting' && e.data.to !== 'waiting') {
+      // A task leaves its gap when it runs again or ends (a not-connected task waits blocked).
+      const parked = (st: string) => st === 'waiting' || st === 'blocked';
+      if (parked(e.data.from) && !parked(e.data.to)) {
         for (const g of Object.values(s.capabilityGaps)) {
           if (!g.tasks[t.taskId]) continue;
           delete g.tasks[t.taskId];

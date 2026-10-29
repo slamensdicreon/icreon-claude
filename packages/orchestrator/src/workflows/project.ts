@@ -848,6 +848,21 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           unconnected ? 'Not connected' : access ? 'Access denied' : 'Escalated',
         ),
       );
+      // Tools nobody has built yet belong on engineering's backlog, whatever the Director answers.
+      const missing = unconnected ? /\(([^)]+)\)/.exec(outcome.reason)?.[1] : undefined;
+      if (missing)
+        events.push({
+          type: 'capability.gap',
+          actor: { kind: 'agent', id: t.role },
+          subject: { kind: 'task', id: t.taskId },
+          severity: 'warning',
+          data: {
+            taskId: t.taskId,
+            agentId: t.role,
+            capability: `Connect ${missing}`,
+            summary: `${t.title} can't run without them.`,
+          },
+        });
       events.push(agentRefresh(t.role));
       await send(...events);
       const escalationId = await raise(
@@ -855,13 +870,17 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           ? {
               type: 'access',
               title: clip(`Not connected: ${t.title}`),
-              context: `${roles.get(t.role)?.name ?? t.role} did not run: ${outcome.reason}`,
+              context: `${roles.get(t.role)?.name ?? t.role} did not run: ${outcome.reason} No agent can do this until engineering builds those tools (listed under Settings, Capability gaps). Do it yourself and mark it done, saying what you checked, or leave it waiting.`,
               impact: `${t.title} and the tasks that depend on it wait. Other work continues.`,
               options: [
-                { id: 'retry', label: 'The tools are connected now; retry', recommended: true },
                 {
                   id: 'accept',
-                  label: 'Skip it: mark the task done without output',
+                  label: 'Done by hand: mark it done (say what you checked)',
+                  recommended: true,
+                },
+                {
+                  id: 'retry',
+                  label: 'Engineering connected the tools: run it again',
                   recommended: false,
                 },
               ],
