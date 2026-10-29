@@ -731,11 +731,29 @@ export function layoutComponents(html: string): { name: string; fields: unknown 
     })
     .join('');
   const out: { name: string; fields: unknown }[] = [];
-  for (const m of payload.matchAll(/"componentName":"([A-Za-z0-9]+)"/g)) {
-    const at = payload.indexOf('"fields":', m.index!);
-    const next = payload.indexOf('"componentName":', m.index! + 1);
+  // Layout data writes each component as {"uid":…,"componentName":…}. Newer Content SDK heads
+  // also serialize an error boundary per component, {"componentName":…,"uid":…} with no fields:
+  // read only the layout's own entries, once per uid, where the payload has them.
+  const entries = [
+    ...payload.matchAll(/"uid":"([0-9a-f-]{36})","componentName":"([A-Za-z0-9]+)"/g),
+  ];
+  const seen = new Set<string>();
+  const found = entries.length
+    ? entries
+        .filter((m) => !seen.has(m[1]!) && !!seen.add(m[1]!))
+        .map((m) => ({ name: m[2]!, index: m.index! }))
+    : [...payload.matchAll(/"componentName":"([A-Za-z0-9]+)"/g)].map((m) => ({
+        name: m[1]!,
+        index: m.index!,
+      }));
+  for (const m of found) {
+    const at = payload.indexOf('"fields":', m.index);
+    const next = payload.indexOf(
+      '"componentName":',
+      payload.indexOf('"componentName":', m.index) + 1,
+    );
     if (at < 0 || (next >= 0 && at > next)) {
-      out.push({ name: m[1]!, fields: null });
+      out.push({ name: m.name, fields: null });
       continue;
     }
     const obj = balanced(payload, at + '"fields":'.length);
@@ -745,7 +763,7 @@ export function layoutComponents(html: string): { name: string; fields: unknown 
     } catch {
       fields = null;
     }
-    out.push({ name: m[1]!, fields });
+    out.push({ name: m.name, fields });
   }
   return out;
 }

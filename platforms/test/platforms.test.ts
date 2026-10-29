@@ -505,6 +505,15 @@ describe('SitecoreAI checks', () => {
       `<header><div id="header"><nav>Home</nav></div></header><h1>About Ansco</h1><h2>Our Services</h2><p>Telecommunications engineering construction wireless splicing</p>${rsc({ data: { datasource: { children: { results: [{}] } } } })}<footer><div id="footer"><p>Ansco</p></div></footer>`;
     const ok = await run();
     expect(ok).toEqual({ status: 'pass', detail: 'Rendered parity with the source: /about 100%.' });
+
+    // Newer heads also serialize an error boundary per component, carrying its name and uid but
+    // no fields: only the layout's own entry counts.
+    const uid = '4577b979-97f5-4cbd-8832-6d85db66b6c7';
+    const push = (v: unknown) =>
+      `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify(v))}])</script>`;
+    pages['https://ansco-site-editing.vercel.app/about'] =
+      `<header><div id="header"><nav>Home</nav></div></header><h1>About Ansco</h1><h2>Our Services</h2><p>Telecommunications engineering construction wireless splicing</p>${push({ uid, componentName: 'CardGrid', fields: { data: { datasource: { children: { results: [{}] } } } } })}${push({ rendering: { componentName: 'CardGrid', uid }, children: 'x' })}<footer><div id="footer"><p>Ansco</p></div></footer>`;
+    expect(await run()).toEqual(ok);
   });
 
   it('compares each page with the source as a visitor sees it, and names the differences', async () => {
