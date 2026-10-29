@@ -17,6 +17,22 @@ pnpm --filter @lw/platforms exec tsx scripts/parity-report.ts \
 Done: every page passes when it prints `PASS` (90% of the source text and headings, list items
 rendered, no placeholder copy, header and footer present).
 
+## Closing at phase 8 (2026-10-29)
+
+- Phase 8 finished: the reviewed commit (`ac1be76`) promoted to `main` and deployed to production;
+  content published to Experience Edge, all 16 routes resolving on the live endpoint.
+- Phase 9's conformance check compared the pages with the Blueprint, which predates the Director's
+  rework, and sent pages back: Contact Us and Subcontractor Request were rebuilt by agents (and the
+  Contact Form and Locations List components re-run). Restored: both layouts (verified by screenshot
+  against anscollc.com), the agents' duplicate items moved to the recycle bin, the two component
+  branches reverted (revert commits; the integration branch never took them). Nothing reached
+  Experience Edge.
+- **Director decision:** the engagement closes at phase 8. Acceptance is the Director's, in the live
+  systems. Phase 9's agent checks were marked done outside the agents; Gate 2 ("Accept Ansco
+  Associates") is the Director's, then the handover pack (phase 10 in this project's plan).
+- Playbook 0.4.0 makes this the rule for new projects: phase 9 is "Handover and acceptance", with
+  the handover pack (including the Director's acceptance checklist) and Gate 2.
+
 ## Handoff to the agents (2026-10-28, night)
 
 Launchworks was brought up to date and the project resumed:

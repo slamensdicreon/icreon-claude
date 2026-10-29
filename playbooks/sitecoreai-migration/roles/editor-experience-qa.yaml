@@ -29,7 +29,4 @@ tools:
 knowledge:
   - known-pitfalls
   - definition-of-done
-activePhases:
-  - 4
-  - 8
-  - 9
+activePhases: [4, 8]

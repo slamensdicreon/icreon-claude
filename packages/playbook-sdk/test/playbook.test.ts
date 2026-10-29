@@ -14,7 +14,7 @@ const PLATFORM_KNOWLEDGE = fileURLToPath(
 describe('sitecoreai-migration playbook', () => {
   it('loads and passes bundle validation', async () => {
     const pb = await loadPlaybook(DIR);
-    expect(pb.manifest.phases).toHaveLength(11);
+    expect(pb.manifest.phases).toHaveLength(10);
     expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
       2, 9,
     ]);
@@ -25,7 +25,7 @@ describe('sitecoreai-migration playbook', () => {
         .map((a) => a.workstream)
         .sort(),
     ).toEqual(['content', 'discovery', 'engineering', 'quality']);
-    expect(r.find((a) => a.agentId === 'chief-of-staff')?.activePhases).toHaveLength(11);
+    expect(r.find((a) => a.agentId === 'chief-of-staff')?.activePhases).toHaveLength(10);
   });
 
   it('grants every tool a role prompt tells the agent to use', async () => {

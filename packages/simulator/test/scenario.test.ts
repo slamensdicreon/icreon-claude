@@ -24,7 +24,7 @@ async function runToEnd() {
 }
 
 describe('sitecore scenario', () => {
-  it('runs all eleven phases to completion on autopilot', async () => {
+  it('runs all ten phases to completion on autopilot', async () => {
     const { state } = await runToEnd();
     const mc = missionControl(state);
     expect(mc.project.status).toBe('completed');

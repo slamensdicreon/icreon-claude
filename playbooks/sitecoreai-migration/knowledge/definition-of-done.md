@@ -1,6 +1,6 @@
 ## Reference: Definition of Done
 
-Gate 2 accepts the site against every row. Each row needs its evidence, recorded as a document or
+The Director accepts the site against every row at Gate 2, in the live systems (Page builder, the editing and delivery hosts); the handover pack's acceptance checklist lists each row with the evidence the engagement already has. Each row needs its evidence, recorded as a document or
 Activity step. A row without evidence is **pending**, never "passed by code review". Budgets come
 from the brief; don't set a budget after testing to declare a pass.
 

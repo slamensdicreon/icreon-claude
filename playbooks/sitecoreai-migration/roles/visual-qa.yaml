@@ -19,6 +19,4 @@ tools:
   validators:
     ops:
       - visual.diff
-activePhases:
-  - 6
-  - 9
+activePhases: [6]

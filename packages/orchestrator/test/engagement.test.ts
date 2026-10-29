@@ -44,7 +44,8 @@ describe('project workflow', () => {
       value: 10,
       total: 10,
     });
-    expect(mc.metrics.find((m) => m.key === 'parity')?.value).toBe(98.9);
+    // From the phase 6 parity audit: acceptance is the Director's, with no final agent re-audit.
+    expect(mc.metrics.find((m) => m.key === 'parity')?.value).toBe(98.6);
 
     const types = Object.values(s.escalations)
       .map((x) => x.type)

@@ -521,78 +521,50 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
   ]);
   await exit(sim, 8, ['Delivery host live; content on Experience Edge; smoke test green.'], [9]);
 
-  // Phase 9 — Validation and acceptance (Gate 2)
+  // Phase 9 — Handover and acceptance (Gate 2): the Director accepts in the live systems.
   await enter(sim, 9, [
-    'Produces: the Acceptance Report.',
-    'Active: all validators.',
-    'Exit: your acceptance at Gate 2.',
+    'Produces: the handover pack, with your acceptance checklist.',
+    'Active: Handover Writer.',
+    'Exit: your acceptance at Gate 2, in the live systems.',
   ]);
   await sim.planTasks(9, [
-    t('p9-structural', 'structural-validator', 'Final conformance check', 'quality'),
     t(
-      'p9-editor',
-      'editor-experience-qa',
-      'Definition of Done checklist in Page builder',
-      'quality',
+      'p9-handover',
+      'handover-writer',
+      'Write runbook, component catalog and known-gaps register',
+      null,
     ),
-    t('p9-lighthouse', 'perf-a11y-qa', 'Lighthouse and axe on 4 representative pages', 'quality'),
   ]);
-  await Promise.all([
-    work(sim, 'structural-validator', 'p9-structural', 'Final conformance check', [
-      ['validators', 'structural.run', '0 critical findings'],
-    ]),
-    work(sim, 'editor-experience-qa', 'p9-editor', 'Running the editor checklist', [
-      ['browser', 'page-builder.drive', 'All 15 renderings enabled in Page builder'],
-      ['browser', 'video.record', 'Recorded marketer walkthrough (4 min)'],
-    ]),
-    work(sim, 'perf-a11y-qa', 'p9-lighthouse', 'Scoring pages', [
-      ['validators', 'lighthouse.run', 'Performance 91, Accessibility 97 (median of 4 pages)'],
-    ]),
+  await work(sim, 'handover-writer', 'p9-handover', 'Writing the handover pack', [
+    ['decision-log', 'read', 'Read 7 decisions'],
+    [
+      'artifacts',
+      'write',
+      'Runbook, component catalog (15 renderings), known gaps (2), acceptance checklist',
+    ],
   ]);
-  await sim.metric('qa_pass', 100);
-  await sim.artifact('acceptance-report', 'report', 'Acceptance Report', 1, 'chief-of-staff');
+  await sim.artifact('handover-pack', 'handover_pack', 'Handover pack', 1, 'handover-writer');
   await sim.escalate({
     type: 'gate',
     title: 'Accept the implementation',
     context:
-      'Every Definition of Done check passes: parity 98.6%, 0 critical findings, Lighthouse 91/97, editor checklist 100%.',
-    impact: 'Accepting closes the engagement and starts the handover.',
+      'The handover pack lists each Definition of Done row with what to check in Page builder and on the delivery host, and the evidence the build already has.',
+    impact: 'Accepting closes the engagement.',
     options: [
       { id: 'approve', label: 'Accept', recommended: true },
       { id: 'send_back', label: 'Send back with notes' },
     ],
     defaultOptionId: null,
     sourceTaskId: null,
-    evidence: [{ kind: 'artifact', label: 'Acceptance Report', ref: 'artifact:acceptance-report' }],
+    evidence: [{ kind: 'artifact', label: 'Handover pack', ref: 'artifact:handover-pack' }],
     gate: {
       phase: 9,
-      artifactId: 'acceptance-report',
+      artifactId: 'handover-pack',
       artifactVersion: 1,
       requiresConfirmation: true,
     },
   });
-  await exit(sim, 9, ['Accepted.'], [10]);
-
-  // Phase 10 — Handover
-  await enter(sim, 10, [
-    'Produces: the handover pack.',
-    'Active: Handover Writer.',
-    'Exit: pack delivered and project archived.',
-  ]);
-  await sim.planTasks(10, [
-    t(
-      'p10-handover',
-      'handover-writer',
-      'Write runbook, component catalog and known-gaps register',
-      null,
-    ),
-  ]);
-  await work(sim, 'handover-writer', 'p10-handover', 'Writing the handover pack', [
-    ['decision-log', 'read', 'Read 7 decisions'],
-    ['artifacts', 'write', 'Runbook, component catalog (15 renderings), known gaps (2)'],
-  ]);
-  await sim.artifact('handover-pack', 'handover_pack', 'Handover pack', 1, 'handover-writer');
-  await exit(sim, 10, ['Handover pack delivered.'], []);
+  await exit(sim, 9, ['Accepted. Handover pack delivered.'], []);
   await sim.emit(sim.projectStatus('completed'));
   await sim.say(
     'text',

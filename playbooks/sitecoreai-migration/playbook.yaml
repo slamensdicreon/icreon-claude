@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai.
 id: sitecoreai-migration
-version: 0.3.0
+version: 0.4.0
 name: Build a SitecoreAI website
 description: >-
   Rebuilds a client's site from its Next.js repository as a Content SDK site on SitecoreAI,
@@ -222,18 +222,14 @@ phases:
       Three releases, each verified on its own: the deployed commit is the reviewed commit on the
       registered editing and delivery hosts; serialization of the project's own items replays cleanly;
       the publish job finished and every route resolves on Experience Edge. Smoke test green.
+  # Acceptance is the Director's, in the live systems (Page builder, the editing and delivery hosts),
+  # against the Definition of Done in the handover pack: agents don't re-check the finished site.
   - number: 9
-    name: Validation and acceptance
+    name: Handover and acceptance
     shortName: Acceptance
     gate: director
     gateLabel: 'Gate 2: Director accepts'
     exitCriteria: >-
-      Acceptance Report compiled against the Definition of Done, with evidence for every row and
-      budgets measured against the brief (a missing test is pending, not passed); every open defect
-      triaged as fix, accept or defer.
-  - number: 10
-    name: Handover
-    shortName: Handover
-    exitCriteria: >-
-      Runbook, marketer component catalog and known-gaps register delivered; project archived with full
-      audit trail.
+      Runbook, marketer component catalog, decision register, known-gaps register and the Director's
+      acceptance checklist delivered; the Director has accepted the site in the live systems; project
+      archived with full audit trail.

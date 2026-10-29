@@ -22,5 +22,6 @@ tools:
   decision-log:
     ops:
       - read
-activePhases:
-  - 10
+knowledge:
+  - definition-of-done
+activePhases: [9]

@@ -28,6 +28,4 @@ tools:
       - write
 knowledge:
   - definition-of-done
-activePhases:
-  - 6
-  - 9
+activePhases: [6]

@@ -19,5 +19,4 @@ tools:
       - axe.run
 knowledge:
   - definition-of-done
-activePhases:
-  - 9
+activePhases: []

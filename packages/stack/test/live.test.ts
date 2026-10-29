@@ -339,14 +339,14 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
   );
   expect(plan(s).tasks.every((t) => t.state === 'done')).toBe(true);
 
-  // QA ran real checks; the handover pack quotes the Decision Log.
+  // QA ran real checks during the build (the visual sample in phase 6); acceptance is the
+  // Director's, so no agent re-checks the finished site. The handover pack quotes the Decision Log.
   const op = (server: string, operation: string) =>
     steps.filter((e) => e.data.toolServer === server && e.data.operation === operation);
   expect(op('validators', 'visual.diff').map((e) => e.data.summary)).toEqual([
     'Visual match: 0% of pixels differ (tolerance 0.5%)',
-    'Visual match: 0% of pixels differ (tolerance 0.5%)',
   ]);
-  expect(op('validators', 'axe.run')).toHaveLength(1);
+  expect(op('validators', 'axe.run')).toHaveLength(0);
   expect(op('decision-log', 'read')[0]!.data.resultCode).toBe(200);
   expect(s.artifacts['handover-pack']).toMatchObject({ kind: 'handover_pack', latest: 1 });
   const pack = await stack.library.read('p1', 'handover-pack');
@@ -356,7 +356,6 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
   expect([...new Set(claude.roles)].sort()).toEqual([
     'Your role: Content Analyst.',
     'Your role: Handover Writer.',
-    'Your role: Performance and Accessibility QA.',
     'Your role: Solution Architect.',
     'Your role: Visual QA.',
   ]);

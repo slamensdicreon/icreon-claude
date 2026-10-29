@@ -30,8 +30,4 @@ tools:
       - write
 knowledge:
   - known-pitfalls
-activePhases:
-  - 3
-  - 4
-  - 5
-  - 9
+activePhases: [3, 4, 5]

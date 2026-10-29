@@ -240,30 +240,8 @@ templates:
     title: Smoke test Page builder on production
     dependsOn: [deploy-code, serialize-items, publish-edge]
 
-  # 9 — Validation and acceptance
-  - id: final-conformance
-    phase: 9
-    role: structural-validator
-    title: Final conformance check
-  - id: editor-checklist
-    phase: 9
-    role: editor-experience-qa
-    title: Run the Definition of Done in Page builder and on the delivery host
-  - id: lighthouse
-    phase: 9
-    role: perf-a11y-qa
-    title: Lighthouse and axe on representative pages
-  - id: final-parity
-    phase: 9
-    role: parity-auditor
-    title: Final content parity audit
-  - id: final-visual
-    phase: 9
-    role: visual-qa
-    title: Final visual parity at three breakpoints
-
-  # 10 — Handover
+  # 9 — Handover and acceptance (the Director accepts in the live systems; no agent re-checks)
   - id: handover-pack
-    phase: 10
+    phase: 9
     role: handover-writer
     title: Write runbook, component catalog and known-gaps register
