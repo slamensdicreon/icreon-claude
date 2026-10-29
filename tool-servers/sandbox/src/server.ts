@@ -76,6 +76,7 @@ export const sandboxName = (projectId: string, taskId: string) =>
 
 const OpenArgs = z.object({
   ref: z.string().regex(AGENT_BRANCH, 'an agent branch, launchworks/…').optional(),
+  fresh: z.boolean().optional(),
 });
 const ListArgs = z.object({ path: z.string().max(300).optional() });
 const ReadArgs = z.object({
@@ -159,10 +160,10 @@ export class SandboxToolServer implements ToolServer {
     },
     'workspace.open': {
       description:
-        "Open this task's working copy of the build repository, on your agent branch (launchworks/…; created from the default branch if new), and install dependencies. Call it first; it is reused for the rest of the task. Commit before you finish: an unused working copy expires after 45 minutes.",
+        "Open this task's working copy of the build repository, on your agent branch (launchworks/…; created from the default branch if new), and install dependencies. Call it first; it is reused for the rest of the task. A working copy kept from an earlier run is brought up to date with the branch on GitHub, and the summary names any uncommitted files it holds. `fresh: true` discards everything uncommitted and starts again from the branch as pushed: use it when the build fails in files you never changed. Commit before you finish: an unused working copy expires after 45 minutes.",
       inputSchema: {
         type: 'object',
-        properties: { ref: { type: 'string' } },
+        properties: { ref: { type: 'string' }, fresh: { type: 'boolean' } },
         additionalProperties: false,
       },
       mutates: false,
@@ -232,7 +233,7 @@ export class SandboxToolServer implements ToolServer {
     },
     'git.commit': {
       description:
-        'Commit every change in the working copy and push it to your agent branch (launchworks/…). Returns the commit SHA. Build first: commit work that builds.',
+        "Commit every change in the working copy and push it to your agent branch (launchworks/…). Returns the commit SHA. Build first: commit work that builds. Commits an earlier push left behind are pushed too, and if the branch moved on GitHub your commits are replayed on top of it. Don't work around a failed push with another tool: the branch would then differ from this working copy.",
       inputSchema: {
         type: 'object',
         properties: { branch: { type: 'string' }, message: { type: 'string' } },
@@ -281,6 +282,32 @@ export class SandboxToolServer implements ToolServer {
     await run('git', ['config', 'user.email', authorOf(facts).email]);
     const auth = ['-c', `http.extraHeader=${basic(ctx.token)}`];
 
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const count = async (range: string) =>
+      Number((await run('git', ['rev-list', '--count', range])).output.trim()) || 0;
+
+    /**
+     * Brings the working copy up to the branch as just fetched (FETCH_HEAD): fast-forwards when it
+     * is only behind, and replays its own commits on top when both moved (a commit whose change is
+     * already on GitHub drops out). Says what it did, or why it couldn't.
+     */
+    const catchUp = async (): Promise<string> => {
+      const behind = await count('HEAD..FETCH_HEAD');
+      if (!behind) return '';
+      const ahead = await count('FETCH_HEAD..HEAD');
+      if (!ahead) {
+        const ff = await run('git', ['merge', '--ff-only', '-q', 'FETCH_HEAD']);
+        return ff.exitCode === 0
+          ? `brought up to date with ${plural(behind, 'commit')} pushed since`
+          : `${plural(behind, 'commit')} behind GitHub and couldn't catch up (${lastError(ff.output)}): open it with fresh: true`;
+      }
+      const replayed = await run('git', ['rebase', '--autostash', 'FETCH_HEAD']);
+      if (replayed.exitCode === 0)
+        return `replayed its own commits on the ${plural(behind, 'commit')} pushed since`;
+      await run('git', ['rebase', '--abort']);
+      return `differs from the branch on GitHub (${plural(ahead, 'local commit')}, ${plural(behind, 'pushed commit')}) and couldn't replay them: open it with fresh: true`;
+    };
+
     /** Installs dependencies when the working copy has none. */
     const install = async () => {
       if (!created && (await box.read(`${facts.appPath}/node_modules/.package-lock.json`)))
@@ -324,6 +351,10 @@ export class SandboxToolServer implements ToolServer {
         !generated || generated.exitCode === 0
           ? await npm('type-check', 10)
           : { exitCode: generated.exitCode, output: generated.output };
+      // Every build reads the content as it is now. A page fetched by an earlier build in this
+      // working copy (before it had a layout, or while it was being edited) otherwise fails every
+      // later build, for nothing the branch changed.
+      if (types.exitCode === 0) await run('rm', ['-rf', `${app}/.next/cache/fetch-cache`]);
       const built = types.exitCode === 0 ? await npm(staged ? 'next:build' : 'build', 20) : null;
       const green = types.exitCode === 0 && built?.exitCode === 0;
       const why =
@@ -331,7 +362,7 @@ export class SandboxToolServer implements ToolServer {
           ? 'generating .sitecore failed'
           : types.exitCode
             ? 'type-check failed'
-            : 'build failed';
+            : `build failed: ${firstFailure(built?.output ?? '')}`;
       return { green, types, built, why };
     };
 
@@ -339,38 +370,51 @@ export class SandboxToolServer implements ToolServer {
       case 'workspace.open': {
         const a = OpenArgs.safeParse(args);
         if (!a.success) return bad(a.error.issues[0]!.message);
-        if (a.data.ref) {
-          const current = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
-          if (current.output.trim() !== a.data.ref) {
-            const fetched = await run('git', [
-              '-c',
-              `http.extraHeader=${basic(ctx.token)}`,
-              'fetch',
-              'origin',
-              a.data.ref,
-            ]);
-            await run(
-              'git',
-              fetched.exitCode === 0
-                ? ['checkout', '-B', a.data.ref, 'FETCH_HEAD']
-                : ['checkout', '-B', a.data.ref],
-            );
-          }
+        const current = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'])).output.trim();
+        const ref = a.data.ref ?? (AGENT_BRANCH.test(current) ? current : undefined);
+        const fetched = ref ? await run('git', [...auth, 'fetch', 'origin', ref]) : null;
+        let synced = '';
+        if (ref && current !== ref) {
+          await run(
+            'git',
+            fetched?.exitCode === 0
+              ? ['checkout', '-B', ref, 'FETCH_HEAD']
+              : ['checkout', '-B', ref],
+          );
+        } else if (fetched?.exitCode === 0 && !a.data.fresh) {
+          // Kept from an earlier run: the branch may have moved on GitHub since.
+          synced = await catchUp();
+        }
+        if (a.data.fresh) {
+          await run('git', [
+            'reset',
+            '-q',
+            '--hard',
+            fetched?.exitCode === 0 ? 'FETCH_HEAD' : 'HEAD',
+          ]);
+          await run('git', ['clean', '-fdq']);
+          await run('rm', ['-rf', `${app}/.next`]);
+          synced = 'started fresh from the branch as pushed';
         }
         const { result: installed, lockUpdated } = await install();
         const head = await run('git', ['log', '-1', '--format=%h %s']);
         const branch = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+        const dirty = (await run('git', ['status', '--porcelain'])).output
+          .split('\n')
+          .map((l) => l.slice(3).trim())
+          .filter(Boolean);
         return {
           code: installed && installed.exitCode !== 0 ? 500 : 200,
           body: {
             branch: branch.output.trim(),
             head: head.output.trim(),
             app: facts.appPath,
+            uncommitted: dirty,
             install: installed
               ? { exitCode: installed.exitCode, output: installed.output }
               : 'reused',
           },
-          summary: `Working copy on ${branch.output.trim()} (${head.output.trim().slice(0, 60)})${installed ? `, dependencies ${installed.exitCode === 0 ? 'installed' : `failed to install: ${lastError(installed.output)}`}` : ''}${lockUpdated ? `; ${facts.appPath}/package-lock.json was out of date with package.json and was updated: commit it` : ''}`,
+          summary: `Working copy on ${branch.output.trim()} (${head.output.trim().slice(0, 60)})${synced ? `; ${synced}` : ''}${dirty.length ? `; uncommitted: ${dirty.slice(0, 5).join(', ')}${dirty.length > 5 ? ` and ${dirty.length - 5} more` : ''}` : ''}${installed ? `, dependencies ${installed.exitCode === 0 ? 'installed' : `failed to install: ${lastError(installed.output)}`}` : ''}${lockUpdated ? `; ${facts.appPath}/package-lock.json was out of date with package.json and was updated: commit it` : ''}`,
         };
       }
       case 'fs.list': {
@@ -659,40 +703,53 @@ export class SandboxToolServer implements ToolServer {
       case 'git.commit': {
         const a = CommitArgs.safeParse(args);
         if (!a.success) return bad(a.error.issues[0]!.message);
+        const { branch } = a.data;
         await run('git', ['add', '-A']);
         const staged = await run('git', ['diff', '--cached', '--name-only']);
         const paths = staged.output.split('\n').filter(Boolean);
-        if (!paths.length) return bad('Nothing to commit.');
         const blocked = paths.filter((p) => !safePath(p) || READ_ONLY.test(p));
         if (blocked.length) {
           await run('git', ['reset', '-q']);
           return bad(`Refused: ${blocked.join(', ')} can't be committed from here.`);
         }
-        const c = await run('git', ['commit', '-q', '-m', a.data.message]);
-        if (c.exitCode !== 0)
-          return { code: 500, body: { error: c.output }, summary: 'Commit failed' };
-        const push = await run(
-          'git',
-          [
-            '-c',
-            `http.extraHeader=${basic(ctx.token)}`,
-            'push',
-            'origin',
-            `HEAD:refs/heads/${a.data.branch}`,
-          ],
-          { timeoutMs: 120_000 },
-        );
+        if (paths.length) {
+          const c = await run('git', ['commit', '-q', '-m', a.data.message]);
+          if (c.exitCode !== 0)
+            return { code: 500, body: { error: c.output }, summary: 'Commit failed' };
+        } else {
+          // Nothing new, but a push that failed earlier leaves its commit here: push that.
+          const fetched = await run('git', [...auth, 'fetch', 'origin', branch]);
+          if (fetched.exitCode !== 0 || !(await count('FETCH_HEAD..HEAD')))
+            return bad('Nothing to commit.');
+        }
+        const push = () =>
+          run('git', [...auth, 'push', 'origin', `HEAD:refs/heads/${branch}`], {
+            timeoutMs: 120_000,
+          });
+        let pushed = await push();
+        let replayed = '';
+        if (pushed.exitCode !== 0 && raced(pushed.output)) {
+          // The branch moved on GitHub (another run, or a commit made with another tool): replay
+          // this working copy's commits on top of it and push again.
+          const fetched = await run('git', [...auth, 'fetch', 'origin', branch]);
+          if (fetched.exitCode === 0) {
+            replayed = await catchUp();
+            pushed = await push();
+          }
+        }
         const sha = (await run('git', ['rev-parse', 'HEAD'])).output.trim();
-        if (push.exitCode !== 0)
+        if (pushed.exitCode !== 0)
           return {
             code: 502,
-            body: { error: push.output },
-            summary: `Push to ${a.data.branch} failed`,
+            body: { error: pushed.output, commit: sha },
+            summary: `Push to ${branch} failed (${pushRefusal(pushed.output)}); committed here as ${sha.slice(0, 7)}${replayed ? `, then ${replayed}` : ''}. Call git.commit again to push it`,
           };
         return {
           code: 200,
-          body: { branch: a.data.branch, commit: sha, files: paths.length },
-          summary: `Committed ${paths.length} file${paths.length === 1 ? '' : 's'} to ${a.data.branch} (${sha.slice(0, 7)})`,
+          body: { branch, commit: sha, files: paths.length },
+          summary: paths.length
+            ? `Committed ${plural(paths.length, 'file')} to ${branch} (${sha.slice(0, 7)})`
+            : `Pushed what an earlier push left behind to ${branch} (${sha.slice(0, 7)})`,
         };
       }
       default:
@@ -721,6 +778,10 @@ const pushRefusal = (output: string) => {
     .slice(0, 3);
   return [bang, ...remote].filter(Boolean).join(' ') || lastError(output);
 };
+
+/** The line that says why a build failed: the page that failed to prerender, else the first error. */
+const firstFailure = (output: string) =>
+  /Error occurred prerendering page "[^"\n]*"/.exec(output)?.[0] ?? lastError(output);
 
 const lastError = (output: string) =>
   (

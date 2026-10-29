@@ -396,6 +396,168 @@ describe('working copies', () => {
       ),
     ).toBe(false);
   });
+
+  /** git commands as run, without the one-off token header. */
+  const gitRuns = (runs: { cmd: string; args: string[] }[]) =>
+    runs
+      .filter((x) => x.cmd === 'git')
+      .map((x) => x.args.filter((a) => !a.startsWith('http.extraHeader') && a !== '-c').join(' '));
+
+  it('brings a working copy kept from an earlier run up to date, and names what is uncommitted', async () => {
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },
+      (cmd, args) => {
+        const a = args.join(' ');
+        if (a === 'rev-parse --abbrev-ref HEAD')
+          return { exitCode: 0, output: 'launchworks/port-hero\n' };
+        if (a === 'rev-list --count HEAD..FETCH_HEAD') return { exitCode: 0, output: '2\n' };
+        if (a === 'rev-list --count FETCH_HEAD..HEAD') return { exitCode: 0, output: '0\n' };
+        if (a === 'status --porcelain') return { exitCode: 0, output: ' M src/app/page.tsx\n' };
+        return null;
+      },
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('workspace.open', { ref: 'launchworks/port-hero' }, ctx);
+    const git = gitRuns(fake.runs);
+    expect(git).toContain('fetch origin launchworks/port-hero');
+    expect(git).toContain('merge --ff-only -q FETCH_HEAD');
+    expect(r.summary).toContain('brought up to date with 2 commits pushed since');
+    expect(r.summary).toContain('uncommitted: src/app/page.tsx');
+    expect(r.body).toMatchObject({ uncommitted: ['src/app/page.tsx'] });
+  });
+
+  it('starts fresh from the branch as pushed when asked, dropping the old build output', async () => {
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },
+      (cmd, args) =>
+        args.join(' ') === 'rev-parse --abbrev-ref HEAD'
+          ? { exitCode: 0, output: 'launchworks/port-hero\n' }
+          : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('workspace.open', { ref: 'launchworks/port-hero', fresh: true }, ctx);
+    const git = gitRuns(fake.runs);
+    expect(git).toContain('reset -q --hard FETCH_HEAD');
+    expect(git).toContain('clean -fdq');
+    expect(git.some((g) => g.startsWith('merge') || g.startsWith('rebase'))).toBe(false);
+    expect(
+      fake.runs.some((x) => x.cmd === 'rm' && x.args.at(-1)!.endsWith('basic-nextjs/.next')),
+    ).toBe(true);
+    expect(r.summary).toContain('started fresh from the branch as pushed');
+  });
+
+  it('pushes a commit an earlier failed push left behind, instead of saying there is nothing to commit', async () => {
+    const fake = fakeBox({}, (cmd, args) => {
+      const a = args.join(' ');
+      if (a === 'diff --cached --name-only') return { exitCode: 0, output: '' };
+      if (a === 'rev-list --count FETCH_HEAD..HEAD') return { exitCode: 0, output: '1\n' };
+      if (a === 'rev-parse HEAD') return { exitCode: 0, output: '9cef7970000\n' };
+      return null;
+    });
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('git.commit', { branch: 'launchworks/hero', message: 'x' }, ctx);
+    expect(r).toMatchObject({ code: 200 });
+    expect(r.summary).toBe('Pushed what an earlier push left behind to launchworks/hero (9cef797)');
+    expect(gitRuns(fake.runs)).toContain('push origin HEAD:refs/heads/launchworks/hero');
+
+    const none = fakeBox({}, (cmd, args) =>
+      args.join(' ') === 'rev-list --count FETCH_HEAD..HEAD'
+        ? { exitCode: 0, output: '0\n' }
+        : null,
+    );
+    const s2 = new SandboxToolServer({
+      provider: none.provider,
+      facts,
+      buildEnv: async () => ({}),
+    });
+    expect(
+      await s2.call('git.commit', { branch: 'launchworks/hero', message: 'x' }, ctx),
+    ).toMatchObject({
+      code: 422,
+      summary: 'Nothing to commit.',
+    });
+  });
+
+  it('replays its commits on a branch that moved on GitHub, then pushes again', async () => {
+    let pushes = 0;
+    const fake = fakeBox({}, (cmd, args) => {
+      const a = args.join(' ');
+      if (a === 'diff --cached --name-only') return { exitCode: 0, output: 'src/Hero.tsx\n' };
+      if (args.includes('push') && ++pushes === 1)
+        return {
+          exitCode: 1,
+          output:
+            ' ! [rejected]        HEAD -> launchworks/hero (fetch first)\nerror: failed to push some refs',
+        };
+      if (a === 'rev-list --count HEAD..FETCH_HEAD') return { exitCode: 0, output: '1\n' };
+      if (a === 'rev-list --count FETCH_HEAD..HEAD') return { exitCode: 0, output: '1\n' };
+      if (a === 'rev-parse HEAD') return { exitCode: 0, output: 'abc12340000\n' };
+      return null;
+    });
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('git.commit', { branch: 'launchworks/hero', message: 'Hero' }, ctx);
+    expect(r).toMatchObject({
+      code: 200,
+      summary: 'Committed 1 file to launchworks/hero (abc1234)',
+    });
+    const git = gitRuns(fake.runs);
+    expect(git).toContain('rebase --autostash FETCH_HEAD');
+    expect(git.filter((g) => g.startsWith('push'))).toHaveLength(2);
+  });
+
+  it('says why a push failed and that the commit is kept, when replaying cannot settle it', async () => {
+    const fake = fakeBox({}, (cmd, args) => {
+      const a = args.join(' ');
+      if (a === 'diff --cached --name-only') return { exitCode: 0, output: 'src/Hero.tsx\n' };
+      if (args.includes('push'))
+        return {
+          exitCode: 1,
+          output: ' ! [rejected]        HEAD -> launchworks/hero (non-fast-forward)',
+        };
+      if (a.startsWith('rev-list --count')) return { exitCode: 0, output: '1\n' };
+      if (a === 'rebase --autostash FETCH_HEAD')
+        return { exitCode: 1, output: 'CONFLICT (content)' };
+      if (a === 'rev-parse HEAD') return { exitCode: 0, output: 'abc12340000\n' };
+      return null;
+    });
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('git.commit', { branch: 'launchworks/hero', message: 'Hero' }, ctx);
+    expect(r.code).toBe(502);
+    expect(r.summary).toContain('committed here as abc1234');
+    expect(r.summary).toContain("couldn't replay them: open it with fresh: true");
+    expect(gitRuns(fake.runs)).toContain('rebase --abort');
+  });
+
+  it('builds without fetches cached by earlier builds, and names the page that failed to prerender', async () => {
+    const scripts = {
+      'sitecore-tools:generate-map': 'x',
+      'sitecore-tools:build': 'x',
+      'next:build': 'x',
+      'type-check': 'x',
+    };
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/package.json': JSON.stringify({ scripts }) },
+      (cmd, args) =>
+        cmd === 'npm' && args[1] === 'next:build'
+          ? {
+              exitCode: 1,
+              output:
+                'Error occurred prerendering page "/acme/en/safety". Read more: https://nextjs.org/docs/messages/prerender-error\nTypeError: Cannot read properties of undefined',
+            }
+          : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('exec.build', {}, ctx);
+    const order = fake.runs.map((x) =>
+      x.cmd === 'npm' ? (x.args[1] ?? '') : `${x.cmd} ${x.args.at(-1) ?? ''}`,
+    );
+    const cleared = order.findIndex((o) => o.endsWith('.next/cache/fetch-cache'));
+    expect(cleared).toBeGreaterThan(order.indexOf('type-check'));
+    expect(cleared).toBeLessThan(order.indexOf('next:build'));
+    expect(r.summary).toBe(
+      'Build red: build failed: Error occurred prerendering page "/acme/en/safety"',
+    );
+  });
 });
 
 describe('the Sitecore CLI', () => {
