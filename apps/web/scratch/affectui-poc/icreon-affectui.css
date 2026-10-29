@@ -1,0 +1,135 @@
+/* ============================================================
+   affectUI on the Icreon Design System: the token bridge.
+
+   affectUI components read their colors and easing from variables named --ui-<prefix>-*
+   (Approval Card: --ui-ap-*). Each one is pointed at the Control Center's own --web-* tokens
+   from src/styles/prototype.css, so light, dark and "follow the system" all come from our one
+   token set. affectUI's own dark block (:where(.dark, [data-theme="dark"]) .ui-ap) is not needed.
+
+   Specificity: `html .ui-ap` (0,1,1) beats both affectUI's light defaults on `.ui-ap` and its
+   dark block (0,1,0), whatever order React 19 hoists its <style> into <head>.
+
+   Radius, font and weight are literals in affectUI's CSS, not variables, so they are overridden
+   on the component's own class names below. Those class names are affectUI's public styling
+   surface; if an update renames one, the override silently stops applying (see the doc's risks).
+   ============================================================ */
+
+/* ---------- Approval Card (approval-card, Pro) ---------- */
+html .ui-ap {
+  /* surfaces: the gray tray, the card on it, the preview panel */
+  --ui-ap-tray: var(--web-surface-3);
+  --ui-ap-bg: var(--web-surface);
+  --ui-ap-soft: var(--web-surface-2);
+  --ui-ap-tile: var(--web-surface-3);
+  --ui-ap-line: var(--web-border);
+
+  /* text: Icreon never sets small text in --web-fg-3 (it misses AA), so muted is --web-fg-2 too */
+  --ui-ap-ink: var(--web-fg);
+  --ui-ap-text: var(--web-fg-2);
+  --ui-ap-muted: var(--web-fg-2);
+
+  /* the primary action is Icreon blue, not affectUI's near-black */
+  --ui-ap-primary: var(--web-accent);
+  --ui-ap-primary-hover: var(--web-accent-hover);
+  --ui-ap-primary-ink: var(--web-fg-on-accent);
+  --ui-ap-primary-kbd: rgba(255, 255, 255, 0.18);
+  --ui-ap-primary-kbd-ink: rgba(255, 255, 255, 0.85);
+
+  /* state layers follow the web-foundations recipe: currentColor at --state-hover */
+  --ui-ap-hover: color-mix(in srgb, var(--web-fg) 8%, transparent);
+  --ui-ap-kbd: color-mix(in srgb, var(--web-fg) 6%, transparent);
+  --ui-ap-box: var(--web-border-strong);
+  --ui-ap-box-hover: var(--web-fg-3);
+  --ui-ap-ring: rgba(56, 106, 255, 0.45); /* --ring-focus's color */
+
+  /* status: the Icreon semantic pairs */
+  --ui-ap-timer-low: var(--warning);
+  --ui-ap-low-bg: var(--web-surface-3);
+  --ui-ap-low-ink: var(--web-fg-2);
+  --ui-ap-med-bg: var(--warning-bg);
+  --ui-ap-med-ink: var(--warning);
+  --ui-ap-high-bg: var(--danger-bg);
+  --ui-ap-high-ink: var(--danger);
+  --ui-ap-ok-bg: var(--success-bg);
+  --ui-ap-ok-ink: var(--success);
+  --ui-ap-no-bg: var(--web-surface-3);
+  --ui-ap-no-ink: var(--web-fg-2);
+
+  --ui-ap-ease: var(--ease-decisive);
+
+  /* literals: Hero New, no negative tracking, Icreon's 4 px container radius */
+  font-family: var(--font-sans);
+  letter-spacing: 0;
+  border-radius: var(--web-radius-2);
+}
+html .ui-ap :is(.ui-ap__title, .ui-ap__row-title) {
+  font-weight: var(--fw-medium); /* affectUI asks for 550; Hero New ships 300, 400 and 500 */
+  letter-spacing: 0;
+}
+html .ui-ap .ui-ap__card {
+  border-radius: var(--web-radius-2);
+  box-shadow: 0 0 0 1px var(--ui-ap-line); /* flat, like .panel: hairline, no drop shadow */
+}
+html .ui-ap :is(.ui-ap__icon, .ui-ap__preview, .ui-ap__kbd) {
+  border-radius: var(--web-radius-1);
+}
+/* our Carbon sprite icons are filled; affectUI styles header icons as 1.7 px strokes */
+html .ui-ap .ui-ap__icon svg.ic {
+  fill: currentColor;
+  stroke: none;
+}
+html .ui-ap .ui-ap__box input {
+  border-radius: var(--web-radius-1);
+}
+
+/* buttons: .btn.sm metrics; the primary is a pill, the others square, as in .btn */
+html .ui-ap .ui-ap__btn {
+  height: 32px;
+  border-radius: var(--web-radius-1);
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+}
+html .ui-ap .ui-ap__btn--primary {
+  border-radius: var(--web-radius-pill);
+  padding-left: 16px;
+  box-shadow: none;
+}
+html .ui-ap .ui-ap__btn:focus-visible {
+  box-shadow: var(--ring-focus);
+}
+
+/* risk badge as an Icreon .chip: square corners, a square marker, the label in --web-fg */
+html .ui-ap .ui-ap__risk {
+  height: 22px;
+  border-radius: var(--web-radius-1);
+  color: var(--web-fg);
+  font-weight: var(--fw-medium);
+}
+html .ui-ap .ui-ap__risk-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  opacity: 1;
+}
+html .ui-ap .ui-ap__risk[data-risk='low'] .ui-ap__risk-dot {
+  background: var(--web-border-strong);
+}
+html .ui-ap .ui-ap__risk[data-risk='medium'] .ui-ap__risk-dot {
+  background: var(--warning);
+}
+html .ui-ap .ui-ap__risk[data-risk='high'] .ui-ap__risk-dot {
+  background: var(--danger);
+}
+
+/* motion: Icreon tops out at --motion-medium-2 (300 ms) and does not blur */
+html .ui-ap {
+  transition-duration: var(--motion-medium-2);
+}
+html .ui-ap :is(.ui-ap__pending[data-entering], .ui-ap__resolved) {
+  animation-name: rise;
+  animation-duration: var(--motion-medium-2);
+  animation-timing-function: var(--ease-decelerate);
+}
+html .ui-ap .ui-ap__pending[data-leaving] {
+  animation-duration: var(--motion-short-3);
+}
