@@ -565,6 +565,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     'parity.page': async (ctx) => {
       const inv = ((await ctx.document('parity-inventory')) ??
         (await ctx.document('page-inventory'))) as {
+        origin?: string;
         pages?: { path?: string; url?: string; title?: string; words?: number }[];
       } | null;
       if (!inv?.pages?.length) return pending('No source inventory to compare with.');
@@ -583,26 +584,51 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         'edge-preview',
       );
       if (!r.missing) return pending(`Can't read the new site: ${r.why}.`);
-      const pages = source.map((p) => {
-        const text = textOf(r.rendered.get(p.path));
-        const words = text.split(/\s+/).filter(Boolean).length;
-        const titled = !p.title || text.toLowerCase().includes(p.title.toLowerCase());
-        const enough = !p.words || words >= p.words * 0.9;
-        const ok = r.rendered.has(p.path) && titled && enough;
-        return {
-          path: p.path,
-          ok,
-          sourceWords: p.words,
-          targetWords: words,
-          problem: !r.rendered.has(p.path)
-            ? 'missing'
-            : !titled
-              ? 'title not found'
-              : !enough
-                ? `${words} of ${p.words} words`
-                : null,
-        };
-      });
+      // A page's layout data misses what a component loads itself (a list it queries) or what the
+      // head supplies (a form's country list), and the inventory counts words its own way. A page
+      // short on layout text is measured again as both sites render it, the same way on each side.
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      const origin = (inv.origin ?? '').replace(/\/$/, '');
+      const count = (t: string) => t.split(/\s+/).filter(Boolean).length;
+      const asRendered = async (path: string) => {
+        if (!project || !origin) return null;
+        const [have, want] = await Promise.all([
+          getText(cfg, `https://${project}-editing.vercel.app${path}`),
+          getText(cfg, `${origin}${path === '/' ? '/' : `${path}/`}`),
+        ]);
+        if (have.status !== 200 || want.status !== 200) return null;
+        return { have: count(visibleText(have.body)), want: count(visibleText(want.body)) };
+      };
+      const pages = await Promise.all(
+        source.map(async (p) => {
+          const text = textOf(r.rendered.get(p.path));
+          const words = count(text);
+          const titled = !p.title || text.toLowerCase().includes(p.title.toLowerCase());
+          let enough = !p.words || words >= p.words * 0.9;
+          let rendered: { have: number; want: number } | null = null;
+          if (!enough && r.rendered.has(p.path) && titled) {
+            rendered = await asRendered(p.path);
+            enough = !!rendered && rendered.have >= rendered.want * 0.9;
+          }
+          const ok = r.rendered.has(p.path) && titled && enough;
+          return {
+            path: p.path,
+            ok,
+            sourceWords: p.words,
+            targetWords: words,
+            ...(rendered ? { rendered } : {}),
+            problem: !r.rendered.has(p.path)
+              ? 'missing'
+              : !titled
+                ? 'title not found'
+                : !enough
+                  ? rendered
+                    ? `${rendered.have} of ${rendered.want} words as rendered`
+                    : `${words} of ${p.words} words`
+                  : null,
+          };
+        }),
+      );
       const parity = Math.round((pages.filter((p) => p.ok).length / pages.length) * 1000) / 10;
       const bad = pages.filter((p) => !p.ok).map((p) => `${p.path}: ${p.problem}`);
       return {

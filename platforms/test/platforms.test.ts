@@ -641,6 +641,76 @@ describe('SitecoreAI checks', () => {
     expect(res.status).toBe('pending');
   });
 
+  it('measures a page short on layout text again as both sites render it', async () => {
+    const words = (n: number, w = 'word') =>
+      Array.from({ length: n }, (_, i) => `${w}${i}`).join(' ');
+    const html = (body: string) => `<html><body><main><p>${body}</p></main></body></html>`;
+    const fetcher = (async (u: string | URL | Request, init?: RequestInit) => {
+      const url = String(u);
+      if (init?.method === 'POST') {
+        const { variables } = JSON.parse(String(init.body)) as { variables: { path: string } };
+        const title = variables.path === '/contact' ? 'Contact' : 'Form';
+        return new Response(
+          JSON.stringify({
+            data: {
+              layout: {
+                item: {
+                  rendered: { sitecore: { route: { fields: { Title: { value: title } } } } },
+                },
+              },
+            },
+          }),
+        );
+      }
+      // The contact page loads its locations itself; the form page really is short.
+      if (url.startsWith('https://acme-editing.vercel.app/contact'))
+        return new Response(html(`Contact ${words(95)}`));
+      if (url.startsWith('https://acme-editing.vercel.app/form'))
+        return new Response(html(`Form ${words(20)}`));
+      if (url.startsWith('https://source.example/contact/'))
+        return new Response(html(`Contact ${words(100)}`));
+      if (url.startsWith('https://source.example/form/'))
+        return new Response(html(`Form ${words(100)}`));
+      return new Response('', { status: 404 });
+    }) as typeof fetch;
+    const p = createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fetcher } }).get(
+      'sitecoreai',
+    )!;
+    const res = await p.checks!['parity.page']!({
+      projectId: 'p',
+      target: { ...target, hostingProject: 'acme' } as typeof target,
+      scope: { collection: null, items: [] },
+      blueprint: {
+        collections: {
+          pages: [
+            { key: 'contact', name: 'Contact', attrs: { path: '/contact' } },
+            { key: 'form', name: 'Form', attrs: { path: '/form' } },
+          ],
+        },
+      },
+      read: async () => ({ code: 404, body: {} }),
+      credential: async () => ({ contextId: 'ctx-preview' }),
+      document: async (id) =>
+        id === 'parity-inventory'
+          ? {
+              origin: 'https://source.example',
+              pages: [
+                { path: '/contact', title: 'Contact', words: 1360 },
+                { path: '/form', title: 'Form', words: 1146 },
+              ],
+            }
+          : null,
+    });
+    expect(res.status).toBe('fail');
+    expect(res.data).toMatchObject({
+      parity: 50,
+      pages: [
+        { path: '/contact', ok: true, rendered: { have: 96, want: 101 } },
+        { path: '/form', ok: false, problem: '21 of 101 words as rendered' },
+      ],
+    });
+  });
+
   it('measures content parity on Experience Edge against the source re-crawl', async () => {
     const layouts: Record<string, unknown> = {
       '/': {
