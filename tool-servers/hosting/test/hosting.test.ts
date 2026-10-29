@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { HostingToolServer, type HostingRecord } from '../src';
 
-function fakeVercel(opts: { existing?: { repo: string } } = {}) {
+function fakeVercel(
+  opts: { existing?: { repo: string }; production?: { alias: string; state: string } } = {},
+) {
   let editingAt: string | undefined;
   const calls: { method: string; path: string; body: unknown }[] = [];
   let project: Record<string, unknown> | null = opts.existing
@@ -15,6 +17,7 @@ function fakeVercel(opts: { existing?: { repo: string } } = {}) {
           repo: opts.existing.repo.split('/')[1],
         },
         ssoProtection: { deploymentType: 'preview' },
+        ...(opts.production ? { targets: { production: { alias: [opts.production.alias] } } } : {}),
       }
     : null;
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status });
@@ -47,6 +50,21 @@ function fakeVercel(opts: { existing?: { repo: string } } = {}) {
       Object.assign(project!, body);
       return json(200, project);
     }
+    if (p === '/v10/projects/prj_1/env' && method === 'GET') return json(200, { envs: [] });
+    if (p === '/v6/deployments' && method === 'GET')
+      return json(200, {
+        deployments: opts.production
+          ? [
+              {
+                uid: 'dpl_9',
+                url: 'acme-site-abc.vercel.app',
+                state: opts.production.state,
+                target: 'production',
+                meta: { githubCommitRef: 'main' },
+              },
+            ]
+          : [],
+      });
     if (p === '/v10/projects/acme-site/env' && method === 'POST')
       return json(201, { created: body, failed: [] });
     if (p === '/v13/deployments' && method === 'POST')
@@ -204,5 +222,34 @@ describe('HostingToolServer', () => {
         ref: 'main',
       },
     });
+  });
+
+  it('records the production address when reading the project finds a ready production deployment', async () => {
+    const existing = { repo: 'icreon-launchworks/acme-site-sitecoreai' };
+    const building: HostingRecord[] = [];
+    await server(
+      fakeVercel({ existing, production: { alias: 'acme-site.vercel.app', state: 'BUILDING' } })
+        .fetch,
+      building,
+    ).call('project.read', {}, ctx);
+    expect(building).toEqual([]);
+    const records: HostingRecord[] = [];
+    const r = await server(
+      fakeVercel({ existing, production: { alias: 'acme-site.vercel.app', state: 'READY' } }).fetch,
+      records,
+    ).call('project.read', {}, ctx);
+    expect(r.body).toMatchObject({ productionUrl: 'https://acme-site.vercel.app' });
+    expect(records).toEqual([
+      {
+        projectId: 'p1',
+        url: 'https://acme-site.vercel.app',
+        deployment: {
+          id: 'dpl_9',
+          url: 'https://acme-site.vercel.app',
+          target: 'production',
+          ref: 'main',
+        },
+      },
+    ]);
   });
 });

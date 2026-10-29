@@ -153,7 +153,7 @@ export class HostingToolServer implements ToolServer {
       case 'project.create':
         return this.create(ctx.projectId, facts);
       case 'project.read':
-        return this.read(facts);
+        return this.read(ctx.projectId, facts);
       case 'env.set': {
         const a = EnvArgs.safeParse(args);
         if (!a.success) return bad(a.error.issues[0]!.message);
@@ -256,7 +256,7 @@ export class HostingToolServer implements ToolServer {
     };
   }
 
-  private async read(facts: HostingFacts): Promise<ToolResult> {
+  private async read(projectId: string, facts: HostingFacts): Promise<ToolResult> {
     const p = await this.request('GET', `/v9/projects/${encodeURIComponent(facts.project)}`);
     if (p.status === 404)
       return { code: 404, body: { error: `${facts.project} doesn't exist yet.` } };
@@ -269,6 +269,23 @@ export class HostingToolServer implements ToolServer {
     );
     const deployments =
       d.status === 200 ? ((d.body as { deployments: Deployment[] }).deployments ?? []) : [];
+    // A production deployment that finished while no one was reading its status is still live:
+    // record its address here too, or the head stays without one.
+    const live = productionUrl(v);
+    const ready = deployments.find(
+      (x) => x.target === 'production' && (x.state ?? x.readyState) === 'READY',
+    );
+    if (live && ready?.uid)
+      await this.opts.record(projectId, {
+        projectId,
+        url: live,
+        deployment: {
+          id: ready.uid,
+          url: live,
+          target: 'production',
+          ref: ready.meta?.githubCommitRef ?? '',
+        },
+      });
     return {
       code: 200,
       body: {
