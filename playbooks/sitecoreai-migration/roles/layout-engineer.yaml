@@ -40,6 +40,8 @@ tools:
         - /sitecore/layout/**
         - /sitecore/templates/**
         - '{sitePath}/**'
+        # The header's and footer's logo and icons: their media IDs, for the image fields.
+        - /sitecore/media library/Project/{project}/**
   sitecore-cli:
     ops:
       - ser.pull

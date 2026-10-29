@@ -148,7 +148,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { store, projections } = deps;
   // With sign-in, browsers send the session cookie: CORS must name the Control Center exactly.
   const corsOrigin = deps.auth ? new URL(deps.auth.appUrl).origin : (deps.corsOrigin ?? null);
-  const app = Fastify({ logger: deps.logger ?? false });
+  // Capability gap keys are the capability in words, often well past Fastify's 100-character
+  // default for a path parameter.
+  const app = Fastify({ logger: deps.logger ?? false, maxParamLength: 1000 });
   await app.register(cors, { origin: corsOrigin ?? false, credentials: Boolean(deps.auth) });
   if (deps.auth) {
     registerGithubAuth(app, deps.auth);

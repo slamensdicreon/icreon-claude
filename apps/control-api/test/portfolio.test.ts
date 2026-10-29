@@ -206,3 +206,18 @@ it('drafts a rule from an answered card, with the scopes it could have and its e
       .statusCode,
   ).toBe(404);
 });
+
+it('takes a capability gap key as long as the capability is written out', async () => {
+  const app = await start();
+  const key = encodeURIComponent(
+    "read items under /sitecore/media library/project/brands/lambert-cable (to get the logo's media id) so logo can be set on site header and site footer",
+  );
+  const r = await app.inject({
+    method: 'POST',
+    url: `/projects/p1/capability-gaps/${key}/close`,
+    payload: {},
+  });
+  // Not 414: the route is reached and answers for the gap itself.
+  expect(r.statusCode).toBe(404);
+  expect(r.json()).toMatchObject({ error: { code: 'not_found' } });
+});
