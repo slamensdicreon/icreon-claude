@@ -243,7 +243,8 @@ export class SitecoreCliToolServer implements ToolServer {
       if (connect.exitCode !== 0) return fail('connecting to the environment', connect);
 
       if (op === 'ser.validate') {
-        const v = await run(`${DOTNET}/dotnet`, ['sitecore', 'ser', 'validate', '-n', 'default'], {
+        // `ser validate` takes no environment name: given -n, the CLI refuses to run.
+        const v = await run(`${DOTNET}/dotnet`, ['sitecore', 'ser', 'validate'], {
           timeoutMs: 900_000,
         });
         return {
@@ -310,8 +311,10 @@ const tail = (output: string) =>
     .slice(-400) || 'no output';
 
 const bad = (error: string, code = 422): ToolResult => ({ code, body: { error }, summary: error });
+// The summary is what the agent and the Activity log read: it carries the CLI's last lines, where
+// it says what went wrong.
 const fail = (doing: string, r: { exitCode: number; output: string }): ToolResult => ({
   code: 500,
   body: { error: `The Sitecore CLI failed ${doing} (exit ${r.exitCode}).`, output: r.output },
-  summary: `Sitecore CLI failed ${doing}`,
+  summary: `Sitecore CLI failed ${doing} (exit ${r.exitCode}): ${tail(r.output)}`,
 });

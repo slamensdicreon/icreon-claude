@@ -590,8 +590,13 @@ describe('the Sitecore CLI', () => {
     ).toEqual(['/sitecore/content/Brands']);
   });
 
-  const cli = (files: Record<string, string>, drift = '') => {
+  const cli = (
+    files: Record<string, string>,
+    drift = '',
+    pulled: { exitCode: number; output: string } | null = null,
+  ) => {
     const fake = fakeBox(files, (cmd, args) => {
+      if (pulled && args.join(' ').includes('ser pull')) return pulled;
       if (
         cmd === 'git' &&
         args[0] === 'diff' &&
@@ -630,6 +635,26 @@ describe('the Sitecore CLI', () => {
     expect(r.code).toBe(422);
     expect(r.summary).toMatch(/outside the project's paths/);
     expect(fake.runs.some((x) => x.args.includes('login'))).toBe(false);
+  });
+
+  it('validates without an environment name, and says what the CLI said when a pull fails', async () => {
+    const module = {
+      'authoring/items/ansco.module.json': JSON.stringify({
+        items: { includes: [{ name: 'site', path: '/sitecore/content/Brands/ansco' }] },
+      }),
+    };
+    const { server, fake } = cli(module);
+    await server.call('ser.validate', {}, ctx);
+    const validate = fake.runs.find((x) => x.args.join(' ').includes('ser validate'))!;
+    expect(validate.args).not.toContain('-n');
+    const failing = cli(module, '', {
+      exitCode: 1,
+      output:
+        'Pulling items…\nError: The item /sitecore/content/Brands/ansco/Home could not be read: 401',
+    });
+    const r = await failing.server.call('ser.pull', { branch: 'launchworks/ser' }, ctx);
+    expect(r.code).toBe(500);
+    expect(r.summary).toMatch(/failed pulling items \(exit 1\): .*could not be read: 401/);
   });
 
   it('refuses changed CLI settings', async () => {
