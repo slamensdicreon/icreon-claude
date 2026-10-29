@@ -38,6 +38,11 @@ export interface PlatformPack {
   name: string;
   fields: Record<string, PlatformField>;
   credentials: Record<string, PlatformCredential>;
+  /**
+   * What projects on the same tenant share, so a saved connection carries it: target fields and
+   * credentials. The rest (the site, its hosting) is per project.
+   */
+  connection?: { fields: string[]; credentials: string[] };
   /** Cleans values before they are recorded (a CM host given as a URL becomes its host). */
   normalize(target: TargetValues): TargetValues;
   /** How a project names its target: subtitle, Mission Control, the intake brief. */

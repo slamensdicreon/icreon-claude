@@ -84,6 +84,11 @@ export const ProjectIntake = z.object({
   credentials: z.record(z.string().max(60), Secret).default({}),
   /** Answers to the playbook's brief, by question key ("yes"/"no" for yes-no questions). */
   brief: z.record(z.string().max(60), z.string().trim().max(2000)).default({}),
+  /**
+   * A saved connection: its tenant facts fill the target, and its credentials stand in for any
+   * the intake doesn't give (each is still checked against the live service).
+   */
+  connectionId: z.string().max(80).nullable().default(null),
 });
 export type ProjectIntake = z.infer<typeof ProjectIntake>;
 export type ProjectIntakeInput = z.input<typeof ProjectIntake>;
@@ -226,3 +231,18 @@ export const ApiError = z.object({
   }),
 });
 export type ApiError = z.infer<typeof ApiError>;
+
+/**
+ * POST /connections — save a project's tenant (its shared target facts and credentials) as a
+ * connection other projects on the same tenant reuse. The secrets are sealed again, to the
+ * connection, server-side.
+ */
+export const CreateConnection = z.object({
+  name: z.string().trim().min(1).max(120),
+  fromProject: z.string().min(1).max(80),
+});
+export type CreateConnection = z.infer<typeof CreateConnection>;
+
+/** PUT /connections/:id/credentials/:credentialId — a new secret, checked, for every project on it. */
+export const RotateConnectionCredential = z.object({ secret: Secret });
+export type RotateConnectionCredential = z.infer<typeof RotateConnectionCredential>;

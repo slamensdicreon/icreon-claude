@@ -18,6 +18,8 @@ import {
   RerunTask,
   CloseCapabilityGap,
   CompleteTasks,
+  CreateConnection,
+  RotateConnectionCredential,
   ResolveEscalation,
   RollbackPhase,
   SendBackGate,
@@ -377,6 +379,50 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return { status: 'unknown', detail: `Could not be read: ${(err as Error).message}` };
     }
   }
+
+  // ---- Saved connections and remix ---------------------------------------------------------
+
+  app.get('/connections', async () => {
+    await projections.catchUpAll();
+    return deps.intake ? deps.intake.connections(projections.all()) : [];
+  });
+
+  app.post('/connections', async (req, reply) => {
+    if (!deps.intake)
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    const { name, fromProject } = CreateConnection.parse(req.body);
+    await projections.catchUp(fromProject);
+    const s = project(fromProject);
+    if (!s) return fail(reply, 404, 'unknown_project', `No project "${fromProject}".`);
+    const id = await deps.intake.createConnection(s, name);
+    return reply.status(201).send({ connectionId: id });
+  });
+
+  app.put<{ Params: { id: string; credentialId: string } }>(
+    '/connections/:id/credentials/:credentialId',
+    async (req, reply) => {
+      if (!deps.intake)
+        return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+      const { secret } = RotateConnectionCredential.parse(req.body);
+      await projections.catchUpAll();
+      await deps.intake.rotateConnectionCredential(
+        req.params.id,
+        req.params.credentialId,
+        secret,
+        projections.all(),
+      );
+      return { ok: true };
+    },
+  );
+
+  app.get<P>('/projects/:id/remix', async (req, reply) => {
+    if (!deps.intake)
+      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    await projections.catchUp(req.params.id);
+    const s = project(req.params.id);
+    if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+    return deps.intake.remixDraft(s);
+  });
 
   // The playbooks a new project can run: what each team delivers and what its intake collects.
   app.get('/playbooks', async (_req, reply) => {

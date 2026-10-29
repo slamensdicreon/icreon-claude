@@ -410,6 +410,7 @@ const app = await buildApp({
     blobs,
     github,
     buildOrg: env.GITHUB_BUILD_ORG,
+    connections: integrations ?? undefined,
   }),
   github,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),

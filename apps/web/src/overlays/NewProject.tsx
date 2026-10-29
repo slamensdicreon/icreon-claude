@@ -3,6 +3,7 @@ import type {
   IntakeFieldSpec,
   PlaybookSummary,
   ProjectIntakeInput,
+  RemixDraft,
   VerifyIntakeCredential,
   VerifyIntakeResult,
 } from '@lw/contracts';
@@ -43,26 +44,43 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,99}$/;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const URL_OK = /^https?:\/\/[^\s]+\.[^\s]+/;
 
-export function NewProject() {
+/**
+ * A remix starts from an existing project: its playbook, client, budgets, brief and the tenant
+ * facts its connection shares. Credentials the connection provides aren't asked for.
+ */
+export interface Remix {
+  draft: RemixDraft;
+  connectionName: string | null;
+}
+
+export function NewProject({ remix }: { remix?: Remix } = {}) {
   const { closeOverlay, switchProject, toast } = useApp();
+  const draft = remix?.draft;
   const [playbooks, setPlaybooks] = useState<PlaybookSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [playbookId, setPlaybookId] = useState<string | null>(null);
-  const [step, setStep] = useState(0);
+  const [playbookId, setPlaybookId] = useState<string | null>(draft?.playbookId ?? null);
+  const [step, setStep] = useState(draft ? 1 : 0);
   const [f, setF] = useState({
     name: '',
-    client: '',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York',
-    usd: '1200',
-    tokensM: '8',
-    hours: '240',
+    client: draft?.client ?? '',
+    timezone:
+      draft?.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'),
+    usd: draft ? String(draft.budgets.usd) : '1200',
+    tokensM: draft ? String(draft.budgets.tokens / 1_000_000) : '8',
+    hours: draft ? String(draft.budgets.hours) : '240',
     repo: '',
     branch: 'main',
     sourceUrl: '',
   });
-  const [target, setTarget] = useState<Record<string, string>>({});
+  const [target, setTarget] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(draft?.target ?? {}).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v]),
+    ),
+  );
   const [secrets, setSecrets] = useState<Record<string, Record<string, string>>>({});
-  const [brief, setBrief] = useState<Record<string, string>>({});
+  const [brief, setBrief] = useState<Record<string, string>>(draft?.brief ?? {});
+  /** Credentials the connection provides; one the Director types in overrides it. */
+  const provided = new Set(draft?.connectionId ? draft.providedCredentials : []);
   const [checks, setChecks] = useState<Record<string, Check>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +89,7 @@ export function NewProject() {
     get<PlaybookSummary[]>('/playbooks')
       .then((list) => {
         setPlaybooks(list);
-        if (list.length === 1) setPlaybookId(list[0]!.id);
+        if (list.length === 1 && !draft) setPlaybookId(list[0]!.id);
       })
       .catch((err: unknown) =>
         setLoadError(
@@ -189,7 +207,11 @@ export function NewProject() {
       (s) =>
         s.fields.every(fieldOk) &&
         s.credentials.every((c) =>
-          c.required ? filled(c) && ok(c.credentialId) : !touched(c) || ok(c.credentialId),
+          provided.has(c.credentialId) && !touched(c)
+            ? true
+            : c.required
+              ? filled(c) && ok(c.credentialId)
+              : !touched(c) || ok(c.credentialId),
         ),
     ),
     ...(questions.length ? [questions.every((q) => !q.required || brief[q.key]?.trim())] : []),
@@ -223,6 +245,7 @@ export function NewProject() {
         .map(([k, v]) => [k, v.trim()])
         .filter(([, v]) => v),
     ),
+    connectionId: draft?.connectionId ?? null,
   });
 
   const create = async () => {
@@ -309,7 +332,16 @@ export function NewProject() {
       <h4>
         {c.system} <span className="muted">({c.required ? 'required' : 'optional'})</span>
       </h4>
-      {c.description && <p className="wiz-hint">{c.description}</p>}
+      {provided.has(c.credentialId) && !touched(c) && (
+        <p className="wiz-from">
+          From the connection {remix?.connectionName ? `“${remix.connectionName}”` : ''}: nothing to
+          type. It is checked again against the live service when you create the project. Fill the
+          fields below only to use a different one for this project.
+        </p>
+      )}
+      {c.description && !provided.has(c.credentialId) && (
+        <p className="wiz-hint">{c.description}</p>
+      )}
       <div className="wiz-row">
         {c.fields.map((fl) =>
           input(
@@ -501,8 +533,8 @@ export function NewProject() {
             <dt>Credentials</dt>
             <dd>
               {credentials
-                .filter(filled)
-                .map((c) => `${c.system} ✓`)
+                .filter((c) => filled(c) || provided.has(c.credentialId))
+                .map((c) => `${c.system} ${filled(c) ? '✓' : '(from the connection)'}`)
                 .join(', ') || 'None yet'}
             </dd>
           </>
@@ -591,7 +623,7 @@ export function NewProject() {
   return (
     <Scrim>
       <div className="dialog wiz" role="dialog" aria-labelledby="np-t">
-        <h2 id="np-t">New project</h2>
+        <h2 id="np-t">{draft ? `New project like ${draft.from.name}` : 'New project'}</h2>
         <ol className="wiz-steps" aria-label="Steps">
           {TITLES.map((s, i) => (
             <li

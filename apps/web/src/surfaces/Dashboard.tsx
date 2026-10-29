@@ -1,12 +1,19 @@
-import type { PlaybookSummary, PortfolioDiagnostics, PortfolioItem } from '@lw/contracts';
+import type {
+  ConnectionView,
+  IntakeCredentialSpec,
+  PlaybookSummary,
+  PortfolioDiagnostics,
+  PortfolioItem,
+  RemixDraft,
+} from '@lw/contracts';
 import { useEffect, useState } from 'react';
-import { get } from '../lib/api';
+import { ApiProblem, get, post, put } from '../lib/api';
 import { age, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { NewProject } from '../overlays/NewProject';
 import { useApp } from '../state';
 
-type Tab = 'projects' | 'playbooks' | 'diagnostics';
+type Tab = 'projects' | 'connections' | 'playbooks' | 'diagnostics';
 type Filter = 'active' | 'needs' | 'completed' | 'all';
 
 const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
@@ -73,6 +80,7 @@ export function Dashboard() {
         {(
           [
             ['projects', 'Projects', needs ? `${needs} need you` : null],
+            ['connections', 'Connections', null],
             ['playbooks', 'Playbooks', null],
             ['diagnostics', 'Diagnostics', null],
           ] as [Tab, string, string | null][]
@@ -90,6 +98,7 @@ export function Dashboard() {
         ))}
       </div>
       {tab === 'projects' && <Projects items={portfolio.data} error={portfolio.error} />}
+      {tab === 'connections' && <Connections projects={portfolio.data ?? []} />}
       {tab === 'playbooks' && <Playbooks projects={portfolio.data ?? []} />}
       {tab === 'diagnostics' && <Diagnostics />}
     </>
@@ -234,6 +243,7 @@ function ProjectCard({ p, open }: { p: PortfolioItem; open: () => void }) {
             <Icon name="link" sm /> Source site
           </a>
         )}
+        {!p.demo && p.playbook && <RemixButton project={p} />}
         <button className="link-btn" onClick={open}>
           {done ? 'View history' : 'Mission Control'}
         </button>
@@ -391,5 +401,259 @@ function Diagnostics() {
         </ul>
       </div>
     </section>
+  );
+}
+
+/** Opens the wizard for a new project like this one: its playbook, client, brief and tenant. */
+function RemixButton({ project }: { project: PortfolioItem }) {
+  const { openOverlay, toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className="link-btn"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const draft = await get<RemixDraft>(`/projects/${project.id}/remix`);
+          const list = draft.connectionId ? await get<ConnectionView[]>('/connections') : [];
+          openOverlay(
+            <NewProject
+              remix={{
+                draft,
+                connectionName: list.find((c) => c.id === draft.connectionId)?.name ?? null,
+              }}
+            />,
+          );
+        } catch (err) {
+          toast(err instanceof ApiProblem ? err.message : 'The remix could not be prepared.');
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      Remix
+    </button>
+  );
+}
+
+/**
+ * Saved connections: one tenant's shared facts and sealed secrets, reused by every site on it.
+ * Secrets are never shown: a hint, when they were last checked, and a way to replace one.
+ */
+function Connections({ projects }: { projects: PortfolioItem[] }) {
+  const { openOverlay, toast } = useApp();
+  const [version, setVersion] = useState(0);
+  const { data, error } = usePoll<ConnectionView[]>(`/connections?v=${version}`, 30_000);
+  const playbooks = usePoll<PlaybookSummary[]>('/playbooks', 300_000).data;
+  const specOf = (credentialId: string): IntakeCredentialSpec | undefined =>
+    playbooks
+      ?.flatMap((pb) => pb.intake.steps.flatMap((st) => st.credentials))
+      .find((c) => c.credentialId === credentialId);
+  const reload = () => setVersion((v) => v + 1);
+  if (error && !data) return <p className="quiet-line">Connections could not be loaded: {error}</p>;
+  if (!data) return <p className="quiet-line">Loading connections…</p>;
+  const savedFrom = new Set(data.map((c) => c.createdFrom?.projectId));
+  const candidates = projects.filter((p) => !p.demo && p.playbook && !savedFrom.has(p.id));
+  return (
+    <section className="dash-diag">
+      <p className="muted">
+        A connection holds what every site on one tenant shares: the environment, its clients and
+        Context IDs. New projects on it don&rsquo;t ask for those again, and replacing a secret here
+        updates every project that uses it.
+      </p>
+      {data.map((c) => (
+        <article key={c.id} className="panel">
+          <div className="panel-head">
+            <h2>
+              {c.name} <small>{c.platform}</small>
+            </h2>
+            {c.createdFrom && (
+              <button
+                className="btn sm primary"
+                onClick={async () => {
+                  try {
+                    const draft = await get<RemixDraft>(
+                      `/projects/${c.createdFrom!.projectId}/remix`,
+                    );
+                    openOverlay(<NewProject remix={{ draft, connectionName: c.name }} />);
+                  } catch (err) {
+                    toast(err instanceof ApiProblem ? err.message : 'Could not start a project.');
+                  }
+                }}
+              >
+                New project on it
+              </button>
+            )}
+          </div>
+          <div className="kv">
+            {Object.entries(c.target).map(([k, v]) => (
+              <span key={k} style={{ display: 'contents' }}>
+                <span>{k}</span>
+                <span className="v">{Array.isArray(v) ? v.join(', ') : v}</span>
+              </span>
+            ))}
+          </div>
+          <h3>Credentials</h3>
+          <ul className="diag-rows">
+            {c.credentials.map((x) => (
+              <ConnectionCredential
+                key={x.credentialId}
+                connectionId={c.id}
+                credential={x}
+                spec={specOf(x.credentialId)}
+                onDone={() => {
+                  reload();
+                  toast(`${x.system} replaced for every project on ${c.name}.`);
+                }}
+              />
+            ))}
+          </ul>
+          <p className="muted">
+            {c.createdFrom ? `Saved from ${c.createdFrom.name}. ` : ''}
+            {c.projects.length
+              ? `Used by ${c.projects.map((p) => p.name).join(', ')}.`
+              : 'No project uses it yet.'}
+          </p>
+        </article>
+      ))}
+      <SaveConnection candidates={candidates} onSaved={reload} />
+    </section>
+  );
+}
+
+function ConnectionCredential({
+  connectionId,
+  credential: x,
+  spec,
+  onDone,
+}: {
+  connectionId: string;
+  credential: ConnectionView['credentials'][number];
+  spec: IntakeCredentialSpec | undefined;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const tone = x.ok === true ? 'good' : x.ok === false ? 'bad' : '';
+  return (
+    <li>
+      <span className={`dot ${tone}`} />
+      <b>{x.system}</b>
+      <span className="muted">
+        {x.hint ? `…${x.hint}` : 'Stored'}
+        {x.checkedAt ? ` · checked ${since(x.checkedAt)}` : ''}
+        {x.detail ? ` · ${x.detail}` : ''}{' '}
+        {spec && (
+          <button className="link-btn" onClick={() => setOpen((o) => !o)}>
+            {open ? 'Cancel' : 'Replace'}
+          </button>
+        )}
+      </span>
+      {open && spec && (
+        <form
+          className="conn-form"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setProblem(null);
+            try {
+              await put(`/connections/${connectionId}/credentials/${x.credentialId}`, {
+                secret: values,
+              });
+              setOpen(false);
+              setValues({});
+              onDone();
+            } catch (err) {
+              setProblem(err instanceof ApiProblem ? err.message : 'It could not be replaced.');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {spec.fields.map((fl) => (
+            <label key={fl.key}>
+              <span className="eyebrow">{fl.label}</span>
+              <input
+                className="input"
+                type={fl.secret ? 'password' : 'text'}
+                autoComplete="new-password"
+                spellCheck={false}
+                value={values[fl.key] ?? ''}
+                onChange={(e) => setValues((v) => ({ ...v, [fl.key]: e.target.value }))}
+              />
+            </label>
+          ))}
+          {problem && <p className="cred-miss">{problem}</p>}
+          <button
+            className="btn sm primary"
+            disabled={busy || !spec.fields.every((fl) => (values[fl.key] ?? '').trim())}
+          >
+            {busy ? 'Checking…' : 'Check and replace'}
+          </button>
+        </form>
+      )}
+    </li>
+  );
+}
+
+function SaveConnection({
+  candidates,
+  onSaved,
+}: {
+  candidates: PortfolioItem[];
+  onSaved: () => void;
+}) {
+  const { toast } = useApp();
+  const [from, setFrom] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!candidates.length) return null;
+  return (
+    <form
+      className="panel conn-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+          await post('/connections', { name: name.trim(), fromProject: from });
+          toast(`${name.trim()} saved. New projects on that tenant can use it.`);
+          setName('');
+          setFrom('');
+          onSaved();
+        } catch (err) {
+          toast(err instanceof ApiProblem ? err.message : 'The connection could not be saved.');
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <h2>Save a project&rsquo;s tenant as a connection</h2>
+      <label>
+        <span className="eyebrow">Project</span>
+        <select className="input" value={from} onChange={(e) => setFrom(e.target.value)}>
+          <option value="">Choose a project…</option>
+          {candidates.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({p.client})
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span className="eyebrow">Name</span>
+        <input
+          className="input"
+          placeholder="Brands tenant (SitecoreAI production)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <button className="btn sm primary" disabled={busy || !from || !name.trim()}>
+        {busy ? 'Saving…' : 'Save connection'}
+      </button>
+    </form>
   );
 }

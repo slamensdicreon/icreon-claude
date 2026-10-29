@@ -8,9 +8,16 @@ import { defineConfig } from 'vite';
  */
 const api = process.env.API_URL ?? 'http://127.0.0.1:4000';
 const proxy = Object.fromEntries(
-  ['/projects', '/portfolio', '/playbooks', '/auth', '/health', '/intake', '/integrations'].map(
-    (p) => [p, { target: api, changeOrigin: true }],
-  ),
+  [
+    '/projects',
+    '/portfolio',
+    '/connections',
+    '/playbooks',
+    '/auth',
+    '/health',
+    '/intake',
+    '/integrations',
+  ].map((p) => [p, { target: api, changeOrigin: true }]),
 );
 
 export default defineConfig({

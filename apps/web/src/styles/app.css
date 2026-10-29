@@ -1339,3 +1339,26 @@
 .diag-rows .dot:not(.good):not(.warn):not(.bad) {
   background: var(--web-fg-3);
 }
+
+/* Saved connections: replace a secret, save a tenant. */
+.conn-form {
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  max-width: 520px;
+  margin-top: 8px;
+}
+.conn-form label {
+  display: grid;
+  gap: 4px;
+}
+.conn-form .btn {
+  justify-self: start;
+}
+.wiz-from {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--web-accent);
+  background: var(--web-surface-2);
+  font-size: 13px;
+}

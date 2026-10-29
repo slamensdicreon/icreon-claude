@@ -140,6 +140,18 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
         defaultFrom: 'name',
       },
     },
+    // One environment hosts many sites: its CM host, collection, languages, clients, Context IDs
+    // and editing secret are the environment's; the site and its Vercel project are each project's.
+    connection: {
+      fields: ['cmHost', 'siteCollection', 'languages'],
+      credentials: [
+        'sitecore-environment',
+        'sitecore-organization',
+        'edge-preview',
+        'edge-live',
+        'editing-secret',
+      ],
+    },
     credentials: {
       'sitecore-environment': {
         system: 'SitecoreAI environment client',

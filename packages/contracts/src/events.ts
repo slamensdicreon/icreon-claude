@@ -292,6 +292,8 @@ export const IntakeFacts = z.preprocess(
     repo: z.string().nullable(),
     branch: z.string().nullable(),
     target: z.record(z.string(), IntakeValue),
+    /** The saved connection whose tenant facts and secrets the project uses, if any. */
+    connectionId: z.string().nullable().default(null),
   }),
 );
 export type IntakeFacts = z.infer<typeof IntakeFacts>;

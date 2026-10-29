@@ -80,6 +80,18 @@
       }
     },
     {
+      "source": "/connections",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/connections/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/health",
       "destination": {
         "service": "api"

@@ -150,6 +150,7 @@ describe('New Project wizard', () => {
         languages: ['en'],
         hostingProject: 'globex-website',
       },
+      connectionId: null,
     });
     expect(mc.project.playbook).toMatchObject({ id: 'sitecoreai-migration' });
     expect(mc.project.target).toMatchObject({

@@ -652,3 +652,45 @@ export const SinceSummary = z.object({
   events: z.number().int(),
 });
 export type SinceSummary = z.infer<typeof SinceSummary>;
+
+/** A saved connection: one tenant's shared facts and credentials, reused by its projects. */
+export const ConnectionView = z.object({
+  id: z.string(),
+  name: z.string(),
+  platform: z.string(),
+  /** The shared target facts (CM host, site collection, languages). */
+  target: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+  credentials: z.array(
+    z.object({
+      credentialId: z.string(),
+      system: z.string(),
+      /** The last few characters, to recognize it; never the secret. */
+      hint: z.string().nullable(),
+      checkedAt: z.iso.datetime().nullable(),
+      ok: z.boolean().nullable(),
+      detail: z.string().nullable(),
+    }),
+  ),
+  createdAt: z.iso.datetime(),
+  createdFrom: z.object({ projectId: z.string(), name: z.string() }).nullable(),
+  projects: z.array(z.object({ id: z.string(), name: z.string(), status: ProjectStatus })),
+});
+export type ConnectionView = z.infer<typeof ConnectionView>;
+
+/**
+ * GET /projects/:id/remix — a new project's intake, prefilled from an existing one: its playbook,
+ * connection, brief, budgets and the target facts it shares; the per-site fields stay to fill.
+ */
+export const RemixDraft = z.object({
+  playbookId: z.string(),
+  from: z.object({ projectId: z.string(), name: z.string() }),
+  connectionId: z.string().nullable(),
+  client: z.string(),
+  timezone: z.string(),
+  budgets: z.object({ usd: z.number(), tokens: z.number(), hours: z.number() }),
+  brief: z.record(z.string(), z.string()),
+  target: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+  /** Credentials the connection provides: the wizard doesn't ask for them. */
+  providedCredentials: z.array(z.string()),
+});
+export type RemixDraft = z.infer<typeof RemixDraft>;

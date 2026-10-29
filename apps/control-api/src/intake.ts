@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  ConnectionView,
+  RemixDraft,
   IntakeSpec,
   NewEvent,
   PlaybookSummary,
@@ -8,7 +10,7 @@ import type {
   VerifyIntakeResult,
 } from '@lw/contracts';
 import { CommandError, type ProjectState } from '@lw/domain';
-import type { EventStore, SecretVault } from '@lw/events';
+import type { EventStore, IntegrationStore, SecretVault } from '@lw/events';
 import type { CatalogEntry } from '@lw/playbook-sdk';
 import type { GithubApp, VerifyResult } from '@lw/connectors';
 import { phaseDefs, roster } from '@lw/playbook-sdk/pure';
@@ -51,7 +53,32 @@ export interface IntakeDeps {
   blobs?: { deleteProject(projectId: string): Promise<void> };
   /** Our GitHub organization, where each project's build repository is created. */
   buildOrg?: string;
+  /** Where saved connections are kept (one tenant's shared facts and sealed secrets). */
+  connections?: IntegrationStore;
 }
+
+/** A saved connection as stored: secrets by vault reference, sealed to the connection. */
+interface ConnectionRecord {
+  id: string;
+  name: string;
+  platform: string;
+  target: TargetValues;
+  credentials: Record<
+    string,
+    {
+      reference: string;
+      system: string;
+      hint: string | null;
+      checkedAt: string | null;
+      ok: boolean | null;
+      detail: string | null;
+    }
+  >;
+  createdAt: string;
+  createdFrom: { projectId: string; name: string } | null;
+}
+
+const CONNECTION = 'connection:';
 
 const INTAKE = { kind: 'system', id: 'intake' } as const;
 
@@ -180,6 +207,14 @@ export class IntakeService {
     const { playbook } = entry;
     const projectId = `prj-${randomUUID().slice(0, 8)}`;
 
+    // A saved connection fills the tenant's facts and stands in for credentials not given.
+    const connection = intake.connectionId ? await this.connection(intake.connectionId) : null;
+    if (connection && connection.platform !== pack.id)
+      throw new CommandError(
+        422,
+        'invalid',
+        `${connection.name} is a ${connection.platform} connection; ${playbook.manifest.name} runs on ${pack.name}.`,
+      );
     const repo = spec.source.repo === 'none' ? null : intake.source.repo;
     const url = spec.source.url === 'none' ? null : intake.source.url;
     if (spec.source.repo === 'required' && !repo)
@@ -189,7 +224,9 @@ export class IntakeService {
     const brief = briefOf(spec, intake.brief);
     let target: TargetValues;
     try {
-      target = pack.normalize(validateTarget(spec, intake.target));
+      target = pack.normalize(
+        validateTarget(spec, { ...intake.target, ...(connection?.target ?? {}) }),
+      );
     } catch (err) {
       if (err instanceof IntakeError) throw new CommandError(422, 'invalid', err.message);
       throw err;
@@ -203,15 +240,31 @@ export class IntakeService {
     );
     if (unknown.length)
       throw new CommandError(422, 'invalid', `${playbook.manifest.name} takes no "${unknown[0]}".`);
-    const given = declared.flatMap((c) => {
-      const secret = intake.credentials[c.credentialId];
-      const complete = secret && c.fields.every((f) => secret[f.key]?.trim());
-      if (!complete) {
+    const shared = connection?.credentials ?? {};
+    const given = await Promise.all(
+      declared.map(async (c) => {
+        const secret = intake.credentials[c.credentialId];
+        const complete = secret && c.fields.every((f) => secret[f.key]?.trim());
+        if (complete)
+          return [
+            { id: c.credentialId, spec: pack.credentials[c.credentialId]!, secret, from: null },
+          ];
+        const saved = shared[c.credentialId];
+        if (saved) {
+          const stored = JSON.parse(await vault.open(saved.reference)) as Record<string, string>;
+          return [
+            {
+              id: c.credentialId,
+              spec: pack.credentials[c.credentialId]!,
+              secret: stored,
+              from: saved,
+            },
+          ];
+        }
         if (c.required) throw new CommandError(422, 'invalid', `${c.system} is required.`);
         return [];
-      }
-      return [{ id: c.credentialId, spec: pack.credentials[c.credentialId]!, secret }];
-    });
+      }),
+    ).then((x) => x.flat());
     const checks = await Promise.all(
       given.map(async (g) => ({ ...g, r: await g.spec.check(g.secret, target) })),
     );
@@ -220,8 +273,11 @@ export class IntakeService {
       throw new CommandError(422, 'credential_failed', `${failed.spec.system}: ${failed.r.detail}`);
 
     const credentialEvents: NewEvent[] = [];
-    for (const { id, spec: c, secret, r } of checks) {
-      const sealed = await vault.seal(projectId, id, JSON.stringify(secret));
+    for (const { id, spec: c, secret, r, from } of checks) {
+      // A connection's secret is used by reference, so rotating it there reaches this project.
+      const sealed = from
+        ? { reference: from.reference }
+        : await vault.seal(projectId, id, JSON.stringify(secret));
       credentialEvents.push(
         {
           type: 'credential.registered',
@@ -233,7 +289,7 @@ export class IntakeService {
             system: c.system,
             scope: c.scope(target),
             reference: sealed.reference,
-            hint: tail(secret[c.hintField] ?? ''),
+            hint: from ? from.hint : tail(secret[c.hintField] ?? ''),
             expiresAt: null,
           },
         },
@@ -278,6 +334,7 @@ export class IntakeService {
             repo,
             branch: repo ? intake.source.branch : null,
             target,
+            connectionId: connection?.id ?? null,
           },
         },
       },
@@ -300,6 +357,7 @@ export class IntakeService {
             },
             ...(repo ? [{ label: 'Source', value: `${repo} (${intake.source.branch})` }] : []),
             { label: 'Target', value: described.label },
+            ...(connection ? [{ label: 'Connection', value: connection.name }] : []),
             ...checks.map((c) => ({ label: c.spec.system, value: c.r.detail })),
           ],
           note: this.canStart
@@ -582,6 +640,184 @@ export class IntakeService {
         data: { intakeTarget: { [key]: target[key]! }, target: pack.describe(target).target },
       },
     ]);
+  }
+
+  // ---- Saved connections ------------------------------------------------------------------
+
+  private store(): IntegrationStore {
+    if (!this.deps.connections)
+      throw new CommandError(501, 'not_supported', 'Saved connections are not available here.');
+    return this.deps.connections;
+  }
+
+  private async connection(id: string): Promise<ConnectionRecord> {
+    const c = await this.store().get<ConnectionRecord>(CONNECTION + id);
+    if (!c) throw new CommandError(404, 'unknown_connection', `No connection "${id}".`);
+    return c;
+  }
+
+  /** Every saved connection, with the projects that use it. */
+  async connections(projects: ProjectState[]): Promise<ConnectionView[]> {
+    if (!this.deps.connections) return [];
+    const rows = await this.deps.connections.list<ConnectionRecord>(CONNECTION);
+    return rows.map(({ config: c }) => ({
+      id: c.id,
+      name: c.name,
+      platform: c.platform,
+      target: c.target,
+      credentials: Object.entries(c.credentials).map(([credentialId, x]) => ({
+        credentialId,
+        system: x.system,
+        hint: x.hint,
+        checkedAt: x.checkedAt,
+        ok: x.ok,
+        detail: x.detail,
+      })),
+      createdAt: c.createdAt,
+      createdFrom: c.createdFrom,
+      projects: projects
+        .filter((p) => p.intake?.connectionId === c.id)
+        .map((p) => ({ id: p.projectId, name: p.name, status: p.status })),
+    }));
+  }
+
+  /**
+   * Saves a project's tenant as a connection: the target facts its platform shares across sites,
+   * and those credentials, opened and sealed again to the connection (never shown to anyone).
+   */
+  async createConnection(s: ProjectState, name: string): Promise<string> {
+    const pack = this.packOf(s);
+    if (!pack || !s.intake)
+      throw new CommandError(422, 'invalid', `${s.name} has no intake to save a connection from.`);
+    if (!pack.connection)
+      throw new CommandError(422, 'invalid', `${pack.name} projects don't share a tenant.`);
+    const id = `con-${randomUUID().slice(0, 8)}`;
+    const target: TargetValues = {};
+    for (const f of pack.connection.fields)
+      if (s.intake.target[f] !== undefined) target[f] = s.intake.target[f]!;
+    const credentials: ConnectionRecord['credentials'] = {};
+    for (const cid of pack.connection.credentials) {
+      const c = s.credentials[cid];
+      if (!c?.reference || c.reference.startsWith('github-app:')) continue;
+      const secret = await this.deps.vault.open(c.reference);
+      const sealed = await this.deps.vault.seal(CONNECTION + id, cid, secret);
+      credentials[cid] = {
+        reference: sealed.reference,
+        system: c.system,
+        hint: c.hint,
+        checkedAt: c.verifiedAt ?? null,
+        ok: c.ok,
+        detail: c.detail ?? null,
+      };
+    }
+    await this.store().put(CONNECTION + id, {
+      id,
+      name,
+      platform: pack.id,
+      target,
+      credentials,
+      createdAt: new Date().toISOString(),
+      createdFrom: { projectId: s.projectId, name: s.name },
+    } satisfies ConnectionRecord);
+    return id;
+  }
+
+  /**
+   * A new secret for a connection's credential: checked against the live service, sealed to the
+   * connection, and given to every project that still uses the old one.
+   */
+  async rotateConnectionCredential(
+    id: string,
+    credentialId: string,
+    secret: Record<string, string>,
+    projects: ProjectState[],
+  ): Promise<void> {
+    const c = await this.connection(id);
+    const pack = this.deps.platforms.get(c.platform);
+    const spec = pack?.credentials[credentialId];
+    if (!pack || !spec || !pack.connection?.credentials.includes(credentialId))
+      throw new CommandError(404, 'unknown_credential', `${c.name} has no "${credentialId}".`);
+    const r = await spec.check(secret, c.target);
+    if (!r.ok) throw new CommandError(422, 'credential_failed', `${spec.system}: ${r.detail}`);
+    const old = c.credentials[credentialId]?.reference ?? null;
+    const sealed = await this.deps.vault.seal(
+      CONNECTION + id,
+      credentialId,
+      JSON.stringify(secret),
+    );
+    const at = new Date().toISOString();
+    c.credentials[credentialId] = {
+      reference: sealed.reference,
+      system: spec.system,
+      hint: tail(secret[spec.hintField] ?? ''),
+      checkedAt: at,
+      ok: true,
+      detail: r.detail,
+    };
+    await this.store().put(CONNECTION + id, c);
+    // Projects that override it with their own secret keep theirs.
+    const actor = { kind: 'director', id: 'director' } as const;
+    for (const p of projects) {
+      if (p.intake?.connectionId !== id) continue;
+      const mine = p.credentials[credentialId];
+      if (mine && mine.reference !== old) continue;
+      await this.deps.store.append(p.projectId, [
+        {
+          type: 'credential.registered',
+          actor,
+          subject: { kind: 'tool', id: credentialId },
+          severity: 'routine',
+          data: {
+            credentialId,
+            system: spec.system,
+            scope: spec.scope(p.intake.target),
+            reference: sealed.reference,
+            hint: c.credentials[credentialId]!.hint,
+            expiresAt: null,
+          },
+        },
+        {
+          type: 'credential.verified',
+          actor,
+          subject: { kind: 'tool', id: credentialId },
+          severity: 'routine',
+          data: { credentialId, ok: true, detail: r.detail, expiresAt: null },
+        },
+      ]);
+    }
+  }
+
+  /**
+   * A new project's intake, prefilled from an existing one: same playbook, client, budgets, brief
+   * and connection (the one it uses, or one saved from it), and the target facts the connection
+   * shares. The site and its hosting are left for the Director.
+   */
+  async remixDraft(s: ProjectState): Promise<RemixDraft> {
+    if (!s.playbook || !s.intake)
+      throw new CommandError(422, 'invalid', `${s.name} has no intake to remix.`);
+    const pack = this.packOf(s);
+    let connection: ConnectionRecord | null = null;
+    if (s.intake.connectionId) connection = await this.connection(s.intake.connectionId);
+    else if (this.deps.connections) {
+      const rows = await this.deps.connections.list<ConnectionRecord>(CONNECTION);
+      connection =
+        rows.find((r) => r.config.createdFrom?.projectId === s.projectId)?.config ?? null;
+    }
+    const sharedFields = pack?.connection?.fields ?? [];
+    const target: TargetValues = {};
+    for (const f of sharedFields)
+      if (s.intake.target[f] !== undefined) target[f] = s.intake.target[f]!;
+    return {
+      playbookId: s.playbook.id,
+      from: { projectId: s.projectId, name: s.name },
+      connectionId: connection?.id ?? null,
+      client: s.client,
+      timezone: s.timezone,
+      budgets: s.budgets,
+      brief: Object.fromEntries(s.brief.map((b) => [b.key, b.answer])),
+      target: { ...target, ...(connection?.target ?? {}) },
+      providedCredentials: connection ? Object.keys(connection.credentials) : [],
+    };
   }
 
   /** Re-checks a stored credential of a live project and records the outcome. */
