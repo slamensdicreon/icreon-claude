@@ -13,10 +13,11 @@ import { age, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { NewProject } from '../overlays/NewProject';
 import { CypherHome } from './CypherHome';
+import { Rules } from './Rules';
 import { PlaybookComparison } from './Scorecard';
 import { useApp } from '../state';
 
-type Tab = 'projects' | 'connections' | 'playbooks' | 'diagnostics';
+type Tab = 'projects' | 'connections' | 'playbooks' | 'rules' | 'diagnostics';
 type Filter = 'active' | 'needs' | 'completed' | 'all';
 
 const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
@@ -89,6 +90,7 @@ export function Dashboard() {
               ['projects', 'Projects', needs ? `${needs} need you` : null],
               ['connections', 'Connections', null],
               ['playbooks', 'Playbooks', null],
+              ['rules', 'Rules', null],
               ['diagnostics', 'Diagnostics', null],
             ] as [Tab, string, string | null][]
           ).map(([key, label, note]) => (
@@ -107,6 +109,7 @@ export function Dashboard() {
         {tab === 'projects' && <Projects items={portfolio.data} error={portfolio.error} />}
         {tab === 'connections' && <Connections projects={portfolio.data ?? []} />}
         {tab === 'playbooks' && <Playbooks projects={portfolio.data ?? []} />}
+        {tab === 'rules' && <Rules projects={portfolio.data ?? []} />}
         {tab === 'diagnostics' && <Diagnostics />}
       </div>
     </div>

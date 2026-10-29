@@ -37,7 +37,7 @@ with A1 and A2 together. The scorecard (step 1) measures it, so we don't guess.
 | 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline (**built**) | 1 session | Every later step claims fewer cards or rejections; this proves it |
 | 2 | **No-repo mode**: start from the public website alone, no source repository (**built**) | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
 | 3 | **A2a Lead triage + autonomy settings** (+ the rules table) (**built, in shadow**) | 1½ sessions | Biggest cut left in cards |
-| 4 | **A2b Rules from answers** ("Make this a rule", Settings → Rules, harvest Ansco's answers) | 1 session | Makes triage smarter every time the Director answers |
+| 4 | **A2b Rules from answers** ("Make this a rule", Settings → Rules, harvest Ansco's answers) (**built**) | 1 session | Makes triage smarter every time the Director answers |
 | 5 | **A3 Project facts** (+ self-check before submitting) | 2 sessions | Ends "which ID?" waits and many rejections |
 | 6 | **A4 Knowledge store** (lessons, procedures, rules; retrospectives) | 2–3 sessions | Learning across projects; replaces the static pitfalls file |
 
@@ -243,6 +243,25 @@ The playbook ships the defaults (`autonomy:` in `playbook.yaml`); a project can 
 - **Harvest Ansco:** Cypher groups Ansco's 340 answered cards by cause and proposes rules (for
   example "a refused source download: skip and log the gap"; "a stale sandbox: clean it up and
   retry"). The Director approves each before it applies anywhere.
+
+**As built (2026-10-29):**
+
+- `lw_rules` and an append-only `lw_rule_history` (migration 005); `RuleStore` with Postgres and
+  memory versions. A rule: when, then, category, scope (project, playbook or platform), optional
+  roles, the cards it came from, author, status (proposed, active, retired), version, applied and
+  overridden counts; flagged once overridden twice.
+- API: `GET/POST /rules`, `PUT /rules/:id` (new version), `POST /rules/:id/activate|retire`,
+  `GET /rules/:id/history`; `POST /projects/:id/escalations/:id/rule-draft` (Cypher drafts from an
+  answered card, with same-cause cards as evidence and the scopes it could have; gates and locked
+  categories refused); `POST /projects/:id/rules/harvest` (one proposed rule per cause answered the
+  same way at least twice, skipping causes already behind a rule).
+- Triage shows the Lead the active rules covering a question (by ref); a rule cited when the Lead
+  decides is applied; in shadow, the Director's answer applies or overrides it; Override in the
+  Decision Log overrides it. Cards the Lead settles keep its answer and rules (`triage.mode:
+  decided`).
+- UI: "Make this a rule" on answered cards; Dashboard → Rules (proposed, active, retired; approve,
+  edit, retire, history, the cards it came from; propose rules from a project's answers).
+- Rules live on the Dashboard rather than a project's Settings because they span projects.
 
 ## Step 5 — Project facts (A3)
 

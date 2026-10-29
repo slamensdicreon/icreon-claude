@@ -14,7 +14,7 @@ import {
 } from '@lw/agent-runtime';
 import { DECISION_CATEGORY_LABEL } from '@lw/contracts';
 import { autonomyFor } from '@lw/domain';
-import type { EventStore, Projections } from '@lw/events';
+import type { EventStore, Projections, RuleStore } from '@lw/events';
 import {
   createStubActivities,
   loadFixtures,
@@ -69,6 +69,8 @@ export interface StackOptions {
    * project lets a Lead decide or shadow; without it, every question reaches the Director.
    */
   triage?: ((input: TriageInput) => Promise<Triage>) | null;
+  /** Rules from the Director's answers: triage shows the Lead the ones that cover a question. */
+  rules?: RuleStore;
   /** Judges a migrated page against its source from screenshots (Claude); without it, the visual check is pending. */
   screens?: ((input: ScreenInput) => Promise<ScreenVerdict & { tokens: number }>) | null;
   /** Extra servers (tests); the browser and workspace servers are always connected. */
@@ -340,6 +342,18 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       if (!opts.triage || !lead) return ask;
       const task = s.tasks[req.taskId];
       const template = opts.playbook.plan.templates.find((t) => t.id === task?.group);
+      // Rules that cover this question; the Lead sees them by their short ref ("R-3").
+      const covering =
+        (await opts.rules
+          ?.matching({
+            projectId: req.projectId,
+            playbookId: s.playbook?.id ?? opts.playbook.manifest.id,
+            platform: s.intake?.platform ?? null,
+            category: req.category,
+            role: req.role,
+          })
+          .catch(() => [])) ?? [];
+      const byRef = new Map(covering.map((r) => [r.ref, r.id]));
       const r = await opts.triage({
         lead: {
           name: lead.persona ? `${lead.persona}, ${lead.name}` : lead.name,
@@ -361,19 +375,27 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
             `${server}: ${grant.ops.join(', ')}${grant.scope?.paths?.length ? ` (writes only under ${grant.scope.paths.join(', ')})` : ''}`,
         ),
         previous: req.previous,
-        rules: [],
+        rules: covering.map((x) => ({ id: x.ref, when: x.when, then: x.then })),
       });
       const who = { leadId: lead.role, leadName: lead.persona ?? lead.name };
-      return r.decision === 'answer'
-        ? { level, ...who, ...r }
-        : {
-            level,
-            ...who,
-            decision: 'forward',
-            reasoning: r.reasoning,
-            tokens: r.tokens,
-            usd: r.usd,
-          };
+      if (r.decision === 'answer') {
+        const ruleIds = r.ruleIds.map((ref) => byRef.get(ref)).filter((id): id is string => !!id);
+        // A rule that settled a question has been applied; in shadow the Director's answer tells.
+        if (level === 'lead')
+          for (const id of ruleIds)
+            await opts.rules
+              ?.applied(id, { projectId: req.projectId, escalationId: `task:${req.taskId}` })
+              .catch(() => undefined);
+        return { level, ...who, ...r, ruleIds };
+      }
+      return {
+        level,
+        ...who,
+        decision: 'forward',
+        reasoning: r.reasoning,
+        tokens: r.tokens,
+        usd: r.usd,
+      };
     },
     async interpretDirective(req) {
       if (!opts.directives || !(await isLive(req.projectId))) return stubs.interpretDirective(req);

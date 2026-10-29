@@ -21,6 +21,8 @@ import {
   CreateConnection,
   AskCypher,
   AutonomySetting,
+  CreateRule,
+  EditRule,
   DECISION_CATEGORY_LABEL,
   RotateConnectionCredential,
   ResolveEscalation,
@@ -37,6 +39,9 @@ import {
   type CommandResult,
   type PortfolioDiagnostics,
   type PlaybookScorecard,
+  type RuleDraftView,
+  type RuleView as RuleViewT,
+  type EscalationView as EscalationViewT,
   type ServiceHealth,
 } from '@lw/contracts';
 import {
@@ -51,6 +56,8 @@ import {
   portfolioItem,
   scorecard,
   LOCKED_CATEGORIES,
+  cardCategory,
+  problemOf,
   preview,
   scheduleSnapshot,
   settingsView,
@@ -61,7 +68,7 @@ import {
   type ProjectState,
 } from '@lw/domain';
 import { Blueprint, blueprintSnapshot } from '@lw/plan';
-import type { EventStore, IntegrationStore, Projections } from '@lw/events';
+import type { EventStore, IntegrationStore, Projections, RuleStore } from '@lw/events';
 import { CommandError } from '@lw/domain';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -70,7 +77,7 @@ import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from 
 import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
 import { PortfolioCypher } from './cypher';
-import type { ModelClient } from '@lw/agent-runtime';
+import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
@@ -103,6 +110,10 @@ export interface AppDeps {
   logger?: boolean;
   /** The worker's last heartbeat (it writes one every 30 s), for the Dashboard's diagnostics. */
   heartbeat?: () => Promise<WorkerHeartbeat | null>;
+  /** Rules from the Director's answers, applied by Lead triage. Absent where nothing stores them. */
+  rules?: RuleStore;
+  /** Drafts a rule from an answered card (Claude); without it, the draft copies the card. */
+  ruleDrafter?: ((input: RuleDraftInput) => Promise<{ when: string; then: string }>) | null;
   /** Cypher on the Dashboard: the model (null where none is configured) and where it keeps the conversation. */
   cypher?: { model: ModelClient | null; store: IntegrationStore };
 }
@@ -436,6 +447,246 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const s = project(req.params.id);
     if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
     return deps.intake.remixDraft(s);
+  });
+
+  /** Tells rules how they did: the Director agreed with the answer they gave, or overrode it. */
+  const ruleOutcome = async (
+    ruleIds: string[],
+    projectId: string,
+    escalationId: string,
+    agreed: boolean,
+  ) => {
+    for (const id of ruleIds) {
+      const use = { projectId, escalationId };
+      await (agreed ? deps.rules?.applied(id, use) : deps.rules?.overridden(id, use))?.catch(
+        () => undefined,
+      );
+    }
+  };
+
+  // Rules: when this happens, do that. Lead triage applies the active ones in their scope.
+  const rules = (reply: FastifyReply) => {
+    if (!deps.rules) {
+      fail(reply, 501, 'rules_unavailable', 'Rules need the database; this server has none.');
+      return null;
+    }
+    return deps.rules;
+  };
+  const rule = async (reply: FastifyReply, id: string) => {
+    const store = rules(reply);
+    if (!store) return null;
+    const r = await store.get(id);
+    if (!r) {
+      fail(reply, 404, 'unknown_rule', `No rule "${id}".`);
+      return null;
+    }
+    return { store, r };
+  };
+
+  // Make this a rule: from a card the Director answered, a draft to edit and save.
+  app.post<{ Params: { id: string; escalationId: string } }>(
+    '/projects/:id/escalations/:escalationId/rule-draft',
+    async (req, reply): Promise<RuleDraftView | undefined> => {
+      const s = known(req.params.id);
+      const x = s.escalations[req.params.escalationId];
+      if (!x)
+        return fail(
+          reply,
+          404,
+          'unknown_escalation',
+          `No escalation "${req.params.escalationId}".`,
+        );
+      const chosen = x.status === 'expired' ? x.defaultOptionId : x.resolution?.optionId;
+      const answer = x.options.find((o) => o.id === chosen)?.label;
+      if (!answer || x.gate)
+        return fail(
+          reply,
+          409,
+          'not_answered',
+          x.gate
+            ? 'Gates are always yours: they make no rules.'
+            : 'Answer the card first: a rule says what you chose.',
+        );
+      const category = cardCategory(x);
+      if (LOCKED_CATEGORIES.includes(category))
+        return fail(
+          reply,
+          409,
+          'locked',
+          `${DECISION_CATEGORY_LABEL[category]} always come to you: a rule can't settle them.`,
+        );
+      const t = x.sourceTaskId ? s.tasks[x.sourceTaskId] : undefined;
+      const names = (y: typeof x) => {
+        const tk = y.sourceTaskId ? s.tasks[y.sourceTaskId] : undefined;
+        return tk ? [tk.title, tk.taskId, ...tk.itemKeys] : [];
+      };
+      const problem = problemOf(x.title, names(x));
+      // The same cause, answered the same way: evidence the rule holds.
+      const similar = Object.values(s.escalations).filter((y) => {
+        if (y.escalationId === x.escalationId || cardCategory(y) !== category) return false;
+        const yChosen = y.status === 'expired' ? y.defaultOptionId : y.resolution?.optionId;
+        const yAnswer = y.options.find((o) => o.id === yChosen)?.label;
+        return yAnswer === answer && problemOf(y.title, names(y)) === problem;
+      });
+      const source = (y: typeof x) => ({
+        projectId: s.projectId,
+        escalationId: y.escalationId,
+        title: y.title,
+        answer,
+      });
+      const fallback = { when: x.title.replace(/[?.]$/, '').toLowerCase(), then: answer };
+      let drafted: { when: string; then: string } = fallback;
+      let draftedBy: RuleDraftView['draftedBy'] = 'copy';
+      if (deps.ruleDrafter) {
+        try {
+          drafted = await deps.ruleDrafter({
+            card: { title: x.title, context: x.context, options: x.options.map((o) => o.label) },
+            answer,
+            notes: x.resolution?.notes ?? null,
+            role: t ? t.role : null,
+            task: t?.title ?? null,
+            similar: similar.slice(0, 8).map((y) => ({ title: y.title, answer })),
+          });
+          draftedBy = 'cypher';
+        } catch {
+          drafted = fallback;
+        }
+      }
+      const playbook = s.playbook?.id;
+      const platform = s.intake?.platform;
+      return {
+        ...drafted,
+        category,
+        roles: t ? [t.role] : [],
+        scopes: [
+          { kind: 'project', id: s.projectId, label: `This project (${s.name})` },
+          ...(playbook
+            ? [{ kind: 'playbook' as const, id: playbook, label: 'Every project on this playbook' }]
+            : []),
+          ...(platform
+            ? [{ kind: 'platform' as const, id: platform, label: 'Every project on this platform' }]
+            : []),
+        ],
+        sources: [x, ...similar.slice(0, 20)].map(source),
+        draftedBy,
+      };
+    },
+  );
+
+  /**
+   * Harvest: a project's answered cards grouped by cause and answer, each group seen at least
+   * twice drafted into a proposed rule with its cards as evidence. Nothing applies until the
+   * Director approves it (Dashboard → Rules). Groups already behind a rule are skipped.
+   */
+  app.post<P>('/projects/:id/rules/harvest', async (req, reply) => {
+    const store = rules(reply);
+    if (!store) return;
+    const s = known(req.params.id);
+    const names = (y: EscalationViewT) => {
+      const tk = y.sourceTaskId ? s.tasks[y.sourceTaskId] : undefined;
+      return tk ? [tk.title, tk.taskId, ...tk.itemKeys] : [];
+    };
+    const groups = new Map<
+      string,
+      { cards: EscalationViewT[]; answer: string; category: DecisionCategory }
+    >();
+    for (const y of Object.values(s.escalations)) {
+      if (y.gate) continue;
+      const category = cardCategory(y);
+      if (LOCKED_CATEGORIES.includes(category)) continue;
+      const chosen = y.status === 'expired' ? y.defaultOptionId : y.resolution?.optionId;
+      const answer = y.options.find((o) => o.id === chosen)?.label;
+      if (!answer) continue;
+      const key = [category, problemOf(y.title, names(y)), answer].join('\n');
+      const g = groups.get(key) ?? { cards: [], answer, category };
+      g.cards.push(y);
+      groups.set(key, g);
+    }
+    const covered = new Set(
+      (await store.list())
+        .filter((r) => r.status !== 'retired')
+        .flatMap((r) => r.sources.map((x) => x.escalationId)),
+    );
+    const worth = [...groups.values()]
+      .filter((g) => g.cards.length >= 2 && !g.cards.some((c) => covered.has(c.escalationId)))
+      .sort((a, b) => b.cards.length - a.cards.length)
+      .slice(0, 20);
+    const created: RuleViewT[] = [];
+    for (const g of worth) {
+      const [first, ...rest] = g.cards;
+      const t = first!.sourceTaskId ? s.tasks[first!.sourceTaskId] : undefined;
+      let drafted = { when: first!.title.replace(/[?.]$/, '').toLowerCase(), then: g.answer };
+      if (deps.ruleDrafter)
+        drafted = await deps
+          .ruleDrafter({
+            card: {
+              title: first!.title,
+              context: first!.context,
+              options: first!.options.map((o) => o.label),
+            },
+            answer: g.answer,
+            notes: first!.resolution?.notes ?? null,
+            role: t?.role ?? null,
+            task: t?.title ?? null,
+            similar: rest.slice(0, 8).map((y) => ({ title: y.title, answer: g.answer })),
+          })
+          .catch(() => drafted);
+      created.push(
+        await store.create({
+          ...drafted,
+          category: g.category,
+          scope: s.playbook
+            ? { kind: 'playbook', id: s.playbook.id }
+            : { kind: 'project', id: s.projectId },
+          sources: g.cards.slice(0, 20).map((y) => ({
+            projectId: s.projectId,
+            escalationId: y.escalationId,
+            title: y.title,
+            answer: g.answer,
+          })),
+          author: 'cypher',
+          status: 'proposed',
+        }),
+      );
+    }
+    return { proposed: created, groups: groups.size };
+  });
+
+  app.get<{ Querystring: { status?: string } }>('/rules', async (req, reply) => {
+    const store = rules(reply);
+    if (!store) return;
+    const status = ['proposed', 'active', 'retired'].includes(req.query.status ?? '')
+      ? (req.query.status as 'proposed' | 'active' | 'retired')
+      : undefined;
+    return store.list({ status });
+  });
+
+  app.post('/rules', async (req, reply) => {
+    const store = rules(reply);
+    if (!store) return;
+    const input = CreateRule.parse(req.body);
+    return reply.status(201).send(await store.create({ ...input, author: 'director' }));
+  });
+
+  app.put<{ Params: { id: string } }>('/rules/:id', async (req, reply) => {
+    const found = await rule(reply, req.params.id);
+    if (!found) return;
+    return found.store.edit(found.r.id, EditRule.parse(req.body));
+  });
+
+  app.post<{ Params: { id: string; action: string } }>('/rules/:id/:action', async (req, reply) => {
+    const status = { activate: 'active', retire: 'retired' }[req.params.action] as
+      'active' | 'retired' | undefined;
+    if (!status) return fail(reply, 404, 'unknown_action', `Rules can be activated or retired.`);
+    const found = await rule(reply, req.params.id);
+    if (!found) return;
+    return found.store.setStatus(found.r.id, status);
+  });
+
+  app.get<{ Params: { id: string } }>('/rules/:id/history', async (req, reply) => {
+    const found = await rule(reply, req.params.id);
+    if (!found) return;
+    return found.store.history(found.r.id);
   });
 
   // Cypher on the Dashboard: a conversation about the portfolio that can draft projects, never
@@ -911,10 +1162,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post<{ Params: { id: string; taskId: string } }>(
     '/projects/:id/tasks/:taskId/rerun',
     async (req) => {
-      const { instructions } = RerunTask.parse(req.body);
-      return command(req.params.id, (o) =>
+      const { instructions, overriding } = RerunTask.parse(req.body);
+      const card = overriding ? project(req.params.id)?.escalations[overriding] : undefined;
+      const result = await command(req.params.id, (o) =>
         supported(o, 'rerunTask')(req.params.taskId, instructions),
       );
+      // Overriding what a Lead settled by a rule counts against the rule.
+      if (card?.triage?.mode === 'decided' && card.triage.ruleIds.length)
+        await ruleOutcome(card.triage.ruleIds, req.params.id, card.escalationId, false);
+      return result;
     },
   );
 
@@ -1151,6 +1407,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const result = await command(req.params.id, (o) =>
         o.resolve(req.params.escalationId, optionId, notes || null),
       );
+      // A shadowed card the Lead answered by a rule: the Director's choice tells the rule how it did.
+      if (x?.triage?.mode === 'shadow' && x.triage.ruleIds.length)
+        await ruleOutcome(
+          x.triage.ruleIds,
+          req.params.id,
+          x.escalationId,
+          optionId === x.triage.optionId,
+        );
       // The rest of its group, the same way; a card answered meanwhile is left as it is.
       for (const id of group?.escalationIds ?? []) {
         if (id === req.params.escalationId) continue;

@@ -190,7 +190,11 @@ export const Control = z.object({
 export type Control = z.infer<typeof Control>;
 
 /** POST /projects/:id/tasks/:taskId/rerun */
-export const RerunTask = z.object({ instructions: z.string().min(1).max(4000) });
+export const RerunTask = z.object({
+  instructions: z.string().min(1).max(4000),
+  /** The card whose Lead or rule answer this re-run overrides, so the rule is told. */
+  overriding: z.string().max(80).optional(),
+});
 export type RerunTask = z.infer<typeof RerunTask>;
 
 /**
@@ -254,3 +258,42 @@ export type RotateConnectionCredential = z.infer<typeof RotateConnectionCredenti
 /** POST /cypher — a message to Cypher on the Dashboard, about the portfolio or a new project. */
 export const AskCypher = z.object({ body: z.string().trim().min(1).max(4000) });
 export type AskCypher = z.infer<typeof AskCypher>;
+
+const RuleText = z.string().trim().min(3).max(600);
+const RuleScopeInput = z.object({
+  kind: z.enum(['project', 'playbook', 'platform']),
+  id: z.string().min(1).max(120),
+});
+
+/** POST /rules — a rule the Director writes or saves from a draft: when this happens, do that. */
+export const CreateRule = z.object({
+  when: RuleText,
+  then: RuleText,
+  category: DecisionCategory,
+  scope: RuleScopeInput,
+  roles: z.array(z.string().max(80)).max(20).default([]),
+  sources: z
+    .array(
+      z.object({
+        projectId: z.string(),
+        escalationId: z.string(),
+        title: z.string().max(200),
+        answer: z.string().max(400).nullable().default(null),
+      }),
+    )
+    .max(50)
+    .default([]),
+  /** Saved straight to active, or proposed for later. */
+  status: z.enum(['proposed', 'active']).default('active'),
+});
+export type CreateRule = z.infer<typeof CreateRule>;
+
+/** PUT /rules/:id — a new version of the rule. */
+export const EditRule = z.object({
+  when: RuleText.optional(),
+  then: RuleText.optional(),
+  category: DecisionCategory.optional(),
+  scope: RuleScopeInput.optional(),
+  roles: z.array(z.string().max(80)).max(20).optional(),
+});
+export type EditRule = z.infer<typeof EditRule>;

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient } from '@lw/agent-runtime';
+import { anthropicModelClient, draftRule } from '@lw/agent-runtime';
 import {
   CommandBus,
   masterKey,
@@ -9,6 +9,8 @@ import {
   MemoryVault,
   openStore,
   PostgresIntegrationStore,
+  PostgresRuleStore,
+  MemoryRuleStore,
   PostgresVault,
   Projections,
   type SecretVault,
@@ -386,6 +388,12 @@ const integrations =
     : env.STORE === 'memory'
       ? new MemoryIntegrationStore()
       : null;
+// Rules live in the database beside the event log; the memory store keeps them for local runs.
+const rules = opened.sql
+  ? new PostgresRuleStore(opened.sql)
+  : env.STORE === 'memory'
+    ? new MemoryRuleStore()
+    : undefined;
 const github = integrations
   ? new GithubApp({
       integrations,
@@ -426,6 +434,8 @@ const app = await buildApp({
   },
   logger: true,
   heartbeat: integrations ? () => integrations.get<WorkerHeartbeat>('heartbeat:worker') : undefined,
+  rules,
+  ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,
   cypher: integrations
     ? {
         model:

@@ -4,6 +4,7 @@ import {
   PortfolioDiagnostics,
   PortfolioItem,
   Scorecard,
+  RuleDraftView,
   SettingsSnapshot,
 } from '@lw/contracts';
 import { InMemoryEventStore, Projections } from '@lw/events';
@@ -20,7 +21,10 @@ afterEach(async () => {
   while (closers.length) await closers.pop()!();
 });
 
-async function start(heartbeat?: () => Promise<WorkerHeartbeat | null>) {
+async function start(
+  heartbeat?: () => Promise<WorkerHeartbeat | null>,
+  ruleDrafter?: Parameters<typeof buildApp>[0]['ruleDrafter'],
+) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
@@ -39,6 +43,7 @@ async function start(heartbeat?: () => Promise<WorkerHeartbeat | null>) {
     commands: (id) => (id === 'p1' ? simulationCommands(sim) : undefined),
     now: () => NOW,
     heartbeat,
+    ruleDrafter,
   });
   closers.push(() => app.close());
   return app;
@@ -160,4 +165,44 @@ it('shows who may settle each kind of card, and keeps releases and scope with th
     default: 'shadow',
   });
   expect(after.autonomy.find((r) => r.category === 'access')?.level).toBe('shadow');
+});
+
+it('drafts a rule from an answered card, with the scopes it could have and its evidence', async () => {
+  const app = await start(undefined, async (input) => ({
+    when: `the agent asks "${input.card.title}" again`,
+    then: `answer: ${input.answer}`,
+  }));
+  const decisions = (await app.inject({ method: 'GET', url: '/projects/p1/decisions' })).json() as {
+    escalationId: string | null;
+    scopeKey: string;
+    answer: string;
+  }[];
+  const answered = decisions.find((d) => d.escalationId && !d.scopeKey.startsWith('gate:'))!;
+  const gate = decisions.find((d) => d.escalationId && d.scopeKey.startsWith('gate:'));
+  const r = await app.inject({
+    method: 'POST',
+    url: `/projects/p1/escalations/${answered.escalationId}/rule-draft`,
+  });
+  expect(r.statusCode).toBe(200);
+  const draft = RuleDraftView.parse(r.json());
+  expect(draft).toMatchObject({
+    draftedBy: 'cypher',
+    then: `answer: ${answered.answer}`,
+    sources: [
+      expect.objectContaining({ escalationId: answered.escalationId, answer: answered.answer }),
+    ],
+  });
+  expect(draft.when).toMatch(/^the agent asks/);
+  expect(draft.scopes.map((x) => x.kind)).toEqual(['project', 'playbook']);
+  if (gate) {
+    const g = await app.inject({
+      method: 'POST',
+      url: `/projects/p1/escalations/${gate.escalationId}/rule-draft`,
+    });
+    expect(g.statusCode).toBe(409);
+  }
+  expect(
+    (await app.inject({ method: 'POST', url: '/projects/p1/escalations/nope/rule-draft' }))
+      .statusCode,
+  ).toBe(404);
 });

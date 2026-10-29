@@ -1693,3 +1693,105 @@
   width: 100%;
   min-width: 0;
 }
+
+/* Make this a rule */
+.resolved-sub .make-rule {
+  margin-left: 8px;
+}
+.rule-dialog {
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+}
+.rule-dialog textarea {
+  width: 100%;
+  resize: vertical;
+}
+.mr-scope {
+  display: grid;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  margin: 6px 0 0;
+}
+.mr-scope label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Dashboard → Rules */
+.rules h3 {
+  margin: 18px 0 8px;
+  font-size: 15px;
+}
+.rules h3 small {
+  color: var(--web-fg-2);
+  font-weight: 500;
+  margin-left: 4px;
+}
+.rule-list {
+  display: grid;
+  gap: 10px;
+}
+.rule {
+  background: var(--web-surface);
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  padding: 12px 14px;
+  min-width: 0;
+}
+.rule.proposed {
+  border-left: 3px solid var(--web-accent);
+}
+.rule.retired {
+  opacity: 0.7;
+}
+.rule.flagged {
+  border-color: var(--web-warn, #b45309);
+}
+.rule header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  font-size: 13px;
+}
+.rule-text {
+  margin: 8px 0 4px;
+  overflow-wrap: anywhere;
+}
+.rule-facts {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.rule-edit {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+.rule-edit textarea {
+  width: 100%;
+  resize: vertical;
+}
+.rule-history {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--web-fg-2);
+}
+.rule details {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.rule-harvest {
+  background: var(--web-surface);
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.rule-harvest .btn-row {
+  margin-top: 6px;
+  flex-wrap: wrap;
+}

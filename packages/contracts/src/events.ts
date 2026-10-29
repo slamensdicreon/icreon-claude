@@ -126,8 +126,11 @@ export type EvidenceLink = z.infer<typeof EvidenceLink>;
 /** What a Lead made of a card before it reached the Director. */
 export const LeadTriage = z.object({
   leadId: z.string(),
-  /** shadow: the Lead answered, for comparison; forwarded: the Lead passed it on. */
-  mode: z.enum(['shadow', 'forwarded']),
+  /**
+   * shadow: the Lead answered, for comparison; forwarded: the Lead passed it on; decided: the
+   * Lead settled it (the card is resolved by the Lead or a rule).
+   */
+  mode: z.enum(['shadow', 'forwarded', 'decided']),
   /** The option the Lead chose; null when forwarded. */
   optionId: z.string().nullable(),
   reasoning: z.string(),

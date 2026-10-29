@@ -5,3 +5,4 @@ export * from './open';
 export * from './commands';
 export * from './vault';
 export * from './integrations';
+export * from './rules';

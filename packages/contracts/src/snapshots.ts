@@ -461,6 +461,76 @@ export const PlaybookScorecard = z.object({
 });
 export type PlaybookScorecard = z.infer<typeof PlaybookScorecard>;
 
+/** Where a rule applies: one project, every project on a playbook, or every project on a platform. */
+export const RuleScope = z.object({
+  kind: z.enum(['project', 'playbook', 'platform']),
+  id: z.string(),
+});
+export type RuleScope = z.infer<typeof RuleScope>;
+
+/** A card a rule came from (or was proposed from), as evidence. */
+export const RuleSource = z.object({
+  projectId: z.string(),
+  escalationId: z.string(),
+  title: z.string(),
+  answer: z.string().nullable().default(null),
+});
+export type RuleSource = z.infer<typeof RuleSource>;
+
+/**
+ * A rule Lead triage applies: when this happens, do that. Proposed rules apply nowhere until the
+ * Director activates them; edits make a new version; retired rules stay for the record.
+ */
+export const RuleView = z.object({
+  id: z.string(),
+  /** Display id, "R-7". */
+  ref: z.string(),
+  status: z.enum(['proposed', 'active', 'retired']),
+  category: DecisionCategory,
+  scope: RuleScope,
+  when: z.string(),
+  then: z.string(),
+  /** Roles it applies to; empty for any role. */
+  roles: z.array(z.string()),
+  sources: z.array(RuleSource),
+  author: z.enum(['director', 'cypher']),
+  version: z.number().int(),
+  applied: z.number().int(),
+  overridden: z.number().int(),
+  /** Overridden twice or more: the Director keeps disagreeing with it. */
+  flagged: z.boolean(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type RuleView = z.infer<typeof RuleView>;
+
+/** One thing that happened to a rule. */
+export const RuleHistoryItem = z.object({
+  at: z.iso.datetime(),
+  kind: z.enum(['created', 'edited', 'activated', 'retired', 'applied', 'overridden']),
+  detail: z.record(z.string(), z.unknown()),
+});
+export type RuleHistoryItem = z.infer<typeof RuleHistoryItem>;
+
+/**
+ * POST /projects/:id/escalations/:escalationId/rule-draft — a rule drafted from an answered card,
+ * for the Director to edit and save (POST /rules). Nothing applies until it is saved.
+ */
+export const RuleDraftView = z.object({
+  when: z.string(),
+  then: z.string(),
+  category: DecisionCategory,
+  /** The role that asked; a rule can be limited to it. */
+  roles: z.array(z.string()),
+  /** The scopes it could be saved at, narrowest first. */
+  scopes: z.array(RuleScope.extend({ label: z.string() })),
+  /** The card, and others with the same cause and answer, as evidence. */
+  sources: z.array(RuleSource),
+  /** Who drafted it: Cypher, or a plain copy of the card when the model isn't available. */
+  draftedBy: z.enum(['cypher', 'copy']),
+});
+export type RuleDraftView = z.infer<typeof RuleDraftView>;
+
 /** A service the system runs on, as last seen. */
 export const ServiceHealth = z.object({
   key: z.string(),
