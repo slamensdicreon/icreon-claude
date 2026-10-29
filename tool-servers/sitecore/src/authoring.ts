@@ -80,7 +80,10 @@ const HOSTS = '/sitecore/system/Settings/Services/Rendering Hosts';
 const UpdateArgs = z.object({
   path: Path,
   language: z.string().optional(),
-  fields: z.array(Field).min(1).max(200),
+  fields: z
+    .array(Field.extend({ add: z.boolean().optional() }))
+    .min(1)
+    .max(200),
 });
 const RenameArgs = z.object({
   path: Path,
@@ -245,7 +248,8 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       lockPaths: (a) => [`${String(a.parentPath).replace(/\/$/, '')}/${String(a.name)}`],
     },
     'item.update': {
-      description: 'Set field values on an item (by absolute path) in one language.',
+      description:
+        "Set field values on an item (by absolute path) in one language. For a field that lists item IDs and that other tasks also write (an Available Renderings group's Renderings, __Masters), pass add: true with the IDs to add: they join the value stored at the moment of the write, and every ID already there stays. Writing back a list you read earlier drops whatever another task added since.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -255,7 +259,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
             type: 'array',
             items: {
               type: 'object',
-              properties: { name: { type: 'string' }, value: { type: 'string' } },
+              properties: {
+                name: { type: 'string' },
+                value: { type: 'string' },
+                add: { type: 'boolean' },
+              },
               required: ['name', 'value'],
             },
           },
@@ -670,6 +678,21 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     for (const f of a.data.fields) {
       if (/^parameters template$/i.test(f.name) && f.value.trim().startsWith('/'))
         f.value = sitecoreId(await this.idOf(q, f.value.trim()));
+    }
+    // IDs to add join the list as stored now, while this task holds the item's lock: a list read
+    // earlier may predate another task's write, and writing it back would drop their IDs.
+    const adds = a.data.fields.filter((f) => f.add);
+    if (adds.some((f) => !f.value.split('|').every((p) => HEX_ID.test(p.trim()))))
+      return bad('add: true takes item IDs, separated by |');
+    if (adds.length) {
+      const now = await readBack(
+        q,
+        a.data.path,
+        language,
+        adds.map((f) => f.name),
+      );
+      if (!now) return { code: 404, body: { error: `No item at ${a.data.path}` } };
+      for (const f of adds) f.value = addIds(now.fields.get(f.name.toLowerCase()) ?? '', f.value);
     }
     let reconciled = false;
     try {
@@ -1430,6 +1453,20 @@ const fieldsOf = (fields: { name: string; value: string }[]) =>
   `[${fields.map((f) => `{ name: ${gql(f.name)}, value: ${gql(stored(f.value))} }`).join(', ')}]`;
 
 const HEX_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
+
+/** A |-separated list of IDs with more added at the end; IDs already in it aren't repeated. */
+function addIds(list: string, more: string): string {
+  const key = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
+  const ids = list.split('|').filter((p) => p.trim());
+  const have = new Set(ids.map(key));
+  for (const id of more.split('|').map((p) => p.trim())) {
+    if (id && !have.has(key(id))) {
+      ids.push(id);
+      have.add(key(id));
+    }
+  }
+  return ids.join('|');
+}
 
 /**
  * An ID as Sitecore keeps it in a field: `{8-4-4-4-12}`, uppercase. The authoring API answers with

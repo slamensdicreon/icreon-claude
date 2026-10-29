@@ -276,6 +276,40 @@ describe('SitecoreAuthoringToolServer', () => {
     });
   });
 
+  it('adds IDs to the list as stored at the write, keeping what another task added', async () => {
+    const group = '/sitecore/content/Brands/ansco/Presentation/Available Renderings/Ansco';
+    const cm = fakeCm({ [group]: 'group-id' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    const one = '{A1B2C3D4-0000-4000-8000-000000000001}';
+    const two = 'a1b2c3d4-0000-4000-8000-000000000002';
+    await s.call('item.update', { path: group, fields: [{ name: 'Renderings', value: one }] }, ctx);
+    // Another registrar read the list before this write; adding keeps the ID written since.
+    const r = await s.call(
+      'item.update',
+      { path: group, fields: [{ name: 'Renderings', value: two, add: true }] },
+      ctx,
+    );
+    expect(r).toMatchObject({ code: 200, body: { verified: true } });
+    const again = await s.call(
+      'item.update',
+      { path: group, fields: [{ name: 'Renderings', value: `{${two.toUpperCase()}}`, add: true }] },
+      ctx,
+    );
+    expect(again.code).toBe(200);
+    const read = await s.call('item.read', { path: group, fields: ['Renderings'] }, ctx);
+    expect(read.body).toMatchObject({
+      fields: {
+        nodes: [{ name: 'Renderings', value: `${one}|{${two.toUpperCase()}}` }],
+      },
+    });
+    const notIds = await s.call(
+      'item.update',
+      { path: group, fields: [{ name: 'Renderings', value: 'Hero', add: true }] },
+      ctx,
+    );
+    expect(notIds.code).toBe(422);
+  });
+
   it("stores a rendering's Parameters Template as the template's ID when given its path", async () => {
     const rendering = '/sitecore/layout/Renderings/Project/Brands/ansco/SnippetGrid';
     const params = '/sitecore/templates/Project/Brands/ansco/SnippetGrid Parameters';
