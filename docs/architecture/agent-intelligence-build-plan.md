@@ -31,6 +31,7 @@ with A1 and A2 together. The scorecard (step 1) measures it, so we don't guess.
 
 | Step | Build | Size | Why here |
 | --- | --- | --- | --- |
+| 0 | **P1 Dashboard + P2 saved connections and remix** (see Portfolio below) | 3 sessions | The next sites are remixes of Ansco on the same tenant |
 | 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline | 1 session | Every later step claims fewer cards or rejections; this proves it |
 | 2 | **No-repo mode**: start from the public website alone, no source repository | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
 | 3 | **A2a Lead triage + autonomy settings** (+ the rules table) | 1½ sessions | Biggest cut left in cards |
@@ -199,6 +200,90 @@ other through waits, or guess. Ansco's ownership and "still missing" cards come 
 - **Effectiveness:** how often each entry was injected, and whether the problem it prevents came
   back (scorecard). Entries that don't help are flagged; superseded ones retire.
 
+## Portfolio: a dashboard above Mission Control, remixable projects, Cypher at the top
+
+The Director runs many engagements (Ansco's tenant alone will take 10+ sites). Today the app opens
+inside one project. Three pieces put a portfolio above it.
+
+### P1. Dashboard (the new home screen)
+
+- **Projects:** a card per project: name, client, playbook and version, status (intake, running,
+  paused, completed, archived), current phase and its progress, health and why, cards waiting on
+  the Director, spend against budget, last activity, and the live site link. Filters: active,
+  needs me, completed, archived. Opening a card goes to its Mission Control as today.
+- **Completed projects stay open for reference,** read-only: Mission Control, Activity, the Decision
+  Log, Workbench documents (Blueprint, inventories, handover pack) and the scorecard. Agents get the
+  same reference through A4: a completed project's lessons, decisions and handover pack become
+  knowledge-store entries scoped to its playbook and platform.
+- **Playbook catalog:** each playbook with what its team delivers, its phases, the roles, what intake
+  asks for, its version history, and the projects that ran it. "Start a project" from a playbook.
+- **Diagnostics across projects and services:**
+  - Services: API, worker (a new heartbeat row every 30 s: version, connected tool servers, live
+    roles, model check), Temporal, Postgres, Blob, the GitHub App.
+  - Per project: orchestrator health (the existing diagnostics: history length, stalled tasks),
+    open capability gaps, and blocked tasks over a day old.
+  - One "needs attention" list.
+- **Build:** `GET /portfolio` (project list with the fields above), `GET /portfolio/diagnostics`,
+  the worker heartbeat table, a Dashboard surface in `apps/web` that the app opens on, and the
+  project switcher linking back to it.
+
+### P2. Saved connections and remix
+
+**Why copying secrets is the wrong answer:** each secret is sealed to its project, so ten sites would
+mean ten copies of the same Sitecore client secret, and a rotation would mean ten updates.
+
+**Saved connections:** a named, reusable set of an environment's facts and credentials, for example
+"Brands tenant (SitecoreAI production)":
+
+| Shared by every site on the tenant (in the connection) | Per site (asked again, prefilled) |
+| --- | --- |
+| CM host, site collection, languages | Site name |
+| SitecoreAI environment client (`sitecore-environment`) | Source URL and repository |
+| Organization client (`sitecore-organization`) | Build repository |
+| Experience Edge Context IDs (preview, live) | Vercel project, editing secret |
+| GitHub App (already one for all projects) | Brief answers |
+
+- Secrets are sealed once, to the connection (owner `connection:<id>`), and projects reference
+  them. Rotating a secret in the connection updates every project that uses it, and is re-verified
+  against the live service. A project can override any credential with its own.
+- Settings shows which connection a project uses; the connection shows its projects.
+- **Remix:** "New project like Ansco" copies the playbook, connection, brief answers, conventions and
+  budgets, and leaves the per-site fields (prefilled where they follow a pattern, e.g. the site
+  name) for the Director to confirm. It starts in intake, so nothing runs until the Director starts
+  it, after the usual credential checks.
+- **Ansco becomes the first connection:** its tenant facts and environment credentials move into
+  "Brands tenant", with Ansco pointing at it. No re-entry.
+- **Build:** `lw_connections` table, vault owner scope, `POST /connections`,
+  `POST /projects/:id/remix`, intake that takes a connection, Settings and wizard changes.
+
+### P3. Cypher at the top
+
+A conversation on the Dashboard with Cypher, the Chief of Staff, across all projects.
+
+- **Ask about the portfolio:** "what needs me today?", "how far is Ansco?", "which projects are
+  blocked on access?". Answers come from the read models, with links.
+- **Start a project from a brief:** describe the work in your own words; Cypher picks the playbook
+  from the catalog (and says why, and what it would not cover), proposes the connection to use,
+  drafts the intake from the brief, and asks only what's missing. Every action is a proposal you
+  confirm: "Create it", then the wizard opens prefilled at the review step.
+- **Remix by asking:** "set up the next site on the Brands tenant like Ansco: anscollc.com's sister
+  site at …". Cypher drafts the remix for you to confirm.
+- **Hand off to the project:** once a project runs, Cypher in that project carries on as today.
+- **Never on its own:** Cypher creates drafts in intake and asks; starting, spending and anything
+  outward-facing stay the Director's click.
+- **Build:** a portfolio conversation stream in the event store, a Cypher agent with portfolio
+  tools (`portfolio.read`, `playbooks.read`, `connections.read`, `intake.draft`, `project.remix`;
+  drafts only), the Dashboard dock, and tests that it never starts or changes a running project
+  without confirmation.
+
+### Size and order
+
+| Piece | Size |
+| --- | --- |
+| P1 Dashboard, catalog, diagnostics | 1½ sessions |
+| P2 Saved connections and remix | 1½ sessions |
+| P3 Cypher at the top | 2 sessions |
+
 ## Capability gap to schedule: Page builder automation
 
 Every project has four tasks that need an agent to work in Page builder as an editor:
@@ -211,9 +296,13 @@ then, these cards ask the Director to check by hand and mark the task done.
 
 ## Decided (2026-10-29)
 
-1. **Order:** scorecard first, then no-repo mode, Lead triage and autonomy, rules, facts, knowledge.
+1. **Order:** the Dashboard and saved connections with remix (P1, P2) first; then the scorecard,
+   no-repo mode, Lead triage and autonomy, rules, facts, knowledge.
 2. **Autonomy defaults:** the table in step 3 (the Lead decides retries, naming, content within the
    Blueprint and tool workarounds; access and scope ask; releases, gates and budget are locked).
 3. **Rule scope default:** this playbook.
 4. **Next site:** after rules (step 4), with or without a repository.
 5. **Knowledge search:** Postgres full-text first; embeddings only if it misses.
+6. **Secrets across projects:** shared saved connections (one sealed copy per tenant, rotated once;
+   a project may override a credential), not copies made at remix.
+7. **Cypher at the top (P3):** after rules (step 4).
