@@ -665,6 +665,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   private async update(q: Gql, a: Parsed<typeof UpdateArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
     const language = lang(a.data.language);
+    // A rendering's Parameters Template takes an item ID. Given a path, Sitecore stores the path,
+    // and every page with that rendering then fails to build its layout data.
+    for (const f of a.data.fields) {
+      if (/^parameters template$/i.test(f.name) && f.value.trim().startsWith('/'))
+        f.value = sitecoreId(await this.idOf(q, f.value.trim()));
+    }
     let reconciled = false;
     try {
       await q.run<{ updateItem: { item: { itemId: string; name: string } } }>(

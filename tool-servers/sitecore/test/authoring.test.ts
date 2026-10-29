@@ -276,6 +276,22 @@ describe('SitecoreAuthoringToolServer', () => {
     });
   });
 
+  it("stores a rendering's Parameters Template as the template's ID when given its path", async () => {
+    const rendering = '/sitecore/layout/Renderings/Project/Brands/ansco/SnippetGrid';
+    const params = '/sitecore/templates/Project/Brands/ansco/SnippetGrid Parameters';
+    const cm = fakeCm({ [rendering]: 'r-id', [params]: '4b05bee0-d501-4c49-9053-4ee45fe3b11e' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    const r = await s.call(
+      'item.update',
+      { path: rendering, fields: [{ name: 'Parameters Template', value: params }] },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    const update = cm.queries.find((q) => q.includes('updateItem'))!;
+    expect(update).toContain('{4B05BEE0-D501-4C49-9053-4EE45FE3B11E}');
+    expect(update).not.toContain('SnippetGrid Parameters');
+  });
+
   it('renames an item, keeping its ID, and reads it back under the new name', async () => {
     const tpl = '/sitecore/templates/Project/Brands/ansco/Pages/Ansco Page';
     const cm = fakeCm({ [tpl]: 'tpl-id' });
