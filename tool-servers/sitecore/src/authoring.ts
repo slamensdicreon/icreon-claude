@@ -26,9 +26,17 @@ export interface AuthoringServerOptions {
   hostSuffixes?: string[];
   /** Where downloads are stored: media.upload takes a file the browser already fetched. */
   blobs?: BlobStore;
+  /**
+   * The project's Experience Edge Context ID (live or preview), for edge.routes. It stays in the
+   * server: the agent sees only which routes resolve.
+   */
+  edgeContextId?(projectId: string, live: boolean): Promise<string | null>;
+  /** Experience Edge's base URL. */
+  edgeUrl?: string;
 }
 
 const MEDIA_ROOT = '/sitecore/media library/';
+const EDGE_URL = 'https://edge-platform.sitecorecloud.io';
 const JSON_RENDERING = '/sitecore/templates/Foundation/JavaScript Services/Json Rendering';
 const LANGUAGE_TEMPLATE = '/sitecore/templates/System/Language';
 const MAX_MEDIA_BYTES = 25_000_000;
@@ -143,6 +151,11 @@ const MediaArgs = z
     alt: z.string().max(500).optional(),
   })
   .refine((a) => Boolean(a.sourceUrl) !== Boolean(a.ref), 'give either ref or sourceUrl');
+const PublishStatusArgs = z.object({ operationId: z.string().min(1).max(300) });
+const EdgeRoutesArgs = z.object({
+  paths: z.array(z.string().regex(/^\//, 'route paths start with /')).min(1).max(60),
+  live: z.boolean().optional(),
+});
 const PublishArgs = z.object({
   paths: z.array(Path).min(1).max(50),
   subItems: z.boolean().optional(),
@@ -405,6 +418,31 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       releases: true,
       pathArgs: ['paths'],
     },
+    'publish.status': {
+      description:
+        "A publishing operation's state, from the operation id publish returned: state, isDone, isFailed. Call it until isDone (a publish takes from seconds to minutes). Changes nothing.",
+      inputSchema: {
+        type: 'object',
+        properties: { operationId: { type: 'string' } },
+        required: ['operationId'],
+        additionalProperties: false,
+      },
+      mutates: false,
+    },
+    'edge.routes': {
+      description:
+        'Whether each route of the project\'s site resolves on Experience Edge (live by default; live:false for preview), as the delivery host reads it: `paths` like "/", "/about", up to 60. Returns the routes found and the ones missing. Changes nothing.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          paths: { type: 'array', items: { type: 'string' } },
+          live: { type: 'boolean' },
+        },
+        required: ['paths'],
+        additionalProperties: false,
+      },
+      mutates: false,
+    },
     'rendering-host.read': {
       description:
         "Which rendering host the project's site renders through in Page builder: the site's setting (its Site Grouping item) and the rendering host items, with their URLs. Changes nothing.",
@@ -497,6 +535,10 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           return await this.media(q, MediaArgs.safeParse(args), facts, ctx, lang);
         case 'publish':
           return await this.publish(q, PublishArgs.safeParse(args), facts);
+        case 'publish.status':
+          return await this.publishStatus(q, PublishStatusArgs.safeParse(args));
+        case 'edge.routes':
+          return await this.edgeRoutes(ctx.projectId, EdgeRoutesArgs.safeParse(args), facts);
         case 'site.verify':
         case 'site.create':
           return await this.site(q, SiteArgs.safeParse(args), facts);
@@ -940,6 +982,61 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       code: 200,
       body: { operationId: id, status: s?.publishingStatus ?? null, languages },
       summary: `Publishing ${a.data.paths.length} item${a.data.paths.length === 1 ? '' : 's'} to Experience Edge (${s?.publishingStatus.state ?? 'queued'})`,
+    };
+  }
+
+  private async publishStatus(q: Gql, a: Parsed<typeof PublishStatusArgs>): Promise<ToolResult> {
+    if (!a.success) return bad(a.error.issues[0]!.message);
+    const s = await q.run<{
+      publishingStatus: { state: string; isDone: boolean; isFailed: boolean } | null;
+    }>(
+      `query { publishingStatus(publishingOperationId: ${gql(a.data.operationId)}) { state isDone isFailed } }`,
+    );
+    const st = s.publishingStatus;
+    if (!st) return { code: 404, body: { error: 'No such publishing operation.' } };
+    return {
+      code: 200,
+      body: { operationId: a.data.operationId, ...st },
+      summary: `Publishing ${st.isFailed ? 'failed' : st.isDone ? 'done' : 'in progress'} (${st.state})`,
+    };
+  }
+
+  private async edgeRoutes(
+    projectId: string,
+    a: Parsed<typeof EdgeRoutesArgs>,
+    facts: TenantFacts,
+  ): Promise<ToolResult> {
+    if (!a.success) return bad(a.error.issues[0]!.message);
+    const live = a.data.live ?? true;
+    const contextId = await this.opts.edgeContextId?.(projectId, live);
+    if (!contextId) {
+      const error = `No Experience Edge ${live ? 'live' : 'preview'} Context ID is stored for this project.`;
+      return { code: 409, body: { error }, summary: error };
+    }
+    const url = new URL('/v1/content/api/graphql/v1', this.opts.edgeUrl ?? EDGE_URL);
+    url.searchParams.set('sitecoreContextId', contextId);
+    const found: string[] = [];
+    const missing: string[] = [];
+    for (const path of [...new Set(a.data.paths)]) {
+      const res = await this.fetch(url.href, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          query:
+            'query($site: String!, $path: String!, $lang: String!) { layout(site: $site, routePath: $path, language: $lang) { item { name } } }',
+          variables: { site: facts.site, path, lang: facts.languages[0] ?? 'en' },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const b = (await res.json().catch(() => ({}))) as {
+        data?: { layout?: { item?: { name?: string } | null } | null };
+      };
+      (b.data?.layout?.item ? found : missing).push(path);
+    }
+    return {
+      code: 200,
+      body: { endpoint: live ? 'live' : 'preview', found, missing },
+      summary: `${found.length} of ${found.length + missing.length} routes resolve on Experience Edge (${live ? 'live' : 'preview'})${missing.length ? `; missing: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}` : ''}`,
     };
   }
 

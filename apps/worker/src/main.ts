@@ -143,6 +143,14 @@ if (env.AGENTS === 'claude') {
     servers.push(
       new SitecoreAuthoringToolServer({
         blobs,
+        // edge.routes reads routes with the project's Context ID; the agent never sees it.
+        edgeContextId: async (id, live) => {
+          const ref = (await project(id))?.credentials[live ? 'edge-live' : 'edge-preview']
+            ?.reference;
+          if (!ref) return null;
+          const c = JSON.parse(await vault.open(ref)) as { contextId?: string };
+          return c.contextId ?? null;
+        },
         facts: async (id) => {
           const s = await project(id);
           if (s?.intake?.platform !== 'sitecoreai') return null;

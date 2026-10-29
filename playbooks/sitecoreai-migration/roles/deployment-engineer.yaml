@@ -43,6 +43,9 @@ tools:
     ops:
       - item.read
       - publish
+      # Follow a publish to its end, then check the delivery host reads every route.
+      - publish.status
+      - edge.routes
       - rendering-host.read
       - rendering-host.set
     scope:
