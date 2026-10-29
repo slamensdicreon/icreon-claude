@@ -948,20 +948,25 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         },
       };
     }
-    if (a.data.alt) {
-      await this.update(
-        q,
-        UpdateArgs.safeParse({
-          path: a.data.itemPath,
-          fields: [{ name: 'Alt', value: a.data.alt }],
-        }),
-        lang,
-      );
+    // Images carry alt text; a file (a PDF, a document) has no Alt field, and its link text
+    // describes it where it's used.
+    let alt = a.data.alt ?? null;
+    if (alt) {
+      try {
+        await this.update(
+          q,
+          UpdateArgs.safeParse({ path: a.data.itemPath, fields: [{ name: 'Alt', value: alt }] }),
+          lang,
+        );
+      } catch (err) {
+        if (!(err instanceof GqlError) || !/field with the name Alt/i.test(err.message)) throw err;
+        alt = null;
+      }
     }
     return {
       code: 200,
-      body: { itemPath: a.data.itemPath, bytes: bytes.length, alt: a.data.alt ?? null },
-      summary: `Uploaded ${a.data.itemPath} (${Math.round(bytes.length / 1024)} KB)`,
+      body: { itemPath: a.data.itemPath, bytes: bytes.length, alt },
+      summary: `Uploaded ${a.data.itemPath} (${Math.round(bytes.length / 1024)} KB)${a.data.alt && !alt ? '; no Alt field on this media type, so no alt text' : ''}`,
     };
   }
 

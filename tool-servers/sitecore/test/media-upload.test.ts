@@ -20,6 +20,9 @@ function setup() {
         return Response.json({
           data: { uploadMedia: { presignedUploadUrl: 'https://up.example/x' } },
         });
+      // A file's template (Pdf, File) has no Alt field.
+      if (/updateItem\(/.test(query) && /name: "Alt"/.test(query))
+        return Response.json({ errors: [{ message: 'Cannot find a field with the name Alt.' }] });
       return Response.json({ data: { item: null } });
     }
     if (url === 'https://up.example/x') {
@@ -63,6 +66,23 @@ describe('media.upload', () => {
     expect(uploads).toEqual([
       { url: 'https://up.example/x', name: 'hsa.png', type: 'image/png', size: 6 },
     ]);
+  });
+
+  it('uploads a file whose media type has no Alt field, without alt text', async () => {
+    const { s, uploads } = setup();
+    const r = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/media library/Project/Brands/ansco/files/code-of-conduct',
+        ref: 'blob://p1/assets/abc123.png',
+        fileName: 'code-of-conduct.pdf',
+        alt: 'Supplier Code of Conduct',
+      },
+      ctx,
+    );
+    expect(r).toMatchObject({ code: 200, body: { alt: null } });
+    expect(r.summary).toContain('no Alt field on this media type');
+    expect(uploads).toHaveLength(1);
   });
 
   it("refuses another project's file, and points a CDN URL at the download step", async () => {
