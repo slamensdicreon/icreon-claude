@@ -81,6 +81,27 @@ const SECTION_EXEMPT =
 const CHANGES = new Set(['fs.write', 'exec.content-sdk-cli']);
 
 /**
+ * Whether a component file is a rendering rather than a helper beside one. A folder's rendering is
+ * the file named after it (hero-banner/HeroBanner.tsx); its other files (a client HeroVideo.tsx)
+ * render inside it. A folder without such a file has every file judged.
+ */
+function isRendering(file: string, all: string[]): boolean {
+  const slash = file.lastIndexOf('/');
+  if (slash < 0) return true;
+  const folder = file.slice(0, slash);
+  const main = `${folder}/${folder
+    .split('/')
+    .pop()!
+    .split(/[-_]/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join('')}.tsx`;
+  return (
+    !all.some((f) => f.toLowerCase() === main.toLowerCase()) ||
+    file.toLowerCase() === main.toLowerCase()
+  );
+}
+
+/**
  * The checks that exist, by validator id; the platform pack adds its own. Everything else a plan
  * names is pending.
  */
@@ -310,10 +331,12 @@ export const CHECKS: Record<string, Check> = {
       t = await read('build-repo', 'tree.read', { path: dir });
     }
     if (t.code !== 200) return { status: 'pending', detail: `${dir} could not be listed.` };
-    const files = ((t.body as { entries?: string[] }).entries ?? [])
-      .map((e) => e.replace(/ \d+$/, ''))
-      .filter((f) => /\.tsx$/.test(f) && !/\.(props|test|stories)\.tsx$/.test(f))
-      .filter((f) => !SECTION_EXEMPT.test(f.slice(dir.length + 1)));
+    const all = ((t.body as { entries?: string[] }).entries ?? [])
+      .map((e) => e.replace(/ \d+$/, '').slice(dir.length + 1))
+      .filter((f) => /\.tsx$/.test(f) && !/\.(props|test|stories)\.tsx$/.test(f));
+    const files = all
+      .filter((f) => isRendering(f, all) && !SECTION_EXEMPT.test(f))
+      .map((f) => `${dir}/${f}`);
     if (!files.length) return { status: 'pending', detail: `No components under ${dir}.` };
     const problems: string[] = [];
     for (let i = 0; i < files.length; i += 20) {

@@ -373,6 +373,21 @@ describe('head.sections', () => {
     expect(r.detail).not.toContain('HeroBanner');
   });
 
+  it("judges each folder's rendering, not the helpers beside it", async () => {
+    const r = await run({
+      'hero-banner/HeroBanner.tsx': '<section>',
+      'hero-banner/HeroVideo.tsx': "'use client'; <iframe>",
+      'stat-counters/StatCounters.tsx':
+        "import { Section } from 'components/ui/Section';\n<Section tone={params.tone}>",
+      'stat-counters/CounterNumber.tsx': "'use client'; <span>",
+      'promo/PromoCard.tsx': '<div>',
+    });
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain("promo/PromoCard.tsx doesn't render inside ui/Section");
+    expect(r.detail).not.toContain('HeroVideo');
+    expect(r.detail).not.toContain('CounterNumber');
+  });
+
   it('judges a port on its own branch', async () => {
     const refs: string[] = [];
     const r = await run(
