@@ -31,6 +31,8 @@ export interface GatewayDeps {
   /** One writer per item across tasks; without it, writes aren't locked. */
   locks?: WriteLocks;
   limiter: RateLimiter;
+  /** How long a call may take, unless its server says otherwise; 10 minutes by default. */
+  callTimeoutMs?: number;
   store: EventStore;
   detector?: InjectionDetector;
   /** Called when fetched content looks like an injection attempt (raise a Risk escalation). */
@@ -92,10 +94,22 @@ export class ToolGateway {
     if (recorded) return { ok: true, code: recorded.code, body: recorded.body, replayed: true };
 
     await this.deps.limiter.acquire(`${server.name}:${server.target(call.projectId)}`);
+    // A call that never answers would hold the agent's session forever, and no pause reaches it:
+    // past the limit the agent hears it timed out and can read before trying a write again.
+    const limit = server.timeoutMs ?? this.deps.callTimeoutMs ?? 10 * 60_000;
+    const deadline = started + limit;
     let token: string;
     try {
-      token = await this.deps.credentials.tokenFor(call.projectId, server.name);
+      token = await within(
+        this.deps.credentials.tokenFor(call.projectId, server.name),
+        deadline - this.now(),
+      );
     } catch (err) {
+      if (err instanceof CallTimeout) {
+        const message = `Getting a credential for ${call.server} didn't finish within ${span(limit)}; nothing was done. Try again.`;
+        await this.record(call, requestHash, 504, started, message, 'failure');
+        return { ok: false, code: 504, message, retryable: true };
+      }
       // No credential, or the service refused it: the agent can't fix that, the Director can.
       const message = `No credential for ${call.server}: ${err instanceof Error ? err.message : String(err)}`;
       await this.record(call, requestHash, 401, started, message, 'failure');
@@ -104,13 +118,21 @@ export class ToolGateway {
 
     let result: ToolResult;
     try {
-      result = await server.call(call.op, call.args, {
-        projectId: call.projectId,
-        token,
-        role: call.role,
-        taskId: call.taskId,
-      });
+      result = await within(
+        server.call(call.op, call.args, {
+          projectId: call.projectId,
+          token,
+          role: call.role,
+          taskId: call.taskId,
+        }),
+        deadline - this.now(),
+      );
     } catch (err) {
+      if (err instanceof CallTimeout) {
+        const message = `${call.server} ${call.op} didn't answer within ${span(limit)}. If it was a write, it may or may not have happened: read before trying it again.`;
+        await this.record(call, requestHash, 504, started, message, 'failure');
+        return { ok: false, code: 504, message, retryable: true };
+      }
       const message = redactText(err instanceof Error ? err.message : String(err), token);
       await this.record(
         call,
@@ -291,3 +313,17 @@ const clip = (text: string, max: number) => text.replace(/\s+/g, ' ').trim().sli
 function redactText(s: string, token: string) {
   return redact(s, [token]) as string;
 }
+
+class CallTimeout extends Error {}
+
+/** The promise's value, or a CallTimeout once `ms` pass (at once when no time is left). */
+function within<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new CallTimeout()), Math.max(0, ms));
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
+const span = (ms: number) =>
+  ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 1000)} seconds`;

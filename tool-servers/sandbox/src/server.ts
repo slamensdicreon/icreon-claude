@@ -140,6 +140,8 @@ const CommitArgs = z.object({
 
 export class SandboxToolServer implements ToolServer {
   readonly name = 'sandbox';
+  /** Builds, installs and serialization run long: up to 30 minutes for one step. */
+  readonly timeoutMs = 45 * 60_000;
   readonly catalog: OperationCatalog = {
     'git.integrate': {
       description: `Bring accepted agent branches (launchworks/design-system, launchworks/port-…) into ${INTEGRATION_BRANCH}, which the editing host deploys: starts from the integration branch as pushed (or the default branch the first time), merges each branch in order, settles conflicts in generated files (the component map, package-lock.json) by generating them again, builds once, and pushes only if the build is green. Branches that don't exist are skipped and listed; one already merged changes nothing. The Director's fixes (${DIRECTOR_BRANCH}) are always merged last when that branch exists. A conflict in source files stops it before anything is pushed, naming the branch and files: integrate again without that branch. If another integration pushes first, it starts again from that, up to three times.`,

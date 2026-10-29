@@ -54,6 +54,8 @@ export function moduleIncludes(json: string): string[] {
 
 export class SitecoreCliToolServer implements ToolServer {
   readonly name = 'sitecore-cli';
+  /** Builds, installs and serialization run long: up to 30 minutes for one step. */
+  readonly timeoutMs = 45 * 60_000;
   readonly catalog: OperationCatalog = {
     'ser.pull': {
       description:

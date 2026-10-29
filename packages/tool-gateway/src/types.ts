@@ -54,6 +54,11 @@ export interface ToolServer {
    */
   call(op: string, args: Record<string, unknown>, ctx: ToolCallContext): Promise<ToolResult>;
   target(projectId: string): string;
+  /**
+   * How long one call may take before the gateway gives up on it and tells the agent, for a
+   * server whose operations run longer than the gateway's default (builds, serialization).
+   */
+  timeoutMs?: number;
 }
 
 /** Values bound per project into scope patterns: `{module}`, `{project}`, `{sitePath}`. */

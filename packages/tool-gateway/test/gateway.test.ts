@@ -53,7 +53,11 @@ function catalogsFor(pb: Playbook): Record<string, OperationCatalog> {
 function fakeServer(
   name: string,
   catalog: OperationCatalog,
-  respond?: (op: string, args: Record<string, unknown>, token: string) => ToolResult,
+  respond?: (
+    op: string,
+    args: Record<string, unknown>,
+    token: string,
+  ) => ToolResult | Promise<ToolResult>,
 ) {
   const server: ToolServer & { calls: { op: string; token: string }[] } = {
     name,
@@ -307,6 +311,25 @@ describe('call handling', () => {
     expect((await g.call(update('migrate-pages-home'))).ok).toBe(true);
     await locks.release('p1', 'migrate-pages-home');
     expect((await g.call(update('migrate-pages-about'))).ok).toBe(true);
+  });
+
+  it('gives up on a call that never answers, so the agent can go on', async () => {
+    const hung = fakeServer('github', catalogs['github']!, () => new Promise<never>(() => {}));
+    const store = new InMemoryEventStore();
+    const g = new ToolGateway({
+      playbook: pb,
+      servers: [hung],
+      bindings: () => BINDINGS,
+      credentials: { tokenFor: async () => TOKEN },
+      idempotency: new MemoryIdempotencyStore(),
+      rollback: { hasRecipe: async () => false },
+      limiter: new TokenBucketLimiter(1000, 1000),
+      callTimeoutMs: 50,
+      store,
+    });
+    const r = await g.call(call('repo-analyst', 'github', 'repo.read', { ref: 'main' }));
+    expect(r).toMatchObject({ ok: false, code: 504, retryable: true });
+    expect('message' in r && r.message).toMatch(/didn't answer within 0 seconds/);
   });
 
   it('replays an identical call within an attempt instead of executing it twice', async () => {
