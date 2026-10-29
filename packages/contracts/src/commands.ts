@@ -246,3 +246,7 @@ export type CreateConnection = z.infer<typeof CreateConnection>;
 /** PUT /connections/:id/credentials/:credentialId — a new secret, checked, for every project on it. */
 export const RotateConnectionCredential = z.object({ secret: Secret });
 export type RotateConnectionCredential = z.infer<typeof RotateConnectionCredential>;
+
+/** POST /cypher — a message to Cypher on the Dashboard, about the portfolio or a new project. */
+export const AskCypher = z.object({ body: z.string().trim().min(1).max(4000) });
+export type AskCypher = z.infer<typeof AskCypher>;

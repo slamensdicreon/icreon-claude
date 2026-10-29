@@ -41,6 +41,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 export const get = <T>(path: string) => call<T>('GET', path);
 export const post = (path: string, body: unknown = {}) => call<CommandResult>('POST', path, body);
 export const put = (path: string, body: unknown) => call<CommandResult>('PUT', path, body);
+export const del = (path: string) => call<CommandResult>('DELETE', path);
+/** A POST whose answer is a resource rather than a command result. */
+export const postFor = <T>(path: string, body: unknown) => call<T>('POST', path, body);
 
 /** A project's blob reference (`blob://<project>/<key>`) as a URL the browser can load. */
 export function blobUrl(projectId: string, ref: string): string {

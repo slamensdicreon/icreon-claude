@@ -424,6 +424,13 @@ const app = await buildApp({
   },
   logger: true,
   heartbeat: integrations ? () => integrations.get<WorkerHeartbeat>('heartbeat:worker') : undefined,
+  cypher: integrations
+    ? {
+        model:
+          env.AGENTS === 'claude' || process.env.ANTHROPIC_API_KEY ? anthropicModelClient() : null,
+        store: integrations,
+      }
+    : undefined,
 });
 
 await seedSample?.();

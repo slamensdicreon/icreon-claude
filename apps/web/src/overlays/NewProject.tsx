@@ -3,6 +3,7 @@ import type {
   IntakeFieldSpec,
   PlaybookSummary,
   ProjectIntakeInput,
+  ProjectDraft,
   RemixDraft,
   VerifyIntakeCredential,
   VerifyIntakeResult,
@@ -49,28 +50,30 @@ const URL_OK = /^https?:\/\/[^\s]+\.[^\s]+/;
  * facts its connection shares. Credentials the connection provides aren't asked for.
  */
 export interface Remix {
-  draft: RemixDraft;
+  /** A remix of a project, or a project Cypher drafted (with its name and source). */
+  draft: RemixDraft | ProjectDraft;
   connectionName: string | null;
 }
 
 export function NewProject({ remix }: { remix?: Remix } = {}) {
   const { closeOverlay, switchProject, toast } = useApp();
   const draft = remix?.draft;
+  const drafted = draft && 'name' in draft ? draft : null;
   const [playbooks, setPlaybooks] = useState<PlaybookSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [playbookId, setPlaybookId] = useState<string | null>(draft?.playbookId ?? null);
   const [step, setStep] = useState(draft ? 1 : 0);
   const [f, setF] = useState({
-    name: '',
+    name: drafted?.name ?? '',
     client: draft?.client ?? '',
     timezone:
       draft?.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'),
     usd: draft ? String(draft.budgets.usd) : '1200',
     tokensM: draft ? String(draft.budgets.tokens / 1_000_000) : '8',
     hours: draft ? String(draft.budgets.hours) : '240',
-    repo: '',
-    branch: 'main',
-    sourceUrl: '',
+    repo: drafted?.repo ?? '',
+    branch: drafted?.branch ?? 'main',
+    sourceUrl: drafted?.sourceUrl ?? '',
   });
   const [target, setTarget] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -630,7 +633,13 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
   return (
     <Scrim>
       <div className="dialog wiz" role="dialog" aria-labelledby="np-t">
-        <h2 id="np-t">{draft ? `New project like ${draft.from.name}` : 'New project'}</h2>
+        <h2 id="np-t">
+          {draft?.from
+            ? `New project like ${draft.from.name}`
+            : draft
+              ? 'New project drafted by Cypher'
+              : 'New project'}
+        </h2>
         <ol className="wiz-steps" aria-label="Steps">
           {TITLES.map((s, i) => (
             <li

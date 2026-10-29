@@ -694,3 +694,47 @@ export const RemixDraft = z.object({
   providedCredentials: z.array(z.string()),
 });
 export type RemixDraft = z.infer<typeof RemixDraft>;
+
+/**
+ * A new project's intake for the wizard to open with, prefilled: a remix of an existing project,
+ * or a project Cypher drafted from a brief. Nothing is created until the Director clicks Create.
+ */
+export const ProjectDraft = RemixDraft.extend({
+  from: z.object({ projectId: z.string(), name: z.string() }).nullable(),
+  name: z.string(),
+  sourceUrl: z.string().nullable(),
+  repo: z.string().nullable(),
+  branch: z.string(),
+});
+export type ProjectDraft = z.infer<typeof ProjectDraft>;
+
+/** Something Cypher proposes for the Director to confirm: a project to create, opened in the wizard. */
+export const CypherProposal = z.object({
+  kind: z.enum(['new', 'remix']),
+  /** Why this playbook (or this project to remix), in a sentence or two. */
+  reason: z.string(),
+  /** What the brief asks for that the playbook won't do. */
+  notCovered: z.array(z.string()),
+  draft: ProjectDraft,
+});
+export type CypherProposal = z.infer<typeof CypherProposal>;
+
+/** One turn of the portfolio conversation with Cypher. */
+export const CypherMessage = z.object({
+  id: z.string(),
+  role: z.enum(['director', 'cypher']),
+  body: z.string(),
+  at: z.iso.datetime(),
+  proposals: z.array(CypherProposal).default([]),
+  /** Projects the answer is about, to open. */
+  projects: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
+});
+export type CypherMessage = z.infer<typeof CypherMessage>;
+
+/** GET /cypher — the portfolio conversation, oldest first. */
+export const CypherConversation = z.object({
+  /** False when no model is configured: Cypher can't answer. */
+  available: z.boolean(),
+  messages: z.array(CypherMessage),
+});
+export type CypherConversation = z.infer<typeof CypherConversation>;

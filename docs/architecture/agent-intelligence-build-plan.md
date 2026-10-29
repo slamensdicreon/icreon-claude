@@ -288,7 +288,7 @@ mean ten copies of the same Sitecore client secret, and a rotation would mean te
 - **Build:** `lw_connections` table, vault owner scope, `POST /connections`,
   `POST /projects/:id/remix`, intake that takes a connection, Settings and wizard changes.
 
-### P3. Cypher at the top
+### P3. Cypher at the top (built)
 
 A conversation on the Dashboard with Cypher, the Chief of Staff, across all projects.
 
@@ -307,6 +307,15 @@ A conversation on the Dashboard with Cypher, the Chief of Staff, across all proj
   tools (`portfolio.read`, `playbooks.read`, `connections.read`, `intake.draft`, `project.remix`;
   drafts only), the Dashboard dock, and tests that it never starts or changes a running project
   without confirmation.
+
+**As built:** a Cypher panel at the top of the Dashboard. `GET/POST/DELETE /cypher` keep one
+portfolio conversation (the last 200 turns, in `lw_integrations` as `cypher:portfolio`); the API
+runs a Claude tool loop (`apps/control-api/src/cypher.ts`) with `list_projects`, `project_detail`,
+`list_playbooks`, `list_connections`, `propose_project` and `propose_remix`. Proposals are drafts
+(`ProjectDraft`): a card with the playbook, source, connection, the reason and what isn't covered,
+and **Review and create** opens the New Project wizard prefilled; the Director creates it there.
+Tests show the model never sees a secret and nothing is created. Not yet: Cypher reading a
+project's history in depth, and handing a conversation over to the project's own Cypher.
 
 ### Size and order
 
@@ -337,4 +346,5 @@ then, these cards ask the Director to check by hand and mark the task done.
 5. **Knowledge search:** Postgres full-text first; embeddings only if it misses.
 6. **Secrets across projects:** shared saved connections (one sealed copy per tenant, rotated once;
    a project may override a credential), not copies made at remix.
-7. **Cypher at the top (P3):** after rules (step 4).
+7. **Cypher at the top (P3):** after rules (step 4). Changed 2026-10-29: built now, before the
+   no-repo test, at the Director's request.

@@ -1362,3 +1362,156 @@
   background: var(--web-surface-2);
   font-size: 13px;
 }
+
+/* Cypher on the Dashboard */
+.cy-home {
+  background: var(--web-surface);
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.cy-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.cy-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.cy-head p {
+  margin: 2px 0 0;
+  color: var(--web-fg-2);
+  font-size: 13px;
+}
+.cy-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--web-accent);
+  color: var(--web-fg-on-accent);
+  font-weight: 700;
+}
+.cy-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.cy-convo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  margin: 14px 0 0;
+  padding-right: 4px;
+}
+.cy-m {
+  max-width: min(100%, 720px);
+}
+.cy-m.me {
+  align-self: flex-end;
+}
+.cy-bubble {
+  background: var(--web-surface-2);
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cy-who {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--web-fg-2);
+  margin-bottom: 2px;
+}
+.cy-who span {
+  font-weight: 400;
+  color: var(--web-fg-3);
+  margin-left: 6px;
+}
+.cy-text p,
+.cy-text ul {
+  margin: 0 0 8px;
+}
+.cy-text ul {
+  padding-left: 20px;
+}
+.cy-text {
+  overflow-wrap: anywhere;
+}
+.cy-thinking {
+  color: var(--web-fg-2);
+  font-style: italic;
+}
+.cy-proposal {
+  border: 1px solid var(--web-border-strong);
+  border-left: 3px solid var(--web-accent);
+  border-radius: var(--web-radius-2);
+  padding: 12px 14px;
+  margin: 8px 0;
+  background: var(--web-surface-2);
+}
+.cy-p-head {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+.cy-p-kind {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--web-fg-2);
+}
+.cy-proposal dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.cy-proposal dt {
+  color: var(--web-fg-2);
+}
+.cy-proposal dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.cy-p-why,
+.cy-p-gap {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.cy-links,
+.cy-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cy-starters {
+  margin-top: 14px;
+}
+.cy-compose {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 14px;
+}
+.cy-compose textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--web-border-strong);
+  border-radius: var(--web-radius-2);
+  background: var(--web-surface);
+  color: var(--web-fg);
+}

@@ -11,6 +11,7 @@ import { ApiProblem, get, post, put } from '../lib/api';
 import { age, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { NewProject } from '../overlays/NewProject';
+import { CypherHome } from './CypherHome';
 import { useApp } from '../state';
 
 type Tab = 'projects' | 'connections' | 'playbooks' | 'diagnostics';
@@ -70,12 +71,16 @@ export function Dashboard() {
       <div className="page-head">
         <div>
           <h1>Dashboard</h1>
-          <p>Every project, the playbooks you can run, and how the system is doing.</p>
+          <p>
+            Talk to Cypher, see every project, the playbooks you can run, and how the system is
+            doing.
+          </p>
         </div>
         <button className="btn primary" onClick={() => openOverlay(<NewProject />)}>
           New project
         </button>
       </div>
+      <CypherHome />
       <div className="dash-tabs" role="tablist">
         {(
           [

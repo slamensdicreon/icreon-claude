@@ -19,6 +19,7 @@ import {
   CloseCapabilityGap,
   CompleteTasks,
   CreateConnection,
+  AskCypher,
   RotateConnectionCredential,
   ResolveEscalation,
   RollbackPhase,
@@ -53,7 +54,7 @@ import {
   type ProjectState,
 } from '@lw/domain';
 import { Blueprint, blueprintSnapshot } from '@lw/plan';
-import type { EventStore, Projections } from '@lw/events';
+import type { EventStore, IntegrationStore, Projections } from '@lw/events';
 import { CommandError } from '@lw/domain';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -61,6 +62,8 @@ import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
 import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
+import { PortfolioCypher } from './cypher';
+import type { ModelClient } from '@lw/agent-runtime';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
@@ -91,6 +94,8 @@ export interface AppDeps {
   logger?: boolean;
   /** The worker's last heartbeat (it writes one every 30 s), for the Dashboard's diagnostics. */
   heartbeat?: () => Promise<WorkerHeartbeat | null>;
+  /** Cypher on the Dashboard: the model (null where none is configured) and where it keeps the conversation. */
+  cypher?: { model: ModelClient | null; store: IntegrationStore };
 }
 
 /** What the worker reports about itself. */
@@ -422,6 +427,52 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const s = project(req.params.id);
     if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
     return deps.intake.remixDraft(s);
+  });
+
+  // Cypher on the Dashboard: a conversation about the portfolio that can draft projects, never
+  // create or change them.
+  const cypher =
+    deps.cypher && deps.intake
+      ? new PortfolioCypher({
+          ...deps.cypher,
+          now,
+          portfolio: async () => {
+            await projections.catchUpAll();
+            return projections.all().map(portfolioItem);
+          },
+          playbooks: () => deps.intake!.playbooks(),
+          connections: async () => {
+            await projections.catchUpAll();
+            return deps.intake!.connections(projections.all());
+          },
+          detail: async (id) => {
+            const s = project(id);
+            if (!s) return null;
+            const mc = missionControl(s);
+            return { status: mc.subtitle, waitingOnYou: mc.waitingOnYou.map((w) => w.title) };
+          },
+          remixDraft: async (id) => {
+            await projections.catchUp(id);
+            const s = project(id);
+            if (!s) throw new Error(`No project "${id}". Use list_projects for ids.`);
+            return deps.intake!.remixDraft(s);
+          },
+        })
+      : null;
+
+  app.get('/cypher', async () =>
+    cypher ? cypher.conversation() : { available: false, messages: [] },
+  );
+
+  app.post('/cypher', async (req, reply) => {
+    if (!cypher) return fail(reply, 501, 'cypher_unavailable', 'Cypher is not wired in this mode.');
+    return cypher.ask(AskCypher.parse(req.body).body);
+  });
+
+  app.delete('/cypher', async (_req, reply) => {
+    if (!cypher) return fail(reply, 501, 'cypher_unavailable', 'Cypher is not wired in this mode.');
+    await cypher.clear();
+    return { ok: true };
   });
 
   // The playbooks a new project can run: what each team delivers and what its intake collects.
