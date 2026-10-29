@@ -20,6 +20,7 @@ const MIGRATIONS = [
   '002_commands.sql',
   '003_secrets.sql',
   '004_integrations.sql',
+  '005_rules.sql',
 ];
 
 /**

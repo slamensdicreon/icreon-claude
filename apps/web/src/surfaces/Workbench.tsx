@@ -427,6 +427,7 @@ function Override({ escalationId, answer }: { escalationId: string; answer: stri
                 void run(() =>
                   post(`${base}/tasks/${card.sourceTaskId}/rerun`, {
                     instructions: `Decision on "${card.title}": ${o.label}. The Director overrode the Lead's answer (${answer}).`,
+                    overriding: card.escalationId,
                   }),
                 ).then(() => setOpen(false))
               }

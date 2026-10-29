@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { TriageInput } from '@lw/agent-runtime';
 import type { NewEvent } from '@lw/contracts';
 import { SITECORE_DEFAULTS } from '@lw/connectors';
-import { InMemoryEventStore, Projections } from '@lw/events';
+import { InMemoryEventStore, MemoryRuleStore, Projections } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { createPlatforms } from '@lw/platforms';
 import { afterAll, expect, it } from 'vitest';
@@ -82,7 +82,25 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
   await store.append('live', created('live', 'live'));
   await store.append('demo', created('demo', 'demo'));
   const asked: TriageInput[] = [];
+  const rules = new MemoryRuleStore();
+  const naming = await rules.create({
+    when: 'a component has several layouts',
+    then: 'build one rendering with a variant per layout',
+    category: 'naming',
+    scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+    author: 'director',
+    status: 'active',
+  });
+  await rules.create({
+    when: 'anything at all',
+    then: 'never shown: proposed only',
+    category: 'naming',
+    scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+    author: 'cypher',
+    status: 'proposed',
+  });
   stack = await composeStack({
+    rules,
     store,
     projections,
     playbook: await loadPlaybook(PLAYBOOK),
@@ -95,7 +113,7 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
         decision: 'answer',
         optionId: 'opt-1',
         reasoning: 'Variants, per the Blueprint.',
-        ruleIds: [],
+        ruleIds: input.rules.map((r) => r.id),
         tokens: 300,
         usd: 0.001,
       };
@@ -111,16 +129,25 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
     decision: 'answer',
     optionId: 'opt-1',
     reasoning: 'Variants, per the Blueprint.',
-    ruleIds: [],
+    // The Lead cited R-1 by its ref; the result names the stored rule.
+    ruleIds: [naming.id],
     tokens: 300,
     usd: 0.001,
   });
+  // In shadow the rule isn't applied yet: the Director's answer will say how it did.
+  expect((await rules.get(naming.id))!.applied).toBe(0);
+  expect(asked[0]!.rules).toEqual([
+    {
+      id: naming.ref,
+      when: 'a component has several layouts',
+      then: 'build one rendering with a variant per layout',
+    },
+  ]);
   expect(asked[0]).toMatchObject({
     lead: { name: 'Marcus Reyes, Engineering Lead', effort: 'low' },
     specialist: 'Component Engineer',
     category: 'Naming and structure',
     task: { title: 'Port Hero to Content SDK' },
-    rules: [],
   });
   expect(asked[0]!.permissions.some((p) => p.startsWith('sandbox: '))).toBe(true);
 
@@ -140,4 +167,19 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
   ]);
   expect(await triage(question('live', 'naming'))).toEqual({ level: 'agents', tokens: 0, usd: 0 });
   expect(asked).toHaveLength(1);
+
+  // Handed to the Lead: a rule it cites is applied.
+  await store.append('live', [
+    {
+      ...sys,
+      type: 'settings.changed',
+      subject: { kind: 'project', id: 'live' },
+      data: { key: 'autonomy', value: { naming: 'lead' } },
+    } as NewEvent,
+  ]);
+  expect(await triage(question('live', 'naming'))).toMatchObject({
+    level: 'lead',
+    ruleIds: [naming.id],
+  });
+  expect((await rules.get(naming.id))!.applied).toBe(1);
 }, 60_000);

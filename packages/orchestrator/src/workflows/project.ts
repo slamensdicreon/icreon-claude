@@ -500,7 +500,19 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       ...(leadNotes[t.taskId] ?? []),
       `"${card.title}": ${label}. ${lead.reasoning}`,
     ];
-    const id = await raise(tagged, resolver);
+    const id = await raise(
+      {
+        ...tagged,
+        triage: {
+          leadId: lead.leadId,
+          mode: 'decided',
+          optionId: lead.optionId,
+          reasoning: lead.reasoning,
+          ruleIds: lead.ruleIds,
+        },
+      },
+      resolver,
+    );
     await settle(
       id,
       lead.optionId,

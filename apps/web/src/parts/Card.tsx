@@ -4,6 +4,7 @@ import { post } from '../lib/api';
 import { age, clock, zoneLabel } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { TypedConfirm } from '../overlays/Dialogs';
+import { MakeRule } from '../overlays/MakeRule';
 import { useApp, useNow, useRoster, useTz } from '../state';
 import { useJump, Who } from './bits';
 
@@ -108,7 +109,7 @@ export function Card({
   /** Who raised it and the task it holds up, when known. */
   about?: { task: string | null; who: string | null };
 }) {
-  const { ui } = useApp();
+  const { ui, projectId, openOverlay } = useApp();
   const tz = useTz();
   const now = useNow();
   const jump = useJump();
@@ -139,6 +140,16 @@ export function Card({
         </div>
         <div className="resolved-sub">
           {resolutionText(x)}. {by}, {x.resolvedAt ? clock(x.resolvedAt, tz) : ''} {zoneLabel(tz)}.
+          {x.type !== 'gate' && !canUndo && projectId && (
+            <button
+              className="link-btn make-rule"
+              onClick={() =>
+                openOverlay(<MakeRule projectId={projectId} escalationId={x.escalationId} />)
+              }
+            >
+              Make this a rule
+            </button>
+          )}
         </div>
       </div>
     );

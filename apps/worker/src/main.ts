@@ -12,6 +12,7 @@ import {
   masterKey,
   openStore,
   PostgresIntegrationStore,
+  PostgresRuleStore,
   PostgresVault,
   Projections,
 } from '@lw/events';
@@ -379,6 +380,7 @@ for (const { playbook, dir } of catalog.values()) {
     directives: env.AGENTS === 'claude' ? (input) => readDirective(input) : null,
     review: env.AGENTS === 'claude' ? (input) => reviewTask(input) : null,
     triage: env.AGENTS === 'claude' ? (input) => triageQuestion(input) : null,
+    rules: opened.sql ? new PostgresRuleStore(opened.sql) : undefined,
     screens: env.AGENTS === 'claude' ? (input) => compareScreens(input) : null,
     servers,
     credentials,
