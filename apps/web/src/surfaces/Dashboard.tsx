@@ -1,6 +1,7 @@
 import type {
   ConnectionView,
   IntakeCredentialSpec,
+  PlaybookScorecard,
   PlaybookSummary,
   PortfolioDiagnostics,
   PortfolioItem,
@@ -12,6 +13,7 @@ import { age, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { NewProject } from '../overlays/NewProject';
 import { CypherHome } from './CypherHome';
+import { PlaybookComparison } from './Scorecard';
 import { useApp } from '../state';
 
 type Tab = 'projects' | 'connections' | 'playbooks' | 'diagnostics';
@@ -258,6 +260,21 @@ function ProjectCard({ p, open }: { p: PortfolioItem; open: () => void }) {
   );
 }
 
+/** Projects run on a playbook, side by side on the scorecard's headline numbers. */
+function Compare({ playbookId }: { playbookId: string }) {
+  const { data } = usePoll<PlaybookScorecard>(
+    `/playbooks/${encodeURIComponent(playbookId)}/scorecard`,
+    60_000,
+  );
+  if (!data?.projects.length) return null;
+  return (
+    <>
+      <h3>How its projects went</h3>
+      <PlaybookComparison data={data} />
+    </>
+  );
+}
+
 function Playbooks({ projects }: { projects: PortfolioItem[] }) {
   const { openOverlay } = useApp();
   const { data, error } = usePoll<PlaybookSummary[]>('/playbooks', 60_000);
@@ -281,6 +298,7 @@ function Playbooks({ projects }: { projects: PortfolioItem[] }) {
             <p className="muted">
               {pb.platform.name} · {pb.charter.mission}
             </p>
+            {ran.some((p) => !p.demo) && <Compare playbookId={pb.id} />}
             <h3>Outcomes</h3>
             <ul className="dash-list">
               {pb.charter.outcomes.map((o) => (

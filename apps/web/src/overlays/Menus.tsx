@@ -112,6 +112,7 @@ export function MoreSheet() {
     ['workbench', 'document', 'Workbench'],
     ['preview', 'view', 'Site preview'],
     ['activity', 'list', 'Activity'],
+    ['scorecard', 'presentation-file', 'Scorecard'],
     ['settings', 'gear', 'Settings'],
   ];
   const current = projects.find((p) => p.id === projectId);

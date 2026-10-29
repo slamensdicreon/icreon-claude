@@ -20,6 +20,7 @@ const NAV: [Surface, string, string][] = [
   ['workbench', 'document', 'Workbench'],
   ['preview', 'view', 'Site preview'],
   ['activity', 'list', 'Activity'],
+  ['scorecard', 'presentation-file', 'Scorecard'],
 ];
 
 export function Sidebar() {

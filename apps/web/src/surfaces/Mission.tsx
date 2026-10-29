@@ -1,4 +1,4 @@
-import type { PreviewSnapshot, SettingsSnapshot } from '@lw/contracts';
+import type { PreviewSnapshot, Scorecard, SettingsSnapshot } from '@lw/contracts';
 import { post } from '../lib/api';
 import { age, clock } from '../lib/fmt';
 import { Icon } from '../lib/icons';
@@ -18,6 +18,7 @@ export function Mission() {
   const tz = useTz();
   const now = useNow(60_000);
   const preview = useProjectResource<PreviewSnapshot>(layout.present ? '/preview' : null).data;
+  const score = useProjectResource<Scorecard>('/scorecard').data;
   if (!mc) return <p className="quiet-line">Loading Mission Control…</p>;
   const p = mc.project;
   const phases = mc.phases;
@@ -92,6 +93,24 @@ export function Mission() {
           </p>
         )}
       </section>
+      {score && score.totals.cards > 0 && (
+        <button className="sc-line hide-present" onClick={() => go('scorecard')}>
+          <Icon name="presentation-file" sm />
+          <span>
+            <strong className="tnum">{score.totals.cardsPerTask}</strong> cards per task
+          </span>
+          <span>
+            <strong className="tnum">{score.totals.settledWithoutDirectorPct}%</strong> settled
+            without you
+          </span>
+          {score.totals.rejectionRate !== null && (
+            <span>
+              <strong className="tnum">{score.totals.rejectionRate}%</strong> Lead rejections
+            </span>
+          )}
+          <span className="sc-go">Scorecard</span>
+        </button>
+      )}
       <div className="statgrid">
         {mc.stats.map((s) => (
           <div className="statcard" key={s.key}>

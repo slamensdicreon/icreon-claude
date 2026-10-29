@@ -48,6 +48,38 @@ export type Health = z.infer<typeof Health>;
 export const EscalationType = z.enum(['blocker', 'decision', 'access', 'budget', 'risk', 'gate']);
 export type EscalationType = z.infer<typeof EscalationType>;
 
+/**
+ * What a card asks about, which decides who may answer it (Settings → Autonomy): media sources,
+ * tool problems, retries after rejections, who owns missing work, naming and structure, content
+ * within the Blueprint, access, scope, and releases, gates and budget.
+ */
+export const DecisionCategory = z.enum([
+  'media',
+  'tool',
+  'retry',
+  'ownership',
+  'naming',
+  'content',
+  'access',
+  'scope',
+  'release',
+  'other',
+]);
+export type DecisionCategory = z.infer<typeof DecisionCategory>;
+
+export const DECISION_CATEGORY_LABEL: Record<DecisionCategory, string> = {
+  media: 'Media sources',
+  tool: 'Tool problems',
+  retry: 'Retries after rejection',
+  ownership: 'Ownership and missing work',
+  naming: 'Naming and structure',
+  content: 'Content within the Blueprint',
+  access: 'Access and permissions',
+  scope: 'Scope',
+  release: 'Releases, gates and budget',
+  other: 'Other',
+};
+
 export const EscalationStatus = z.enum(['open', 'deferred', 'expired', 'resolved', 'superseded']);
 export type EscalationStatus = z.infer<typeof EscalationStatus>;
 

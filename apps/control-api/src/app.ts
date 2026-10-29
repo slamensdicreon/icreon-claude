@@ -32,6 +32,7 @@ import {
   type ArtifactView,
   type CommandResult,
   type PortfolioDiagnostics,
+  type PlaybookScorecard,
   type ServiceHealth,
 } from '@lw/contracts';
 import {
@@ -44,6 +45,7 @@ import {
   cardGroups,
   isLogEvent,
   portfolioItem,
+  scorecard,
   preview,
   scheduleSnapshot,
   settingsView,
@@ -517,6 +519,34 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!project(req.params.id))
       return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
     return supported(orchestrator(req.params.id), 'diagnose')();
+  });
+
+  // How the project's work went: cards by category and who settled them, reviews, waits.
+  app.get<P>('/projects/:id/scorecard', async (req, reply) => {
+    await projections.catchUp(req.params.id);
+    const s = project(req.params.id);
+    return s
+      ? scorecard(s, now())
+      : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+  });
+
+  // Every project on a playbook side by side, newest first, so the next site compares with the last.
+  app.get<P>('/playbooks/:id/scorecard', async (req): Promise<PlaybookScorecard> => {
+    await projections.catchUpAll();
+    return {
+      playbookId: req.params.id,
+      projects: projections
+        .all()
+        .filter((s) => s.playbook?.id === req.params.id && s.mode === 'live')
+        .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+        .map((s) => ({
+          projectId: s.projectId,
+          name: s.name,
+          status: s.status,
+          version: s.playbook?.version ?? null,
+          totals: scorecard(s, now()).totals,
+        })),
+    };
   });
 
   app.get<P>('/projects/:id/mission-control', async (req, reply) => {

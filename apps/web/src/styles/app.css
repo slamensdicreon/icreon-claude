@@ -1562,3 +1562,82 @@
   background: var(--web-surface);
   color: var(--web-fg);
 }
+
+/* Scorecard */
+.sc-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 0 0 16px;
+  color: var(--web-fg-2);
+  font-size: 14px;
+}
+.sc-facts strong {
+  color: var(--web-fg);
+  font-weight: 600;
+}
+.sc-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.sc-scroll table {
+  min-width: 560px;
+}
+.sc-repeats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.sc-repeats li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.sc-repeats small {
+  display: block;
+  color: var(--web-fg-2);
+  font-size: 12px;
+}
+.sc-count {
+  flex: none;
+  min-width: 3ch;
+  font-weight: 600;
+}
+.sc-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--web-border);
+  border-radius: var(--web-radius-2);
+  background: var(--web-surface);
+  color: var(--web-fg-2);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.sc-line .ic {
+  color: var(--web-accent);
+}
+.sc-line strong {
+  color: var(--web-fg);
+}
+.sc-go {
+  margin-left: auto;
+  color: var(--web-accent-text);
+  font-weight: 600;
+}
+.statgrid > .statcard {
+  /* Grid items shrink to their column on narrow screens instead of overflowing it. */
+  min-width: 0;
+}
+.sc-tile .v {
+  font-variant-numeric: proportional-nums;
+  letter-spacing: 0;
+}

@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { PortfolioDiagnostics, PortfolioItem } from '@lw/contracts';
+import { PlaybookScorecard, PortfolioDiagnostics, PortfolioItem, Scorecard } from '@lw/contracts';
 import { InMemoryEventStore, Projections } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { Simulation, sitecoreScenario } from '@lw/simulator';
@@ -95,4 +95,24 @@ it("reports the services and says plainly when the worker hasn't been seen", asy
     status: 'unknown',
     detail: 'Not reported in this mode',
   });
+});
+
+it("scores a project's work from its log, and compares only real projects on a playbook", async () => {
+  const app = await start();
+  const r = await app.inject({ method: 'GET', url: '/projects/p1/scorecard' });
+  expect(r.statusCode).toBe(200);
+  const card = Scorecard.parse(r.json());
+  expect(card.totals.tasks).toBeGreaterThan(0);
+  expect(card.totals.done).toBe(card.totals.tasks);
+  expect(card.totals.cards).toBe(card.categories.reduce((n, c) => n + c.raised, 0));
+  expect(card.categories.find((c) => c.category === 'release')?.raised).toBeGreaterThan(0);
+  expect(card.phases.map((p) => p.phase)).toEqual([...new Set(card.phases.map((p) => p.phase))]);
+  expect((await app.inject({ method: 'GET', url: '/projects/nope/scorecard' })).statusCode).toBe(
+    404,
+  );
+  // The simulated project is a demo: comparisons leave it out.
+  const pb = PlaybookScorecard.parse(
+    (await app.inject({ method: 'GET', url: '/playbooks/sitecoreai-migration/scorecard' })).json(),
+  );
+  expect(pb).toEqual({ playbookId: 'sitecoreai-migration', projects: [] });
 });

@@ -19,7 +19,15 @@ import { ApiProblem, get } from './lib/api';
 import { live, useResource } from './lib/live';
 
 export type Surface =
-  'mission' | 'inbox' | 'team' | 'plan' | 'workbench' | 'preview' | 'activity' | 'settings';
+  | 'mission'
+  | 'inbox'
+  | 'team'
+  | 'plan'
+  | 'workbench'
+  | 'preview'
+  | 'activity'
+  | 'scorecard'
+  | 'settings';
 export const SURFACES: Surface[] = [
   'mission',
   'inbox',
@@ -28,6 +36,7 @@ export const SURFACES: Surface[] = [
   'workbench',
   'preview',
   'activity',
+  'scorecard',
   'settings',
 ];
 export const SURFACE_LABEL: Record<Surface, string> = {
@@ -38,6 +47,7 @@ export const SURFACE_LABEL: Record<Surface, string> = {
   workbench: 'Workbench',
   preview: 'Site preview',
   activity: 'Activity',
+  scorecard: 'Scorecard',
   settings: 'Settings',
 };
 

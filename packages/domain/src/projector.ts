@@ -100,7 +100,24 @@ export interface ProjectState {
   conventions: { key: string; value: string }[];
   /** What agents' tools couldn't do, by capability (lower case): engineering's backlog. */
   capabilityGaps: Record<string, CapabilityGapRecord>;
+  /** Per task: how its work went (runs, reviews, waits, tokens), for the scorecard. */
+  ledger: Record<string, TaskLedger>;
 }
+
+/** How one task's work went, counted from its events. */
+export interface TaskLedger {
+  runs: number;
+  reviews: number;
+  rejections: number;
+  /** Times it stopped to wait on a decision or another agent. */
+  waits: number;
+  /** Times it ran again after it was done (sent back, rolled back, re-run). */
+  reruns: number;
+  tokens: number;
+}
+
+const ledgerOf = (s: ProjectState, taskId: string): TaskLedger =>
+  (s.ledger[taskId] ??= { runs: 0, reviews: 0, rejections: 0, waits: 0, reruns: 0, tokens: 0 });
 
 export interface CapabilityGapRecord {
   capability: string;
@@ -180,6 +197,7 @@ export function createProjectState(projectId: string): ProjectState {
     settings: {},
     conventions: [],
     capabilityGaps: {},
+    ledger: {},
   };
 }
 
@@ -311,6 +329,11 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
           if (!Object.keys(g.tasks).length) g.closedAt = e.ts;
         }
       }
+      const l = ledgerOf(s, t.taskId);
+      if (e.data.to === 'running' && e.data.from !== 'running') l.runs++;
+      if (e.data.to === 'waiting') l.waits++;
+      if (e.data.to === 'ready' && (e.data.from === 'done' || e.data.from === 'rolled_back'))
+        l.reruns++;
       t.state = e.data.to;
       t.attempt = e.data.attempt;
       t.lastReason = e.data.reason;
@@ -354,6 +377,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       break;
     }
     case 'step.recorded': {
+      ledgerOf(s, e.data.taskId).tokens += e.data.tokens;
       const a = s.agents[e.data.agentId];
       if (a) {
         a.tokensThisTask += e.data.tokens;
@@ -375,6 +399,12 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       break;
     }
     case 'review.recorded': {
+      if (e.data.taskId) {
+        const l = ledgerOf(s, e.data.taskId);
+        l.reviews++;
+        if (e.data.verdict === 'reject') l.rejections++;
+        l.tokens += e.data.tokens;
+      }
       const a = s.agents[e.data.reviewerId];
       if (a) a.tokensProject += e.data.tokens;
       if (a)

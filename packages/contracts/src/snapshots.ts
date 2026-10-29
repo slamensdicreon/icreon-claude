@@ -4,6 +4,7 @@ import {
   AgentTier,
   Breakpoint,
   CosPresence,
+  DecisionCategory,
   EscalationType,
   EscalationStatus,
   Health,
@@ -362,6 +363,99 @@ export const PortfolioItem = ProjectListItem.extend({
   capabilityGaps: z.number().int(),
 });
 export type PortfolioItem = z.infer<typeof PortfolioItem>;
+
+/** Who settled a card. `lead` and `rule` arrive with Lead triage. */
+export const SettledBy = z.enum(['director', 'chief_of_staff', 'default', 'lead', 'rule']);
+export type SettledBy = z.infer<typeof SettledBy>;
+
+/** Cards of one category: how many, who settled them, and how often the recommendation held. */
+export const ScorecardCategory = z.object({
+  category: DecisionCategory,
+  raised: z.number().int(),
+  open: z.number().int(),
+  settled: z.record(SettledBy, z.number().int()),
+  /** Settled cards whose answer was the option the agent recommended. */
+  recommendedTaken: z.number().int(),
+  /** Settled cards that had a recommended option. */
+  withRecommendation: z.number().int(),
+});
+export type ScorecardCategory = z.infer<typeof ScorecardCategory>;
+
+/** One phase's work: tasks, cards, reviews, waits, re-runs and spend. */
+export const ScorecardPhase = z.object({
+  phase: z.number().int(),
+  name: z.string(),
+  tasks: z.number().int(),
+  done: z.number().int(),
+  cards: z.number().int(),
+  reviews: z.number().int(),
+  rejections: z.number().int(),
+  waits: z.number().int(),
+  reruns: z.number().int(),
+  tokens: z.number().int(),
+});
+export type ScorecardPhase = z.infer<typeof ScorecardPhase>;
+
+/** The headline numbers: what the scorecard compares across projects. */
+export const ScorecardTotals = z.object({
+  tasks: z.number().int(),
+  done: z.number().int(),
+  cards: z.number().int(),
+  cardsPerTask: z.number(),
+  /** Settled by anyone but the Director (default, Chief of Staff, Lead, rule). */
+  settledWithoutDirector: z.number().int(),
+  settledWithoutDirectorPct: z.number(),
+  /** Of settled cards with a recommendation, the share where it was taken. */
+  recommendedTakenPct: z.number().nullable(),
+  reviews: z.number().int(),
+  rejections: z.number().int(),
+  rejectionRate: z.number().nullable(),
+  /** Cards beyond the first in a group with the same cause. */
+  repeats: z.number().int(),
+  waits: z.number().int(),
+  reruns: z.number().int(),
+  capabilityGaps: z.number().int(),
+  tokens: z.number().int(),
+  usd: z.number(),
+  /** From start to the last finished task, or now while running. */
+  elapsedHours: z.number().nullable(),
+});
+export type ScorecardTotals = z.infer<typeof ScorecardTotals>;
+
+/** GET /projects/:id/scorecard — how the project's work went, from its event log. */
+export const Scorecard = z.object({
+  projectId: z.string(),
+  name: z.string(),
+  status: ProjectStatus,
+  playbook: z.object({ id: z.string(), version: z.string() }).nullable(),
+  totals: ScorecardTotals,
+  categories: z.array(ScorecardCategory),
+  phases: z.array(ScorecardPhase),
+  /** The causes that came back most: one row per group of same-cause cards. */
+  repeats: z.array(
+    z.object({
+      category: DecisionCategory,
+      title: z.string(),
+      count: z.number().int(),
+    }),
+  ),
+});
+export type Scorecard = z.infer<typeof Scorecard>;
+
+/** GET /playbooks/:id/scorecard — every project on a playbook, side by side. */
+export const PlaybookScorecard = z.object({
+  playbookId: z.string(),
+  projects: z.array(
+    z.object({
+      projectId: z.string(),
+      name: z.string(),
+      status: ProjectStatus,
+      version: z.string().nullable(),
+      totals: ScorecardTotals,
+    }),
+  ),
+});
+export type PlaybookScorecard = z.infer<typeof PlaybookScorecard>;
 
 /** A service the system runs on, as last seen. */
 export const ServiceHealth = z.object({

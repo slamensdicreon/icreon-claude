@@ -16,6 +16,7 @@ import { Inbox } from './surfaces/Inbox';
 import { Mission } from './surfaces/Mission';
 import { Plan } from './surfaces/Plan';
 import { Preview } from './surfaces/Preview';
+import { Scorecard } from './surfaces/Scorecard';
 import { Settings } from './surfaces/Settings';
 import { Team } from './surfaces/Team';
 import { Workbench } from './surfaces/Workbench';
@@ -28,6 +29,7 @@ const SURFACE: Record<Surface, () => React.JSX.Element> = {
   workbench: Workbench,
   preview: Preview,
   activity: Activity,
+  scorecard: Scorecard,
   settings: Settings,
 };
 
@@ -39,6 +41,7 @@ const CHORD: Record<string, Surface> = {
   w: 'workbench',
   s: 'preview',
   a: 'activity',
+  c: 'scorecard',
 };
 
 export function App() {
@@ -181,7 +184,7 @@ function useKeys() {
       }
       if (e.key === '?') {
         a.toast(
-          'Shortcuts: Ctrl or Cmd K opens the palette. G then M, N, T, P, W, S or A changes surface. In Needs you, J and K move between items; 1 to 4 chooses, D defers, A approves a gate. Esc closes.',
+          'Shortcuts: Ctrl or Cmd K opens the palette. G then M, N, T, P, W, S, A or C changes surface. In Needs you, J and K move between items; 1 to 4 chooses, D defers, A approves a gate. Esc closes.',
         );
         return;
       }
