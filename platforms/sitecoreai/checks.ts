@@ -429,7 +429,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         if (placeholders.length)
           problems.push(`${path} shows placeholder copy: "${placeholders.join('", "')}"`);
         for (const c of layoutComponents(page.body))
-          if (lists.has(c.name) && !itemCount(c.fields))
+          if (lists.has(c.name) && !itemCount(c.fields) && !loadsOwnItems(c.fields))
             problems.push(
               `${path}: ${c.name} renders no items (its rendering needs a Component Query returning its children, and its datasource needs child items)`,
             );
@@ -742,6 +742,16 @@ function balanced(s: string, from: number): string | null {
 }
 
 /** How many child items a component received: by its Component Query, or as a list field. */
+/**
+ * A query that delivered the datasource but asked for no children: the component loads its items
+ * itself (a long list over Edge's complexity budget is paged in code). The text check covers it.
+ */
+export function loadsOwnItems(fields: unknown): boolean {
+  const f = (fields ?? {}) as { items?: unknown; data?: { datasource?: Record<string, unknown> } };
+  const ds = f.data?.datasource;
+  return !!ds && typeof ds === 'object' && !('children' in ds) && f.items === undefined;
+}
+
 export function itemCount(fields: unknown): number {
   const f = (fields ?? {}) as {
     items?: unknown[];

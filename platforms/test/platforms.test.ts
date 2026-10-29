@@ -489,6 +489,18 @@ describe('SitecoreAI checks', () => {
     expect(res.detail).toMatch(/shows \d+% of the source page's text/);
     expect(res.detail).toContain('missing headings: Our Services');
 
+    // A query that asks for no children: the component loads its own items (the text check covers it).
+    const page = (fields: unknown) =>
+      `<header><div id="header"><nav>Home</nav></div></header><h1>About Ansco</h1><h2>Our Services</h2><p>Telecommunications engineering construction wireless splicing</p>${rsc(fields)}<footer><div id="footer"><p>Ansco</p></div></footer>`;
+    pages['https://ansco-site-editing.vercel.app/about'] = page({
+      data: { datasource: { heading: { jsonValue: { value: 'Our Services' } } } },
+    });
+    expect((await run()).status).toBe('pass');
+    pages['https://ansco-site-editing.vercel.app/about'] = page({
+      data: { datasource: { children: { results: [] } } },
+    });
+    expect((await run()).detail).toContain('/about: CardGrid renders no items');
+
     pages['https://ansco-site-editing.vercel.app/about'] =
       `<header><div id="header"><nav>Home</nav></div></header><h1>About Ansco</h1><h2>Our Services</h2><p>Telecommunications engineering construction wireless splicing</p>${rsc({ data: { datasource: { children: { results: [{}] } } } })}<footer><div id="footer"><p>Ansco</p></div></footer>`;
     const ok = await run();

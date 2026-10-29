@@ -21,20 +21,24 @@ tools:
       - item.create
       - item.update
       - layout.compose
+      # A page's own photos, from the source page (sourceUrl), when no media task uploaded them.
+      - media.upload
     scope:
       paths:
         - '{sitePath}/Home/**'
         - '{sitePath}/Data/**'
-      # Template and rendering IDs to compose with, and media to link: read only.
+        - /sitecore/media library/Project/{project}/**
+      # Template and rendering IDs to compose with: read only.
       readPaths:
         - /sitecore/templates/**
         - /sitecore/layout/**
         - '{sitePath}/**'
-        - /sitecore/media library/Project/{project}/**
   browser:
     ops:
       # The source page's copy and structure, so content is migrated, never invented.
       - snapshot
+      # Images set by CSS (a hero's or section's background) aren't in a snapshot: computed styles give their URL.
+      - page.styles
   # The source repository, where a site built from code keeps its copy (content files).
   github:
     ops:
