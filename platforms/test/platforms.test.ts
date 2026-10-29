@@ -378,6 +378,40 @@ describe('SitecoreAI checks', () => {
     expect((await run()).status).toBe('pass');
   });
 
+  it('checks the header and footer on pages that exist, skipping ones not migrated yet', async () => {
+    const page =
+      '<header><div id="header"><nav>Home</nav></div></header><footer><div id="footer"><nav>links</nav></div></footer>';
+    let home = 200;
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async (url: string | URL | Request) =>
+          String(url).endsWith('.app/')
+            ? new Response(page, { status: home })
+            : new Response('', { status: 404 })) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const bp = {
+      collections: {
+        pages: ['about', 'safety'].map((k) => ({ key: k, name: k, attrs: { path: `/${k}` } })),
+      },
+    };
+    const run = () =>
+      checks['head.header-footer']!({
+        ...ctx(tenant({}).read, bp),
+        target: { ...target, hostingProject: 'lambert-cable' },
+      });
+    expect(await run()).toEqual({
+      status: 'pass',
+      detail:
+        'The header and footer render on 1 page of https://lambert-cable-editing.vercel.app; /about, /safety not created yet.',
+    });
+    home = 404;
+    const res = await run();
+    expect(res.status).toBe('fail');
+    expect(res.detail).toContain('/ answered 404');
+  });
+
   it('compares each rendered page with its source: text, headings, items, placeholders, header', async () => {
     const rsc = (fields: unknown) =>
       `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ componentName: 'CardGrid', fields }))}])</script>`;

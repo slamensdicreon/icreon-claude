@@ -351,13 +351,21 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       if (!project) return pending('No hosting project is recorded for the head.');
       const host = `https://${project}-editing.vercel.app`;
       const problems: string[] = [];
-      const paths = inScope(ctx, 'pages').length ? pagePaths(ctx).slice(0, 5) : ['/'];
+      // Home first: it renders once the head runs. Other pages are created in content migration;
+      // until then they answer 404 and are skipped, not failed.
+      const kept = inScope(ctx, 'pages').length ? pagePaths(ctx) : [];
+      const paths = ['/', ...kept.filter((p) => p !== '/')].slice(0, 5);
+      const notYet: string[] = [];
       for (const path of paths) {
         let html = '';
         try {
           const res = await cfg.fetch(`${host}${path}`, {
             signal: AbortSignal.timeout(cfg.timeoutMs),
           });
+          if (res.status === 404 && path !== '/') {
+            notYet.push(path);
+            continue;
+          }
           if (!res.ok) {
             problems.push(`${path} answered ${res.status} on ${host}`);
             continue;
@@ -378,7 +386,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
             'nothing is placed in headless-header / headless-footer: create the Header and Footer partial designs (from the JSS Partial Design template), add them to the page designs and map the page templates with page-designs.map',
           ])
         : pass(
-            `The header and footer render on ${paths.length} page${paths.length === 1 ? '' : 's'} of ${host}.`,
+            `The header and footer render on ${paths.length - notYet.length} page${paths.length - notYet.length === 1 ? '' : 's'} of ${host}${notYet.length ? `; ${notYet.join(', ')} not created yet` : ''}.`,
           );
     },
 
