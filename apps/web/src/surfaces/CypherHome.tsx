@@ -137,7 +137,6 @@ export function CypherHome() {
   const [convo, setConvo] = useState<CypherConversation | null>(null);
   const [text, setText] = useState('');
   const [pending, setPending] = useState<string | null>(null);
-  const [open, setOpen] = useState(true);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -176,26 +175,20 @@ export function CypherHome() {
   };
 
   const messages = convo?.messages ?? [];
-  const recent = open ? messages : messages.slice(-2);
   return (
-    <section className="cy-home" aria-label="Cypher">
+    <section className="cy-home">
       <header className="cy-head">
         <span className="cy-avatar" aria-hidden="true">
           C
         </span>
         <div>
           <h2>Cypher</h2>
-          <p>Chief of Staff. Ask about any project, or describe one to start.</p>
+          <p>Chief of Staff</p>
         </div>
         <div className="cy-actions">
-          {messages.length > 2 && (
-            <button className="btn sm" onClick={() => setOpen((o) => !o)}>
-              {open ? 'Show less' : `Show all ${messages.length}`}
-            </button>
-          )}
           {messages.length > 0 && (
             <button className="btn sm" onClick={restart} disabled={Boolean(pending)}>
-              New conversation
+              New chat
             </button>
           )}
         </div>
@@ -204,9 +197,9 @@ export function CypherHome() {
         <p className="quiet-line">Cypher needs the model, which isn’t configured on this server.</p>
       ) : (
         <>
-          {(recent.length > 0 || pending) && (
+          {(messages.length > 0 || pending) && (
             <div className="cy-convo" aria-live="polite" ref={box}>
-              {recent.map((m) => (
+              {messages.map((m) => (
                 <Message key={m.id} m={m} />
               ))}
               {pending && (
@@ -247,9 +240,9 @@ export function CypherHome() {
           >
             <textarea
               ref={input}
-              rows={2}
               value={text}
-              placeholder="Message Cypher: a question, a brief, or “a site like Ansco for …”"
+              rows={3}
+              placeholder="Ask about a project, give a brief, or ask for “a site like Ansco for …”"
               aria-label="Message Cypher"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {

@@ -67,46 +67,47 @@ export function Dashboard() {
   const portfolio = usePoll<PortfolioItem[]>('/portfolio', 10_000);
   const needs = (portfolio.data ?? []).filter((p) => p.waitingCount > 0).length;
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>Dashboard</h1>
-          <p>
-            Talk to Cypher, see every project, the playbooks you can run, and how the system is
-            doing.
-          </p>
-        </div>
-        <button className="btn primary" onClick={() => openOverlay(<NewProject />)}>
-          New project
-        </button>
-      </div>
-      <CypherHome />
-      <div className="dash-tabs" role="tablist">
-        {(
-          [
-            ['projects', 'Projects', needs ? `${needs} need you` : null],
-            ['connections', 'Connections', null],
-            ['playbooks', 'Playbooks', null],
-            ['diagnostics', 'Diagnostics', null],
-          ] as [Tab, string, string | null][]
-        ).map(([key, label, note]) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            className={tab === key ? 'on' : ''}
-            onClick={() => setTab(key)}
-          >
-            {label}
-            {note && <small>{note}</small>}
+    <div className="dash-split">
+      <aside className="dash-cypher" aria-label="Cypher">
+        <CypherHome />
+      </aside>
+      <div className="dash-main">
+        <div className="page-head">
+          <div>
+            <h1>Dashboard</h1>
+            <p>Every project, the playbooks you can run, and how the system is doing.</p>
+          </div>
+          <button className="btn primary" onClick={() => openOverlay(<NewProject />)}>
+            New project
           </button>
-        ))}
+        </div>
+        <div className="dash-tabs" role="tablist">
+          {(
+            [
+              ['projects', 'Projects', needs ? `${needs} need you` : null],
+              ['connections', 'Connections', null],
+              ['playbooks', 'Playbooks', null],
+              ['diagnostics', 'Diagnostics', null],
+            ] as [Tab, string, string | null][]
+          ).map(([key, label, note]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              className={tab === key ? 'on' : ''}
+              onClick={() => setTab(key)}
+            >
+              {label}
+              {note && <small>{note}</small>}
+            </button>
+          ))}
+        </div>
+        {tab === 'projects' && <Projects items={portfolio.data} error={portfolio.error} />}
+        {tab === 'connections' && <Connections projects={portfolio.data ?? []} />}
+        {tab === 'playbooks' && <Playbooks projects={portfolio.data ?? []} />}
+        {tab === 'diagnostics' && <Diagnostics />}
       </div>
-      {tab === 'projects' && <Projects items={portfolio.data} error={portfolio.error} />}
-      {tab === 'connections' && <Connections projects={portfolio.data ?? []} />}
-      {tab === 'playbooks' && <Playbooks projects={portfolio.data ?? []} />}
-      {tab === 'diagnostics' && <Diagnostics />}
-    </>
+    </div>
   );
 }
 

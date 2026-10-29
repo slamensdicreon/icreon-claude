@@ -1364,18 +1364,58 @@
 }
 
 /* Cypher on the Dashboard */
+/* The Dashboard: Cypher in a third on the left, the portfolio in two thirds on the right. */
+.dash-split {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+.dash-cypher {
+  position: sticky;
+  top: 0;
+  /* The surface's height less its own padding: the column stays put while the portfolio scrolls. */
+  height: calc(100dvh - 64px - 28px - 32px);
+  min-height: 420px;
+}
+.dash-main {
+  min-width: 0;
+}
+@container canvas (max-width: 900px) {
+  .dash-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dash-main {
+    order: -1;
+  }
+  .dash-cypher {
+    position: static;
+    height: auto;
+    min-height: 0;
+  }
+  .dash-cypher .cy-convo {
+    max-height: 60vh;
+  }
+}
 .cy-home {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   background: var(--web-surface);
   border: 1px solid var(--web-border);
   border-radius: var(--web-radius-2);
   padding: 16px;
-  margin-bottom: 20px;
 }
 .cy-head {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--web-border);
+}
+.cy-head > div:not(.cy-actions) {
+  flex: 1;
+  min-width: 0;
 }
 .cy-head h2 {
   margin: 0;
@@ -1389,8 +1429,8 @@
 .cy-avatar {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   flex: none;
   border-radius: 50%;
   background: var(--web-accent);
@@ -1398,7 +1438,7 @@
   font-weight: 700;
 }
 .cy-actions {
-  margin-left: auto;
+  flex: none;
   display: flex;
   gap: 8px;
 }
@@ -1406,13 +1446,17 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: min(60vh, 560px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   margin: 14px 0 0;
   padding-right: 4px;
 }
 .cy-m {
-  max-width: min(100%, 720px);
+  max-width: 100%;
+}
+.cy-m.me {
+  max-width: 90%;
 }
 .cy-m.me {
   align-self: flex-end;
@@ -1500,12 +1544,15 @@
 }
 .cy-compose {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
-  margin-top: 14px;
+  margin-top: auto;
+  padding-top: 14px;
+}
+.cy-compose .btn {
+  align-self: flex-end;
 }
 .cy-compose textarea {
-  flex: 1;
   min-width: 0;
   resize: vertical;
   font: inherit;
