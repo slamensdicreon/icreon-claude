@@ -207,6 +207,9 @@ wake from idle, restarts it, and the next step must replay the whole history wit
 
 ## Order of work
 
+The detailed build plan for A2–A5, sized against Ansco's cards, is in
+[agent-intelligence-build-plan.md](agent-intelligence-build-plan.md).
+
 | # | Build | Why first | Size |
 | --- | --- | --- | --- |
 | 1 | C1 local activities and batched writes, C2 continue-as-new from the event log, 60 s timeout | Stops the freezes; everything else adds events | 2–3 sessions |
