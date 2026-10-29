@@ -115,7 +115,9 @@ describe('SitecoreAI checks', () => {
     languages: ['en'],
   };
   /** A tenant as item paths, with children and fields. */
-  const tenant = (items: Record<string, { id?: string; fields?: Record<string, string> }>) => {
+  const tenant = (
+    items: Record<string, { id?: string; fields?: Record<string, string>; template?: string }>,
+  ) => {
     const reads: string[] = [];
     const read = async (_s: string, _op: string, args: Record<string, unknown>) => {
       const path = String(args.path);
@@ -124,7 +126,12 @@ describe('SitecoreAI checks', () => {
       if (!it) return { code: 404, body: {} };
       const children = Object.keys(items)
         .filter((p) => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes('/'))
-        .map((p) => ({ itemId: items[p]!.id ?? p, name: p.split('/').at(-1)!, path: p }));
+        .map((p) => ({
+          itemId: items[p]!.id ?? p,
+          name: p.split('/').at(-1)!,
+          path: p,
+          template: { name: items[p]!.template ?? 'Template' },
+        }));
       return {
         code: 200,
         body: {
@@ -271,6 +278,32 @@ describe('SitecoreAI checks', () => {
       detail:
         '2 templates exist with standard values, and their insert options match the Blueprint; 1 merged into others, as the Blueprint says.',
     });
+  });
+
+  it('finds page templates in a folder that sorts after dozens of component templates', async () => {
+    const root = '/sitecore/templates/Project/Brands/ansco';
+    const items: Record<string, { template?: string }> = {
+      [root]: { template: 'Template Folder' },
+    };
+    // Component and child-item templates, each with sections, ahead of Pages in tree order.
+    for (let i = 0; i < 60; i++) {
+      items[`${root}/Component${String(i).padStart(2, '0')}`] = {};
+      items[`${root}/Component${String(i).padStart(2, '0')}/Data`] = {
+        template: 'Template section',
+      };
+    }
+    items[`${root}/Pages`] = { template: 'Template Folder' };
+    items[`${root}/Pages/Home Page`] = {};
+    items[`${root}/Pages/Home Page/__Standard Values`] = {};
+    const bp = { collections: { templates: [{ key: 'home-page', name: 'Home Page' }] } };
+    const t = tenant(items);
+    expect(await pack.checks!['structural.templates']!(ctx(t.read, bp))).toEqual({
+      status: 'pass',
+      detail:
+        '1 templates exist with standard values, and their insert options match the Blueprint.',
+    });
+    // The folder is read before any template, and the walk stops once it finds what it wants.
+    expect(t.reads[1]).toBe(`${root}/Pages`);
   });
 
   it('checks each page has components on a layout Sitecore can read', async () => {

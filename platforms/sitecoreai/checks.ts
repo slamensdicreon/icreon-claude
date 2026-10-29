@@ -15,7 +15,7 @@ interface Item {
   fields?: { nodes: { name: string; value: string }[] };
 }
 
-type Child = { itemId: string; name: string; path: string };
+type Child = { itemId: string; name: string; path: string; template?: { name?: string } };
 
 const pass = (detail: string): CheckResult => ({ status: 'pass', detail });
 const fail = (problems: string[]): CheckResult => ({
@@ -51,18 +51,21 @@ async function findByName(
   const found = new Map<string, Child>();
   let level = [root];
   for (let depth = 0; depth < 3 && level.length && (all || found.size < want.size); depth++) {
-    const next: string[] = [];
-    for (const path of level.slice(0, 40)) {
+    const next: Child[] = [];
+    for (const path of level.slice(0, 100)) {
       const it = await item(ctx, path, true);
       for (const c of it?.children?.nodes ?? []) {
         const key = c.name.toLowerCase();
         if (want.has(key)) {
           if (!found.has(key)) found.set(key, c);
           all?.set(key, [...(all.get(key) ?? []), c]);
-        } else next.push(c.path);
+        } else next.push(c);
       }
     }
-    level = next;
+    // Folders first: a site's module folder holds dozens of templates, and the Pages folder sorts
+    // after most of them, so a capped walk in tree order never opened it.
+    const folder = (c: Child) => /folder/i.test(c.template?.name ?? '');
+    level = [...next.filter(folder), ...next.filter((c) => !folder(c))].map((c) => c.path);
   }
   return found;
 }
