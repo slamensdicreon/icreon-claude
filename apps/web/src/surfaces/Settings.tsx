@@ -105,7 +105,9 @@ export function Settings() {
             )}
           />
         )}
-        {!p.demo && p.intake?.repo && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}
+        {!p.demo && p.intake && (
+          <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo ?? p.sourceUrl ?? p.name} />
+        )}
         {!p.demo && p.intake && p.playbook && (
           <IntakePanel
             values={p.intake.target}
@@ -773,7 +775,17 @@ function CredentialForm({
  */
 function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; source: string }) {
   const { projectId, run } = useApp();
-  const suggested = `${source.split('/')[1] ?? 'site'}-sitecoreai`;
+  const projectName = useMission().data?.project.name ?? 'site';
+  // Named after the source repository, or after the project when the live site is the source.
+  const suggested = `${
+    /^[\w.-]+\/[\w.-]+$/.test(source)
+      ? source.split('/')[1]
+      : projectName
+          .toLowerCase()
+          .replace(/['’]/g, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+  }-sitecoreai`;
   const [name, setName] = useState('');
   const valid = !name.trim() || /^[A-Za-z0-9._-]{1,100}$/.test(name.trim());
   return (

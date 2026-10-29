@@ -70,7 +70,7 @@ afterEach(async () => {
   app = null;
 });
 
-async function start(opts: { orchestrator?: boolean } = {}) {
+async function start(opts: { orchestrator?: boolean; github?: unknown } = {}) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
@@ -90,6 +90,7 @@ async function start(opts: { orchestrator?: boolean } = {}) {
       start: opts.orchestrator ? async (input) => void started.push(input) : undefined,
       stop: opts.orchestrator ? async (id) => void stopped.push(id) : undefined,
       blobs,
+      ...(opts.github ? { github: opts.github as never, buildOrg: 'icreon-launchworks' } : {}),
     }),
   });
   return { app, store, started, stopped, blobs };
@@ -260,6 +261,43 @@ describe('New Project wizard', () => {
     const { projectId } = r.json() as { projectId: string };
     expect((await post(`/projects/${projectId}/start`)).statusCode).toBe(200);
     expect(started.at(-1)!.features).toEqual([]);
+  });
+
+  it('creates the build repository at start, named after the project when there is no source repository', async () => {
+    const made: { org: string; name: string; description: string }[] = [];
+    const github = {
+      async createBuildRepo(org: string, name: string, description: string) {
+        made.push({ org, name, description });
+        return {
+          repo: `${org}/${name}`,
+          branch: 'main',
+          installationId: 1,
+          url: `https://github.com/${org}/${name}`,
+          template: 'Sitecore/xmcloud-starter-js',
+          appPath: 'examples/basic-nextjs',
+        };
+      },
+    };
+    await start({ orchestrator: true, github });
+    const r = await post('/projects', {
+      ...intake(),
+      name: "Lambert's Cable",
+      source: { repo: null, url: 'https://www.lambertcable.com/' },
+    });
+    const { projectId } = r.json() as { projectId: string };
+    expect((await post(`/projects/${projectId}/start`)).statusCode).toBe(200);
+    expect(made).toEqual([
+      {
+        org: 'icreon-launchworks',
+        name: 'lamberts-cable-sitecoreai',
+        description:
+          "Lambert's Cable: SitecoreAI site built by Launchworks from https://www.lambertcable.com/.",
+      },
+    ]);
+    const mc = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(mc.project.buildRepo?.repo).toBe('icreon-launchworks/lamberts-cable-sitecoreai');
   });
 
   it('asks about the source code only when there is a repository', async () => {

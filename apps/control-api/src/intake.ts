@@ -398,7 +398,7 @@ export class IntakeService {
     }
     // The build repository is needed from phase 3; a failure here shows in Settings, where it
     // can be retried, and doesn't hold up discovery.
-    if (!s.buildRepo && s.intake?.repo && this.deps.buildOrg && this.deps.github) {
+    if (!s.buildRepo && s.intake && this.deps.buildOrg && this.deps.github) {
       await this.createBuildRepo(s).catch((e: unknown) => {
         console.warn(`Build repository for ${s.projectId} not created: ${(e as Error).message}`);
       });
@@ -416,15 +416,12 @@ export class IntakeService {
 
   /**
    * Creates the project's build repository in our organization from Sitecore's starter, or
-   * checks and reuses one of that name. Named after the source repository unless told otherwise.
+   * checks and reuses one of that name. Named after the source repository, or after the project
+   * when it has none (the live site is its source), unless told otherwise.
    */
   async createBuildRepo(s: ProjectState, name?: string): Promise<void> {
-    if (s.mode !== 'live' || !s.intake?.repo) {
-      throw new CommandError(
-        409,
-        'not_live',
-        'Only real projects with a source repository have a build repository.',
-      );
+    if (s.mode !== 'live' || !s.intake) {
+      throw new CommandError(409, 'not_live', 'Only real projects have a build repository.');
     }
     if (s.buildRepo) {
       throw new CommandError(409, 'exists', `${s.name} already builds in ${s.buildRepo.repo}.`);
@@ -437,11 +434,13 @@ export class IntakeService {
         'No build organization is configured. Set GITHUB_BUILD_ORG and set up the GitHub App.',
       );
     }
-    const repoName = name ?? `${s.intake.repo.split('/')[1]}-sitecoreai`;
+    const source = s.intake.repo ?? s.sourceUrl ?? s.name;
+    const repoName =
+      name ?? `${s.intake.repo ? s.intake.repo.split('/')[1] : slug(s.name)}-sitecoreai`;
     const buildRepo = await github.createBuildRepo(
       buildOrg,
       repoName,
-      `${s.name}: SitecoreAI site built by Launchworks from ${s.intake.repo}.`,
+      `${s.name}: SitecoreAI site built by Launchworks from ${source}.`,
     );
     await this.deps.store.append(s.projectId, [
       {
@@ -901,4 +900,16 @@ function briefOf(
     out.push({ key: q.key, label: q.label, answer });
   }
   return out;
+}
+
+/** A repository-safe name: "Lambert's Cable" → "lamberts-cable". */
+export function slug(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'site'
+  );
 }
