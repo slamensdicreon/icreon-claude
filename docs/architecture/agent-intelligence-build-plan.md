@@ -4,6 +4,8 @@ The detailed build plan for A2–A5 of [the agent intelligence plan](agent-intel
 sized against what Ansco actually asked the Director. A1 (canary, card clustering, capability
 gaps) is built.
 
+The task-by-task plan for everything left is in [agent-intelligence-task-plan.md](agent-intelligence-task-plan.md).
+
 ## What Ansco tells us
 
 Ansco raised **347 cards** (to 2026-10-28):
@@ -31,7 +33,7 @@ with A1 and A2 together. The scorecard (step 1) measures it, so we don't guess.
 
 | Step | Build | Size | Why here |
 | --- | --- | --- | --- |
-| 0 | **P1 Dashboard + P2 saved connections and remix** (see Portfolio below) | 3 sessions | The next sites are remixes of Ansco on the same tenant |
+| 0 | **P1 Dashboard + P2 saved connections and remix** (see Portfolio below) (**built**) | 3 sessions | The next sites are remixes of Ansco on the same tenant |
 | 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline | 1 session | Every later step claims fewer cards or rejections; this proves it |
 | 2 | **No-repo mode**: start from the public website alone, no source repository (**built**) | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
 | 3 | **A2a Lead triage + autonomy settings** (+ the rules table) | 1½ sessions | Biggest cut left in cards |
