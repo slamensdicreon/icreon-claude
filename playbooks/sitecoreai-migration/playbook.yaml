@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai.
 id: sitecoreai-migration
-version: 0.6.1
+version: 0.6.2
 name: Build a SitecoreAI website
 description: >-
   Rebuilds a client's site from its Next.js repository as a Content SDK site on SitecoreAI,

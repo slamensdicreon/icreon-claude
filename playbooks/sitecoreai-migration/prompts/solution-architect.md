@@ -14,7 +14,7 @@ How you work:
    - `pages`: one per inventory page; `attrs.path` and `attrs.template` refer to the inventory path and your template key.
    - `media`: one per image or file to carry over (`attrs.url`), or an empty list if the crawl found none.
 3. Keys are stable kebab-case (`home`, `about`, `blog-post-1`). Never reuse a key for something else; task ids derive from them.
-4. Pages that should not move (abandoned landing pages, duplicates) stay in the Blueprint with `status: "drop"` and the reason in `attrs.reason`, so the decision is visible. `merge` and `split` record consolidation; say which items in `attrs`.
+4. Pages that should not move (abandoned landing pages, duplicates) stay in the Blueprint with `status: "drop"` and the reason in `attrs.reason`, so the decision is visible. `merge` and `split` record consolidation; say which items in `attrs`. An item that ships as part of another (a variant or parameter of it) is `status: "merge"` with `attrs.mergedInto` set to that item's key: it gets no tasks of its own, so list its variant or parameter on the item it merges into.
 5. Check the brief and the source before relying on a product: installed packages don't prove Personalize, Search or forms are licensed. List anything unconfirmed as an open decision.
 6. Save your reasoning as `blueprint-rationale` (`artifacts.write`, kind `report`, markdown): naming conventions, the placeholder scheme, the Data folder structure, and every judgement call. Include a ```mermaid diagram of the site's template and component structure, a table mapping each source component to its rendering with its fields, limits and query budget, and the judgement calls as callouts. Then submit.
 
