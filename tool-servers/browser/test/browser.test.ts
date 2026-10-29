@@ -141,6 +141,71 @@ describe('crawl', () => {
   }, 60_000);
 });
 
+describe('page.markup, page.styles', () => {
+  it('outlines a page’s sections, looking through a single wrapper', async () => {
+    const r = await browser.call('page.markup', { url: `${origin}/styled` }, ctx);
+    const { sections } = r.body as {
+      sections: { selector: string; tag: string; classes: string[]; headings: string[] }[];
+    };
+    expect(sections.map((s) => [s.tag, s.classes[0] ?? null, s.headings[0] ?? null])).toEqual([
+      ['header', 'site-header', null],
+      ['section', 'hero', 'Built to last'],
+      ['section', 'cards', 'What we do'],
+      ['footer', null, null],
+    ]);
+  }, 30_000);
+
+  it('returns one section’s markup without scripts, handlers or tracking', async () => {
+    const outline = await browser.call('page.markup', { url: `${origin}/styled` }, ctx);
+    const hero = (outline.body as { sections: { selector: string }[] }).sections[1]!;
+    const r = await browser.call(
+      'page.markup',
+      { url: `${origin}/styled`, selector: hero.selector },
+      ctx,
+    );
+    const { html, truncated } = r.body as { html: string; truncated: boolean };
+    expect(r.code).toBe(200);
+    expect(html).toContain('<section class="hero">');
+    expect(html).toContain('<h1>Built to last</h1>');
+    expect(html).not.toMatch(/script|onclick|data-track/);
+    expect(truncated).toBe(false);
+    const missing = await browser.call(
+      'page.markup',
+      { url: `${origin}/styled`, selector: '.nope' },
+      ctx,
+    );
+    expect(missing.code).toBe(404);
+  }, 30_000);
+
+  it('reads computed styles and design tokens', async () => {
+    const r = await browser.call(
+      'page.styles',
+      { url: `${origin}/styled`, selectors: ['.hero', '.hero h1', '.cards', '.nope'] },
+      ctx,
+    );
+    const body = r.body as {
+      elements: { selector: string; matches: number; styles: Record<string, string> | null }[];
+      tokens: {
+        fonts: { family: string }[];
+        customProperties: Record<string, string>;
+        breakpoints: string[];
+      };
+    };
+    const [hero, h1, cards, nope] = body.elements;
+    expect(hero!.styles).toMatchObject({
+      'background-color': 'rgb(228, 0, 43)',
+      padding: '48px 24px',
+    });
+    expect(hero!.styles!['clip-path']).toContain('polygon');
+    expect(h1!.styles).toMatchObject({ 'font-size': '40px', 'font-weight': '700' });
+    expect(cards).toMatchObject({ matches: 1, styles: { display: 'grid', gap: '16px' } });
+    expect(nope).toEqual({ selector: '.nope', matches: 0, styles: null });
+    expect(body.tokens.fonts[0]!.family).toBe('Georgia');
+    expect(body.tokens.customProperties).toEqual({ '--brand': '#e4002b', '--ink': '#1a1a1a' });
+    expect(body.tokens.breakpoints).toEqual(['(max-width: 768px)']);
+  }, 30_000);
+});
+
 describe('snapshot, screenshot, fetch.asset', () => {
   it('captures one page’s blocks in order', async () => {
     const r = await browser.call('snapshot', { url: `${origin}/` }, ctx);

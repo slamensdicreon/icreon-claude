@@ -23,6 +23,15 @@ templates:
     phase: 1
     role: repo-analyst
     title: Inventory components, routes and assets
+    when: source-repo
+    uses: [github, artifacts]
+  # No source repository: the live site is the source, read as rendered.
+  - id: inventory-live-ui
+    phase: 1
+    role: repo-analyst
+    title: Inventory components and design system from the live site
+    unless: source-repo
+    uses: [browser, artifacts]
   - id: crawl-site
     phase: 1
     role: content-analyst
@@ -37,7 +46,7 @@ templates:
     phase: 2
     role: solution-architect
     title: Draft the Implementation Blueprint
-    dependsOn: [inventory-repo, crawl-site, platform-notes]
+    dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
     acceptance: [validator:blueprint.coverage]
 
   # 3 — Foundation

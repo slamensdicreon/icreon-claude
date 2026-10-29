@@ -39,6 +39,11 @@ tools:
       - tree.read
       - repo.read
       - code.search
+  browser:
+    ops:
+      - screenshot
+      - page.markup
+      - page.styles
   blackboard:
     ops:
       - read

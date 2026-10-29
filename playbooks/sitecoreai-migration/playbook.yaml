@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai.
 id: sitecoreai-migration
-version: 0.4.0
+version: 0.5.0
 name: Build a SitecoreAI website
 description: >-
   Rebuilds a client's site from its Next.js repository as a Content SDK site on SitecoreAI,
@@ -43,9 +43,12 @@ charter:
         guide and known-gaps register delivered.
 intake:
   source:
-    repo: required
+    repo: optional
     url: optional
-    intro: The code being migrated. Agents read it; the new site is built in a repository of its own.
+    intro: >-
+      The code being migrated, the live site, or both. Agents read the code when there is a
+      repository; without one they rebuild from the live site's rendered markup and styles. The new
+      site is built in a repository of its own.
   steps:
     - title: SitecoreAI
       intro: The SitecoreAI environment the site is built in.

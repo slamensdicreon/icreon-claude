@@ -131,13 +131,21 @@ export class IntakeService {
     return { entry, pack, spec: intakeSpec(entry.playbook, pack) };
   }
 
-  /** Features the brief switched on: a yes to a question that names one. */
+  /**
+   * Features the project switches on: `source-repo` when it has a source repository (templates
+   * that read the code need one; their live-site stand-ins run without it), and a yes to a brief
+   * question that names one.
+   */
   private featuresOf(s: ProjectState): string[] {
-    if (!s.playbook || !this.deps.catalog.has(s.playbook.id)) return [];
+    const source = s.intake?.repo ? ['source-repo'] : [];
+    if (!s.playbook || !this.deps.catalog.has(s.playbook.id)) return source;
     const questions = this.resolve(s.playbook.id).spec.brief;
-    return questions
-      .filter((q) => q.feature && s.brief.find((b) => b.key === q.key)?.answer === 'yes')
-      .map((q) => q.feature!);
+    return [
+      ...source,
+      ...questions
+        .filter((q) => q.feature && s.brief.find((b) => b.key === q.key)?.answer === 'yes')
+        .map((q) => q.feature!),
+    ];
   }
 
   /** The platform pack a project runs on, from its intake. */
@@ -221,6 +229,12 @@ export class IntakeService {
       throw new CommandError(422, 'invalid', 'The source repository is required.');
     if (spec.source.url === 'required' && !url)
       throw new CommandError(422, 'invalid', 'The live site is required.');
+    if (spec.source.repo !== 'none' && spec.source.url !== 'none' && !repo && !url)
+      throw new CommandError(
+        422,
+        'invalid',
+        'Give the source repository or the live site: without a repository, agents rebuild from the live site.',
+      );
     const brief = briefOf(spec, intake.brief);
     let target: TargetValues;
     try {

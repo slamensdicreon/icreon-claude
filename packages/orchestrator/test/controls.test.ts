@@ -143,7 +143,7 @@ describe('pause and cancel below the project', () => {
     const gateOpen = new Promise<void>((r) => (release = r));
     const runner = {
       async run(req: RunRequest) {
-        if (req.task.taskId === 'inventory-repo') await gateOpen;
+        if (req.task.taskId === 'inventory-live-ui') await gateOpen;
         return {
           kind: 'done' as const,
           summary: 'ok',
@@ -153,17 +153,21 @@ describe('pause and cancel below the project', () => {
       },
     };
     const p = await launch(h, { runner });
-    await until(() => p.state()?.tasks['inventory-repo']?.state === 'running');
-    await p.commands.control({ verb: 'pause', scope: { kind: 'task', id: 'inventory-repo' } });
+    await until(() => p.state()?.tasks['inventory-live-ui']?.state === 'running');
+    await p.commands.control({ verb: 'pause', scope: { kind: 'task', id: 'inventory-live-ui' } });
     expect(missionControl(p.state()!).project.holds).toEqual([
-      { kind: 'task', id: 'inventory-repo', label: 'Inventory components, routes and assets' },
+      {
+        kind: 'task',
+        id: 'inventory-live-ui',
+        label: 'Inventory components and design system from the live site',
+      },
     ]);
     release();
-    await until(() => p.state()!.tasks['inventory-repo']!.state === 'paused');
+    await until(() => p.state()!.tasks['inventory-live-ui']!.state === 'paused');
     await new Promise((r) => setTimeout(r, 300));
-    expect(p.state()!.tasks['inventory-repo']!.state).toBe('paused');
-    await p.commands.control({ verb: 'resume', scope: { kind: 'task', id: 'inventory-repo' } });
-    await until(() => p.state()!.tasks['inventory-repo']!.state === 'done');
+    expect(p.state()!.tasks['inventory-live-ui']!.state).toBe('paused');
+    await p.commands.control({ verb: 'resume', scope: { kind: 'task', id: 'inventory-live-ui' } });
+    await until(() => p.state()!.tasks['inventory-live-ui']!.state === 'done');
     await p.handle.terminate();
   }, 60_000);
 

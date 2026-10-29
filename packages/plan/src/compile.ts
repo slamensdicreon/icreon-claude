@@ -78,7 +78,10 @@ export function compilePlan(
   const expanded = new Map<string, { template: TaskTemplate; key: string | null }>();
   const skipped = new Set<string>();
   for (const template of playbook.plan.templates) {
-    if (template.when && !options.features?.includes(template.when)) {
+    if (
+      (template.when && !options.features?.includes(template.when)) ||
+      (template.unless && options.features?.includes(template.unless))
+    ) {
       skipped.add(template.id.replace(/\{key\}.*$/, ''));
       continue;
     }

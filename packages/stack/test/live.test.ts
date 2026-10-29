@@ -352,10 +352,11 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
   const pack = await stack.library.read('p1', 'handover-pack');
   expect(pack!.content).toMatch(/^# Decision register\n- /);
 
-  // Only the live roles called the model.
+  // Only the live roles called the model; without a repository the Repo Analyst reads the live site.
   expect([...new Set(claude.roles)].sort()).toEqual([
     'Your role: Content Analyst.',
     'Your role: Handover Writer.',
+    'Your role: Repo Analyst.',
     'Your role: Solution Architect.',
     'Your role: Visual QA.',
   ]);

@@ -33,7 +33,7 @@ with A1 and A2 together. The scorecard (step 1) measures it, so we don't guess.
 | --- | --- | --- | --- |
 | 0 | **P1 Dashboard + P2 saved connections and remix** (see Portfolio below) | 3 sessions | The next sites are remixes of Ansco on the same tenant |
 | 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline | 1 session | Every later step claims fewer cards or rejections; this proves it |
-| 2 | **No-repo mode**: start from the public website alone, no source repository | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
+| 2 | **No-repo mode**: start from the public website alone, no source repository (**built**) | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
 | 3 | **A2a Lead triage + autonomy settings** (+ the rules table) | 1½ sessions | Biggest cut left in cards |
 | 4 | **A2b Rules from answers** ("Make this a rule", Settings → Rules, harvest Ansco's answers) | 1 session | Makes triage smarter every time the Director answers |
 | 5 | **A3 Project facts** (+ self-check before submitting) | 2 sessions | Ends "which ID?" waits and many rejections |
@@ -97,6 +97,27 @@ What doesn't:
   with `parity.visual`. The `codeExtraction` brief question doesn't apply and is hidden.
 - **Test:** a project created from just a URL runs phases 1–2 to an approved Blueprint in the
   simulator; a stack test drives `page.markup` and `page.styles` against a local fixture site.
+
+**As built (playbook 0.5.0):**
+
+- Intake takes a repository, the live site, or both; with neither it refuses ("Give the source
+  repository or the live site"). The wizard says what agents work from when the repository is
+  left blank. A project with a repository gets the `source-repo` feature (`IntakeService.featuresOf`).
+- Templates take `unless:`. `inventory-repo` is `when: source-repo, uses: [github, artifacts]`;
+  `inventory-live-ui` is `unless: source-repo, uses: [browser, artifacts]`, run by the Repo
+  Analyst, and `draft-blueprint` depends on both (the one skipped is dropped).
+- Browser `page.markup` (section outline without a selector; cleaned markup with one, 30k cap) and
+  `page.styles` (computed styles for up to 20 selectors, design tokens, `:root` custom properties,
+  width breakpoints, stylesheets). They run inside the page (`tool-servers/browser/src/structure.ts`)
+  and are tested against the fixture site's `styled.html`. Granted to the Repo Analyst and the
+  Component Engineer.
+- Prompts: the Repo Analyst's live-site inventory (`repo-inventory` with `source: live-site`,
+  selectors, variants and a `designSystem`); the Component Engineer builds from markup and computed
+  styles and never calls `github` on such a project; the Solution Architect keeps each component's
+  page and selector in `attrs`.
+- Running projects keep the playbook they started with, so Ansco is unaffected.
+- Not done: hiding the `codeExtraction` brief question, and Head Integrator prompt changes (it
+  works on the build repository either way).
 
 ## Step 3 — Lead triage and autonomy (A2a)
 

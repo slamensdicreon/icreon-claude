@@ -4,6 +4,11 @@ inventory-repo:
     - artifactId: component-inventory
       kind: inventory
       title: Component inventory
+inventory-live-ui:
+  artifacts:
+    - artifactId: component-inventory
+      kind: inventory
+      title: Component inventory
 crawl-site:
   artifacts:
     - artifactId: page-inventory

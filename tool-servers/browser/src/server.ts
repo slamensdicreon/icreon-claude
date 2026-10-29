@@ -3,6 +3,7 @@ import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/to
 import type { BrowserContext } from 'playwright-core';
 import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
 import { extractContent, extractPage, type PageExtract } from './extract';
+import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
 import { assertNavigable, BlockedUrlError, type UrlPolicy } from './ssrf';
 
 export interface BrowserServerOptions {
@@ -84,6 +85,37 @@ const CATALOG: OperationCatalog = {
     mutates: false,
     untrusted: true,
   },
+  'page.markup': {
+    description:
+      "A live page's structure for rebuilding it without the source code. Without `selector`: its sections in order (header, each section of the main content, footer), each with a selector, tag, classes, headings, first words and markup size. With `selector` (one from the outline, or any CSS selector): that element's markup, cleaned (classes, structure, links, images and text kept; scripts, styles, handlers and tracking removed), up to `maxChars` (default 30000).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        selector: { type: 'string' },
+        maxChars: { type: 'integer', minimum: 1000, maximum: 100000 },
+      },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'page.styles': {
+    description:
+      "How a live page looks, in values a builder can use: computed styles (font, size, weight, colour, background, spacing, border, radius, layout, clip-path) of up to 20 selectors at desktop width, plus the page's design tokens (most used fonts, text colours, backgrounds and font sizes; :root custom properties; media-query breakpoints) and its stylesheets.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        selectors: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+      },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
 };
 
 /** Tool server for everything that needs a real browser against the source site. */
@@ -138,6 +170,9 @@ export class BrowserToolServer implements ToolServer {
           );
         case 'fetch.asset':
           return await this.fetchAsset(ctx.projectId, policy, String(args.url));
+        case 'page.markup':
+        case 'page.styles':
+          return await this.structure(policy, op, args);
         default:
           return { code: 400, body: { error: `Unknown operation ${op}` } };
       }
@@ -147,6 +182,61 @@ export class BrowserToolServer implements ToolServer {
         return { code: 422, body: { error: err.message }, summary: `Blocked: ${err.message}` };
       throw err;
     }
+  }
+
+  /** Section outline, one section's markup, or styles: read from the page as rendered at desktop width. */
+  private async structure(
+    policy: UrlPolicy,
+    op: 'page.markup' | 'page.styles',
+    args: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const url = await assertNavigable(String(args.url), policy);
+    return this.withPage(policy, async (context) => {
+      const page = await context.newPage();
+      await page.setViewportSize(BREAKPOINTS.desktop);
+      const response = await page.goto(url.toString(), {
+        waitUntil: 'load',
+        timeout: this.opts.navigationTimeoutMs ?? 30_000,
+      });
+      const status = response?.status() ?? 0;
+      const run = <T>(fn: (...a: never[]) => T, ...a: unknown[]) =>
+        page.evaluate(
+          `(${fn.toString()})(${a.map((x) => JSON.stringify(x)).join(',')})`,
+        ) as Promise<T>;
+      try {
+        if (op === 'page.styles') {
+          const selectors = ((args.selectors as string[] | undefined) ?? []).slice(0, 20);
+          const styles = await run(readStyles, selectors, STYLE_PROPS);
+          return {
+            code: status,
+            body: { url: canonical(page.url()), ...styles },
+            summary: `Styles of ${canonical(page.url())}: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties`,
+          };
+        }
+        if (typeof args.selector !== 'string' || !args.selector) {
+          const sections = await run(outlineSections);
+          return {
+            code: status,
+            body: { url: canonical(page.url()), sections },
+            summary: `${sections.length} sections on ${canonical(page.url())}`,
+          };
+        }
+        const markup = await run(cleanMarkup, args.selector, Number(args.maxChars ?? 30_000));
+        if (!markup.found)
+          return {
+            code: 404,
+            body: { error: `Nothing matches ${args.selector} on ${canonical(page.url())}` },
+            summary: `No element matches ${args.selector}`,
+          };
+        return {
+          code: status,
+          body: { url: canonical(page.url()), selector: args.selector, ...markup },
+          summary: `Markup of ${args.selector}: ${markup.html.length} characters${markup.truncated ? ' (truncated)' : ''}`,
+        };
+      } finally {
+        await page.close();
+      }
+    });
   }
 
   private async load(context: BrowserContext, policy: UrlPolicy, raw: string, full = false) {

@@ -158,6 +158,11 @@ export const TaskTemplate = z.object({
    */
   when: Kebab.optional(),
   /**
+   * The opposite of `when`: with that feature the template yields no task (e.g. a live-site
+   * stand-in for a step that reads the source repository, `unless: source-repo`).
+   */
+  unless: Kebab.optional(),
+  /**
    * A release (deploy, publish, register a host): it waits for the Director's approval, which
    * shows the rollback plan, and only release tasks may call release-affecting operations.
    */

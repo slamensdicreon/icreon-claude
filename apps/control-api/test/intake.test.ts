@@ -175,7 +175,7 @@ describe('New Project wizard', () => {
     const pb = list.find((p) => p.id === 'sitecoreai-migration')!;
     expect(pb.platform).toEqual({ id: 'sitecoreai', name: 'SitecoreAI' });
     expect(pb.charter.outcomes.map((o) => o.id)).toContain('marketer-autonomy');
-    expect(pb.intake.source).toMatchObject({ repo: 'required', url: 'optional' });
+    expect(pb.intake.source).toMatchObject({ repo: 'optional', url: 'optional' });
     expect(pb.intake.steps.map((s) => s.title)).toEqual(['SitecoreAI', 'Edge and hosting']);
     expect(pb.intake.steps[0]!.credentials).toEqual([
       expect.objectContaining({
@@ -239,9 +239,27 @@ describe('New Project wizard', () => {
         sourceUrl: 'https://www.globex.example',
         budgets: { usd: 900, tokens: 6_000_000, hours: 200 },
         playbookId: 'sitecoreai-migration',
-        features: [],
+        features: ['source-repo'],
       },
     ]);
+  });
+
+  it('starts a project without a repository from the live site alone, and needs one of the two', async () => {
+    const { started } = await start({ orchestrator: true });
+    const neither = await post('/projects', {
+      ...intake(),
+      source: { repo: null, url: null },
+    });
+    expect(neither.statusCode).toBe(422);
+    expect(neither.json().error.message).toMatch(/source repository or the live site/);
+    const r = await post('/projects', {
+      ...intake(),
+      source: { repo: null, url: 'https://www.globex.example' },
+    });
+    expect(r.statusCode).toBe(201);
+    const { projectId } = r.json() as { projectId: string };
+    expect((await post(`/projects/${projectId}/start`)).statusCode).toBe(200);
+    expect(started.at(-1)!.features).toEqual([]);
   });
 
   it('records the brief, refuses a missing answer, and switches features on from it', async () => {
@@ -269,7 +287,7 @@ describe('New Project wizard', () => {
       answer: 'LCP under 2.5 s',
     });
     await post(`/projects/${projectId}/start`);
-    expect(started.at(-1)!.features).toEqual(['personalization']);
+    expect(started.at(-1)!.features).toEqual(['source-repo', 'personalization']);
   });
 
   it('answers the brief after intake, for a project created before it was asked', async () => {

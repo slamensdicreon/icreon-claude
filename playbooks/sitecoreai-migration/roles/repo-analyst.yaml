@@ -1,7 +1,7 @@
 role: repo-analyst
 name: Repo Analyst
 persona: 'Priya Patel'
-description: 'Reads the source repository. Lists every component, route, dependency and media file, and flags code that will not carry over.'
+description: 'Reads the source repository, or the live site when there is none. Lists every component, route, dependency and media file, and flags what will not carry over.'
 tier: specialist
 reportsTo: discovery-lead
 workstream: discovery
@@ -23,6 +23,12 @@ tools:
       - repo.read
       - tree.read
       - code.search
+  browser:
+    ops:
+      - snapshot
+      - screenshot
+      - page.markup
+      - page.styles
   artifacts:
     ops:
       - write

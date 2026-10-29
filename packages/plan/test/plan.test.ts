@@ -181,6 +181,20 @@ describe('compilePlan', () => {
     });
   });
 
+  it('inventories the repository with one, and the live site without (`unless`)', () => {
+    const ids = (features?: string[]) =>
+      compilePlan(pb, blueprint(), { features }).tasks.map((t) => t.taskId);
+    const deps = (features?: string[]) =>
+      compilePlan(pb, blueprint(), { features }).tasks.find((t) => t.taskId === 'draft-blueprint')!
+        .dependsOn;
+    expect(ids(['source-repo'])).toContain('inventory-repo');
+    expect(ids(['source-repo'])).not.toContain('inventory-live-ui');
+    expect(deps(['source-repo'])).toEqual(['inventory-repo', 'crawl-site', 'platform-notes']);
+    expect(ids()).toContain('inventory-live-ui');
+    expect(ids()).not.toContain('inventory-repo');
+    expect(deps()).toEqual(['inventory-live-ui', 'crawl-site', 'platform-notes']);
+  });
+
   it('turns the checkpoint into a Director gate when the optional gate is on', () => {
     const plan = compilePlan(pb, blueprint(), { enabledGates: ['pilot-slice-review'] });
     expect(plan.tasks.find((t) => t.taskId === PILOT_CHECKPOINT)).toMatchObject({

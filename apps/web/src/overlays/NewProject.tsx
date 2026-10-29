@@ -200,7 +200,11 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
           (source!.repo === 'none' ||
             (repoOk && Boolean(f.branch.trim())) ||
             (source!.repo === 'optional' && !f.repo.trim())) &&
-            urlOk,
+            urlOk &&
+            // Without a repository the live site is the source: one of the two is needed.
+            (source!.repo === 'none' ||
+              source!.url === 'none' ||
+              Boolean(f.repo.trim() || f.sourceUrl.trim())),
         ]
       : []),
     ...steps.map(
@@ -461,8 +465,11 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
             branch: f.branch.trim(),
           }))}
           <p className="wiz-hint">
-            Optional now: if the client hasn’t installed the app yet, the project records it and you
-            can check again from Settings.
+            {source.repo === 'optional'
+              ? 'No repository? Leave it blank and give the live site: agents inventory it and rebuild each component from its pages’ markup and styles. '
+              : ''}
+            If the client hasn’t installed the app yet, the project records it and you can check
+            again from Settings.
           </p>
         </>
       )}

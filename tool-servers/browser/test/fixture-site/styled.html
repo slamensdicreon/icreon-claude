@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Styled | Acme</title>
+    <style>
+      :root { --brand: #e4002b; --ink: #1a1a1a; }
+      body { font-family: Georgia, serif; color: rgb(26, 26, 26); margin: 0; }
+      .hero { background-color: rgb(228, 0, 43); color: white; padding: 48px 24px; clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%); }
+      .hero h1 { font-size: 40px; font-weight: 700; }
+      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      @media (max-width: 768px) { .cards { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header class="site-header"><a href="/">Acme</a></header>
+    <main>
+      <div class="page">
+        <section class="hero" data-track="hero-1" onclick="track()">
+          <h1>Built to last</h1>
+          <p>Since 1970.</p>
+          <script>window.track = () => {};</script>
+        </section>
+        <section class="cards">
+          <h2>What we do</h2>
+          <article class="card">Widgets</article>
+          <article class="card">Gadgets</article>
+        </section>
+      </div>
+    </main>
+    <footer>© Acme</footer>
+  </body>
+</html>
