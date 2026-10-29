@@ -23,6 +23,7 @@ import type {
   PlanSnapshot,
   PreviewPage,
   PreviewSnapshot,
+  PortfolioItem,
   ProjectListItem,
   ProjectSource,
   ProjectStatus,
@@ -753,6 +754,26 @@ export function projectListItem(s: ProjectState): ProjectListItem {
     initials: p.initials,
     subtitle: p.subtitle,
     demo: p.demo,
+  };
+}
+
+/** A project on the Dashboard: its list entry plus plan progress, spend, and where it lives. */
+export function portfolioItem(s: ProjectState): PortfolioItem {
+  const summary = projectSummary(s);
+  const phases = Object.values(s.phases);
+  return {
+    ...projectListItem(s),
+    healthReason: summary.healthReason,
+    playbook: s.playbook,
+    phases: { total: phases.length, done: phases.filter((p) => p.status === 'done').length },
+    budgets: s.budgets,
+    spent: s.spent,
+    createdAt: s.createdAt,
+    startedAt: s.startedAt,
+    lastActivityAt: s.latest[0]?.ts ?? null,
+    sourceUrl: s.sourceUrl,
+    liveUrl: s.hosting?.url ?? null,
+    capabilityGaps: Object.values(s.capabilityGaps).filter((g) => !g.closedAt).length,
   };
 }
 

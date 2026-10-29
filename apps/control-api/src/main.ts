@@ -29,7 +29,7 @@ import { openBlobStore } from '@lw/tool-gateway';
 import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
-import { buildApp } from './app';
+import { buildApp, type WorkerHeartbeat } from './app';
 import { GithubApp } from '@lw/connectors';
 import { IntakeService, type StartInput } from './intake';
 import { SITECORE_DEFAULTS } from '@lw/connectors';
@@ -422,6 +422,7 @@ const app = await buildApp({
     maxMs: env.STREAM_MAX_SECONDS ? env.STREAM_MAX_SECONDS * 1000 : null,
   },
   logger: true,
+  heartbeat: integrations ? () => integrations.get<WorkerHeartbeat>('heartbeat:worker') : undefined,
 });
 
 await seedSample?.();

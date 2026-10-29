@@ -96,5 +96,15 @@ export const PlaybookSummary = z.object({
   platform: z.object({ id: z.string(), name: z.string() }),
   charter: Charter,
   intake: IntakeSpec,
+  /** The engagement's phases in order, with the Director's gates. */
+  phases: z
+    .array(z.object({ number: z.number().int(), name: z.string(), gate: z.string().nullable() }))
+    .default([]),
+  /** The team: each role's name and what it does. */
+  roles: z
+    .array(
+      z.object({ role: z.string(), name: z.string(), tier: z.string(), description: z.string() }),
+    )
+    .default([]),
 });
 export type PlaybookSummary = z.infer<typeof PlaybookSummary>;

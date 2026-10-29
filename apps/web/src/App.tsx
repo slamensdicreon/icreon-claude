@@ -11,6 +11,7 @@ import { MobileNav, Sidebar, Strip, Toasts, useAwayLine } from './Shell';
 import { AppProvider, useApp, useMission, type Surface } from './state';
 import { Activity } from './surfaces/Activity';
 import { GithubAppPanel } from './surfaces/GithubApp';
+import { Dashboard } from './surfaces/Dashboard';
 import { Inbox } from './surfaces/Inbox';
 import { Mission } from './surfaces/Mission';
 import { Plan } from './surfaces/Plan';
@@ -76,6 +77,8 @@ function Frame() {
     layout.sideOpen && 'side-open',
     layout.dockOpen && 'dock-open',
     layout.present && 'present',
+    // The Dashboard has no project, so no dock beside it.
+    !projectId && 'home',
   ]
     .filter(Boolean)
     .join(' ');
@@ -88,7 +91,7 @@ function Frame() {
         <main className="canvas">
           <Strip />
           <div className="surface" ref={surfaceRef} tabIndex={-1}>
-            {projectId ? <Body key={projectId} /> : <Empty loaded={projects.length > 0} />}
+            {projectId ? <Body key={projectId} /> : projects.length ? <Dashboard /> : <Empty />}
           </div>
           <Inspector />
         </main>
@@ -101,18 +104,8 @@ function Frame() {
   );
 }
 
-function Empty({ loaded }: { loaded: boolean }) {
+function Empty() {
   const { openOverlay } = useApp();
-  if (loaded) {
-    return (
-      <div className="page-head">
-        <div>
-          <h1>Choose a project</h1>
-          <p>Pick a project from the switcher at the top of the sidebar.</p>
-        </div>
-      </div>
-    );
-  }
   return (
     <>
       <div className="page-head">

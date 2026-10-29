@@ -343,6 +343,55 @@ export const ProjectListItem = ProjectSummary.pick({
 });
 export type ProjectListItem = z.infer<typeof ProjectListItem>;
 
+/** One project on the Dashboard: where it stands, what it costs, and where it lives. */
+export const PortfolioItem = ProjectListItem.extend({
+  healthReason: z.string().nullable(),
+  playbook: z.object({ id: z.string(), version: z.string() }).nullable(),
+  /** Phases in the project's plan, and how many are done. */
+  phases: z.object({ total: z.number().int(), done: z.number().int() }),
+  budgets: Budgets,
+  spent: Spend,
+  createdAt: z.iso.datetime().nullable(),
+  startedAt: z.iso.datetime().nullable(),
+  /** The newest thing that happened on the project. */
+  lastActivityAt: z.iso.datetime().nullable(),
+  sourceUrl: z.string().nullable(),
+  /** The new site, as deployed. */
+  liveUrl: z.string().nullable(),
+  /** Open capability gaps: tasks waiting on tools engineering hasn't built. */
+  capabilityGaps: z.number().int(),
+});
+export type PortfolioItem = z.infer<typeof PortfolioItem>;
+
+/** A service the system runs on, as last seen. */
+export const ServiceHealth = z.object({
+  key: z.string(),
+  label: z.string(),
+  status: z.enum(['ok', 'degraded', 'down', 'unknown']),
+  detail: z.string(),
+  checkedAt: z.iso.datetime().nullable(),
+});
+export type ServiceHealth = z.infer<typeof ServiceHealth>;
+
+/** Health across services and projects, for the Dashboard. */
+export const PortfolioDiagnostics = z.object({
+  services: z.array(ServiceHealth),
+  projects: z.array(
+    z.object({
+      projectId: z.string(),
+      name: z.string(),
+      status: ProjectStatus,
+      /** The orchestrator's state: running, stalled on a failed step, or ended. */
+      orchestrator: z.object({
+        status: z.enum(['ok', 'stalled', 'ended', 'unknown']),
+        detail: z.string(),
+      }),
+      attention: z.array(z.string()),
+    }),
+  ),
+});
+export type PortfolioDiagnostics = z.infer<typeof PortfolioDiagnostics>;
+
 export const ArtifactVersionView = z.object({
   version: z.number().int().positive(),
   ts: z.iso.datetime(),

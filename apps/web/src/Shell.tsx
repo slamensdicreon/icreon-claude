@@ -24,8 +24,19 @@ const NAV: [Surface, string, string][] = [
 
 export function Sidebar() {
   const app = useApp();
-  const { projects, projectId, surface, go, me, layout, setLayout, theme, setTheme, openOverlay } =
-    app;
+  const {
+    projects,
+    projectId,
+    surface,
+    go,
+    home,
+    me,
+    layout,
+    setLayout,
+    theme,
+    setTheme,
+    openOverlay,
+  } = app;
   const p = projects.find((x) => x.id === projectId);
   const waiting = p?.waitingCount ?? 0;
   const scenarios = useProjectResource<{ key: string; label: string }[]>('/scenarios').data ?? [];
@@ -43,10 +54,12 @@ export function Sidebar() {
       <button className="projsw" title={p?.name} onClick={() => openOverlay(<ProjectMenu />)}>
         <Icon name="chevron--down" sm style={{ order: 3, color: 'var(--web-fg-2)' }} />
         <span className="ini" aria-hidden="true">
-          {p?.initials ?? '…'}
+          {p?.initials ?? (projects.length ? <Icon name="dashboard" sm /> : '…')}
         </span>
         <span className="pm">
-          <div className="pn">{p?.name ?? 'Loading projects'}</div>
+          <div className="pn">
+            {p?.name ?? (projects.length ? 'All projects' : 'Loading projects')}
+          </div>
           <div className="ps">
             {p?.demo && <span className="pm-demo first">Demo</span>}
             {p?.subtitle ?? p?.client ?? ''}
@@ -54,30 +67,42 @@ export function Sidebar() {
         </span>
       </button>
       <div className="side-nav">
-        <div className="side-label">Project</div>
-        {NAV.map(([s, icon, label]) => (
-          <button
-            key={s}
-            className="nav sl"
-            aria-current={surface === s ? 'page' : undefined}
-            title={label}
-            onClick={() => go(s)}
-          >
-            <Icon name={icon} />
-            <span className="lbl">{label}</span>
-            {s === 'inbox' && waiting > 0 && <span className="count">{waiting}</span>}
-          </button>
-        ))}
-        <div className="side-label">Manage</div>
         <button
           className="nav sl"
-          aria-current={surface === 'settings' ? 'page' : undefined}
-          title="Settings"
-          onClick={() => go('settings')}
+          aria-current={!projectId ? 'page' : undefined}
+          title="Dashboard"
+          onClick={home}
         >
-          <Icon name="gear" />
-          <span className="lbl">Settings</span>
+          <Icon name="dashboard" />
+          <span className="lbl">Dashboard</span>
         </button>
+        {projectId && <div className="side-label">Project</div>}
+        {projectId &&
+          NAV.map(([s, icon, label]) => (
+            <button
+              key={s}
+              className="nav sl"
+              aria-current={surface === s ? 'page' : undefined}
+              title={label}
+              onClick={() => go(s)}
+            >
+              <Icon name={icon} />
+              <span className="lbl">{label}</span>
+              {s === 'inbox' && waiting > 0 && <span className="count">{waiting}</span>}
+            </button>
+          ))}
+        <div className="side-label">Manage</div>
+        {projectId && (
+          <button
+            className="nav sl"
+            aria-current={surface === 'settings' ? 'page' : undefined}
+            title="Settings"
+            onClick={() => go('settings')}
+          >
+            <Icon name="gear" />
+            <span className="lbl">Settings</span>
+          </button>
+        )}
         <button className="nav sl" title="New project" onClick={() => openOverlay(<NewProject />)}>
           <Icon name="application" />
           <span className="lbl">New project</span>
@@ -270,6 +295,8 @@ export function Strip() {
 export function MobileNav() {
   const { surface, go, layout, setLayout, openOverlay, projects, projectId } = useApp();
   const waiting = projects.find((p) => p.id === projectId)?.waitingCount ?? 0;
+  // The Dashboard has no project surfaces to switch between.
+  if (!projectId) return null;
   const item = (s: Surface, icon: string, label: string) => (
     <button className="mn" aria-current={surface === s ? 'page' : undefined} onClick={() => go(s)}>
       <Icon name={icon} />

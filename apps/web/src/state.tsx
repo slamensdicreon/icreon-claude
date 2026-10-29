@@ -92,6 +92,8 @@ interface AppValue {
   projects: ProjectListItem[];
   projectId: string | null;
   switchProject: (id: string) => void;
+  /** The Dashboard: every project, the playbook catalog and diagnostics, above any one project. */
+  home: () => void;
   surface: Surface;
   go: (s: Surface, patch?: Partial<ProjectUi>) => void;
   ui: ProjectUi;
@@ -190,9 +192,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       get<ProjectListItem[]>('/projects')
         .then((list) => {
           setProjects(list);
-          setProjectId((cur) =>
-            cur && list.some((p) => p.id === cur) ? cur : (list[0]?.id ?? null),
-          );
+          // No project in the address means the Dashboard; a project that's gone does too.
+          setProjectId((cur) => (cur && list.some((p) => p.id === cur) ? cur : null));
         })
         .catch(() => {}),
     [],
@@ -205,14 +206,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Keep the URL in step, and follow the back button.
   useEffect(() => {
-    if (!projectId) return;
-    const path = `/p/${encodeURIComponent(projectId)}/${surface}`;
+    const path = projectId ? `/p/${encodeURIComponent(projectId)}/${surface}` : '/';
     if (location.pathname !== path) history.pushState(null, '', path);
   }, [projectId, surface]);
   useEffect(() => {
     const onPop = () => {
       const p = parsePath();
-      if (p.projectId) setProjectId(p.projectId);
+      setProjectId(p.projectId);
       setSurface(p.surface);
     };
     window.addEventListener('popstate', onPop);
@@ -269,9 +269,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     switchProject: (id) => {
       if (id === projectId) return;
       setInspector(null);
+      // From the Dashboard a project opens on Mission Control.
+      if (!projectId) setSurface('mission');
       setProjectId(id);
       const p = projects.find((x) => x.id === id);
       if (p) toast(`Switched to ${p.name}`);
+    },
+    home: () => {
+      setInspector(null);
+      setProjectId(null);
+      setLayoutState((l) => ({ ...l, dockOpen: false }));
     },
     surface,
     go: (s, patch) => {

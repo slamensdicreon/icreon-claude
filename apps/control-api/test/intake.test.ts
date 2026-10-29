@@ -184,7 +184,8 @@ describe('New Project wizard', () => {
       }),
       expect.objectContaining({ credentialId: 'sitecore-organization', required: false }),
     ]);
-    expect(JSON.stringify(list)).not.toContain('check');
+    // A credential's live check (how it is verified) stays on the server.
+    expect(JSON.stringify(list)).not.toContain('"check":');
   });
 
   it('refuses intake missing what the playbook requires, or carrying what it does not take', async () => {

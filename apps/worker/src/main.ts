@@ -19,7 +19,7 @@ import { createWorker, taskQueueFor } from '@lw/orchestrator';
 import { loadCatalog } from '@lw/playbook-sdk';
 import { createPlatforms, ownedPaths, sitecoreTarget, text } from '@lw/platforms';
 import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw/tool-sandbox';
-import { composeStack } from '@lw/stack';
+import { composeStack, type Stack } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
 import { ResearchToolServer } from '@lw/tool-research';
@@ -364,7 +364,7 @@ console.log(
 );
 
 // One stack per playbook: its roles, prompts, grants and platform pack.
-const stacks = [];
+const stacks: { id: string; stack: Stack }[] = [];
 for (const { playbook, dir } of catalog.values()) {
   const stack = await composeStack({
     store: opened.store,
@@ -421,8 +421,26 @@ const workers = await Promise.all(
   ),
 );
 
+// A heartbeat every 30 s for the Dashboard's diagnostics: when it was last up, and what it runs.
+const beatStore = opened.sql ? new PostgresIntegrationStore(opened.sql) : null;
+const beat = () =>
+  beatStore
+    ?.put('heartbeat:worker', {
+      at: new Date().toISOString(),
+      version: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+      servers: servers.map((x) => x.name),
+      liveRoles: [...new Set(stacks.flatMap(({ stack }) => stack.liveRoles))],
+      temporal: workers.every((w) => w.getState() === 'RUNNING' || w.getState() === 'INITIALIZED'),
+    })
+    .catch((err: unknown) => console.error('Heartbeat not written', err));
+void beat();
+const beating = setInterval(() => void beat(), 30_000);
+
 // Vercel sends SIGTERM on rollout and gives the grace period to finish; the workers drain.
-const stop = () => workers.forEach((w) => w.shutdown());
+const stop = () => {
+  clearInterval(beating);
+  workers.forEach((w) => w.shutdown());
+};
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 

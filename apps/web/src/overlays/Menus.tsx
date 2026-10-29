@@ -8,10 +8,25 @@ import { Scrim } from './Dialogs';
 const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
 
 export function ProjectMenu() {
-  const { projects, projectId, switchProject, closeOverlay, openOverlay } = useApp();
+  const { projects, projectId, switchProject, home, closeOverlay, openOverlay } = useApp();
   return (
     <Scrim style={{ placeItems: 'start start', padding: '120px 0 0 12px' }}>
       <div className="menu pmenu">
+        <button
+          className={`pm-row ${!projectId ? 'on' : ''}`}
+          onClick={() => {
+            closeOverlay();
+            home();
+          }}
+        >
+          <span className="ini">
+            <Icon name="dashboard" sm />
+          </span>
+          <span className="pm-t">
+            <b>Dashboard</b>
+            <small>All projects, playbooks and diagnostics</small>
+          </span>
+        </button>
         <h3>Projects</h3>
         {projects.map((p) => (
           <button

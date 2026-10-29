@@ -68,6 +68,18 @@
       }
     },
     {
+      "source": "/portfolio",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/portfolio/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/health",
       "destination": {
         "service": "api"

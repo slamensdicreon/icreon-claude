@@ -28,6 +28,8 @@ import {
   type ApiError,
   type ArtifactView,
   type CommandResult,
+  type PortfolioDiagnostics,
+  type ServiceHealth,
 } from '@lw/contracts';
 import {
   agentDetail,
@@ -38,6 +40,7 @@ import {
   projectListItem,
   cardGroups,
   isLogEvent,
+  portfolioItem,
   preview,
   scheduleSnapshot,
   settingsView,
@@ -84,6 +87,19 @@ export interface AppDeps {
   /** Event stream timing; see StreamOptions. Defaults suit a long-running server. */
   stream?: Partial<Pick<StreamOptions, 'pollMs' | 'maxMs'>>;
   logger?: boolean;
+  /** The worker's last heartbeat (it writes one every 30 s), for the Dashboard's diagnostics. */
+  heartbeat?: () => Promise<WorkerHeartbeat | null>;
+}
+
+/** What the worker reports about itself. */
+export interface WorkerHeartbeat {
+  at: string;
+  version: string | null;
+  /** Tool servers it connected, by name. */
+  servers: string[];
+  /** Roles that run on Claude here. */
+  liveRoles: string[];
+  temporal: boolean;
 }
 
 type P = { Params: { id: string } };
@@ -227,6 +243,140 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
       .map(projectListItem);
   });
+
+  const now = deps.now ?? Date.now;
+
+  // ---- Portfolio: the Dashboard above every project ---------------------------------------
+
+  app.get('/portfolio', async () => {
+    await projections.catchUpAll();
+    return projections
+      .all()
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+      .map(portfolioItem);
+  });
+
+  app.get('/portfolio/diagnostics', async (): Promise<PortfolioDiagnostics> => {
+    const at = new Date(now()).toISOString();
+    const services: ServiceHealth[] = [
+      { key: 'api', label: 'Control API', status: 'ok', detail: 'Answering', checkedAt: at },
+    ];
+    try {
+      await projections.catchUpAll();
+      services.push({
+        key: 'database',
+        label: 'Event log (Postgres)',
+        status: 'ok',
+        detail: `${projections.all().length} projects read`,
+        checkedAt: at,
+      });
+    } catch (err) {
+      services.push({
+        key: 'database',
+        label: 'Event log (Postgres)',
+        status: 'down',
+        detail: (err as Error).message.slice(0, 200),
+        checkedAt: at,
+      });
+    }
+    const beat = deps.heartbeat ? await deps.heartbeat().catch(() => null) : null;
+    const age = beat ? (now() - Date.parse(beat.at)) / 1000 : null;
+    services.push({
+      key: 'worker',
+      label: 'Agent worker',
+      status: age === null ? 'unknown' : age < 120 ? 'ok' : age < 600 ? 'degraded' : 'down',
+      detail: beat
+        ? `Last seen ${Math.round(age!)} s ago${beat.version ? ` on ${beat.version.slice(0, 7)}` : ''}: ${beat.servers.length} tool servers, ${beat.liveRoles.length} roles on Claude`
+        : deps.heartbeat
+          ? 'No heartbeat yet'
+          : 'Not reported in this mode',
+      checkedAt: beat?.at ?? null,
+    });
+    services.push({
+      key: 'temporal',
+      label: 'Orchestration (Temporal)',
+      status: beat ? (beat.temporal ? 'ok' : 'down') : 'unknown',
+      detail: beat
+        ? beat.temporal
+          ? 'The worker is connected'
+          : 'The worker is not connected'
+        : 'Unknown without a worker heartbeat',
+      checkedAt: beat?.at ?? null,
+    });
+    if (deps.github) {
+      const gh = await deps.github.status().catch(() => null);
+      services.push({
+        key: 'github',
+        label: 'GitHub App',
+        status: !gh ? 'down' : gh.connected ? 'ok' : 'degraded',
+        detail: !gh
+          ? 'Could not be read'
+          : gh.connected
+            ? `${gh.app?.name ?? 'Connected'}, ${gh.installations.length} installation${gh.installations.length === 1 ? '' : 's'}`
+            : 'Not set up: Settings, GitHub App',
+        checkedAt: at,
+      });
+    }
+
+    const day = 24 * 3_600_000;
+    const projects = await Promise.all(
+      projections
+        .all()
+        .filter((s) => s.mode === 'live')
+        .map(async (s) => {
+          const attention: string[] = [];
+          const open = Object.values(s.escalations).filter((x) => x.status === 'open');
+          const old = open.filter((x) => now() - Date.parse(x.raisedAt) > day);
+          if (old.length)
+            attention.push(`${old.length} card${old.length === 1 ? '' : 's'} waiting over a day`);
+          const gaps = Object.values(s.capabilityGaps).filter((g) => !g.closedAt);
+          if (gaps.length)
+            attention.push(
+              `${gaps.length} capability gap${gaps.length === 1 ? '' : 's'}: ${gaps
+                .map((g) => g.capability)
+                .slice(0, 2)
+                .join('; ')}`,
+            );
+          const orchestrator = await orchestratorHealth(s.projectId, s.status);
+          if (orchestrator.status === 'stalled') attention.unshift(orchestrator.detail);
+          return {
+            projectId: s.projectId,
+            name: s.name,
+            status: s.status,
+            orchestrator,
+            attention,
+          };
+        }),
+    );
+    return { services, projects };
+  });
+
+  /** The project workflow's state, from its history: running, stalled on a failed step, or ended. */
+  async function orchestratorHealth(
+    projectId: string,
+    status: ProjectState['status'],
+  ): Promise<PortfolioDiagnostics['projects'][number]['orchestrator']> {
+    if (status === 'intake') return { status: 'ok', detail: 'Not started' };
+    const o = deps.commands(projectId);
+    if (!o?.diagnose) return { status: 'unknown', detail: 'Not available in this mode' };
+    try {
+      const d = (await Promise.race([
+        o.diagnose(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), 8000)),
+      ])) as { status?: string; historyLength?: number; recent?: { type: string }[] };
+      if (d.status && d.status !== 'RUNNING')
+        return { status: 'ended', detail: `Workflow ${d.status.toLowerCase()}` };
+      const last = d.recent?.[0]?.type ?? '';
+      if (/TimedOut|Failed/.test(last))
+        return {
+          status: 'stalled',
+          detail: `Orchestrator stuck: its last step ${last.replace(/^workflowTask/, '').toLowerCase()}`,
+        };
+      return { status: 'ok', detail: `Running (${d.historyLength ?? '?'} history events)` };
+    } catch (err) {
+      return { status: 'unknown', detail: `Could not be read: ${(err as Error).message}` };
+    }
+  }
 
   // The playbooks a new project can run: what each team delivers and what its intake collects.
   app.get('/playbooks', async (_req, reply) => {

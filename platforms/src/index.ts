@@ -207,6 +207,17 @@ export function playbookSummary(playbook: Playbook, pack: PlatformPack): Playboo
     platform: { id: pack.id, name: pack.name },
     charter: m.charter,
     intake: intakeSpec(playbook, pack),
+    phases: m.phases.map((p) => ({
+      number: p.number,
+      name: p.name,
+      gate: p.gate === 'director' ? (p.gateLabel ?? 'Director gate') : null,
+    })),
+    roles: playbook.roles.map((r) => ({
+      role: r.role,
+      name: r.name,
+      tier: r.tier,
+      description: r.description ?? r.mandate,
+    })),
   };
 }
 
