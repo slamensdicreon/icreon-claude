@@ -163,13 +163,11 @@ other through waits, or guess. Ansco's ownership and "still missing" cards come 
 - **Effectiveness:** how often each entry was injected, and whether the problem it prevents came
   back (scorecard). Entries that don't help are flagged; superseded ones retire.
 
-## Decisions for the Director
+## Decided (2026-10-29)
 
-1. **Order:** scorecard first (proposed), or start with Lead triage?
-2. **Autonomy defaults:** the table in step 2, or more conservative (Lead decides only retries and
-   naming)?
-3. **Rule scope default:** new rules start at **this playbook** (proposed), this project, or the
-   platform?
-4. **Next site:** after step 3 (proposed), or after all five steps?
-5. **Knowledge search:** full-text first (proposed), or embeddings from the start (needs an
-   embeddings provider and key)?
+1. **Order:** scorecard first, then Lead triage and autonomy, rules, facts, knowledge.
+2. **Autonomy defaults:** the table in step 2 (the Lead decides retries, naming, content within the
+   Blueprint and tool workarounds; access and scope ask; releases, gates and budget are locked).
+3. **Rule scope default:** this playbook.
+4. **Next site:** after step 3.
+5. **Knowledge search:** Postgres full-text first; embeddings only if it misses.
