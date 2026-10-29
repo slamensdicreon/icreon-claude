@@ -64,6 +64,11 @@ export interface RuntimeDeps {
   items?(projectId: string, task: PlannedTask): Promise<string | null>;
   /** System prompt text for a role, from the playbook's prompts folder; null to derive one. */
   prompt?: (role: RoleDef) => string | null;
+  /**
+   * Tool servers with nothing behind them on this project (no source repository: github). Their
+   * operations are left out of the agent's tools, so it never reaches for them.
+   */
+  unavailable?(projectId: string): Promise<string[]>;
   maxTurns?: number;
   maxTokensPerTurn?: number;
 }
@@ -98,7 +103,11 @@ export class AgentRuntime {
       await (deps.context ?? emptyContext).forTask(req.projectId, req.task),
     );
     const version = promptVersion(system);
-    const { tools, route } = toolsFor(role.role, deps.gateway);
+    const { tools, route } = toolsFor(
+      role.role,
+      deps.gateway,
+      new Set((await deps.unavailable?.(req.projectId)) ?? []),
+    );
     const model = role.model.id;
     const budget = role.budget?.tokens ?? Infinity;
     const spent: Spend = { tokens: 0, usd: 0 };

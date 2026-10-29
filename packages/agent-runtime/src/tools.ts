@@ -131,13 +131,18 @@ export function toolName(server: string, op: string): string {
 
 /**
  * The tools an agent sees: exactly the operations its role is granted (the gateway still checks
- * every call), plus submit_result. Sorted by name so the tool block, and the cache prefix it
+ * every call), less those on servers the project has nothing behind, plus submit_result. Sorted by name so the tool block, and the cache prefix it
  * starts, is byte-identical across tasks of the same role.
  */
-export function toolsFor(role: string, gateway: ToolGateway): ToolSet {
+export function toolsFor(
+  role: string,
+  gateway: ToolGateway,
+  unavailable: ReadonlySet<string> = new Set(),
+): ToolSet {
   const route = new Map<string, { server: string; op: string }>();
   const tools: BetaTool[] = [];
   for (const { server, op } of gateway.allowedOperations(role)) {
+    if (unavailable.has(server)) continue;
     const name = toolName(server, op);
     const spec = gateway.operation(server, op)!;
     route.set(name, { server, op });

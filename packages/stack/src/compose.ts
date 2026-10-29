@@ -468,6 +468,11 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           board: (projectId, task) => teamBoard(opts.projections, projectId, task.taskId),
           items: (projectId, task) => blueprintEntries(library, projectId, task),
           prompt: (role) => prompts[role.role] ?? null,
+          // The source repository's tools, on a project built from its live site alone.
+          unavailable: async (projectId) => {
+            const intake = opts.projections.get(projectId)?.intake;
+            return intake && !intake.repo ? ['github'] : [];
+          },
         }),
         runsLive,
       )

@@ -94,7 +94,11 @@ function authoringServer(
   };
 }
 
-function setup(model: ModelClient, servers: ToolServer[] = [authoringServer()]) {
+function setup(
+  model: ModelClient,
+  servers: ToolServer[] = [authoringServer()],
+  unavailable?: (projectId: string) => Promise<string[]>,
+) {
   const store = new InMemoryEventStore();
   const gateway = new ToolGateway({
     playbook: pb,
@@ -112,6 +116,7 @@ function setup(model: ModelClient, servers: ToolServer[] = [authoringServer()]) 
     playbook: pb,
     store,
     context: { forTask: async () => 'Grid: Tailwind. Languages: en, fr-CA.' },
+    unavailable,
   });
   return { runtime, store };
 }
@@ -267,6 +272,33 @@ describe('AgentRuntime', () => {
       message:
         "sitecore-authoring returned 403 for item.create. Re-verify the credential's scope in Settings.",
     });
+  });
+
+  it('leaves out the tools of a server the project has nothing behind', async () => {
+    const github: ToolServer = {
+      name: 'github',
+      catalog: {
+        'tree.read': { mutates: false },
+        'repo.read': { mutates: false },
+        'code.search': { mutates: false },
+      },
+      target: () => 'acme/site',
+      call: async () => ({ code: 401, body: null }),
+    };
+    const submit = () =>
+      scripted([reply([use('submit_result', { status: 'done', summary: 'ok' })], 'tool_use')]);
+    const names = (m: ReturnType<typeof scripted>) =>
+      m.requests[0]!.tools!.map((t) => ('name' in t ? t.name : ''));
+    const withRepo = submit();
+    await setup(withRepo, [authoringServer(), github]).runtime.run(request('migrate-pages-about'));
+    expect(names(withRepo)).toContain('github__tree_read');
+    // No source repository: the live site is the source, and the agent isn't offered the repo.
+    const noRepo = submit();
+    await setup(noRepo, [authoringServer(), github], async () => ['github']).runtime.run(
+      request('migrate-pages-about'),
+    );
+    expect(names(noRepo).filter((n) => n.startsWith('github__'))).toEqual([]);
+    expect(names(noRepo)).toContain('sitecore-authoring__item_create');
   });
 
   it('surfaces a decision the agent cannot make on its own', async () => {
