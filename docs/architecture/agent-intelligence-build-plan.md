@@ -32,12 +32,13 @@ with A1 and A2 together. The scorecard (step 1) measures it, so we don't guess.
 | Step | Build | Size | Why here |
 | --- | --- | --- | --- |
 | 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline | 1 session | Every later step claims fewer cards or rejections; this proves it |
-| 2 | **A2a Lead triage + autonomy settings** (+ the rules table) | 1½ sessions | Biggest cut left in cards |
-| 3 | **A2b Rules from answers** ("Make this a rule", Settings → Rules, harvest Ansco's answers) | 1 session | Makes triage smarter every time the Director answers |
-| 4 | **A3 Project facts** (+ self-check before submitting) | 2 sessions | Ends "which ID?" waits and many rejections |
-| 5 | **A4 Knowledge store** (lessons, procedures, rules; retrospectives) | 2–3 sessions | Learning across projects; replaces the static pitfalls file |
+| 2 | **No-repo mode**: start from the public website alone, no source repository | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
+| 3 | **A2a Lead triage + autonomy settings** (+ the rules table) | 1½ sessions | Biggest cut left in cards |
+| 4 | **A2b Rules from answers** ("Make this a rule", Settings → Rules, harvest Ansco's answers) | 1 session | Makes triage smarter every time the Director answers |
+| 5 | **A3 Project facts** (+ self-check before submitting) | 2 sessions | Ends "which ID?" waits and many rejections |
+| 6 | **A4 Knowledge store** (lessons, procedures, rules; retrospectives) | 2–3 sessions | Learning across projects; replaces the static pitfalls file |
 
-The next site can start after step 3: the scorecard then compares it with Ansco on A1 + A2, and its
+The next site can start after step 4, with or without a repository: the scorecard then compares it with Ansco on A1 + A2, and its
 cards feed A3 and A4. Each step ships with tests, is gated with `patched()` so running projects
 upgrade in place, and deploys at a quiet moment (a deploy restarts the worker).
 
@@ -61,7 +62,42 @@ its baseline at once). `GET /projects/:id/scorecard` and `GET /playbooks/:id/sco
 (projects side by side). A tile on Mission Control (cards per task, % settled without the
 Director); a Scorecard page under Reports.
 
-## Step 2 — Lead triage and autonomy (A2a)
+## Step 2 — No-repo mode
+
+Some projects start with only the public website: no source repository. Crawling, copy, media and
+every audit already work from the live site (since Ansco, the live site is the reference anyway).
+What doesn't:
+
+- **Intake** requires a repository (`source.repo: required` in the SitecoreAI playbook).
+- **`inventory-repo`** runs on GitHub tools, and the Blueprint expects its `repo-inventory`.
+- **Building** the design system and components means porting source code: markup and CSS. From the
+  live site the browser tool gives text, headings, images and screenshots, but not a section's
+  markup or its styles, so builders would guess the design from pictures (Ansco's first visual
+  pass shows how that goes).
+
+**Build:**
+
+- **Intake:** `source.repo: optional`. A repository, when given, sets the project feature
+  `source-repo`; the wizard says what the agents will work from in each case.
+- **Plan:** `inventory-repo` gets `when: source-repo`. Templates gain `unless:` (the opposite of
+  `when`), and a new `inventory-live-ui` (`unless: source-repo`) takes its place: the components a
+  visitor sees, found as sections repeated across pages, with their variants, and the design tokens
+  (type scale, colours, spacing, breakpoints) from computed styles. It writes the same
+  `repo-inventory` shape the Blueprint reads, marked `source: live-site`.
+- **Browser tools:**
+  - `page.markup`: the cleaned HTML of a section (by selector or by its place in the snapshot),
+    with class names kept and scripts and tracking stripped, size-capped.
+  - `page.styles`: the page's stylesheet URLs and text (same host), and computed styles for chosen
+    selectors (fonts, sizes, weights, colours, spacing, borders, and the breakpoints that change
+    them).
+- **Prompts:** the Content Analyst, Solution Architect, Component Engineer (design system and port
+  tasks) and Head Integrator each say what to do without a repository: rebuild each component from
+  the live page's markup and styles, keep class names where they carry the design, and prove it
+  with `parity.visual`. The `codeExtraction` brief question doesn't apply and is hidden.
+- **Test:** a project created from just a URL runs phases 1–2 to an approved Blueprint in the
+  simulator; a stack test drives `page.markup` and `page.styles` against a local fixture site.
+
+## Step 3 — Lead triage and autonomy (A2a)
 
 **Flow.** When an agent ends with `needs_decision` (and for "rejected 3 times: retry or accept?"
 and "what it needs is missing" cards), the workflow first runs a **triage** activity instead of
@@ -75,7 +111,7 @@ triage({ task, question, options, recommended, summary, attempt })
 
 - **Who answers:** the task's Lead (its model, low effort, structured output). It sees the question
   and options, the agent's summary, the task's Blueprint entry, the outcome charter, the role's
-  tools and scopes, the task's earlier answers, and the rules that match (step 3).
+  tools and scopes, the task's earlier answers, and the rules that match (step 4).
 - **When it may answer:** the category's autonomy setting allows it, and the answer follows from
   the Blueprint, the charter, a rule, or a playbook default. Otherwise it forwards, saying why.
 - **Never triaged:** gates, releases, budget, scope changes (adding or dropping pages or
@@ -110,7 +146,7 @@ The playbook ships the defaults (`autonomy:` in `playbook.yaml`); a project can 
   unresolvable-wait paths (patched `lead-triage`); a counter per task for the two-answer limit.
 - Domain and web: Decision Log filter by who decided, Override, the Autonomy panel.
 
-## Step 3 — Rules from the Director's answers (A2b)
+## Step 4 — Rules from the Director's answers (A2b)
 
 - **Make this a rule.** On an answered card: Cypher drafts a rule from the card and the answer
   (*when* "the source refuses a media download", *do* "skip it and log the gap"). The Director edits
@@ -125,7 +161,7 @@ The playbook ships the defaults (`autonomy:` in `playbook.yaml`); a project can 
   example "a refused source download: skip and log the gap"; "a stale sandbox: clean it up and
   retry"). The Director approves each before it applies anywhere.
 
-## Step 4 — Project facts (A3)
+## Step 5 — Project facts (A3)
 
 **Why:** agents re-discover IDs (rendering IDs, template IDs, media paths, page paths), ask each
 other through waits, or guess. Ansco's ownership and "still missing" cards come from this.
@@ -143,10 +179,10 @@ other through waits, or guess. Ansco's ownership and "still missing" cards come 
 - **Build:** `fact.published` event and projection, a `facts` tool server (in-process, like
   blackboard), extractors in `platforms/sitecoreai`, brief changes in the agent runtime.
 
-## Step 5 — Knowledge store (A4)
+## Step 6 — Knowledge store (A4)
 
 - **One store, three kinds:** lessons ("insert options go on `__Standard Values`"), procedures (the
-  steps that worked for creating a headless variant), rules (step 3). Scopes: global, platform,
+  steps that worked for creating a headless variant), rules (step 4). Scopes: global, platform,
   playbook, role, project. Each entry: what it applies to (roles, tool operations, templates, tags),
   its evidence, a version and status.
 - **Retrieval, not dumping:** a task's brief gets the few most relevant entries for its role,
@@ -175,9 +211,9 @@ then, these cards ask the Director to check by hand and mark the task done.
 
 ## Decided (2026-10-29)
 
-1. **Order:** scorecard first, then Lead triage and autonomy, rules, facts, knowledge.
-2. **Autonomy defaults:** the table in step 2 (the Lead decides retries, naming, content within the
+1. **Order:** scorecard first, then no-repo mode, Lead triage and autonomy, rules, facts, knowledge.
+2. **Autonomy defaults:** the table in step 3 (the Lead decides retries, naming, content within the
    Blueprint and tool workarounds; access and scope ask; releases, gates and budget are locked).
 3. **Rule scope default:** this playbook.
-4. **Next site:** after step 3.
+4. **Next site:** after rules (step 4), with or without a repository.
 5. **Knowledge search:** Postgres full-text first; embeddings only if it misses.
