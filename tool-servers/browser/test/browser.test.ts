@@ -141,6 +141,18 @@ describe('crawl', () => {
   }, 60_000);
 });
 
+describe('a browser that closed', () => {
+  it('launches Chromium again instead of failing every call', async () => {
+    expect((await browser.call('crawl', { url: `${origin}/` }, ctx)).code).toBe(200);
+    // As when the worker restarts, or Chromium crashes, under a running task.
+    const running = (guarded as unknown as { browser: Promise<{ close(): Promise<void> }> })
+      .browser;
+    await (await running).close();
+    const again = await browser.call('crawl', { url: `${origin}/` }, ctx);
+    expect(again.code).toBe(200);
+  }, 60_000);
+});
+
 describe('page.markup, page.styles', () => {
   it('outlines a page’s sections, looking through a single wrapper', async () => {
     const r = await browser.call('page.markup', { url: `${origin}/styled` }, ctx);

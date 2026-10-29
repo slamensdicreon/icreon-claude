@@ -50,9 +50,17 @@ export class GuardedBrowser {
   }
 
   async withContext<T>(policy: UrlPolicy, fn: (context: BrowserContext) => Promise<T>): Promise<T> {
-    const context = await (
-      await this.launch()
-    ).newContext({ javaScriptEnabled: true, viewport: BREAKPOINTS.desktop });
+    const open = async () =>
+      (await this.launch()).newContext({ javaScriptEnabled: true, viewport: BREAKPOINTS.desktop });
+    let context: BrowserContext;
+    try {
+      context = await open();
+    } catch (err) {
+      // Chromium crashed or was closed under us: launch it again rather than fail every call.
+      if (!/has been closed|disconnected/i.test(String(err))) throw err;
+      this.browser = null;
+      context = await open();
+    }
     await context.addInitScript('globalThis.__name = (f) => f;');
     await context.route('**/*', (route) => {
       const req = route.request();
@@ -77,10 +85,21 @@ export class GuardedBrowser {
   }
 
   private launch(): Promise<Browser> {
-    this.browser ??= chromium.launch({
-      executablePath: this.executablePath,
-      args: ['--no-sandbox'],
-    });
+    if (!this.browser) {
+      const launched: Promise<Browser> = chromium
+        .launch({ executablePath: this.executablePath, args: ['--no-sandbox'] })
+        .then((b) => {
+          // Once it disconnects (crash, or closed during a restart), the next call launches anew.
+          b.on('disconnected', () => {
+            if (this.browser === launched) this.browser = null;
+          });
+          return b;
+        });
+      launched.catch(() => {
+        if (this.browser === launched) this.browser = null;
+      });
+      this.browser = launched;
+    }
     return this.browser;
   }
 }
