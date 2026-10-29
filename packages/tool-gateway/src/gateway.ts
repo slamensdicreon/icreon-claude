@@ -133,12 +133,15 @@ export class ToolGateway {
 
     if (result.code >= 400) {
       const retryable = result.code === 429 || result.code >= 500;
-      // The server's own reason, so Activity says why ("No stored content for repo-inventory").
-      const why = reasonOf(body);
-      const message =
+      // The server's own account, so the agent and Activity say why: its summary (a merge
+      // conflict names the branch and files), else the body's error.
+      const said = result.summary?.trim() ? clip(result.summary, 400) : reasonOf(body);
+      const why = said ? `: ${redactText(said, token).replace(/\.$/, '')}.` : '.';
+      const message = `${call.server} returned ${result.code} for ${call.op}${why}${
         result.code === 401 || result.code === 403
-          ? `${call.server} returned ${result.code} for ${call.op}. Re-verify the credential's scope in Settings.`
-          : `${call.server} returned ${result.code} for ${call.op}${why ? `: ${redactText(why, token)}` : '.'}`;
+          ? " Re-verify the credential's scope in Settings."
+          : ''
+      }`;
       await this.record(call, requestHash, result.code, started, message, 'failure');
       return { ok: false, code: result.code, message, retryable };
     }
@@ -280,8 +283,10 @@ function canonical(v: unknown): string {
 function reasonOf(body: unknown): string | null {
   const e = (body as { error?: unknown } | null)?.error;
   const text = typeof e === 'string' ? e : typeof body === 'string' ? body : null;
-  return text ? text.replace(/\s+/g, ' ').trim().slice(0, 200) : null;
+  return text ? clip(text, 200) : null;
 }
+
+const clip = (text: string, max: number) => text.replace(/\s+/g, ' ').trim().slice(0, max);
 
 function redactText(s: string, token: string) {
   return redact(s, [token]) as string;

@@ -405,6 +405,21 @@ describe('call handling', () => {
     expect(await gateway.call(c())).toMatchObject({ ok: false, code: 503, retryable: true });
     expect(await gateway.call(c())).toMatchObject({ ok: false, code: 404, retryable: false });
 
+    // The server's summary says what failed and where; the caller sees it.
+    const conflict = fakeServer('github', catalogs['github']!, () => ({
+      code: 409,
+      body: { branch: 'launchworks/port-faq', conflicts: ['src/components/ui/fields.ts'] },
+      summary:
+        'launchworks/port-faq conflicts with launchworks/integration in src/components/ui/fields.ts: nothing pushed',
+    }));
+    const named = setup({ servers: [conflict] }).gateway;
+    expect(await named.call(c())).toMatchObject({
+      ok: false,
+      code: 409,
+      message:
+        'github returned 409 for repo.read: launchworks/port-faq conflicts with launchworks/integration in src/components/ui/fields.ts: nothing pushed.',
+    });
+
     const down: ToolServer = {
       ...fakeServer('github', catalogs['github']!),
       call: async () => {
