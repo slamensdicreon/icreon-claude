@@ -1610,6 +1610,13 @@ export const ansell: DemoScenario = {
       context:
         'SearchBody and search-engine.ts (about 930 lines) answer queries from corpus.ts in the browser. Once products, topics and documents live in Sitecore, search needs a new source.',
       impact: 'The search overlay port waits on this. Batch 2 continues on the other components.',
+      lead: {
+        leadId: 'engineering-lead',
+        mode: 'shadow',
+        optionIdx: 0,
+        reasoning:
+          'The Blueprint keeps products, topics and documents in Sitecore, so search should read them from there too.',
+      },
       options: [
         { label: SEARCH_OPTS[0]!, rec: true },
         { label: SEARCH_OPTS[1]! },

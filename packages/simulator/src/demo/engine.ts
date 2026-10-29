@@ -1171,7 +1171,15 @@ export class DemoProject {
     const card: EscalationCard = {
       escalationId: id,
       category: null,
-      triage: null,
+      triage: def.lead
+        ? {
+            leadId: def.lead.leadId,
+            mode: def.lead.mode,
+            optionId: def.lead.optionIdx === null ? null : options[def.lead.optionIdx]!.id,
+            reasoning: def.lead.reasoning,
+            ruleIds: [],
+          }
+        : null,
       type: def.type,
       typeLabel: def.typeLabel ?? null,
       title: def.title,

@@ -1,4 +1,5 @@
 import type {
+  EscalationView,
   ArtifactDocument,
   ArtifactView,
   BlueprintRow,
@@ -11,7 +12,7 @@ import type {
   WorkbenchSnapshot,
 } from '@lw/contracts';
 import { useEffect, useRef, useState } from 'react';
-import { API, blobUrl } from '../lib/api';
+import { API, blobUrl, get, post } from '../lib/api';
 import { clock, shortDay, stamp } from '../lib/fmt';
 import { Chip } from '../parts/bits';
 import { DataDoc } from '../parts/DataDoc';
@@ -325,22 +326,44 @@ function BlueprintViewer() {
   );
 }
 
+const DECIDED_BY: Record<DecisionView['decidedBy'], string> = {
+  director: 'Director',
+  chief_of_staff: 'Cypher (convention)',
+  default: 'Default action (Cypher)',
+  lead: 'Lead (triage)',
+  rule: 'Rule',
+};
+
 function DecisionLog() {
   const tz = useTz();
   const list = useProjectResource<DecisionView[]>('/decisions').data ?? [];
-  const by: Record<DecisionView['decidedBy'], string> = {
-    director: 'Director',
-    chief_of_staff: 'Cypher (convention)',
-    default: 'Default action (Cypher)',
-    lead: 'Lead (triage)',
-    rule: 'Rule',
-  };
+  const [who, setWho] = useState<'all' | DecisionView['decidedBy']>('all');
+  const shown = [...list].reverse().filter((d) => who === 'all' || d.decidedBy === who);
+  const present = (Object.keys(DECIDED_BY) as DecisionView['decidedBy'][]).filter((k) =>
+    list.some((d) => d.decidedBy === k),
+  );
   return (
     <>
       <div className="viewer-head">
         <h2>Decision Log</h2>
         <span className="muted">append-only</span>
       </div>
+      {present.length > 1 && (
+        <div className="dash-filters" role="group" aria-label="Decided by">
+          {(['all', ...present] as const).map((k) => (
+            <button
+              key={k}
+              className={`dash-chip ${who === k ? 'on' : ''}`}
+              onClick={() => setWho(k)}
+            >
+              {k === 'all' ? 'Everyone' : DECIDED_BY[k]}
+              <small>
+                {k === 'all' ? list.length : list.filter((d) => d.decidedBy === k).length}
+              </small>
+            </button>
+          ))}
+        </div>
+      )}
       <table>
         <thead>
           <tr>
@@ -352,18 +375,68 @@ function DecisionLog() {
           </tr>
         </thead>
         <tbody>
-          {[...list].reverse().map((d) => (
+          {shown.map((d) => (
             <tr key={d.decisionId}>
               <td className="mono">{d.ref}</td>
               <td>{d.question}</td>
-              <td>{d.answer}</td>
-              <td>{by[d.decidedBy]}</td>
+              <td>
+                {d.answer}
+                {(d.decidedBy === 'lead' || d.decidedBy === 'rule') && (
+                  <>
+                    <small className="muted dl-why">{d.rationale}</small>
+                    {d.escalationId && <Override escalationId={d.escalationId} answer={d.answer} />}
+                  </>
+                )}
+              </td>
+              <td>{DECIDED_BY[d.decidedBy]}</td>
               <td className="muted">{stamp(d.ts, tz)}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </>
+  );
+}
+
+/**
+ * Overrides a Lead's (or a rule's) answer: the task runs again with the Director's choice. What
+ * the task already did with the Lead's answer stays in its history.
+ */
+function Override({ escalationId, answer }: { escalationId: string; answer: string }) {
+  const { projectId, run } = useApp();
+  const [card, setCard] = useState<EscalationView | null>(null);
+  const [open, setOpen] = useState(false);
+  const base = `/projects/${projectId}`;
+  const load = async () => {
+    setOpen((o) => !o);
+    if (!card) setCard(await get<EscalationView>(`${base}/escalations/${escalationId}`));
+  };
+  const others = card?.options.filter((o) => o.label !== answer) ?? [];
+  return (
+    <span className="dl-override">
+      <button className="link-btn" onClick={() => void load()} aria-expanded={open}>
+        Override
+      </button>
+      {open && card?.sourceTaskId && (
+        <span className="dl-options">
+          {others.map((o) => (
+            <button
+              key={o.id}
+              className="btn sm"
+              onClick={() =>
+                void run(() =>
+                  post(`${base}/tasks/${card.sourceTaskId}/rerun`, {
+                    instructions: `Decision on "${card.title}": ${o.label}. The Director overrode the Lead's answer (${answer}).`,
+                  }),
+                ).then(() => setOpen(false))
+              }
+            >
+              Run again with: {o.label}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }
 

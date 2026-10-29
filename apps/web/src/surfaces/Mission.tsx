@@ -19,6 +19,8 @@ export function Mission() {
   const now = useNow(60_000);
   const preview = useProjectResource<PreviewSnapshot>(layout.present ? '/preview' : null).data;
   const score = useProjectResource<Scorecard>('/scorecard').data;
+  const leadSettled =
+    score?.categories.reduce((n, c) => n + c.settled.lead + c.settled.rule, 0) ?? 0;
   if (!mc) return <p className="quiet-line">Loading Mission Control…</p>;
   const p = mc.project;
   const phases = mc.phases;
@@ -103,6 +105,11 @@ export function Mission() {
             <strong className="tnum">{score.totals.settledWithoutDirectorPct}%</strong> settled
             without you
           </span>
+          {leadSettled > 0 && (
+            <span>
+              <strong className="tnum">{leadSettled}</strong> settled by Leads
+            </span>
+          )}
           {score.totals.rejectionRate !== null && (
             <span>
               <strong className="tnum">{score.totals.rejectionRate}%</strong> Lead rejections

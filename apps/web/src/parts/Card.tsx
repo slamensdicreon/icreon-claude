@@ -4,7 +4,7 @@ import { post } from '../lib/api';
 import { age, clock, zoneLabel } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { TypedConfirm } from '../overlays/Dialogs';
-import { useApp, useNow, useTz } from '../state';
+import { useApp, useNow, useRoster, useTz } from '../state';
 import { useJump, Who } from './bits';
 
 export const TYPE_LABEL: Record<string, string> = {
@@ -119,12 +119,13 @@ export function Card({
 
   if (x.status === 'resolved' || x.status === 'expired') {
     const canUndo = x.undoUntil && Date.parse(x.undoUntil) > now;
-    const by =
-      x.resolution?.by === 'director'
-        ? 'You'
-        : x.resolution?.by === 'default'
-          ? 'Default action'
-          : 'Cypher';
+    const by = {
+      director: 'You',
+      default: 'Default action',
+      chief_of_staff: 'Cypher',
+      lead: 'The Lead',
+      rule: 'A rule, applied by the Lead',
+    }[x.resolution?.by ?? 'chief_of_staff'];
     return (
       <div className="card resolved">
         <div className="resolved-line">
@@ -211,6 +212,7 @@ export function Card({
           answer applies to all of them.
         </p>
       )}
+      {x.triage && <LeadNote x={x} />}
       <div className="impact">
         <span>Impact</span>
         <p>
@@ -324,5 +326,29 @@ export function Card({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What the Lead made of the question before it came here: in shadow, the answer it would have
+ * given (the Director's choice is compared with it on the scorecard); forwarded, why it's yours.
+ */
+function LeadNote({ x }: { x: EscalationView }) {
+  const { byId } = useRoster();
+  const t = x.triage!;
+  const lead = byId(t.leadId)?.name ?? 'The Lead';
+  const option = x.options.find((o) => o.id === t.optionId);
+  return (
+    <p className={`card-lead ${t.mode}`}>
+      {t.mode === 'shadow' && option ? (
+        <>
+          <b>{lead} would answer:</b> {option.label}. {t.reasoning}
+        </>
+      ) : (
+        <>
+          <b>{lead} passed this to you:</b> {t.reasoning}
+        </>
+      )}
+    </p>
   );
 }

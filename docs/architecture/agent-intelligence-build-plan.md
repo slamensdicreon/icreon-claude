@@ -36,7 +36,7 @@ with A1 and A2 together. The scorecard (step 1) measures it, so we don't guess.
 | 0 | **P1 Dashboard + P2 saved connections and remix** (see Portfolio below) (**built**) | 3 sessions | The next sites are remixes of Ansco on the same tenant |
 | 1 | **A5 Scorecard**, computed from the event log, Ansco as the baseline (**built**) | 1 session | Every later step claims fewer cards or rejections; this proves it |
 | 2 | **No-repo mode**: start from the public website alone, no source repository (**built**) | 1–1½ sessions | Some projects arrive with only the live site; today they can't start |
-| 3 | **A2a Lead triage + autonomy settings** (+ the rules table) | 1½ sessions | Biggest cut left in cards |
+| 3 | **A2a Lead triage + autonomy settings** (+ the rules table) (**built, in shadow**) | 1½ sessions | Biggest cut left in cards |
 | 4 | **A2b Rules from answers** ("Make this a rule", Settings → Rules, harvest Ansco's answers) | 1 session | Makes triage smarter every time the Director answers |
 | 5 | **A3 Project facts** (+ self-check before submitting) | 2 sessions | Ends "which ID?" waits and many rejections |
 | 6 | **A4 Knowledge store** (lessons, procedures, rules; retrospectives) | 2–3 sessions | Learning across projects; replaces the static pitfalls file |
@@ -202,6 +202,32 @@ The playbook ships the defaults (`autonomy:` in `playbook.yaml`); a project can 
 - Orchestrator: the triage activity before `raise()` in the `needs_decision`, rejected and
   unresolvable-wait paths (patched `lead-triage`); a counter per task for the two-answer limit.
 - Domain and web: Decision Log filter by who decided, Override, the Autonomy panel.
+
+**As built (2026-10-29, playbook 0.6.0):**
+
+- Cards carry a `category` (from `categoryOf`) and, when a Lead saw them first, `triage`: its
+  shadow answer, or why it forwarded. Decisions and resolutions can be by `lead` or `rule`.
+- Autonomy levels per category: `agents`, `lead`, `shadow`, `ask`. The playbook ships them under
+  `defaults.autonomy` (Lead-decidable categories in **shadow**; access and other `ask`); releases,
+  gates, budget and scope are locked to `ask` (checked by `validatePlaybook` and refused by the API).
+  A project's change is recorded straight to its log (`settings.changed`), so triage reads it for
+  the next card on any project without a workflow update.
+- `triageQuestion` (agent runtime): the Lead's model at low effort, structured output, only the
+  card's options and only the rules given; priced like other calls.
+- Workflow (`patched('lead-triage')`, `raiseTriaged`): tags each agent question, then asks the
+  `triage` activity. `ask` and a failed triage raise the card as before; `agents` takes the
+  recommendation (settled by Cypher, logged); `shadow` raises the card with the Lead's answer;
+  `lead` settles it (the task retries with the answer), at most two in a row per task, and the
+  third comes to the Director with both answers. A Lead never accepts work it rejected. Counters
+  survive continue-as-new.
+- Stack: live projects ask the task's Lead (its `reportsTo`) with the Blueprint entry, charter,
+  permissions and the task's earlier answers; demo projects always ask.
+- UI: Settings → Autonomy; cards show "<Lead> would answer: …" or "<Lead> passed this to you: …";
+  the Decision Log filters by who decided, shows the Lead's reasoning, and **Override** re-runs the
+  task with another option; Mission Control counts questions settled by Leads; the Scorecard has
+  "Lead agreed (shadow)" per category.
+- Switching a category from shadow to lead: once its "Lead agreed" column shows about 30 cards at
+  90% or more.
 
 ## Step 4 — Rules from the Director's answers (A2b)
 

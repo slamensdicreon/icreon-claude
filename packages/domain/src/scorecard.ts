@@ -52,6 +52,8 @@ export function scorecard(s: ProjectState, now: number = Date.now()): Scorecard 
         settled: { ...NOBODY },
         recommendedTaken: 0,
         withRecommendation: 0,
+        shadowAnswered: 0,
+        shadowAgreed: 0,
       },
     ]),
   );
@@ -70,6 +72,11 @@ export function scorecard(s: ProjectState, now: number = Date.now()): Scorecard 
       if (rec && chosen) {
         row.withRecommendation++;
         if (chosen === rec.id) row.recommendedTaken++;
+      }
+      // Shadow mode's whole point: would the Lead have answered as the Director did?
+      if (by === 'director' && x.triage?.mode === 'shadow' && x.triage.optionId) {
+        row.shadowAnswered++;
+        if (x.resolution?.optionId === x.triage.optionId) row.shadowAgreed++;
       }
     }
     if (x.gate) continue;

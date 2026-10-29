@@ -5,6 +5,7 @@ import {
   compareScreens,
   readDirective,
   reviewTask,
+  triageQuestion,
 } from '@lw/agent-runtime';
 import { GithubApp, SITECORE_DEFAULTS, VaultCredentials } from '@lw/connectors';
 import {
@@ -377,6 +378,7 @@ for (const { playbook, dir } of catalog.values()) {
     model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
     directives: env.AGENTS === 'claude' ? (input) => readDirective(input) : null,
     review: env.AGENTS === 'claude' ? (input) => reviewTask(input) : null,
+    triage: env.AGENTS === 'claude' ? (input) => triageQuestion(input) : null,
     screens: env.AGENTS === 'claude' ? (input) => compareScreens(input) : null,
     servers,
     credentials,

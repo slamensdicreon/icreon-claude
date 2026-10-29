@@ -9,7 +9,11 @@ import {
   type ReviewVerdict,
   type ScreenInput,
   type ScreenVerdict,
+  type Triage,
+  type TriageInput,
 } from '@lw/agent-runtime';
+import { DECISION_CATEGORY_LABEL } from '@lw/contracts';
+import { autonomyFor } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
 import {
   createStubActivities,
@@ -60,6 +64,11 @@ export interface StackOptions {
   directives?: ((input: DirectiveInput) => Promise<DirectiveReading>) | null;
   /** A Lead's review of each finished task on live projects (Claude); without it, checks only. */
   review?: ((input: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null;
+  /**
+   * A Lead's triage of an agent's question on live projects (Claude), for the categories the
+   * project lets a Lead decide or shadow; without it, every question reaches the Director.
+   */
+  triage?: ((input: TriageInput) => Promise<Triage>) | null;
   /** Judges a migrated page against its source from screenshots (Claude); without it, the visual check is pending. */
   screens?: ((input: ScreenInput) => Promise<ScreenVerdict & { tokens: number }>) | null;
   /** Extra servers (tests); the browser and workspace servers are always connected. */
@@ -319,6 +328,53 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   };
   const base: Activities = {
     ...stubs,
+    async triage(req) {
+      const ask = { level: 'ask' as const, tokens: 0, usd: 0 };
+      if (!(await isLive(req.projectId))) return ask;
+      const s = opts.projections.get(req.projectId)!;
+      const level = autonomyFor(s, req.category, opts.playbook.manifest.defaults.autonomy);
+      if (level === 'ask' || level === 'agents') return { level, tokens: 0, usd: 0 };
+      const roles = new Map(opts.playbook.roles.map((r) => [r.role, r]));
+      const role = roles.get(req.role);
+      const lead = (role?.reportsTo && roles.get(role.reportsTo)) || roles.get('chief-of-staff');
+      if (!opts.triage || !lead) return ask;
+      const task = s.tasks[req.taskId];
+      const template = opts.playbook.plan.templates.find((t) => t.id === task?.group);
+      const r = await opts.triage({
+        lead: {
+          name: lead.persona ? `${lead.persona}, ${lead.name}` : lead.name,
+          mandate: lead.mandate,
+          model: lead.model.id,
+          effort: 'low',
+        },
+        specialist: role?.name ?? req.role,
+        category: DECISION_CATEGORY_LABEL[req.category],
+        charter: opts.playbook.manifest.charter,
+        task: { title: task?.title ?? req.taskId, acceptance: role?.acceptance ?? [] },
+        blueprint: await blueprintEntries(library, req.projectId, {
+          collection: template?.forEach ?? null,
+          itemKeys: task?.itemKeys ?? [],
+        }),
+        card: req.card,
+        permissions: Object.entries(role?.tools ?? {}).map(
+          ([server, grant]) =>
+            `${server}: ${grant.ops.join(', ')}${grant.scope?.paths?.length ? ` (writes only under ${grant.scope.paths.join(', ')})` : ''}`,
+        ),
+        previous: req.previous,
+        rules: [],
+      });
+      const who = { leadId: lead.role, leadName: lead.persona ?? lead.name };
+      return r.decision === 'answer'
+        ? { level, ...who, ...r }
+        : {
+            level,
+            ...who,
+            decision: 'forward',
+            reasoning: r.reasoning,
+            tokens: r.tokens,
+            usd: r.usd,
+          };
+    },
     async interpretDirective(req) {
       if (!opts.directives || !(await isLive(req.projectId))) return stubs.interpretDirective(req);
       const items = Object.entries(req.blueprint?.collections ?? {}).flatMap(([collection, list]) =>

@@ -131,8 +131,8 @@ it('answers at most twice in a row on one task, then the Director gets the quest
   expect(cards.map((c) => c.resolution?.by)).toEqual(['lead', 'lead', 'director']);
   expect(cards[2]!.triage).toMatchObject({ mode: 'forwarded', optionId: null });
   expect(cards[2]!.triage!.reasoning).toMatch(/answered 2 questions on this task in a row/);
-  // Each question showed the Lead its earlier answers on the task.
-  expect(asked.map((a) => a.previous.length)).toEqual([0, 1, 2]);
+  // Each question showed the Lead its earlier answers on the task (a retried call asks again).
+  expect([...new Set(asked.map((a) => a.previous.length))]).toEqual([0, 1, 2]);
 }, 120_000);
 
 it('sends the card up as before when triage fails', async () => {

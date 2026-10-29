@@ -170,6 +170,8 @@ it('counts cards by category and who settled them, reviews, waits, re-runs, repe
       settled: { director: 1, chief_of_staff: 0, default: 1, lead: 0, rule: 0 },
       recommendedTaken: 2,
       withRecommendation: 2,
+      shadowAnswered: 0,
+      shadowAgreed: 0,
     },
     {
       category: 'retry',
@@ -178,6 +180,8 @@ it('counts cards by category and who settled them, reviews, waits, re-runs, repe
       settled: { director: 1, chief_of_staff: 0, default: 0, lead: 0, rule: 0 },
       recommendedTaken: 0,
       withRecommendation: 1,
+      shadowAnswered: 0,
+      shadowAgreed: 0,
     },
     {
       category: 'release',
@@ -186,6 +190,8 @@ it('counts cards by category and who settled them, reviews, waits, re-runs, repe
       settled: { director: 0, chief_of_staff: 0, default: 0, lead: 0, rule: 0 },
       recommendedTaken: 0,
       withRecommendation: 0,
+      shadowAnswered: 0,
+      shadowAgreed: 0,
     },
   ]);
   expect(
@@ -197,4 +203,29 @@ it('counts cards by category and who settled them, reviews, waits, re-runs, repe
   expect(card_.repeats).toEqual([
     { category: 'media', title: 'Source URL for hero.png?', count: 2 },
   ]);
+});
+
+it('measures how often the Director answered as the Lead would have, in shadow', () => {
+  const shadowed = (id: string, leadSays: string) => ({
+    ...card(id, 'inventory', `Rename the Hero ${id} variant?`),
+    data: {
+      ...card(id, 'inventory', `Rename the Hero ${id} variant?`).data,
+      triage: { leadId: 'lead', mode: 'shadow', optionId: leadSays, reasoning: 'x', ruleIds: [] },
+    },
+  });
+  const s = project(
+    [
+      created,
+      task('inventory', 1),
+      shadowed('y1', 'a'),
+      settle('y1', 'director', 'a'),
+      shadowed('y2', 'a'),
+      settle('y2', 'director', 'b'),
+      // Settled by its default: nothing to compare.
+      shadowed('y3', 'a'),
+      expire('y3'),
+    ].map((e, i) => ({ ...e, at: T0 + i * H })),
+  );
+  const naming = scorecard(s).categories.find((c) => c.category === 'naming')!;
+  expect(naming).toMatchObject({ raised: 3, shadowAnswered: 2, shadowAgreed: 1 });
 });

@@ -120,6 +120,13 @@ export interface DemoEscalation {
   evidence?: { label: string; go: Jump }[];
   reversible?: boolean;
   waitNote?: string;
+  /** What the Lead made of it before it reached the Director (Lead triage). */
+  lead?: {
+    leadId: string;
+    mode: 'shadow' | 'forwarded';
+    optionIdx: number | null;
+    reasoning: string;
+  };
   gate?: { phase: number; artifactId: string; version: number };
   onResolve?: (p: DemoProject, option: number, by: 'director' | 'default') => Promise<void>;
   onUndo?: (p: DemoProject) => Promise<void>;

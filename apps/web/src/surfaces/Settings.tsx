@@ -1,4 +1,5 @@
 import type {
+  AutonomyLevel,
   IntakeCredentialSpec,
   PlaybookSummary,
   ProjectSummary,
@@ -33,6 +34,13 @@ function usePlaybooks(): PlaybookSummary[] | null {
 }
 
 type CredentialRow = SettingsSnapshot['credentials'][number];
+
+const AUTONOMY_LEVELS: [AutonomyLevel, string][] = [
+  ['ask', 'Always you'],
+  ['shadow', 'Shadow'],
+  ['lead', 'Lead decides'],
+  ['agents', 'Agent decides'],
+];
 
 export function Settings() {
   const { projectId, run, openOverlay, closeOverlay } = useApp();
@@ -275,6 +283,62 @@ export function Settings() {
             </div>
           ))}
         </section>
+
+        {s.autonomy.length > 0 && (
+          <section className="panel autonomy">
+            <h2>
+              Autonomy <small>who settles each kind of question</small>
+            </h2>
+            <p className="muted">
+              Before a question reaches you, the task’s Lead sees it. In shadow the Lead answers for
+              the record and the card still comes to you, so the Scorecard can show how often you
+              agree before you hand a kind of question to the Lead.
+            </p>
+            <div className="auto-rows">
+              {s.autonomy.map((r) => (
+                <div className="auto-row" key={r.category}>
+                  <span>
+                    {r.label}
+                    {!r.locked && r.level !== r.default && (
+                      <small className="muted">
+                        Default: {AUTONOMY_LEVELS.find(([level]) => level === r.default)?.[1]}
+                      </small>
+                    )}
+                  </span>
+                  {r.locked ? (
+                    <span className="muted">Always you</span>
+                  ) : (
+                    <select
+                      className="select"
+                      aria-label={`Who settles ${r.label.toLowerCase()}`}
+                      value={r.level}
+                      onChange={(e) =>
+                        void run(() =>
+                          put(`${base}/settings/autonomy`, {
+                            value: Object.fromEntries(
+                              s.autonomy
+                                .filter((x) => !x.locked)
+                                .map((x) => [
+                                  x.category,
+                                  x.category === r.category ? e.target.value : x.level,
+                                ]),
+                            ),
+                          }),
+                        )
+                      }
+                    >
+                      {AUTONOMY_LEVELS.map(([level, label]) => (
+                        <option key={level} value={level}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="panel">
           <h2>Escalation policy</h2>

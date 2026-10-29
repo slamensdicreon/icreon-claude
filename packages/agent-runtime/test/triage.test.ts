@@ -65,6 +65,7 @@ describe('triageQuestion', () => {
       reasoning: 'R-1 covers a refused download.',
       ruleIds: ['R-1'],
       tokens: 120,
+      usd: expect.any(Number),
     });
     expect(seen[0]!.system).toMatch(/^You are a Lead/);
     expect(seen[0]!.system).toMatch(/You are Danielle Brooks\. Leads content\./);
@@ -88,7 +89,12 @@ describe('triageQuestion', () => {
           ruleIds: [],
         }),
       ),
-    ).toEqual({ decision: 'forward', reasoning: 'Drops a page: scope.', tokens: 120 });
+    ).toEqual({
+      decision: 'forward',
+      reasoning: 'Drops a page: scope.',
+      tokens: 120,
+      usd: expect.any(Number),
+    });
     const r = await triageQuestion(
       input,
       answering({ decision: 'answer', optionId: 'delete-page', reasoning: 'x', ruleIds: [] }),

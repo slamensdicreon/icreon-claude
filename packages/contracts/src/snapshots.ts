@@ -379,6 +379,9 @@ export const ScorecardCategory = z.object({
   recommendedTaken: z.number().int(),
   /** Settled cards that had a recommended option. */
   withRecommendation: z.number().int(),
+  /** Shadowed cards the Director answered: how many, and how many matched the Lead's answer. */
+  shadowAnswered: z.number().int().default(0),
+  shadowAgreed: z.number().int().default(0),
 });
 export type ScorecardCategory = z.infer<typeof ScorecardCategory>;
 

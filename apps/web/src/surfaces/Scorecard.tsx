@@ -138,6 +138,7 @@ export function Scorecard() {
                 <th className="num">Rule</th>
                 <th className="num">Open</th>
                 <th className="num">Recommendation taken</th>
+                <th className="num">Lead agreed (shadow)</th>
               </tr>
             </thead>
             <tbody>
@@ -156,6 +157,11 @@ export function Scorecard() {
                     <td className="num tnum">
                       {c.withRecommendation
                         ? `${Math.round((c.recommendedTaken / c.withRecommendation) * 100)}%`
+                        : '–'}
+                    </td>
+                    <td className="num tnum">
+                      {c.shadowAnswered
+                        ? `${Math.round((c.shadowAgreed / c.shadowAnswered) * 100)}% of ${c.shadowAnswered}`
                         : '–'}
                     </td>
                   </tr>

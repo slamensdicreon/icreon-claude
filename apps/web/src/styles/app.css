@@ -1641,3 +1641,55 @@
   font-variant-numeric: proportional-nums;
   letter-spacing: 0;
 }
+
+/* The Lead's view of a card that reached the Director. */
+.card .card-lead {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--web-radius-1);
+  background: var(--web-surface-2);
+  font-size: 13px;
+  color: var(--web-fg-2);
+  overflow-wrap: anywhere;
+}
+.card .card-lead b {
+  color: var(--web-fg);
+}
+
+/* Decision Log: why a Lead decided, and overriding it. */
+.dl-why {
+  display: block;
+  margin-top: 2px;
+}
+.dl-override {
+  display: block;
+  margin-top: 4px;
+}
+.dl-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Settings → Autonomy: one row per kind of question. */
+.auto-rows {
+  display: grid;
+  gap: 2px;
+}
+.auto-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--web-border);
+}
+.auto-row small {
+  display: block;
+  font-size: 12px;
+}
+.auto-row .select {
+  width: 100%;
+  min-width: 0;
+}

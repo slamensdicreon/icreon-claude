@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
+import { costOf } from './pricing';
 
 /** What a Lead makes of a specialist's question: answer it, or pass it to the Director. */
 export const TriageReading = z.object({
@@ -47,8 +48,15 @@ export interface TriageInput {
 
 /** A Lead's answer, checked: only the card's options, only the rules given. */
 export type Triage =
-  | { decision: 'answer'; optionId: string; reasoning: string; ruleIds: string[]; tokens: number }
-  | { decision: 'forward'; reasoning: string; tokens: number };
+  | {
+      decision: 'answer';
+      optionId: string;
+      reasoning: string;
+      ruleIds: string[];
+      tokens: number;
+      usd: number;
+    }
+  | { decision: 'forward'; reasoning: string; tokens: number; usd: number };
 
 const SYSTEM = `You are a Lead. A specialist on your team stopped with a question and asked for a decision. You see it before the Director does: answer it yourself when the answer is yours to give, so the Director only sees the choices that are really theirs.
 
@@ -107,20 +115,15 @@ export async function triageQuestion(
   });
   const reading = response.parsed_output;
   if (!reading) throw new Error(`Triage not readable (stop reason ${response.stop_reason})`);
-  const u = response.usage;
-  const tokens = u
-    ? u.input_tokens +
-      u.output_tokens +
-      (u.cache_read_input_tokens ?? 0) +
-      (u.cache_creation_input_tokens ?? 0)
-    : 0;
+  const { tokens, usd } = spendOf(input.lead.model, response.usage);
   if (reading.decision === 'forward')
-    return { decision: 'forward', reasoning: reading.reasoning, tokens };
+    return { decision: 'forward', reasoning: reading.reasoning, tokens, usd };
   if (!input.card.options.some((o) => o.id === reading.optionId))
     return {
       decision: 'forward',
       reasoning: `The Lead's answer ("${reading.optionId}") isn't one of the card's options.`,
       tokens,
+      usd,
     };
   const known = new Set(input.rules.map((r) => r.id));
   return {
@@ -129,5 +132,23 @@ export async function triageQuestion(
     reasoning: reading.reasoning,
     ruleIds: reading.ruleIds.filter((id) => known.has(id)),
     tokens,
+    usd,
   };
+}
+
+/** What the call cost, priced like every other model call (tokens only for an unpriced model). */
+function spendOf(model: string, usage: Parameters<typeof costOf>[1] | undefined) {
+  if (!usage) return { tokens: 0, usd: 0 };
+  try {
+    return costOf(model, usage);
+  } catch {
+    return {
+      tokens:
+        usage.input_tokens +
+        usage.output_tokens +
+        (usage.cache_read_input_tokens ?? 0) +
+        (usage.cache_creation_input_tokens ?? 0),
+      usd: 0,
+    };
+  }
 }
