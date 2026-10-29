@@ -59,6 +59,15 @@ function fakeGithub() {
     if (p === '/git/trees' && method === 'POST') return json(201, { sha: 't1' });
     if (p === '/git/commits' && method === 'POST')
       return json(201, { sha: 'c1', html_url: 'https://github.com/acme/site/commit/c1' });
+    m = /^\/compare\/(.+)\.\.\.(.+)$/.exec(p);
+    if (m) {
+      const [base, head] = [refs.get(decodeURIComponent(m[1]!)), m[2]!];
+      // a… ← b… ← c… is the only history; anything else has diverged.
+      const order = ['a', 'b', 'c'].map((x) => x.repeat(40));
+      const [i, j] = [order.indexOf(base ?? ''), order.indexOf(head)];
+      const status = i === j ? 'identical' : i >= 0 && j > i ? 'ahead' : 'diverged';
+      return json(200, { status, ahead_by: Math.max(0, j - i) });
+    }
     m = /^\/git\/refs\/heads\/(.+)$/.exec(p);
     if (m && method === 'PATCH') {
       refs.set(decodeURIComponent(m[1]!), JSON.parse(String(init!.body)).sha);
@@ -156,5 +165,41 @@ describe('GithubToolServer', () => {
       code: 409,
       body: { error: 'No build repository yet.' },
     });
+  });
+
+  it('promotes the reviewed integration commit to main by fast-forward only', async () => {
+    const gh = fakeGithub();
+    const build = new GithubToolServer({
+      name: 'build-repo',
+      facts: async () => ({ repo: 'acme/site', branch: 'main' }),
+      fetch: gh.fetch,
+    });
+    const [a, b, c] = ['a', 'b', 'c'].map((x) => x.repeat(40));
+    expect(build.catalog['branch.promote']).toMatchObject({ releases: true, mutates: true });
+    gh.refs.set('main', a!);
+    gh.refs.set('launchworks/integration', c!);
+
+    // Integration moved since the review: nothing changes.
+    expect(await build.call('branch.promote', { commit: b!.slice(0, 7) }, ctx)).toMatchObject({
+      code: 409,
+      summary: expect.stringContaining('moved'),
+    });
+    expect(gh.refs.get('main')).toBe(a);
+
+    const ok = await build.call('branch.promote', { commit: c!.slice(0, 7) }, ctx);
+    expect(ok).toMatchObject({ code: 200, body: { branch: 'main', commit: c, ahead: 2 } });
+    expect(gh.refs.get('main')).toBe(c);
+    expect(await build.call('branch.promote', { commit: c!.slice(0, 7) }, ctx)).toMatchObject({
+      code: 200,
+      body: { ahead: 0 },
+    });
+
+    // A main with work the integration branch lacks is never overwritten.
+    gh.refs.set('main', 'd'.repeat(40));
+    expect(await build.call('branch.promote', { commit: c!.slice(0, 7) }, ctx)).toMatchObject({
+      code: 409,
+      summary: expect.stringContaining('diverged'),
+    });
+    expect(gh.refs.get('main')).toBe('d'.repeat(40));
   });
 });

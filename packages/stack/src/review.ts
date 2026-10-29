@@ -137,7 +137,8 @@ export const CHECKS: Record<string, Check> = {
     return problems.length ? failed(problems) : pass('Pulled and validated by the Sitecore CLI.');
   },
 
-  // What runs in production is the commit at the head of the build repository's default branch.
+  // Production runs the reviewed commit: the integration branch's head, promoted to the default
+  // branch. A default branch that never took it (still the starter) fails, though it deployed.
   'deploy.commit-matches': async ({ read }) => {
     const p = await read('hosting', 'project.read', {});
     if (p.code !== 200) return failed(['The Vercel project could not be read']);
@@ -150,11 +151,23 @@ export const CHECKS: Record<string, Check> = {
     const head = (t.body as { commit?: string | null } | null)?.commit;
     if (t.code !== 200 || !head)
       return { status: 'pending', detail: 'The build repository head could not be read.' };
-    return prod.sha === head
-      ? pass(`Production runs ${head.slice(0, 7)}, the head of the default branch.`)
-      : failed([
-          `Production runs ${prod.sha.slice(0, 7)}, but the default branch is at ${head.slice(0, 7)}`,
-        ]);
+    const i = await read('build-repo', 'tree.read', { ref: 'launchworks/integration' });
+    const reviewed = (i.body as { commit?: string | null } | null)?.commit;
+    if (i.code !== 200 || !reviewed)
+      return { status: 'pending', detail: 'The integration branch head could not be read.' };
+    const problems = [
+      head !== reviewed
+        ? `The default branch is at ${head.slice(0, 7)}, not the reviewed integration commit ${reviewed.slice(0, 7)}: promote it (build-repo.branch.promote)`
+        : null,
+      prod.sha !== head
+        ? `Production runs ${prod.sha.slice(0, 7)}, but the default branch is at ${head.slice(0, 7)}`
+        : null,
+    ].filter((x): x is string => Boolean(x));
+    return problems.length
+      ? failed(problems)
+      : pass(
+          `Production runs ${head.slice(0, 7)}, the reviewed integration commit, from the default branch.`,
+        );
   },
 
   // Platform Notes cite their sources.

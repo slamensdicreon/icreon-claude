@@ -37,6 +37,8 @@ tools:
       - repo.read
       - code.search
       - branch.commit
+      # The code release: main takes the reviewed integration commit before the production deploy.
+      - branch.promote
   sitecore-authoring:
     ops:
       - item.read

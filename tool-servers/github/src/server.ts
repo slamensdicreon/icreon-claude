@@ -23,6 +23,8 @@ export interface GithubServerOptions {
 
 /** Agents only ever push to their own branches; the client's branches are read-only. */
 export const AGENT_BRANCH_PREFIX = 'launchworks/';
+/** Where accepted work comes together; the editing host runs it, and a release promotes it. */
+const INTEGRATION_BRANCH = 'launchworks/integration';
 const MAX_FILE_BYTES = 200_000;
 const MAX_TREE_ENTRIES = 4_000;
 /**
@@ -57,6 +59,9 @@ const ReadArgs = z.object({
   ref: z.string().max(200).optional(),
 });
 const SearchArgs = z.object({ query: z.string().min(2).max(200) });
+const PromoteArgs = z.object({
+  commit: z.string().regex(/^[0-9a-fA-F]{7,40}$/, 'a commit SHA, 7 to 40 hex characters'),
+});
 const CommitArgs = z.object({
   branch: z
     .string()
@@ -150,6 +155,17 @@ export class GithubToolServer implements ToolServer {
       },
       mutates: true,
     },
+    'branch.promote': {
+      description: `The code release: fast-forward the project branch (main) to the head of ${INTEGRATION_BRANCH}, the commit the editing host runs and its Lead reviewed, so the production deploy builds it. Give the commit you expect (\`commit\`, 7+ characters): if the integration branch has moved since, nothing changes. Anything but a fast-forward is refused. Returns the commit the project branch is now at.`,
+      inputSchema: {
+        type: 'object',
+        properties: { commit: { type: 'string' } },
+        required: ['commit'],
+        additionalProperties: false,
+      },
+      mutates: true,
+      releases: true,
+    },
   };
 
   private readonly fetch: typeof fetch;
@@ -159,7 +175,7 @@ export class GithubToolServer implements ToolServer {
     this.name = opts.name ?? 'github';
     this.catalog = Object.fromEntries(
       Object.entries(GithubToolServer.CATALOG).filter(
-        ([op]) => op !== 'branch.commit' || opts.commits !== false,
+        ([op]) => !op.startsWith('branch.') || opts.commits !== false,
       ),
     );
     this.fetch = opts.fetch ?? ((...a) => fetch(...a));
@@ -188,6 +204,8 @@ export class GithubToolServer implements ToolServer {
         return this.search(facts, SearchArgs.safeParse(args), ctx.token);
       case 'branch.commit':
         return this.commit(facts, CommitArgs.safeParse(args), gh);
+      case 'branch.promote':
+        return this.promote(facts, PromoteArgs.safeParse(args), gh);
       default:
         return { code: 404, body: { error: `Unknown operation ${op}` } };
     }
@@ -312,6 +330,53 @@ export class GithubToolServer implements ToolServer {
         })),
       },
       summary: `Code search "${a.data.query}": ${body.total_count} match${body.total_count === 1 ? '' : 'es'}`,
+    };
+  }
+
+  private async promote(
+    facts: RepoFacts,
+    a: z.ZodSafeParseResult<z.infer<typeof PromoteArgs>>,
+    gh: Gh,
+  ): Promise<ToolResult> {
+    if (!a.success) return bad(a.error.issues[0]!.message);
+    const integration = await gh('GET', `/git/ref/heads/${INTEGRATION_BRANCH}`);
+    if (integration.status !== 200) return fail(integration, `reading ${INTEGRATION_BRANCH}`);
+    const sha = (integration.body as { object: { sha: string } }).object.sha;
+    if (!sha.startsWith(a.data.commit.toLowerCase()))
+      return {
+        code: 409,
+        body: {
+          error: `${INTEGRATION_BRANCH} is at ${sha.slice(0, 7)}, not ${a.data.commit}`,
+          head: sha,
+        },
+        summary: `Not promoted: ${INTEGRATION_BRANCH} moved to ${sha.slice(0, 7)} since the review`,
+      };
+    const cmp = await gh('GET', `/compare/${encodeURIComponent(facts.branch)}...${sha}`);
+    if (cmp.status !== 200) return fail(cmp, `comparing ${facts.branch} with ${sha.slice(0, 7)}`);
+    const { status, ahead_by: ahead } = cmp.body as { status: string; ahead_by: number };
+    if (status === 'identical')
+      return {
+        code: 200,
+        body: { branch: facts.branch, commit: sha, ahead: 0 },
+        summary: `${facts.branch} is already at ${sha.slice(0, 7)}`,
+      };
+    if (status !== 'ahead')
+      return {
+        code: 409,
+        body: {
+          error: `${facts.branch} has commits ${INTEGRATION_BRANCH} lacks (${status}): not a fast-forward`,
+        },
+        summary: `Not promoted: ${facts.branch} and ${INTEGRATION_BRANCH} have diverged`,
+      };
+    const moved = await gh('PATCH', `/git/refs/heads/${encodeURIComponent(facts.branch)}`, {
+      sha,
+      force: false,
+    });
+    if (moved.status !== 200) return fail(moved, `moving ${facts.branch} to ${sha.slice(0, 7)}`);
+    return {
+      code: 200,
+      body: { branch: facts.branch, commit: sha, ahead },
+      summary: `Promoted ${INTEGRATION_BRANCH} to ${facts.branch}: ${sha.slice(0, 7)} (${ahead} commit${ahead === 1 ? '' : 's'})`,
     };
   }
 
