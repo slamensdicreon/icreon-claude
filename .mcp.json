@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "affectui": {
+      "type": "http",
+      "url": "https://www.affectui.com/api/mcp",
+      "headers": { "Authorization": "Bearer ${AFFECTUI_API_KEY}" }
+    }
+  }
+}
