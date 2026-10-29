@@ -509,7 +509,9 @@ async function settleForScreenshot(page: {
     }
     window.scrollTo(0, 0);
   });
-  await page.waitForTimeout(500);
+  // Scrolling starts count-ups and reveal animations (commonly up to 2s): let them finish, or the
+  // shot shows half-counted numbers and half-faded sections.
+  await page.waitForTimeout(2500);
   await page.evaluate(() => {
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
       const position = getComputedStyle(el).position;
