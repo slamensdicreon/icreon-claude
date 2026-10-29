@@ -4,6 +4,7 @@ import type {
   ProjectSummary,
   SettingsSnapshot,
 } from '@lw/contracts';
+import { briefApplies, SOURCE_REPO } from '@lw/contracts';
 import { Fragment, useEffect, useState } from 'react';
 import { get, post, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';
@@ -91,7 +92,9 @@ export function Settings() {
         {!p.demo && p.playbook && (
           <BriefPanel
             current={p.brief}
-            questions={playbooks?.find((x) => x.id === p.playbook?.id)?.intake.brief ?? []}
+            questions={(playbooks?.find((x) => x.id === p.playbook?.id)?.intake.brief ?? []).filter(
+              (q) => briefApplies(q, p.intake?.repo ? [SOURCE_REPO] : []),
+            )}
           />
         )}
         {!p.demo && p.intake?.repo && <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo} />}

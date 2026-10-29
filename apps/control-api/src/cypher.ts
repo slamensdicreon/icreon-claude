@@ -9,6 +9,7 @@ import type {
   ProjectDraft,
   RemixDraft,
 } from '@lw/contracts';
+import { briefApplies, SOURCE_REPO } from '@lw/contracts';
 import type { ModelClient } from '@lw/agent-runtime';
 import type { IntegrationStore } from '@lw/events';
 import { CommandError } from '@lw/domain';
@@ -338,12 +339,17 @@ export class PortfolioCypher {
       case 'propose_remix': {
         const id = String(input.fromProjectId ?? '');
         const base = await this.deps.remixDraft(id);
+        const source = this.source(input);
         const draft: ProjectDraft = {
           ...base,
-          ...this.source(input),
+          ...source,
           name: this.name(input),
           client: str(input.client) ?? base.client,
-          brief: { ...base.brief, ...this.brief(input, base.playbookId) },
+          brief: this.brief(
+            { ...base.brief, ...((input.brief ?? {}) as Input) },
+            base.playbookId,
+            source.repo,
+          ),
         };
         projects.set(base.from.projectId, base.from.name);
         proposals.push({ kind: 'remix', reason: str(input.reason) ?? '', notCovered: [], draft });
@@ -377,7 +383,7 @@ export class PortfolioCypher {
       client,
       timezone: 'America/New_York',
       budgets: DEFAULT_BUDGETS,
-      brief: this.brief(input, playbook.id),
+      brief: this.brief((input.brief ?? {}) as Input, playbook.id, str(input.repo)),
       target: connection?.target ?? {},
       providedCredentials: connection?.credentials.map((c) => c.credentialId) ?? [],
       name: this.name(input),
@@ -400,10 +406,14 @@ export class PortfolioCypher {
     return { sourceUrl, repo, branch: str(input.branch) ?? 'main' };
   }
 
-  /** Brief answers for questions the playbook asks; anything else is dropped. */
-  private brief(input: Input, playbookId: string): Record<string, string> {
-    const questions = this.deps.playbooks().find((b) => b.id === playbookId)?.intake.brief ?? [];
-    const given = (input.brief ?? {}) as Record<string, unknown>;
+  /**
+   * Brief answers for the questions the playbook asks this project (one about the source code
+   * only with a repository); anything else is dropped.
+   */
+  private brief(given: Input, playbookId: string, repo: string | null): Record<string, string> {
+    const questions = (
+      this.deps.playbooks().find((b) => b.id === playbookId)?.intake.brief ?? []
+    ).filter((q) => briefApplies(q, repo ? [SOURCE_REPO] : []));
     return Object.fromEntries(
       questions
         .filter((q) => typeof given[q.key] === 'string' && (given[q.key] as string).trim())

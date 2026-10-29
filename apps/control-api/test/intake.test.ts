@@ -262,6 +262,27 @@ describe('New Project wizard', () => {
     expect(started.at(-1)!.features).toEqual([]);
   });
 
+  it('asks about the source code only when there is a repository', async () => {
+    await start();
+    // Without a repository the question isn't asked: not required, and an answer is ignored.
+    const { codeExtraction: _, ...rest } = intake().brief!;
+    const r = await post('/projects', {
+      ...intake(),
+      source: { repo: null, url: 'https://www.globex.example' },
+      brief: { ...rest, codeExtraction: 'Yes' },
+    });
+    expect(r.statusCode).toBe(201);
+    const { projectId } = r.json() as { projectId: string };
+    const mc = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(mc.project.brief.map((b) => b.key)).not.toContain('codeExtraction');
+    // With one it is required.
+    const missing = await post('/projects', { ...intake(), brief: rest });
+    expect(missing.statusCode).toBe(422);
+    expect(missing.json().error.message).toMatch(/source code/);
+  });
+
   it('records the brief, refuses a missing answer, and switches features on from it', async () => {
     const { started } = await start({ orchestrator: true });
     const missing = await post('/projects', { ...intake(), brief: { personalization: 'yes' } });

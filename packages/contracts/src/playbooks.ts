@@ -66,8 +66,23 @@ export const BriefQuestion = z.object({
   placeholder: z.string().nullable().default(null),
   /** A yes switches this project feature on (plan templates with `when` need it). */
   feature: z.string().nullable().default(null),
+  /** Asked only of projects with this feature (e.g. `source-repo`), like a template's `when`. */
+  when: z.string().nullable().default(null),
+  /** Not asked of projects with this feature. */
+  unless: z.string().nullable().default(null),
 });
 export type BriefQuestion = z.infer<typeof BriefQuestion>;
+
+/** The feature a project has when it was given a source repository at intake. */
+export const SOURCE_REPO = 'source-repo';
+
+/** Whether a brief question is asked of a project with these features. */
+export function briefApplies(
+  q: Pick<BriefQuestion, 'when' | 'unless'>,
+  features: readonly string[],
+): boolean {
+  return (!q.when || features.includes(q.when)) && (!q.unless || !features.includes(q.unless));
+}
 
 export const IntakeSpec = z.object({
   source: z.object({

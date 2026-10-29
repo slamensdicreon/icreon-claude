@@ -9,6 +9,7 @@ import type {
   VerifyIntakeCredential,
   VerifyIntakeResult,
 } from '@lw/contracts';
+import { briefApplies, SOURCE_REPO } from '@lw/contracts';
 import { CommandError, type ProjectState } from '@lw/domain';
 import type { EventStore, IntegrationStore, SecretVault } from '@lw/events';
 import type { CatalogEntry } from '@lw/playbook-sdk';
@@ -137,7 +138,7 @@ export class IntakeService {
    * question that names one.
    */
   private featuresOf(s: ProjectState): string[] {
-    const source = s.intake?.repo ? ['source-repo'] : [];
+    const source = s.intake?.repo ? [SOURCE_REPO] : [];
     if (!s.playbook || !this.deps.catalog.has(s.playbook.id)) return source;
     const questions = this.resolve(s.playbook.id).spec.brief;
     return [
@@ -235,7 +236,7 @@ export class IntakeService {
         'invalid',
         'Give the source repository or the live site: without a repository, agents rebuild from the live site.',
       );
-    const brief = briefOf(spec, intake.brief);
+    const brief = briefOf(spec, intake.brief, repo ? [SOURCE_REPO] : []);
     let target: TargetValues;
     try {
       target = pack.normalize(
@@ -599,7 +600,11 @@ export class IntakeService {
     if (s.mode !== 'live' || !s.playbook) {
       throw new CommandError(409, 'not_live', 'Only real projects have a brief.');
     }
-    const brief = briefOf(this.resolve(s.playbook.id).spec, answers);
+    const brief = briefOf(
+      this.resolve(s.playbook.id).spec,
+      answers,
+      s.intake?.repo ? [SOURCE_REPO] : [],
+    );
     await this.deps.store.append(s.projectId, [
       {
         type: 'project.updated',
@@ -872,12 +877,17 @@ export class IntakeService {
 const tail = (v: string) => (v.length > 8 ? v.slice(-4) : null);
 
 /** The brief as recorded: the playbook's questions only, required ones answered, choices valid. */
+/**
+ * The brief from the Director's answers: the questions this project is asked (a question with
+ * `when: source-repo` only when it has a repository), checked against their kinds.
+ */
 function briefOf(
   spec: IntakeSpec,
   answers: Record<string, string>,
+  features: string[],
 ): { key: string; label: string; answer: string }[] {
   const out: { key: string; label: string; answer: string }[] = [];
-  for (const q of spec.brief) {
+  for (const q of spec.brief.filter((q) => briefApplies(q, features))) {
     const answer = (answers[q.key] ?? '').trim();
     if (!answer) {
       if (q.required)

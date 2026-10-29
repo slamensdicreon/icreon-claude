@@ -8,6 +8,7 @@ import type {
   VerifyIntakeCredential,
   VerifyIntakeResult,
 } from '@lw/contracts';
+import { briefApplies, SOURCE_REPO } from '@lw/contracts';
 import { useEffect, useState } from 'react';
 import { ApiProblem, get, post } from '../lib/api';
 import { useApp } from '../state';
@@ -107,15 +108,18 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
   const hasSource = Boolean(
     pb && (pb.intake.source.repo !== 'none' || pb.intake.source.url !== 'none'),
   );
+  // Questions this project is asked: one about the source code only when there is a repository.
+  const questions = (pb?.intake.brief ?? []).filter((q) =>
+    briefApplies(q, f.repo.trim() ? [SOURCE_REPO] : []),
+  );
   const TITLES = [
     'Playbook',
     'Project',
     ...(hasSource ? ['Source'] : []),
     ...steps.map((s) => s.title),
-    ...(pb?.intake.brief.length ? ['Brief'] : []),
+    ...(questions.length ? ['Brief'] : []),
     'Review',
   ];
-  const questions = pb?.intake.brief ?? [];
 
   const clear = (key: string) => setChecks((c) => ({ ...c, [key]: { state: 'idle' } }));
   const setBase =
@@ -249,6 +253,7 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
     ),
     brief: Object.fromEntries(
       Object.entries(brief)
+        .filter(([k]) => questions.some((q) => q.key === k))
         .map(([k, v]) => [k, v.trim()])
         .filter(([, v]) => v),
     ),

@@ -183,11 +183,11 @@ it('drafts a remix on the saved connection from a conversation, and creates noth
       target: { cmHost: 'xmc-globex.sitecorecloud.io', siteCollection: 'globex' },
     },
   });
-  // The brief keeps the original's answers, takes the changed one, and drops unknown keys.
+  // The brief keeps the original's answers, takes the changed one, and drops unknown keys and
+  // the source-code question (no repository).
   expect(reply.proposals[0]!.draft.brief).toEqual({
     personalization: 'yes',
     accessibility: 'WCAG 2.2 AA',
-    codeExtraction: 'Yes',
   });
   expect(reply.proposals[0]!.draft.connectionId).toMatch(/^con-/);
   expect(reply.proposals[0]!.draft.providedCredentials.sort()).toEqual([
