@@ -100,6 +100,20 @@ function fakeCm(
       return ok({ updateItem: { item: { itemId: items[path], name: 'n' } } });
     }
     const bare = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
+    // Several items by ID in one query, each under its alias.
+    if (/^query \{ i0: item\(/.test(query))
+      return ok(
+        Object.fromEntries(
+          [
+            ...query.matchAll(
+              /(i\d+): item\(where: \{ database: "master", itemId: "([^"]+)" \}\)/g,
+            ),
+          ].map(([, alias, id]) => {
+            const at = Object.keys(items).find((k) => bare(items[k]!) === bare(id!));
+            return [alias!, at ? { itemId: items[at] } : null];
+          }),
+        ),
+      );
     const byId = /where: \{ database: "master", itemId: "([^"]+)"/.exec(query)?.[1];
     const path = byId
       ? Object.keys(items).find((k) => bare(items[k]!) === bare(byId))
@@ -135,7 +149,12 @@ function fakeCm(
     }
     return new Response(JSON.stringify({ errors: [{ message: 'nope' }] }), { status: 200 });
   }) as typeof globalThis.fetch;
-  return { fetch, queries };
+  return {
+    fetch,
+    queries,
+    add: (path: string, id: string) => void (items[path] = id),
+    forget: (path: string) => void delete items[path],
+  };
 }
 
 describe('SitecoreAuthoringToolServer', () => {
@@ -215,7 +234,13 @@ describe('SitecoreAuthoringToolServer', () => {
     });
 
     // Inherited fields read back, and IDs stored uppercase in braces match what was written.
-    const cm3 = fakeCm({ [home]: 'home-id', [tpl]: 'tpl-id' });
+    const listed = Object.fromEntries(
+      [1, 2, 3].map((n) => [
+        `/sitecore/layout/Renderings/r${n}`,
+        `a1b2c3d4-0000-4000-8000-00000000000${n}`,
+      ]),
+    );
+    const cm3 = fakeCm({ [home]: 'home-id', [tpl]: 'tpl-id', ...listed });
     const s3 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm3.fetch });
     await s3.call('item.create', create, ctx);
     const inherited = await s3.call(
@@ -265,6 +290,17 @@ describe('SitecoreAuthoringToolServer', () => {
         )
       ).code,
     ).toBe(200);
+    // An ID no item has is refused before anything is written.
+    const typed = await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [{ name: '__Masters', value: 'a1b2c3d4-0000-4000-8000-00000000000c' }],
+      },
+      ctx,
+    );
+    expect(typed.code).toBe(422);
+    expect(JSON.stringify(typed.body)).toContain('a1b2c3d4-0000-4000-8000-00000000000c');
     const masters = await s3.call(
       'item.read',
       { path: `${home}/Contact`, fields: ['__Masters', 'Nope'] },
@@ -278,10 +314,10 @@ describe('SitecoreAuthoringToolServer', () => {
 
   it('adds IDs to the list as stored at the write, keeping what another task added', async () => {
     const group = '/sitecore/content/Brands/ansco/Presentation/Available Renderings/Ansco';
-    const cm = fakeCm({ [group]: 'group-id' });
-    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
     const one = '{A1B2C3D4-0000-4000-8000-000000000001}';
     const two = 'a1b2c3d4-0000-4000-8000-000000000002';
+    const cm = fakeCm({ [group]: 'group-id', '/r/One': one, '/r/Two': two });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
     await s.call('item.update', { path: group, fields: [{ name: 'Renderings', value: one }] }, ctx);
     // Another registrar read the list before this write; adding keeps the ID written since.
     const r = await s.call(
@@ -296,10 +332,25 @@ describe('SitecoreAuthoringToolServer', () => {
       ctx,
     );
     expect(again.code).toBe(200);
+    // An ID already in the list isn't this write's to check, even if its item is gone.
+    cm.forget('/r/One');
+    const three = 'a1b2c3d4-0000-4000-8000-000000000003';
+    cm.add('/r/Three', three);
+    expect(
+      (
+        await s.call(
+          'item.update',
+          { path: group, fields: [{ name: 'Renderings', value: three, add: true }] },
+          ctx,
+        )
+      ).code,
+    ).toBe(200);
     const read = await s.call('item.read', { path: group, fields: ['Renderings'] }, ctx);
     expect(read.body).toMatchObject({
       fields: {
-        nodes: [{ name: 'Renderings', value: `${one}|{${two.toUpperCase()}}` }],
+        nodes: [
+          { name: 'Renderings', value: `${one}|{${two.toUpperCase()}}|{${three.toUpperCase()}}` },
+        ],
       },
     });
     const notIds = await s.call(

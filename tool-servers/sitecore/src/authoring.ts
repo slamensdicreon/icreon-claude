@@ -679,20 +679,38 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       if (/^parameters template$/i.test(f.name) && f.value.trim().startsWith('/'))
         f.value = sitecoreId(await this.idOf(q, f.value.trim()));
     }
-    // IDs to add join the list as stored now, while this task holds the item's lock: a list read
-    // earlier may predate another task's write, and writing it back would drop their IDs.
+    const isIdList = (v: string) => !!v.trim() && v.split('|').every((p) => HEX_ID.test(p.trim()));
     const adds = a.data.fields.filter((f) => f.add);
-    if (adds.some((f) => !f.value.split('|').every((p) => HEX_ID.test(p.trim()))))
+    if (adds.some((f) => !isIdList(f.value)))
       return bad('add: true takes item IDs, separated by |');
-    if (adds.length) {
+    const lists = a.data.fields.filter((f) => isIdList(f.value));
+    if (lists.length) {
       const now = await readBack(
         q,
         a.data.path,
         language,
-        adds.map((f) => f.name),
+        lists.map((f) => f.name),
       );
       if (!now) return { code: 404, body: { error: `No item at ${a.data.path}` } };
-      for (const f of adds) f.value = addIds(now.fields.get(f.name.toLowerCase()) ?? '', f.value);
+      const stored = (f: { name: string }) => now.fields.get(f.name.toLowerCase()) ?? '';
+      // IDs to add join the list as stored now, while this task holds the item's lock: a list read
+      // earlier may predate another task's write, and writing it back would drop their IDs.
+      for (const f of adds) f.value = addIds(stored(f), f.value);
+      // An ID typed rather than copied from a read points at nothing, and Sitecore keeps it
+      // without complaint: a page design listing a mistyped partial design ID drops that design.
+      // Only IDs this write brings in are checked; what the field held already isn't this task's.
+      for (const f of lists) {
+        const had = new Set(stored(f).split('|').filter(Boolean).map(bare));
+        const fresh = f.value
+          .split('|')
+          .map((p) => p.trim())
+          .filter((id) => !had.has(bare(id)));
+        const missing = fresh.length ? await this.missingIds(q, fresh) : [];
+        if (missing.length)
+          return bad(
+            `${f.name}: no item has the ID ${missing.join(', ')}. Copy IDs from an item.read rather than typing them; nothing was written`,
+          );
+      }
     }
     let reconciled = false;
     try {
@@ -1288,6 +1306,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     };
   }
 
+  /** The IDs no item has, asked in one query. */
+  private async missingIds(q: Gql, ids: string[]): Promise<string[]> {
+    const d = await q.run<Record<string, { itemId: string } | null>>(
+      `query { ${ids.map((id, i) => `i${i}: item(where: { database: "master", itemId: ${gql(sitecoreId(id))} }) { itemId }`).join(' ')} }`,
+    );
+    return ids.filter((_, i) => !d[`i${i}`]);
+  }
+
   /** An item's ID by path, or a 404 the agent can act on. */
   /** The item's ID when an item has it, else 404. */
   private async idExists(q: Gql, id: string): Promise<string> {
@@ -1456,13 +1482,12 @@ const HEX_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]
 
 /** A |-separated list of IDs with more added at the end; IDs already in it aren't repeated. */
 function addIds(list: string, more: string): string {
-  const key = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
   const ids = list.split('|').filter((p) => p.trim());
-  const have = new Set(ids.map(key));
+  const have = new Set(ids.map(bare));
   for (const id of more.split('|').map((p) => p.trim())) {
-    if (id && !have.has(key(id))) {
+    if (id && !have.has(bare(id))) {
       ids.push(id);
-      have.add(key(id));
+      have.add(bare(id));
     }
   }
   return ids.join('|');
