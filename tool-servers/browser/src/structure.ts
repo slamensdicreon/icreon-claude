@@ -128,6 +128,10 @@ const PROPS = [
   'padding',
   'margin',
   'border',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
   'border-radius',
   'box-shadow',
   'width',
@@ -141,6 +145,8 @@ const PROPS = [
   'list-style-type',
   'clip-path',
   'transform',
+  'opacity',
+  'content',
 ];
 
 /** Computed styles for chosen selectors, the page's design tokens, and its stylesheets. */
@@ -167,21 +173,35 @@ export function readStyles(
     'letter-spacing': 'normal',
     'text-transform': 'none',
     border: '0px none rgb(0, 0, 0)',
+    opacity: '1',
+    content: 'normal',
   };
   const elements = selectors.map((selector) => {
+    // querySelectorAll refuses pseudo-elements: read ::before/::after from their element.
+    const pseudo = /::?(before|after)\s*$/i.exec(selector);
+    const base = pseudo ? selector.slice(0, pseudo.index) : selector;
     let all: Element[] = [];
     try {
-      all = Array.from(document.querySelectorAll(selector));
+      all = Array.from(document.querySelectorAll(base));
     } catch {
       return { selector, matches: 0, styles: null };
     }
     const el = all[0];
     if (!el) return { selector, matches: 0, styles: null };
-    const cs = getComputedStyle(el);
+    const cs = getComputedStyle(el, pseudo ? `::${pseudo[1]!.toLowerCase()}` : null);
+    if (pseudo && cs.getPropertyValue('content') === 'none')
+      return { selector, matches: 0, styles: null };
     const styles: Record<string, string> = {};
     for (const p of props) {
       const v = cs.getPropertyValue(p);
-      if (v && v !== defaults[p]) styles[p] = v;
+      if (!v || v === defaults[p]) continue;
+      // Sides only when they differ (the shorthand is empty then), and only drawn ones.
+      if (
+        /^border-(top|right|bottom|left)$/.test(p) &&
+        (cs.getPropertyValue('border') || /^0px/.test(v))
+      )
+        continue;
+      styles[p] = v;
     }
     return { selector, matches: all.length, styles };
   });

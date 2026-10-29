@@ -192,7 +192,18 @@ describe('page.markup, page.styles', () => {
   it('reads computed styles and design tokens', async () => {
     const r = await browser.call(
       'page.styles',
-      { url: `${origin}/styled`, selectors: ['.hero', '.hero h1', '.cards', '.nope'] },
+      {
+        url: `${origin}/styled`,
+        selectors: [
+          '.hero',
+          '.hero h1',
+          '.cards',
+          '.nope',
+          'footer',
+          '.hero::before',
+          '.cards::after',
+        ],
+      },
       ctx,
     );
     const body = r.body as {
@@ -203,7 +214,7 @@ describe('page.markup, page.styles', () => {
         breakpoints: string[];
       };
     };
-    const [hero, h1, cards, nope] = body.elements;
+    const [hero, h1, cards, nope, footer, before, after] = body.elements;
     expect(hero!.styles).toMatchObject({
       'background-color': 'rgb(228, 0, 43)',
       padding: '48px 24px',
@@ -212,6 +223,14 @@ describe('page.markup, page.styles', () => {
     expect(h1!.styles).toMatchObject({ 'font-size': '40px', 'font-weight': '700' });
     expect(cards).toMatchObject({ matches: 1, styles: { display: 'grid', gap: '16px' } });
     expect(nope).toEqual({ selector: '.nope', matches: 0, styles: null });
+    // One drawn side, which the border shorthand can't express.
+    expect(footer!.styles).toMatchObject({ 'border-top': '1px solid rgb(234, 234, 234)' });
+    expect(footer!.styles!['border-bottom']).toBeUndefined();
+    expect(before).toMatchObject({
+      matches: 1,
+      styles: { 'background-color': 'rgba(204, 24, 0, 0.03)', opacity: '0.5' },
+    });
+    expect(after).toEqual({ selector: '.cards::after', matches: 0, styles: null });
     expect(body.tokens.fonts[0]!.family).toBe('Georgia');
     expect(body.tokens.customProperties).toEqual({ '--brand': '#e4002b', '--ink': '#1a1a1a' });
     expect(body.tokens.breakpoints).toEqual(['(max-width: 768px)']);

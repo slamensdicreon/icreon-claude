@@ -103,7 +103,7 @@ const CATALOG: OperationCatalog = {
   },
   'page.styles': {
     description:
-      "How a live page looks, in values a builder can use: computed styles (font, size, weight, colour, background, spacing, border, radius, layout, clip-path) of up to 20 selectors at desktop width, plus the page's design tokens (most used fonts, text colours, backgrounds and font sizes; :root custom properties; media-query breakpoints) and its stylesheets.",
+      "How a live page looks, in values a builder can use: computed styles (font, size, weight, colour, background, spacing, borders per side, radius, layout, clip-path, opacity) of up to 20 selectors at desktop width (a selector may end in ::before or ::after), plus the page's design tokens (most used fonts, text colours, backgrounds and font sizes; :root custom properties; media-query breakpoints) and its stylesheets.",
     inputSchema: {
       type: 'object',
       properties: {

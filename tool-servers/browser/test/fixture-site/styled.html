@@ -8,6 +8,8 @@
       .hero { background-color: rgb(228, 0, 43); color: white; padding: 48px 24px; clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%); }
       .hero h1 { font-size: 40px; font-weight: 700; }
       .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      footer { border-top: 1px solid rgb(234, 234, 234); }
+      .hero::before { content: ''; background-color: rgba(204, 24, 0, 0.03); opacity: 0.5; }
       @media (max-width: 768px) { .cards { grid-template-columns: 1fr; } }
     </style>
   </head>
