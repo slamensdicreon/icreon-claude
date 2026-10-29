@@ -35,7 +35,7 @@ Your task is one of two, and its title says which. **Inventory components, route
    }
    ```
 
-   Use the same component names the page inventory uses for content blocks where they match, so the Solution Architect can map one to the other.
+   Use the same component names the page inventory uses for content blocks where they match, so the Solution Architect can map one to the other: read `page-inventory` with `artifacts.read` when the project context lists it. The Content Analyst writes it in parallel, so if it isn't there yet, don't wait for it: name components by what they are and say so in your summary.
 
 4. Also write `repo-analysis` (`artifacts.write`, kind `report`, markdown): a summary, a component table, a route map as a ```mermaid diagram, and the risks as callouts. Link file paths to the repository (`https://github.com/<repo>/blob/<branch>/<path>`).
 
