@@ -520,7 +520,8 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           problems.push(
             `${name} lists child items but its rendering has no Component Query: set one returning the fields and children its code reads`,
           );
-        else if (!/children\s*\(/.test(q))
+        // `children { … }` takes the default page of 10; `children(first: N) { … }` sets one.
+        else if (!/\bchildren\s*[({]/.test(q))
           problems.push(`${name}'s Component Query doesn't read the datasource's children`);
       }
       return problems.length

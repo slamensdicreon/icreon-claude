@@ -525,6 +525,21 @@ describe('SitecoreAI checks', () => {
     expect(
       (await pack.checks!['structural.component-queries']!(ctx(tenant(items).read, bp))).status,
     ).toBe('pass');
+    // No `first`: the default page, as nested children must be read to stay under Edge's limit.
+    items[`${r}/CardGrid`]!.fields = {
+      ComponentQuery:
+        'query { datasource: item(path: $datasource) { children { results { id children { results { id } } } } } }',
+    };
+    expect(
+      (await pack.checks!['structural.component-queries']!(ctx(tenant(items).read, bp))).status,
+    ).toBe('pass');
+    items[`${r}/CardGrid`]!.fields = {
+      ComponentQuery:
+        'query { datasource: item(path: $datasource) { title: field(name: "title") { jsonValue } } }',
+    };
+    expect(
+      (await pack.checks!['structural.component-queries']!(ctx(tenant(items).read, bp))).detail,
+    ).toContain("CardGrid's Component Query doesn't read the datasource's children");
   });
 
   it("checks the site, Home and the project's own folders", async () => {
