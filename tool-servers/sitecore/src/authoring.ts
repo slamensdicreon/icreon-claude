@@ -567,15 +567,24 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   private async read(q: Gql, a: Parsed<typeof ReadArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return bad(a.error.issues[0]!.message);
     const named = a.data.fields?.map((f) => f.toLowerCase());
-    const d = await q.run<{
-      item: { fields: { nodes: { name: string; value: string }[] } } | null;
-    }>(
-      `query { item(where: { database: "master", path: ${gql(a.data.path)}, language: ${gql(lang(a.data.language))} }) {
+    type Read = { item: { fields: { nodes: { name: string; value: string }[] } } | null };
+    // Children come a page at a time: ask for a page large enough for a module folder of dozens
+    // of templates, or take the API's default page where it doesn't take a size.
+    const query = (size: string) =>
+      q.run<Read>(
+        `query { item(where: { database: "master", path: ${gql(a.data.path)}, language: ${gql(lang(a.data.language))} }) {
         itemId name path template { name templateId }
         fields(ownFields: false, excludeStandardFields: ${named ? 'false' : 'true'}) { nodes { name value } }
-        ${a.data.children ? 'children { nodes { itemId name path template { name } } }' : ''}
+        ${a.data.children ? `children${size} { nodes { itemId name path template { name } } }` : ''}
       } }`,
-    );
+      );
+    let d: Read;
+    try {
+      d = await query(a.data.children ? '(first: 1000)' : '');
+    } catch (err) {
+      if (!(err instanceof GqlError) || !a.data.children) throw err;
+      d = await query('');
+    }
     if (!d.item) return { code: 404, body: { error: `No item at ${a.data.path}` } };
     if (!named) return { code: 200, body: d.item, summary: `Read ${a.data.path}` };
     // Named fields only, asked for by name, and say which the item doesn't have.

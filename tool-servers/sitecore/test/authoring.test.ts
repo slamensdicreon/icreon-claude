@@ -394,6 +394,57 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(bare).toMatchObject({ code: 422 });
   });
 
+  it('reads every child of a folder, not just the first page', async () => {
+    const kids = Array.from({ length: 45 }, (_, i) => ({
+      itemId: `id-${i}`,
+      name: i === 44 ? 'Pages' : `Component${String(i).padStart(2, '0')}`,
+      path: `/sitecore/templates/Project/Brands/ansco/${i === 44 ? 'Pages' : `Component${i}`}`,
+      template: { name: i === 44 ? 'Template Folder' : 'Template' },
+    }));
+    const cm = (takesSize: boolean) => {
+      const queries: string[] = [];
+      const answer = (async (_: string | URL | Request, init?: RequestInit) => {
+        const { query } = JSON.parse(String(init!.body)) as { query: string };
+        queries.push(query);
+        const sized = /children\(first: (\d+)\)/.exec(query);
+        if (sized && !takesSize)
+          return new Response(
+            JSON.stringify({ errors: [{ message: 'Unknown argument "first"' }] }),
+          );
+        const item = {
+          itemId: 'root',
+          name: 'ansco',
+          path: '/sitecore/templates/Project/Brands/ansco',
+          fields: { nodes: [] },
+          // The API's default page is 10.
+          children: { nodes: kids.slice(0, sized ? Number(sized[1]) : 10) },
+        };
+        return new Response(JSON.stringify({ data: { item } }));
+      }) as typeof globalThis.fetch;
+      return { fetch: answer, queries };
+    };
+    const big = cm(true);
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: big.fetch });
+    const r = await s.call(
+      'item.read',
+      { path: '/sitecore/templates/Project/Brands/ansco', children: true },
+      ctx,
+    );
+    const names = (r.body as { children: { nodes: { name: string }[] } }).children.nodes;
+    expect(names).toHaveLength(45);
+    expect(names.at(-1)!.name).toBe('Pages');
+    // An API that doesn't take a page size still answers, with its default page.
+    const old = cm(false);
+    const s2 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: old.fetch });
+    const r2 = await s2.call(
+      'item.read',
+      { path: '/sitecore/templates/Project/Brands/ansco', children: true },
+      ctx,
+    );
+    expect(r2.code).toBe(200);
+    expect(old.queries).toHaveLength(2);
+  });
+
   it('reports a missing item and refuses hosts outside SitecoreAI', async () => {
     const cm = fakeCm({});
     const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
