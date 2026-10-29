@@ -719,8 +719,17 @@ export class SandboxToolServer implements ToolServer {
         } else {
           // Nothing new, but a push that failed earlier leaves its commit here: push that.
           const fetched = await run('git', [...auth, 'fetch', 'origin', branch]);
-          if (fetched.exitCode !== 0 || !(await count('FETCH_HEAD..HEAD')))
-            return bad('Nothing to commit.');
+          if (fetched.exitCode !== 0) return bad('Nothing to commit.');
+          if (!(await count('FETCH_HEAD..HEAD'))) {
+            if (await count('HEAD..FETCH_HEAD')) return bad('Nothing to commit.');
+            // The branch already holds exactly this working copy: say so, with the commit.
+            const sha = (await run('git', ['rev-parse', 'HEAD'])).output.trim();
+            return {
+              code: 200,
+              body: { branch, commit: sha, files: 0 },
+              summary: `Nothing new to commit: ${branch} already has this working copy (${sha.slice(0, 7)})`,
+            };
+          }
         }
         const push = () =>
           run('git', [...auth, 'push', 'origin', `HEAD:refs/heads/${branch}`], {

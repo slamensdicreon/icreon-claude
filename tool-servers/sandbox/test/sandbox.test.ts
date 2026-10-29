@@ -460,22 +460,37 @@ describe('working copies', () => {
     expect(r.summary).toBe('Pushed what an earlier push left behind to launchworks/hero (9cef797)');
     expect(gitRuns(fake.runs)).toContain('push origin HEAD:refs/heads/launchworks/hero');
 
-    const none = fakeBox({}, (cmd, args) =>
-      args.join(' ') === 'rev-list --count FETCH_HEAD..HEAD'
-        ? { exitCode: 0, output: '0\n' }
-        : null,
+    // Already on GitHub as it is here: confirmed with the commit, which build.green looks for.
+    const same = fakeBox({}, (cmd, args) =>
+      args.join(' ') === 'rev-parse HEAD' ? { exitCode: 0, output: '92444e50000\n' } : null,
     );
     const s2 = new SandboxToolServer({
-      provider: none.provider,
+      provider: same.provider,
       facts,
       buildEnv: async () => ({}),
     });
     expect(
       await s2.call('git.commit', { branch: 'launchworks/hero', message: 'x' }, ctx),
     ).toMatchObject({
-      code: 422,
-      summary: 'Nothing to commit.',
+      code: 200,
+      summary: 'Nothing new to commit: launchworks/hero already has this working copy (92444e5)',
     });
+    expect(gitRuns(same.runs).some((g) => g.startsWith('push'))).toBe(false);
+
+    // Behind the branch on GitHub: nothing of its own to push.
+    const behind = fakeBox({}, (cmd, args) =>
+      args.join(' ') === 'rev-list --count HEAD..FETCH_HEAD'
+        ? { exitCode: 0, output: '2\n' }
+        : null,
+    );
+    const s3 = new SandboxToolServer({
+      provider: behind.provider,
+      facts,
+      buildEnv: async () => ({}),
+    });
+    expect(
+      await s3.call('git.commit', { branch: 'launchworks/hero', message: 'x' }, ctx),
+    ).toMatchObject({ code: 422, summary: 'Nothing to commit.' });
   });
 
   it('replays its commits on a branch that moved on GitHub, then pushes again', async () => {
