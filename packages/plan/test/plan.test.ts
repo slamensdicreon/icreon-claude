@@ -33,10 +33,7 @@ const PILOT = new Set(['hero', 'promo-card', 'rich-text']);
 
 function blueprint(
   overrides: Partial<
-    Record<
-      string,
-      { key: string; name: string; status?: string; pilot?: boolean; attrs?: object }[]
-    >
+    Record<string, { key: string; name: string; status?: string; pilot?: boolean }[]>
   > = {},
 ): Blueprint {
   const items = (prefix: string, n: number) =>
@@ -108,22 +105,6 @@ describe('compilePlan', () => {
     const ids = plan.tasks.map((t) => t.taskId);
     expect(ids.filter((id) => id.startsWith('port-'))).toHaveLength(7);
     expect(ids).not.toContain('port-quote-calculator');
-    // Merged into another item: it ships with that item's tasks, so it has none of its own.
-    const merged = compilePlan(
-      pb,
-      blueprint({
-        components: COMPONENTS.map((k) => ({
-          key: k,
-          name: k,
-          pilot: PILOT.has(k),
-          ...(k === 'quote-calculator'
-            ? { status: 'merge' as const, attrs: { mergedInto: 'hero', variant: 'Quote' } }
-            : {}),
-        })),
-      }),
-    ).tasks.map((t) => t.taskId);
-    expect(merged.filter((id) => id.endsWith('-quote-calculator'))).toEqual([]);
-    expect(merged.filter((id) => id.startsWith('port-'))).toHaveLength(7);
     expect(plan.tasks.filter((t) => t.templateId === 'migrate-pages-{key}')).toHaveLength(25);
     expect(plan.tasks.find((t) => t.taskId === 'migrate-pages-page-1')).toMatchObject({
       title: 'Migrate page 1',

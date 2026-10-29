@@ -31,13 +31,6 @@ export interface CollectionDiff {
 
 const inScope = (i: BlueprintItem) => i.status !== 'drop';
 
-/**
- * Does the item get tasks of its own? Not when dropped, nor when merged into another item
- * (`status: 'merge'` naming it in `attrs.mergedInto`): it ships with that item's tasks.
- */
-export const hasOwnWork = (i: BlueprintItem) =>
-  i.status !== 'drop' && !(i.status === 'merge' && i.attrs.mergedInto);
-
 /** Item-level difference between two Blueprint versions, by collection. */
 export function diffBlueprints(before: Blueprint, after: Blueprint): CollectionDiff[] {
   const names = new Set([...Object.keys(before.collections), ...Object.keys(after.collections)]);

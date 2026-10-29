@@ -1,6 +1,6 @@
 import type { MetricKey, TaskContract, Workstream } from '@lw/contracts';
 import type { Playbook, TaskTemplate } from '@lw/playbook-sdk';
-import { hasOwnWork, type Blueprint, type BlueprintItem } from './blueprint';
+import type { Blueprint, BlueprintItem } from './blueprint';
 
 export interface PlannedTask {
   taskId: string;
@@ -131,7 +131,7 @@ export function compilePlan(
   if (pilot && blueprint) {
     pilotKeys = new Set(
       (blueprint.collections[pilot.collection] ?? [])
-        .filter((i) => i.pilot && hasOwnWork(i))
+        .filter((i) => i.pilot && i.status !== 'drop')
         .map((i) => i.key),
     );
     if (pilotKeys.size) {
@@ -305,14 +305,16 @@ function expand(template: TaskTemplate, blueprint: Blueprint | null, problems: s
     problems.push(`${template.id}: Blueprint has no "${template.forEach}" collection`);
     return [];
   }
-  return collection.filter(hasOwnWork).map((i: BlueprintItem) => ({
-    taskId: template.id.replace('{key}', i.key),
-    key: i.key,
-    name: i.name,
-    title: template.title.replace('{name}', i.name),
-    kind: 'work' as const,
-    itemKeys: [i.key],
-  }));
+  return collection
+    .filter((i) => i.status !== 'drop')
+    .map((i: BlueprintItem) => ({
+      taskId: template.id.replace('{key}', i.key),
+      key: i.key,
+      name: i.name,
+      title: template.title.replace('{name}', i.name),
+      kind: 'work' as const,
+      itemKeys: [i.key],
+    }));
 }
 
 const fill = (text: string, name: string | null) => text.replaceAll('{name}', name ?? 'the item');
