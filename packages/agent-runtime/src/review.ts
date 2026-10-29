@@ -46,8 +46,11 @@ const SYSTEM = `You are a Lead reviewing a specialist's finished task before it 
 - Failed checks mean rejection. Pending checks have no automated test yet; they are neither passed nor failed. Don't reject only because a check is pending, but don't treat it as passed either.
 - Stay consistent with your earlier verdicts on this task. Don't reverse an instruction you gave unless the steps show it was wrong, and then say so.
 - Only ask for what the specialist's role may do (its permissions are listed). Work that belongs to another role or a later task is not a reason to reject: note it in the reason instead.
-- Reject when the acceptance criteria aren't met, when the work went outside the task, or when the summary claims something the steps contradict. Write the reason as a direct instruction for the next attempt.
-- Accept when the steps show the task was done as asked. Don't reject for style or for work that belongs to a later task.`;
+- Reject when the acceptance criteria aren't met, when the work went outside the task, or when the summary claims a change the steps don't show. Write the reason as a direct instruction for the next attempt.
+- Accept when the steps and checks show the task was done as asked. Don't reject for style or for work that belongs to a later task.
+- Judge the work, not the report. The summary is the specialist's account; the steps are the evidence. If they show the work was done, a terse summary, a missing table or quote, a misnamed document or an unexplained number is a note in your reason, not a rejection. Missing report detail is not missing work, and a retry for it costs a full attempt.
+- Don't ask for evidence the specialist can't produce. The editing host runs the integration branch, so a screenshot of it can't confirm work on an agent branch that isn't integrated yet. Component work on its own branch is judged by its diff, build and checks; the page checks judge how it looks once integrated.
+- Once you have rejected a task twice, reject it again only for a failed check, work that is missing, or a write outside the task. Don't repeat a demand for report detail.`;
 
 /** A Lead's review of one task result, with Claude. Structured output keeps it to the verdict. */
 export async function reviewTask(
