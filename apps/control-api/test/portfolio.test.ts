@@ -145,4 +145,19 @@ it('shows who may settle each kind of card, and keeps releases and scope with th
     payload: { value: { media: 'sometimes' } },
   });
   expect(bad.statusCode).toBe(400);
+  // A valid change is recorded at once; the next card reads it.
+  const ok = await app.inject({
+    method: 'PUT',
+    url: '/projects/p1/settings/autonomy',
+    payload: { value: { media: 'lead', access: 'shadow' } },
+  });
+  expect(ok.statusCode).toBe(200);
+  const after = SettingsSnapshot.parse(
+    (await app.inject({ method: 'GET', url: '/projects/p1/settings' })).json(),
+  );
+  expect(after.autonomy.find((r) => r.category === 'media')).toMatchObject({
+    level: 'lead',
+    default: 'shadow',
+  });
+  expect(after.autonomy.find((r) => r.category === 'access')?.level).toBe('shadow');
 });

@@ -82,6 +82,7 @@ export async function startHarness(): Promise<Harness> {
     validate: (req) => route(req.projectId).validate(req),
     loadBlueprint: (projectId) => route(projectId).loadBlueprint(projectId),
     interpretDirective: (req) => route(req.projectId).interpretDirective(req),
+    triage: (req) => route(req.projectId).triage(req),
     rollbackTask: (req) => route(req.projectId).rollbackTask(req),
   };
   const worker = await createWorker({
@@ -108,6 +109,8 @@ export async function launch(
     policy?: Partial<ProjectPolicy>;
     blueprint?: Blueprint;
     runner?: AgentRunner;
+    /** Stands in for the Lead's triage (stub projects send every question to the Director). */
+    triage?: Activities['triage'];
   } = {},
 ) {
   const projectId = `p${++counter}`;
@@ -119,7 +122,8 @@ export async function launch(
     outputs,
     script: opts.script,
   });
-  h.projects.set(projectId, opts.runner ? withAgentRunner(stubs, opts.runner) : stubs);
+  const acts = opts.runner ? withAgentRunner(stubs, opts.runner) : stubs;
+  h.projects.set(projectId, opts.triage ? { ...acts, triage: opts.triage } : acts);
   const policy = defaultPolicy(h.playbook, {
     budgets: { tokens: 50_000_000, usd: 10_000, hours: 10_000 },
     // Undo has its own tests; elsewhere choices take effect at once.

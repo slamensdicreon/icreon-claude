@@ -1,4 +1,13 @@
-import { AgentTier, BriefQuestion, Charter, MetricKey, Presence, Workstream } from '@lw/contracts';
+import {
+  AgentTier,
+  AutonomyLevel,
+  BriefQuestion,
+  Charter,
+  DecisionCategory,
+  MetricKey,
+  Presence,
+  Workstream,
+} from '@lw/contracts';
 import { z } from 'zod';
 
 const Kebab = z.string().regex(/^[a-z][a-z0-9-]*$/, 'kebab-case');
@@ -135,6 +144,12 @@ export const PlaybookManifest = z.object({
       .default([]),
     /** Tool server display names for Activity. */
     toolLabels: z.record(z.string(), z.string()).default({}),
+    /**
+     * Who may settle each category of card (Settings → Autonomy shows these as the defaults).
+     * Releases, gates, budget and scope are always the Director's; other categories left out
+     * fall back to shadow (Lead-decidable ones) or ask.
+     */
+    autonomy: z.partialRecord(DecisionCategory, AutonomyLevel).default({}),
   }),
   phases: z.array(PhaseSpec).min(1),
 });

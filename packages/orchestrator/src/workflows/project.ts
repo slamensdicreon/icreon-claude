@@ -11,7 +11,7 @@ import type {
   ScopeKind,
   TaskState,
 } from '@lw/contracts';
-import { metricUnit } from '@lw/domain';
+import { categoryOf, LOCKED_CATEGORIES, metricUnit } from '@lw/domain';
 import {
   compilePlan,
   diffBlueprints,
@@ -56,13 +56,27 @@ import {
   stopDirective,
   undoResolution,
 } from '../definitions';
-import type { AgentResult, ProjectInput, ProjectSnapshot, Resolver, TaskOutcome } from '../types';
+import type {
+  AgentResult,
+  ProjectInput,
+  ProjectSnapshot,
+  Resolver,
+  TaskOutcome,
+  TriageOutcome,
+} from '../types';
 import { taskWorkflow } from './task';
 
 const acts = proxyActivities<Activities>({
   startToCloseTimeout: '5 minutes',
   retry: { maximumAttempts: 10 },
 });
+/** Triage is an extra opinion, not a step the project needs: when it fails, the card goes up. */
+const triageActs = proxyActivities<Pick<Activities, 'triage'>>({
+  startToCloseTimeout: '2 minutes',
+  retry: { maximumAttempts: 2 },
+});
+/** Lead answers in a row on one task before the next question goes to the Director. */
+const MAX_LEAD_ANSWERS = 2;
 
 const BUDGET_SOFT = 0.8;
 const CHIEF = { kind: 'chief_of_staff' as const, id: 'chief-of-staff' };
@@ -132,6 +146,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const MAX_SEND_BACKS = 2;
   /** Tasks parked until engineering adds a capability their agent's tools lack, and which. */
   const capabilityWait = new Map<string, string>();
+  /** Lead answers in a row per task, and what they were; a Director answer on the task resets them. */
+  const leadAnswers: Record<string, number> = {};
+  const leadNotes: Record<string, string[]> = {};
   const titleOf = (id: string) => task(id)?.title ?? id;
   const taskEscalation = new Map<string, string>();
   const started = new Set<number>();
@@ -329,7 +346,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     question: string,
     answer: string,
     rationale: string,
-    decidedBy: 'director' | 'chief_of_staff' | 'default',
+    decidedBy: 'director' | 'chief_of_staff' | 'default' | 'lead' | 'rule',
     scopeKey: string,
     escalationId: string | null,
   ): NewEvent => ({
@@ -388,6 +405,111 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     return escalationId;
   }
 
+  /**
+   * A question an agent stopped on: its Lead sees it first. By the category's autonomy level the
+   * Lead answers it (the task retries with the answer), answers it for the record while the card
+   * still goes to the Director (shadow), or passes it on; agents-level categories take the
+   * agent's recommendation. Releases, gates, budget and scope always go straight up, and so does
+   * the card if triage fails.
+   */
+  async function raiseTriaged(
+    t: PlannedTask,
+    card: Omit<EscalationCardInput, 'escalationId' | 'deadline'>,
+    resolver: Resolver,
+  ): Promise<string> {
+    if (!patched('lead-triage')) return raise(card, resolver);
+    const category = categoryOf({ type: card.type, title: card.title, context: card.context });
+    const tagged = { ...card, category };
+    if (LOCKED_CATEGORIES.includes(category)) return raise(tagged, resolver);
+    const options = card.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      recommended: o.recommended ?? false,
+    }));
+    let out: TriageOutcome;
+    try {
+      out = await triageActs.triage({
+        projectId,
+        taskId: t.taskId,
+        role: t.role,
+        category,
+        card: { title: card.title, context: card.context, impact: card.impact, options },
+        previous: leadNotes[t.taskId] ?? [],
+      });
+    } catch {
+      return raise(tagged, resolver);
+    }
+    if (out.tokens || out.usd) {
+      const events: NewEvent[] = [];
+      await account({ tokens: out.tokens, usd: out.usd }, events);
+      await send(...events);
+    }
+    if (out.level === 'ask') return raise(tagged, resolver);
+    const recommended = options.find((o) => o.recommended)?.id ?? options[0]!.id;
+    if (out.level === 'agents') {
+      const id = await raise(tagged, resolver);
+      await settle(
+        id,
+        recommended,
+        "Agents decide this kind of question (Settings, Autonomy): the agent's recommendation stands.",
+        'chief_of_staff',
+      );
+      return id;
+    }
+    const lead = out;
+    const forward = (reasoning: string) =>
+      raise(
+        {
+          ...tagged,
+          triage: {
+            leadId: lead.leadId,
+            mode: 'forwarded',
+            optionId: null,
+            reasoning,
+            ruleIds: [],
+          },
+        },
+        resolver,
+      );
+    if (lead.decision === 'forward') return forward(lead.reasoning);
+    // A Lead can send rejected work back again, never accept what it rejected.
+    if (resolver.kind === 'blocked' && lead.optionId !== 'retry')
+      return forward(`Accepting work its Lead rejected is your call. ${lead.reasoning}`);
+    if (lead.level === 'shadow')
+      return raise(
+        {
+          ...tagged,
+          triage: {
+            leadId: lead.leadId,
+            mode: 'shadow',
+            optionId: lead.optionId,
+            reasoning: lead.reasoning,
+            ruleIds: lead.ruleIds,
+          },
+        },
+        resolver,
+      );
+    const answered = leadAnswers[t.taskId] ?? 0;
+    if (answered >= MAX_LEAD_ANSWERS)
+      return forward(
+        `${lead.leadName} has answered ${answered} questions on this task in a row; this one is yours. Its answers: ${(leadNotes[t.taskId] ?? []).join(' ')}`,
+      );
+    const label = options.find((o) => o.id === lead.optionId)!.label;
+    leadAnswers[t.taskId] = answered + 1;
+    leadNotes[t.taskId] = [
+      ...(leadNotes[t.taskId] ?? []),
+      `"${card.title}": ${label}. ${lead.reasoning}`,
+    ];
+    const id = await raise(tagged, resolver);
+    await settle(
+      id,
+      lead.optionId,
+      `${lead.leadName}: ${lead.reasoning}`,
+      lead.ruleIds.length ? 'rule' : 'lead',
+    );
+    return id;
+  }
+
   /** Applies the default at the deadline; re-opens a deferred card when its deferral ends. */
   async function watch(id: string) {
     const e = escalations.get(id)!;
@@ -435,7 +557,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     id: string,
     optionId: string,
     notes: string | null,
-    by: 'director' | 'default' | 'chief_of_staff',
+    by: 'director' | 'default' | 'chief_of_staff' | 'lead' | 'rule',
   ) {
     const e = escalations.get(id)!;
     e.status = by === 'default' ? 'expired' : 'resolved';
@@ -473,10 +595,15 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     id: string,
     optionId: string,
     notes: string | null,
-    by: 'director' | 'default' | 'chief_of_staff',
+    by: 'director' | 'default' | 'chief_of_staff' | 'lead' | 'rule',
   ) {
     const e = escalations.get(id)!;
     const option = e.card.options.find((o) => o.id === optionId);
+    // The Director answering a task's question starts its Lead's count again.
+    if (by === 'director' && e.card.sourceTaskId) {
+      delete leadAnswers[e.card.sourceTaskId];
+      delete leadNotes[e.card.sourceTaskId];
+    }
     await send(
       updated(id, e.status, { optionId, notes, by, supersededBy: null }),
       decision(
@@ -820,7 +947,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       }));
       const recommended = options.find((o) => o.recommended) ?? options[0]!;
       recommended.recommended = true;
-      const escalationId = await raise(
+      const escalationId = await raiseTriaged(
+        t,
         {
           type: 'decision',
           title: clip(d.question),
@@ -839,7 +967,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           options: options.map((o) => ({ id: o.id, label: o.label })),
         },
       );
-      taskEscalation.set(t.taskId, escalationId);
+      // A Lead may have settled it already; then the task is retrying, not waiting on a card.
+      if (unresolved(escalations.get(escalationId)!)) taskEscalation.set(t.taskId, escalationId);
     } else {
       const access = outcome.outcome === 'access_denied';
       const unconnected = outcome.outcome === 'access_denied' && outcome.notConnected;
@@ -867,7 +996,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         });
       events.push(agentRefresh(t.role));
       await send(...events);
-      const escalationId = await raise(
+      // Rejected and retries didn't fix it: the Lead may send it back once more.
+      const raiser = (
+        card: Omit<EscalationCardInput, 'escalationId' | 'deadline'>,
+        resolver: Resolver,
+      ) => (access ? raise(card, resolver) : raiseTriaged(t, card, resolver));
+      const escalationId = await raiser(
         unconnected
           ? {
               type: 'access',
@@ -921,12 +1055,13 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
               },
         { kind: 'blocked', taskId: t.taskId },
       );
-      taskEscalation.set(t.taskId, escalationId);
+      // A Lead may have settled it already; then the task is retrying, not waiting on a card.
+      if (unresolved(escalations.get(escalationId)!)) taskEscalation.set(t.taskId, escalationId);
     }
     poke();
   }
 
-  async function account(result: AgentResult, events: NewEvent[]) {
+  async function account(result: Pick<AgentResult, 'tokens' | 'usd'>, events: NewEvent[]) {
     spent.tokens += result.tokens;
     spent.usd = Math.round((spent.usd + result.usd) * 100) / 100;
     const hours = Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100;
@@ -1975,6 +2110,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
     for (const [id, c] of r.capabilityWait ?? []) capabilityWait.set(id, c);
+    Object.assign(leadAnswers, r.leadAnswers ?? {});
+    Object.assign(leadNotes, r.leadNotes ?? {});
     for (const [taskId, escId] of r.taskEscalation) taskEscalation.set(taskId, escId);
     for (const n of r.started) started.add(n);
     for (const n of r.done) done.add(n);
@@ -2009,6 +2146,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       reruns: [...reruns],
       waitingOn: [...waitingOn],
       capabilityWait: [...capabilityWait],
+      leadAnswers: { ...leadAnswers },
+      leadNotes: { ...leadNotes },
       waits: { ...waits },
       sentBack: { ...sentBack },
       taskEscalation: [...taskEscalation],

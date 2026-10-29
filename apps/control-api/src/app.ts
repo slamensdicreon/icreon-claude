@@ -32,6 +32,8 @@ import {
   type ActivityPage,
   type ApiError,
   type ArtifactView,
+  type AutonomyLevel,
+  type DecisionCategory,
   type CommandResult,
   type PortfolioDiagnostics,
   type PlaybookScorecard,
@@ -86,6 +88,8 @@ export interface AppDeps {
   artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
   /** The playbook's escalation policy table, for Settings. */
   policyDefaults?: (projectId: string) => PolicyRow[];
+  /** The playbook's autonomy defaults for a project, for Settings and triage. */
+  autonomyDefaults?: (projectId: string) => Partial<Record<DecisionCategory, AutonomyLevel>>;
   /** Server clock; tests pin it. */
   now?: () => number;
   /** Origin allowed to call the API from a browser (the Control Center or the prototype). */
@@ -676,7 +680,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<P>('/projects/:id/preview', async (req) => preview(known(req.params.id)));
 
   app.get<P>('/projects/:id/settings', async (req) =>
-    settingsView(known(req.params.id), deps.policyDefaults?.(req.params.id) ?? []),
+    settingsView(
+      known(req.params.id),
+      deps.policyDefaults?.(req.params.id) ?? [],
+      deps.autonomyDefaults?.(req.params.id) ?? {},
+    ),
   );
 
   const readJson = async (projectId: string, ref: string | null) => {
@@ -979,6 +987,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           'locked',
           `${DECISION_CATEGORY_LABEL[locked]} always come to you: they can't be handed to agents or Leads.`,
         );
+      // Recorded in the log, not sent to the run: triage reads the level when a card comes up,
+      // so the change applies to the next card on any project, live or simulated.
+      const s = known(req.params.id);
+      await store.append(s.projectId, [
+        {
+          type: 'settings.changed',
+          actor: { kind: 'director', id: 'director' },
+          subject: { kind: 'project', id: s.projectId },
+          severity: 'notable',
+          data: { key, value: levels },
+        },
+      ]);
+      const seq = await store.head(s.projectId);
+      await projections.waitFor(s.projectId, seq);
+      const r: CommandResult = { accepted: true, seq };
+      return r;
     }
     return command(req.params.id, (o) => supported(o, 'changeSetting')(key, value));
   });

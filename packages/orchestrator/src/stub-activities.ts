@@ -117,6 +117,10 @@ export function createStubActivities(deps: StubDeps): Activities {
       return deps.blueprint;
     },
 
+    // Stub projects have no Leads to ask: every question reaches the Director, as before.
+    async triage() {
+      return { level: 'ask', tokens: 0, usd: 0 };
+    },
     async interpretDirective({ text, blueprint }) {
       if (/^\/?status\b/i.test(text) || /\b(status|where are we)\b/i.test(text))
         return { kind: 'status' };

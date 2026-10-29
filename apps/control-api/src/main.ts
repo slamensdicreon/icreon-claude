@@ -415,6 +415,8 @@ const app = await buildApp({
   github,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
   policyDefaults: (projectId) => policyRows(playbookOf(projections.get(projectId)?.playbook?.id)),
+  autonomyDefaults: (projectId) =>
+    playbookOf(projections.get(projectId)?.playbook?.id).manifest.defaults.autonomy,
   corsOrigin: env.CORS_ORIGIN,
   auth,
   extraOrigins,

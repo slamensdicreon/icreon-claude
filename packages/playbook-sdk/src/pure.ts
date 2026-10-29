@@ -11,6 +11,12 @@ export interface Playbook {
 /** Bundle-level rules the per-file schemas cannot express. */
 export function validatePlaybook({ manifest, roles, plan }: Playbook): string[] {
   const problems: string[] = [];
+  // Releases, gates, budget and scope are the Director's on every project.
+  for (const c of ['release', 'scope'] as const) {
+    const level = manifest.defaults.autonomy[c];
+    if (level && level !== 'ask')
+      problems.push(`defaults.autonomy.${c} must be ask: it is always the Director's`);
+  }
   const byId = new Map(roles.map((r) => [r.role, r]));
   const phaseNumbers = new Set(manifest.phases.map((p) => p.number));
 

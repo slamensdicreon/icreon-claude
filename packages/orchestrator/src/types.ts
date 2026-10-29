@@ -1,5 +1,6 @@
 // Types shared by workflows, activities and the client. Workflow-safe: no Node imports.
 import type {
+  DecisionCategory,
   AgentState,
   Budgets,
   EscalationCard,
@@ -110,6 +111,9 @@ export interface ProjectSnapshot {
   waitingOn: [string, { ids: string[]; what: string; prior: string | null; note?: string }][];
   /** Absent in snapshots taken before capability gaps existed. */
   capabilityWait?: [string, string][];
+  /** Lead answers in a row per task, and what they were (absent before Lead triage). */
+  leadAnswers?: Record<string, number>;
+  leadNotes?: Record<string, string[]>;
   waits: Record<string, number>;
   sentBack: Record<string, number>;
   taskEscalation: [string, string][];
@@ -234,3 +238,48 @@ export interface AgentDecision {
   options: string[];
   recommended: string;
 }
+
+/** A question an agent stopped on, for its Lead to see before the Director does. */
+export interface TriageRequest {
+  projectId: string;
+  taskId: string;
+  role: string;
+  category: DecisionCategory;
+  card: {
+    title: string;
+    context: string;
+    impact: string;
+    options: { id: string; label: string; recommended: boolean }[];
+  };
+  /** This task's earlier Lead answers, oldest first. */
+  previous: string[];
+}
+
+/**
+ * What triage made of it, by the category's autonomy level. ask: straight to the Director.
+ * agents: the agent's recommendation stands. lead and shadow: the Lead's answer, or why it
+ * forwarded; in shadow the card still goes to the Director, with the answer on it.
+ */
+export type TriageOutcome =
+  | { level: 'ask'; tokens: number; usd: number }
+  | { level: 'agents'; tokens: number; usd: number }
+  | {
+      level: 'lead' | 'shadow';
+      leadId: string;
+      leadName: string;
+      decision: 'answer';
+      optionId: string;
+      reasoning: string;
+      ruleIds: string[];
+      tokens: number;
+      usd: number;
+    }
+  | {
+      level: 'lead' | 'shadow';
+      leadId: string;
+      leadName: string;
+      decision: 'forward';
+      reasoning: string;
+      tokens: number;
+      usd: number;
+    };

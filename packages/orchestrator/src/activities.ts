@@ -1,6 +1,13 @@
 import type { NewEvent } from '@lw/contracts';
 import type { Blueprint, PlannedTask } from '@lw/plan';
-import type { AgentRequest, AgentResult, DirectiveInterpretation, ValidationResult } from './types';
+import type {
+  AgentRequest,
+  AgentResult,
+  DirectiveInterpretation,
+  TriageOutcome,
+  TriageRequest,
+  ValidationResult,
+} from './types';
 
 /**
  * Everything a workflow needs from the outside world. Workflows import this type only; the worker
@@ -23,6 +30,11 @@ export interface Activities {
     /** The plan's work tasks, for a re-run to name. */
     tasks?: { taskId: string; title: string; state: string }[];
   }): Promise<DirectiveInterpretation>;
+  /**
+   * A question an agent stopped on, seen by its Lead first: the category's autonomy level
+   * decides whether the Lead answers it, answers it for the record (shadow), or passes it on.
+   */
+  triage(req: TriageRequest): Promise<TriageOutcome>;
   /** Runs the task's rollback recipe (delete created items, revert its commit). */
   rollbackTask(req: { projectId: string; task: PlannedTask }): Promise<void>;
 }

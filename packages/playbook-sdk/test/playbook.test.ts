@@ -60,6 +60,19 @@ describe('sitecoreai-migration playbook', () => {
     );
     expect(problems).toContain('visual-qa: active in unknown phase 42');
   });
+
+  it('ships autonomy defaults, and refuses handing releases or scope to anyone but the Director', async () => {
+    const pb = await loadPlaybook(DIR);
+    expect(pb.manifest.defaults.autonomy).toMatchObject({ media: 'shadow', release: 'ask' });
+    const loose = structuredClone(pb);
+    loose.manifest.defaults.autonomy = { release: 'lead', scope: 'shadow' };
+    expect(validatePlaybook(loose)).toEqual(
+      expect.arrayContaining([
+        "defaults.autonomy.release must be ask: it is always the Director's",
+        "defaults.autonomy.scope must be ask: it is always the Director's",
+      ]),
+    );
+  });
 });
 
 describe('role prompts', () => {

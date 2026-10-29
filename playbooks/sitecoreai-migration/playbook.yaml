@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai.
 id: sitecoreai-migration
-version: 0.5.1
+version: 0.6.0
 name: Build a SitecoreAI website
 description: >-
   Rebuilds a client's site from its Next.js repository as a Content SDK site on SitecoreAI,
@@ -106,6 +106,20 @@ intake:
       when: source-repo
 defaults:
   concurrency: 6
+  # Who may settle each category of card. Lead-decidable categories start in shadow: the Lead
+  # answers for the record and the card still reaches the Director, until the scorecard shows
+  # they agree (about 30 cards, 90% or more); then switch the category to lead in Settings.
+  autonomy:
+    media: shadow
+    tool: shadow
+    retry: shadow
+    ownership: shadow
+    naming: shadow
+    content: shadow
+    access: ask
+    scope: ask
+    release: ask
+    other: ask
   budgets:
     tokens: 60000000
     usd: 1500
