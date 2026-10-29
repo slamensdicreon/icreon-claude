@@ -45,8 +45,19 @@ function behaves(name: string, make: () => Promise<RuleStore>) {
       expect(await store.matching(ctx('p2'))).toEqual([]);
       await store.setStatus(proposed.id, 'active');
       expect((await store.matching(ctx('p2'))).map((r) => r.id)).toEqual([proposed.id]);
-      // Another category, another playbook's scope, or a role it isn't for: not this rule.
-      expect(await store.matching({ ...ctx('p2'), category: 'naming' })).toEqual([]);
+      // A card of another category still gets it, after rules of its own category: a scope rule
+      // is often met as a retry card. Another playbook's scope, or a role it isn't for: not this rule.
+      const naming = await store.create({
+        ...media,
+        category: 'naming',
+        scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+        status: 'active',
+      });
+      expect((await store.matching({ ...ctx('p2'), category: 'naming' })).map((r) => r.id)).toEqual(
+        [naming.id, proposed.id],
+      );
+      expect((await store.matching(ctx('p2'))).map((r) => r.id)).toEqual([proposed.id, naming.id]);
+      await store.setStatus(naming.id, 'retired');
       const onlyMine = await store.create({
         ...media,
         scope: { kind: 'project', id: 'p9' },

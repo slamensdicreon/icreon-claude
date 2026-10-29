@@ -105,8 +105,13 @@ function view(r: Row): RuleView {
 }
 
 /** Does a rule's scope and role list cover this question? */
+/**
+ * Whether a rule is offered for a question. Its category doesn't limit it: the Director's rule on
+ * a scope gap is often met as a retry card (a Lead rejecting the page for that gap), and the Lead
+ * judges the rule's own `when`. Rules of the card's category come first.
+ */
 export function ruleCovers(rule: RuleView, ctx: RuleContext): boolean {
-  if (rule.status !== 'active' || rule.category !== ctx.category) return false;
+  if (rule.status !== 'active') return false;
   if (rule.roles.length && !rule.roles.includes(ctx.role)) return false;
   const { kind, id } = rule.scope;
   return kind === 'project'
@@ -200,11 +205,11 @@ export class PostgresRuleStore implements RuleStore {
 
   async matching(ctx: RuleContext): Promise<RuleView[]> {
     const { rows } = await this.sql.query<Row>(
-      `SELECT * FROM lw_rules WHERE status = 'active' AND category = $1 AND (
+      `SELECT * FROM lw_rules WHERE status = 'active' AND (
          (scope_kind = 'project' AND scope_id = $2) OR
          (scope_kind = 'playbook' AND scope_id = $3) OR
          (scope_kind = 'platform' AND scope_id = $4))
-       ORDER BY created_at`,
+       ORDER BY (category = $1) DESC, created_at`,
       [ctx.category, ctx.projectId, ctx.playbookId ?? '', ctx.platform ?? ''],
     );
     return rows.map(view).filter((r) => ruleCovers(r, ctx));
@@ -310,7 +315,11 @@ export class MemoryRuleStore implements RuleStore {
   }
 
   async matching(ctx: RuleContext): Promise<RuleView[]> {
-    return [...this.rules.values()].filter((r) => ruleCovers(r, ctx));
+    const covering = [...this.rules.values()].filter((r) => ruleCovers(r, ctx));
+    return [
+      ...covering.filter((r) => r.category === ctx.category),
+      ...covering.filter((r) => r.category !== ctx.category),
+    ];
   }
 
   async applied(id: string, use: RuleUse): Promise<void> {
