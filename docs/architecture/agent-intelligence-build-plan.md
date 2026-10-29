@@ -207,6 +207,11 @@ inside one project. Three pieces put a portfolio above it.
 
 ### P1. Dashboard (the new home screen)
 
+*Built (2026-10-29):* the app opens on the Dashboard (Projects, Connections, Playbooks,
+Diagnostics). `GET /portfolio`, `GET /portfolio/diagnostics`; the worker writes
+`heartbeat:worker` every 30 s. Completed projects open on their Mission Control, Activity,
+Decision Log and Workbench ("View history").
+
 - **Projects:** a card per project: name, client, playbook and version, status (intake, running,
   paused, completed, archived), current phase and its progress, health and why, cards waiting on
   the Director, spend against budget, last activity, and the live site link. Filters: active,
@@ -228,6 +233,12 @@ inside one project. Three pieces put a portfolio above it.
   project switcher linking back to it.
 
 ### P2. Saved connections and remix
+
+*Built (2026-10-29):* connections live in `lw_integrations` as `connection:<id>`, secrets sealed
+to `connection:<id>`; the platform pack's `connection` lists what is shared. `GET/POST
+/connections`, `PUT /connections/:id/credentials/:credentialId` (rotate, re-points projects
+still on the old secret), `GET /projects/:id/remix`; intake takes `connectionId`. "Brands tenant
+(SitecoreAI)" was saved from Ansco with its five shared secrets.
 
 **Why copying secrets is the wrong answer:** each secret is sealed to its project, so ten sites would
 mean ten copies of the same Sitecore client secret, and a rotation would mean ten updates.
