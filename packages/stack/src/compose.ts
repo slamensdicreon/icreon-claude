@@ -635,11 +635,16 @@ function projectContext(projections: Projections, platform: PlatformPack): Conte
         s?.buildRepo
           ? `Build repository: ${s.buildRepo.repo}, created from ${s.buildRepo.template}; the site's Next.js app is in ${s.buildRepo.appPath}. Read it with build-repo tools and commit only to launchworks/* branches; never commit to the source repository.`
           : 'Build repository: not created yet.',
-        s?.hosting?.url
-          ? `Migrated preview site: ${s.hosting.url} (Vercel project ${s.hosting.project}; also the editing host once registered).`
-          : s?.hosting
-            ? `Migrated preview site: Vercel project ${s.hosting.project} exists; nothing is deployed to production yet.`
-            : 'Migrated preview site: none deployed yet.',
+        // Before the release, the migration is what the editing host renders (the integration
+        // branch with preview content); production runs the default branch until the release.
+        ...(s?.hosting
+          ? [
+              `Migrated site, to review and compare before the release: https://${s.hosting.project}-editing.vercel.app (the editing host: launchworks/integration with preview content). Screenshot and judge pages here.`,
+              s.hosting.url
+                ? `Production: ${s.hosting.url} (Vercel project ${s.hosting.project}). It runs the default branch and shows the migration only after the release deploys it, so don't judge the migration on it before then.`
+                : `Production: Vercel project ${s.hosting.project} exists; nothing is deployed to production yet.`,
+            ]
+          : ['Migrated site: none deployed yet.']),
         ...(s?.preview.target?.url && s.preview.target.url !== s.hosting?.url
           ? [`Latest preview deployment: ${s.preview.target.url} (${s.preview.target.label}).`]
           : []),
