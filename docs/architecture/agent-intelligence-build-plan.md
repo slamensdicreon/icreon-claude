@@ -163,6 +163,16 @@ other through waits, or guess. Ansco's ownership and "still missing" cards come 
 - **Effectiveness:** how often each entry was injected, and whether the problem it prevents came
   back (scorecard). Entries that don't help are flagged; superseded ones retire.
 
+## Capability gap to schedule: Page builder automation
+
+Every project has four tasks that need an agent to work in Page builder as an editor:
+`prove-pilot-slice`, `smoke-test`, `editor-checklist` and, with personalization,
+`prove-personalization`. No tool does that yet (`browser.page-builder.drive`, `browser.video.record`),
+so on Ansco the Director did them by hand. Building it means signing in to SitecoreAI Pages in the
+browser tool server with a service identity, then scripted actions: open a page, add a component,
+edit inline, save, publish, record. Size: 2 sessions, plus deciding how the agent signs in. Until
+then, these cards ask the Director to check by hand and mark the task done.
+
 ## Decided (2026-10-29)
 
 1. **Order:** scorecard first, then Lead triage and autonomy, rules, facts, knowledge.
