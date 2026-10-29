@@ -135,6 +135,29 @@ describe('working copies', () => {
     expect(fake.runs.filter((x) => x.args[0] === 'merge')).toHaveLength(4);
   });
 
+  it('takes a push GitHub could not lock the branch for as a race, not a refusal', async () => {
+    let pushes = 0;
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },
+      (cmd, args) =>
+        cmd === 'git' && args.includes('push')
+          ? ++pushes === 1
+            ? {
+                exitCode: 1,
+                output: [
+                  " ! [remote rejected] HEAD -> launchworks/integration (cannot lock ref 'refs/heads/launchworks/integration': is at 13e8766 but expected 6f4cfa4)",
+                  "error: failed to push some refs to 'https://github.com/icreon-launchworks/lamberts-cable-sitecoreai.git'",
+                ].join('\n'),
+              }
+            : { exitCode: 0, output: '' }
+          : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call('git.integrate', { branches: ['launchworks/port-hero'] }, ctx);
+    expect(r.code).toBe(200);
+    expect(pushes).toBe(2);
+  });
+
   it("says a refused push isn't a merge conflict, and why GitHub refused it", async () => {
     const refused = fakeBox(
       { 'examples/basic-nextjs/node_modules/.package-lock.json': '{}' },

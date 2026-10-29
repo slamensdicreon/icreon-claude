@@ -703,9 +703,13 @@ export class SandboxToolServer implements ToolServer {
 
 /** A git header carrying the token for one command, never written to the repository's config. */
 /** The line of command output that says what went wrong, for a step's summary. */
-/** A push refused only because the branch moved meanwhile: integrating again settles it. */
+/**
+ * A push refused only because the branch moved meanwhile: integrating again settles it. Two
+ * pushes landing at once come back from GitHub as `[remote rejected] … (cannot lock ref …)`.
+ */
 const raced = (output: string) =>
-  /\[rejected\][^\n]*\((?:fetch first|non-fast-forward|stale info)\)/.test(output);
+  /\[rejected\][^\n]*\((?:fetch first|non-fast-forward|stale info)\)/.test(output) ||
+  /\[remote rejected\][^\n]*\((?:cannot lock ref|failed to update ref)/.test(output);
 
 /** Why git refused a push: its `! [rejected] … (reason)` line and what the remote said. */
 const pushRefusal = (output: string) => {
