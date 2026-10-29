@@ -236,6 +236,17 @@ describe('snapshot, screenshot, fetch.asset', () => {
     });
   }, 30_000);
 
+  it('reads the copy from the page as served when its scripts take it out', async () => {
+    const r = await browser.call('snapshot', { url: `${origin}/scripted` }, ctx);
+    const page = r.body as { content: { tag: string; text: string }[]; from?: string };
+    expect(page.from).toBe('served-html');
+    expect(page.content.filter((c) => c.tag === 'h3')).toHaveLength(8);
+    expect(page.content.find((c) => c.tag === 'p')!.text).toContain('Your health is important');
+    // A page whose scripts leave its copy alone is read as rendered.
+    const plain = await browser.call('snapshot', { url: `${origin}/faq-long` }, ctx);
+    expect((plain.body as { from?: string }).from).toBeUndefined();
+  }, 30_000);
+
   it('screenshots at three breakpoints and stores the images', async () => {
     const r = await browser.call('screenshot', { url: `${origin}/services` }, ctx);
     const shots = (

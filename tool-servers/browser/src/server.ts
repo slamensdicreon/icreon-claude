@@ -254,11 +254,33 @@ export class BrowserToolServer implements ToolServer {
     }
     const extract = (await page.evaluate(`(${extractPage.toString()})()`)) as PageExtract;
     // The full text only where it's asked for (a snapshot): a crawl keeps the short form.
-    const text = full
+    let text = full
       ? ((await page.evaluate(`(${extractContent.toString()})()`)) as ReturnType<
           typeof extractContent
-        >)
+        > & { from?: 'served-html' })
       : null;
+    // Some page builders take the copy out of the page once their scripts run (sliders, reveal
+    // effects), though the server sent it. When the page as served holds far more words than
+    // the page as rendered, read the served HTML with its scripts removed.
+    if (text && response) {
+      const served = await response.text().catch(() => '');
+      const rendered = text.content.reduce((n, c) => n + words(c.text), 0);
+      if (words(plainText(served)) > Math.max(150, rendered * 2.5)) {
+        const copy = await context.newPage();
+        try {
+          await copy.setContent(withoutScripts(served, url.toString()), {
+            waitUntil: 'domcontentloaded',
+          });
+          const fromServed = (await copy.evaluate(
+            `(${extractContent.toString()})()`,
+          )) as ReturnType<typeof extractContent>;
+          if (fromServed.content.reduce((n, c) => n + words(c.text), 0) > rendered)
+            text = { ...fromServed, from: 'served-html' };
+        } finally {
+          await copy.close();
+        }
+      }
+    }
     await page.close();
     return {
       status,
@@ -496,3 +518,13 @@ async function settleForScreenshot(page: {
     }
   });
 }
+
+const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
+
+/** A page's text as served, without its markup, scripts or styles. */
+const plainText = (html: string) =>
+  html.replace(/<(script|style|noscript|template)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
+
+/** The served HTML with its scripts removed, resolving links against the page's own URL. */
+const withoutScripts = (html: string, url: string) =>
+  `<base href="${url.replace(/"/g, '&quot;')}">${html.replace(/<script[\s\S]*?<\/script>/gi, '')}`;
