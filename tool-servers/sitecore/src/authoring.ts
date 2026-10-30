@@ -77,6 +77,8 @@ const HostArgs = z.object({
 });
 /** Where SitecoreAI keeps rendering hosts; the environment's own is "Default". */
 const HOSTS = '/sitecore/system/Settings/Services/Rendering Hosts';
+/** An item ID as the API or a field gives it: 32 hex digits, with or without braces and hyphens. */
+const HEX_ID_LOOSE = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
 const UpdateArgs = z.object({
   path: Path,
   language: z.string().optional(),
@@ -92,6 +94,10 @@ const RenameArgs = z.object({
     .min(1)
     .max(100)
     .regex(/^[^/\\:?"<>|\[\]]+$/, 'an item name, without / \\ : ? " < > | [ ]'),
+});
+const DeleteArgs = z.object({
+  path: Path,
+  itemId: z.string().regex(HEX_ID_LOOSE, 'an item ID').optional(),
 });
 const TemplateArgs = z.object({
   parentPath: Path,
@@ -281,6 +287,18 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         type: 'object',
         properties: { path: { type: 'string' }, name: { type: 'string' } },
         required: ['path', 'name'],
+        additionalProperties: false,
+      },
+      mutates: true,
+      pathArgs: ['path'],
+    },
+    'item.delete': {
+      description:
+        'Move an item to the Recycle Bin, where it can be restored: a duplicate, or one created by mistake. Give its absolute path, and its itemId too when two items share that path (a duplicate __Standard Values): the item with that ID must be at that path. Refuses an item with children. Reads back to confirm it is gone.',
+      inputSchema: {
+        type: 'object',
+        properties: { path: { type: 'string' }, itemId: { type: 'string' } },
+        required: ['path'],
         additionalProperties: false,
       },
       mutates: true,
@@ -531,6 +549,8 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           return await this.update(q, UpdateArgs.safeParse(args), lang);
         case 'item.rename':
           return await this.rename(q, RenameArgs.safeParse(args));
+        case 'item.delete':
+          return await this.remove(q, DeleteArgs.safeParse(args));
         case 'page-designs.map':
           return await this.pageDesigns(q, PageDesignsArgs.safeParse(args), facts);
         case 'template.create':
@@ -779,6 +799,45 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           code: 409,
           body: { itemId, path: a.data.path, expected: target },
           summary: `Renamed ${a.data.path}, but ${target} doesn't read back as the same item`,
+        };
+  }
+
+  private async remove(q: Gql, a: Parsed<typeof DeleteArgs>): Promise<ToolResult> {
+    if (!a.success) return bad(a.error.issues[0]!.message);
+    const { path } = a.data;
+    type Found = { item: { itemId: string; path: string; children: { nodes: unknown[] } } | null };
+    const find = (where: string) =>
+      q.run<Found>(
+        `query { item(where: { database: "master", ${where} }) { itemId path children { nodes { itemId } } } }`,
+      );
+    const d = a.data.itemId
+      ? await find(`itemId: ${gql(sitecoreId(a.data.itemId))}`)
+      : await find(`path: ${gql(path)}`);
+    if (!d.item)
+      return {
+        code: 404,
+        body: { error: `No item ${a.data.itemId ?? `at ${path}`}` },
+      };
+    // The path is what the role's scope was checked against: the ID must be the item there.
+    if (d.item.path.toLowerCase().replace(/\/+$/, '') !== path.toLowerCase().replace(/\/+$/, ''))
+      return bad(`Item ${a.data.itemId} is at ${d.item.path}, not ${path}; nothing was deleted`);
+    if (d.item.children.nodes.length)
+      return bad(`${path} has child items; delete those first, or keep it. Nothing was deleted`);
+    await q.run<{ deleteItem: { successful: boolean } }>(
+      `mutation { deleteItem(input: { database: "master", itemId: ${gql(d.item.itemId)}, permanently: false }) { successful } }`,
+    );
+    // Executed is not verified: the ID no longer answers.
+    const gone = !(await find(`itemId: ${gql(d.item.itemId)}`)).item;
+    return gone
+      ? {
+          code: 200,
+          body: { itemId: d.item.itemId, path: d.item.path, recycled: true },
+          summary: `Moved ${d.item.path} (${d.item.itemId}) to the Recycle Bin, read back`,
+        }
+      : {
+          code: 409,
+          body: { itemId: d.item.itemId, path: d.item.path },
+          summary: `Deleting ${d.item.path} (${d.item.itemId}) didn't take: it still reads back`,
         };
   }
 

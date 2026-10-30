@@ -100,6 +100,12 @@ function fakeCm(
       return ok({ updateItem: { item: { itemId: items[path], name: 'n' } } });
     }
     const bare = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
+    if (/deleteItem\(/.test(query)) {
+      const id = /itemId: "([^"]+)"/.exec(query)![1]!;
+      const at = Object.keys(items).find((k) => bare(items[k]!) === bare(id));
+      if (at && !opts.ignoreUpdate) delete items[at];
+      return ok({ deleteItem: { successful: !!at } });
+    }
     // Several items by ID in one query, each under its alias.
     if (/^query \{ i0: item\(/.test(query))
       return ok(
@@ -133,6 +139,11 @@ function fakeCm(
             itemId: items[path],
             name: 'n',
             path,
+            children: {
+              nodes: Object.keys(items)
+                .filter((k) => k.startsWith(`${path}/`) && !k.slice(path.length + 1).includes('/'))
+                .map((k) => ({ itemId: items[k] })),
+            },
             ...single,
             fields: {
               // Fields from base templates come back only when inherited fields are asked for;
@@ -359,6 +370,29 @@ describe('SitecoreAuthoringToolServer', () => {
       ctx,
     );
     expect(notIds.code).toBe(422);
+  });
+
+  it('moves an item to the Recycle Bin, by ID where two share a path, never one with children', async () => {
+    const tpl = '/sitecore/templates/Project/Brands/ansco/SnippetGrid Parameters';
+    const sv = `${tpl}/__Standard Values`;
+    const cm = fakeCm({ [tpl]: 'tpl-id', [sv]: 'a1b2c3d4-0000-4000-8000-0000000000aa' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    // The ID must be the item at the path the role's scope was checked against.
+    const elsewhere = await s.call(
+      'item.delete',
+      { path: `${tpl}/Other`, itemId: 'a1b2c3d4-0000-4000-8000-0000000000aa' },
+      ctx,
+    );
+    expect(elsewhere.code).toBe(422);
+    expect((await s.call('item.delete', { path: tpl }, ctx)).code).toBe(422);
+    const r = await s.call(
+      'item.delete',
+      { path: sv, itemId: '{A1B2C3D4-0000-4000-8000-0000000000AA}' },
+      ctx,
+    );
+    expect(r).toMatchObject({ code: 200, body: { recycled: true } });
+    expect(cm.queries.find((q) => q.includes('deleteItem'))).toContain('permanently: false');
+    expect((await s.call('item.delete', { path: sv }, ctx)).code).toBe(404);
   });
 
   it("stores a rendering's Parameters Template as the template's ID when given its path", async () => {

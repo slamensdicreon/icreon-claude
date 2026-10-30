@@ -164,13 +164,15 @@ describe('authorization matrix (every role × every operation)', () => {
   it('never lets anyone reach operations no role is granted', async () => {
     const { gateway } = setup({ recipe: true });
     for (const role of pb.roles) {
-      expect(
-        await gateway.call(
-          call(role.role, 'sitecore-authoring', 'item.delete', {
-            path: '/sitecore/content/Acme/Corporate/Home',
-          }),
-        ),
-      ).toMatchObject({ denied: 'not_allowed' });
+      // Only the Registrar may delete (to the Recycle Bin), and only its own definitions.
+      if (role.role !== 'rendering-registrar')
+        expect(
+          await gateway.call(
+            call(role.role, 'sitecore-authoring', 'item.delete', {
+              path: '/sitecore/content/Acme/Corporate/Home',
+            }),
+          ),
+        ).toMatchObject({ denied: 'not_allowed' });
       expect(await gateway.call(call(role.role, 'github', 'branch.force-push'))).toMatchObject({
         denied: 'not_allowed',
       });

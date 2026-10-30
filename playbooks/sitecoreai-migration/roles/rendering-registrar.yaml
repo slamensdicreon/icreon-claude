@@ -24,6 +24,7 @@ tools:
       - item.create
       - item.update
       - item.rename
+      - item.delete
       - rendering.create
     scope:
       paths:
