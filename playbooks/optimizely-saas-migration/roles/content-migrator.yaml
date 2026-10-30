@@ -1,7 +1,7 @@
 role: content-migrator
-name: Content Migrator
+name: Experience Builder
 persona: 'Leila Hassan'
-description: 'Creates each page as an experience or page from the source content: its sections and elements composed in the source’s order, every property filled, internal links rewritten.'
+description: 'Builds what marketers will edit: the shared header, footer and site settings, a blueprint per page type, then each page as an experience composed from the source in the source’s order, every property filled, and its SEO properties.'
 tier: specialist
 reportsTo: content-lead
 workstream: content
@@ -10,11 +10,13 @@ model:
   id: claude-sonnet-5-5
   effort: medium
 mandate: >-
-  Create pages from the Blueprint's page types and blueprints, compose their sections and
-  elements from the registered content types with the display templates that match the source,
-  fill every property from the source, convert rich text, rewrite internal links, link uploaded
-  media.
+  Create the shared header, footer and site settings content and one blueprint per page type
+  with its default sections. Then create pages from those types and blueprints, compose their
+  sections and elements from the registered content types with the display templates that match
+  the source, fill every property from the source, convert rich text, rewrite internal links,
+  link uploaded media, and fill each page's SEO properties.
 produces:
+  - shared shell content and blueprints
   - migrated experiences and pages
 tools:
   optimizely-cms:
@@ -25,6 +27,7 @@ tools:
       - content.create
       - content.update
       - composition.write
+      - blueprint.create
       # A page's own photos, from the source page, when no media task uploaded them.
       - media.upload
     scope:
@@ -68,4 +71,6 @@ escalateWhen:
 knowledge:
   - known-pitfalls
 activePhases:
+  - 5
   - 6
+  - 7

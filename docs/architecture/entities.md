@@ -120,6 +120,48 @@ shared prompt may read `{{platform.name}}` so "Compares source and SitecoreAI pa
 copy. This is a loader change (`packages/playbook-sdk/src/load.ts`) with no runtime effect; it
 can come after the first Optimizely pilot.
 
+## The team changes with the entity
+
+The method roles (Chief of Staff, four Leads) and the discovery and core quality roles are the
+same team on every entity, with the same role ids, so scorecards, rules and Cypher's triage
+compare across playbooks. The specialists follow the platform's model. Optimizely's model differs
+from SitecoreAI's in two ways that reshape the engineering and content workstreams: the content
+model is code (types, display templates and page types are TypeScript next to the component, and
+"registering" is `config push`), and the platform has no site-settings layer (redirects, sitemap,
+robots and error pages are head code, not items).
+
+| SitecoreAI role                        | Optimizely                                                                                                                                         | Why                                                                                                         |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Rendering Registrar                    | Gone. The Head Integrator pushes a branch's types with `--only` in the integration task that deploys its code (`integrate-{key}`)                  | Visual Builder needs the type in the CMS and the code on the host together; one task lands both             |
+| Layout Engineer                        | Gone. Page types are code tasks for the Component Engineer (`define-type-{key}`), pushed by an integration; blueprints and the shell are content tasks for the Experience Builder | A content role with a sandbox and a CLI mixed two jobs                                                      |
+| Tenant Provisioner                     | Folded into the Deployment Engineer (phases 0 and 3)                                                                                               | Application, locales and media folder are three calls; hostnames and live preview already sit with deployment |
+| Content Migrator                       | Named **Experience Builder** (id `content-migrator`), active in phases 5 to 7: shell, blueprints, pages, SEO properties                            | Composing an experience from a blueprint is the central act, and the same person should make the blueprints |
+| Experience Enabler                     | Gone. Routing, sitemap, robots, error pages and webhooks go to the Head Integrator (`routing-and-seo`); SEO properties to the Experience Builder; the proof experiment to Visual Builder QA, only with the feature | Most of the work is code on this platform                                                                   |
+| Editor Experience QA                   | Named **Visual Builder QA** (id `editor-experience-qa`)                                                                                            | Same job, different editor                                                                                  |
+| Structural Validator                   | Named **Model Validator** (id `structural-validator`)                                                                                              | Structure is validated by the dry-run push and read-back; the role checks the model against the Blueprint   |
+
+Twenty roles instead of twenty-four, and a shorter loop per component: build, integrate (push
+plus deploy), compose, prove. Until a pilot has run, the entity-specific builders should run at
+higher effort and the `tool` autonomy category should stay in shadow, because pushes touch a
+shared instance.
+
+### SitecoreAI team: proposed optimizations (version 0.7.0)
+
+Looking back at the Ansco, Lambert's Cable and Star builds, the SitecoreAI team can lose three or
+four roles too. These are not applied yet: Lambert and Star still hold planned and blocked tasks
+whose role ids a change would orphan, and the catalog serves one version of a playbook. Apply them
+when both projects close, or once the catalog pins a project to its playbook version.
+
+| Change                                                                                                                                                              | Evidence                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Merge the Rendering Registrar and the Layout Engineer into one **Sitecore Modeler** (phases 4, 5, 8) with the union of their scopes                                | Same skill (SXA item modelling), overlapping scopes, and two access denials on Star (placeholder settings, Headless Variants) that each cost a card and a handoff |
+| Merge Visual QA into the Parity Auditor                                                                                                                             | The pixel diff at 0.5% tolerance flags every rebuilt page; the model judge in `parity.visual` already runs on every page task; Visual QA's claims on Lambert and Star were often wrong when measured |
+| Give the Performance and Accessibility QA a task, or remove it                                                                                                     | `activePhases: []` and no plan template: the role never runs, yet the Definition of Done needs its evidence. The Optimizely playbook gives it `perf-a11y-audit` in phase 8 |
+| Fold the Tenant Provisioner into the Deployment Engineer                                                                                                            | Phase 0 probe and phase 3 folders; the shared-tenant scope rules live in the pack and the gateway, not in the role                                              |
+| Move the personalization proof to Editor Experience QA; keep the Experience Enabler for items only                                                                 | Both need `page-builder.drive`; one role should own the Page builder driving                                                                                     |
+| Until M7 ships, make the Page builder tasks (`prove-pilot-slice`, `smoke-test`) Director checklist cards instead of agent tasks                                   | Without the driver they always end in a "not connected" card (Lambert's smoke test); an honest human step beats a permanent failure                               |
+
+
 ## The Optimizely entity: shipped now
 
 - **Connector** (`packages/connectors/src/optimizely.ts`): token minting against
@@ -141,9 +183,8 @@ can come after the first Optimizely pilot.
   display templates, defined in code and pushed by the CLI; page templates become page or
   experience types with blueprints; the editing host is a hostname of the application with live
   preview on `/preview`; delivery is Optimizely Graph; the content model's "serialization" is a
-  manifest export plus a clean dry-run push. Twenty-four roles (two new: Content Type Modeler
-  replaces the Rendering Registrar; the Layout Engineer now owns the shell, page types and
-  blueprints), nineteen prompts, a Definition of Done, fixtures.
+  manifest export plus a clean dry-run push. Twenty roles (see "The team changes with the
+  entity"), fifteen prompts, a Definition of Done, fixtures.
 
 Both the API and the worker load it; `platforms/test/platforms.test.ts` checks its intake,
 bindings, credential checks and environments. Its entity-specific roles are not live until the

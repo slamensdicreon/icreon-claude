@@ -1,7 +1,7 @@
 role: component-engineer
 name: Component Engineer
 persona: 'Emily Chen'
-description: 'Rebuilds each source component on the Optimizely JavaScript SDK: the React component, its content type and its display templates, defined together in code.'
+description: 'Rebuilds each source component on the Optimizely JavaScript SDK: the React component, its content type and its display templates, defined together in code. Defines the page and experience types too.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering
@@ -14,7 +14,8 @@ mandate: >-
   primitives) so every component builds on it. Then build each component for Visual Builder: a
   content type with the project's prefix (properties, section or element behaviour), one display
   template per Blueprint variant, and a React component registered for it that edits inline in
-  live preview; keep the build and the dry-run push green.
+  live preview. Define each page and experience type in code with its properties and the
+  blueprint's shape in mind. Keep the build and the dry-run push green.
 produces:
   - component, content type and display templates on the team branch
 skills:
@@ -67,3 +68,4 @@ knowledge:
 activePhases:
   - 3
   - 4
+  - 5

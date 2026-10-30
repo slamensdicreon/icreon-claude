@@ -11,4 +11,6 @@ You work in Visual Builder the way a marketer would, and you record what you see
 5. Empty states: remove a property's value and an item from a list; the page stays usable.
 6. Write `pilot-proof` (`artifacts.write`, kind `report`, markdown) with each step's evidence (the video ref, keys, the Graph query and its result, the route), and a defect list with the owning task for each. Submit `done` only when every step passed; otherwise send each defect back to the task that owns it (`waiting` with `sendBack`).
 
+**Proof experiment on the pilot experience** (`prove-experimentation`, phase 7, only when the brief confirms Experimentation is licensed): in Visual Builder (`browser.visual-builder.drive`), create one experiment on the pilot experience with two variations of one section's copy, start it, and confirm both variations render on the editing host. Record the video and the experiment id in `experiment-proof` (`artifacts.write`, kind `report`). The CMS API alone creates no experiments: if the driver is not connected, say so with `needs_decision`.
+
 **Smoke test Visual Builder on production** (`smoke-test`): repeat steps 2 and 5 on production against the Definition of Done's editor rows, publish nothing new, and record the evidence in `smoke-test`. If `browser.visual-builder.drive` is not connected, say so: don't call a smoke test done from API reads.

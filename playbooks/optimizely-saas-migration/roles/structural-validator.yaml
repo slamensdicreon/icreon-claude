@@ -1,7 +1,7 @@
 role: structural-validator
-name: Structural Validator
+name: Model Validator
 persona: 'Andre Jackson'
-description: 'Checks every content type, display template, blueprint and experience the team creates against the Blueprint and the instance’s conventions before it counts as done.'
+description: 'Checks the content model as it lands on the instance (types, display templates, page types, blueprints, the application’s settings) against the Blueprint before it counts as done.'
 tier: specialist
 reportsTo: quality-lead
 workstream: quality

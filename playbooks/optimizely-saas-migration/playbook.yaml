@@ -3,9 +3,12 @@
 # Optimizely platform pack in platforms/optimizely. The method (Director, Chief of Staff, Leads,
 # gates, cards, evidence) is the one every Launchworks playbook shares; what differs from the
 # SitecoreAI playbook is the platform's model: content types instead of renderings, Visual
-# Builder experiences instead of page designs, Optimizely Graph instead of Experience Edge.
+# Builder experiences instead of page designs, Optimizely Graph instead of Experience Edge. The
+# team is smaller (twenty roles): the content model is code, so the item-authoring roles of the
+# SitecoreAI team (registrar, layout engineer, provisioner, experience enabler) fold into the
+# engineers who write and integrate that code and into the Experience Builder who composes pages.
 id: optimizely-saas-migration
-version: 0.1.0
+version: 0.2.0
 name: Build an Optimizely CMS (SaaS) website
 description: >-
   Rebuilds a client's live site as an Optimizely CMS (SaaS) application with a Next.js head on
@@ -230,8 +233,9 @@ phases:
     dependsOn:
       - 3
     exitCriteria: >-
-      Every page template is a page or experience type with its properties and a blueprint of its
-      default sections; the shared header and footer render on every page from shared content.
+      Every page template is a page or experience type in code, pushed to the CMS, with a blueprint
+      of its default sections; the shared header and footer render on every page from shared
+      content.
   - number: 6
     name: Content and media migration
     shortName: Migration

@@ -1,6 +1,10 @@
 # Task templates for the Optimizely CMS (SaaS) rebuild. The plan compiler expands them over the
 # approved Blueprint's collections: components, templates, pages, media. Before Gate 1 each
 # forEach template shows as one placeholder task, so the whole plan is visible from day one.
+#
+# The loop per component is shorter than on SitecoreAI because the content model is code: build
+# (component, type and templates on one branch), integrate (merge, push the types, deploy the
+# editing host), compose (the Experience Builder), prove (Visual Builder QA).
 
 pilot:
   phase: 4
@@ -15,7 +19,7 @@ templates:
   # 0 — Intake and access verification
   - id: verify-access
     phase: 0
-    role: tenant-provisioner
+    role: deployment-engineer
     title: Verify credentials and record instance facts
     acceptance: [validator:credentials.verified]
 
@@ -53,7 +57,7 @@ templates:
   # 3 — Foundation
   - id: provision-application
     phase: 3
-    role: tenant-provisioner
+    role: deployment-engineer
     title: Create the application, locales and media folder
     acceptance: [validator:structural.application]
   - id: design-system
@@ -64,6 +68,7 @@ templates:
     phase: 3
     role: deployment-engineer
     title: Deploy the head to Vercel
+    dependsOn: [provision-application]
     release:
       rollback: >-
         Delete the Vercel project; nothing is published, no hostname is registered and no
@@ -78,7 +83,7 @@ templates:
 
   # 4 — Component build and content types
   # Each component is one branch: its React component, its content type and display templates
-  # in code (optimizely.config.mjs picks them up), built green.
+  # in code (optimizely.config.mjs picks them up), built green, dry-run push clean.
   - id: port-{key}
     phase: 4
     role: component-engineer
@@ -86,32 +91,29 @@ templates:
     title: Build {name} on the Optimizely SDK
     dependsOn: [design-system]
     acceptance: [validator:build.green, validator:types.defined, validator:head.sections]
-  # The type reaches the CMS through the CLI, from the component's branch, this project's keys
-  # only; then it is read back from the CMS and from Visual Builder's point of view.
-  - id: register-{key}
-    phase: 4
-    role: content-type-modeler
-    forEach: components
-    title: Push {name}'s content type and display templates
-    dependsOn: ['port-{key}']
-    acceptance:
-      [validator:types.pushed, validator:structural.content-types, validator:editor.element-enabled]
-    metric: components_registered
   - id: integrate-head
     phase: 4
     role: head-integrator
     title: Configure the head as the editing host
     dependsOn: [prepare-hosting]
     acceptance: [validator:head.preview-route]
-  # Visual Builder only renders components the editing host's code has, so each accepted
-  # component joins one integration branch, deployed at the project's fixed editing address.
+  # Visual Builder offers a component only when its type is in the CMS and its code is on the
+  # editing host: one task lands both. The accepted branch joins the integration branch, its
+  # types are pushed (this project's keys only), and the editing address is redeployed.
   - id: integrate-{key}
     phase: 4
     role: head-integrator
     forEach: components
-    title: Integrate {name} into the editing host
-    dependsOn: ['register-{key}', integrate-head]
-    acceptance: [validator:editing-host.deployed, validator:head.preview-route]
+    title: Integrate {name} and push its content type
+    dependsOn: ['port-{key}', integrate-head]
+    acceptance:
+      [
+        validator:types.pushed,
+        validator:structural.content-types,
+        validator:editing-host.deployed,
+        validator:head.preview-route,
+      ]
+    metric: components_registered
   - id: register-editing-hostname
     phase: 4
     role: deployment-engineer
@@ -134,28 +136,45 @@ templates:
     phase: 4
     role: structural-validator
     title: Validate content types and display templates
-    dependsOn: [register-*]
+    dependsOn: [integrate-*]
     acceptance: [validator:structural.content-types]
 
   # 5 — Page types, blueprints and site shell
+  # A page type is code (the Component Engineer), reaches the CMS through an integration (the
+  # Head Integrator), and gets its blueprint and shared content as content (the Experience Builder).
+  - id: define-type-{key}
+    phase: 5
+    role: component-engineer
+    forEach: templates
+    title: Define {name} page type
+    dependsOn: [design-system]
+    acceptance: [validator:build.green, validator:types.defined]
+  - id: integrate-type-{key}
+    phase: 5
+    role: head-integrator
+    forEach: templates
+    title: Integrate {name} page type and push it
+    dependsOn: ['define-type-{key}', integrate-head]
+    acceptance: [validator:types.pushed, validator:editing-host.deployed]
   - id: site-shell
     phase: 5
-    role: layout-engineer
+    role: content-migrator
     title: Create the shared header, footer and site settings content
-    # The shell's content types must exist first.
-    dependsOn: [register-*]
+    # The shell's content types reach the CMS with their components' integrations.
+    dependsOn: [integrate-*]
     acceptance: [validator:head.header-footer]
-  - id: template-{key}
+  - id: blueprint-{key}
     phase: 5
-    role: layout-engineer
+    role: content-migrator
     forEach: templates
-    title: Create {name} page type and blueprint
-    dependsOn: [site-shell]
+    title: Create {name} blueprint
+    dependsOn: ['integrate-type-{key}', site-shell]
+    acceptance: [validator:structural.templates]
   - id: validate-templates
     phase: 5
     role: structural-validator
     title: Validate page types and blueprints
-    dependsOn: [template-*]
+    dependsOn: [blueprint-*]
     acceptance: [validator:structural.templates]
 
   # 6 — Content and media migration
@@ -199,18 +218,24 @@ templates:
     acceptance: [validator:parity.visual]
 
   # 7 — Experience enablement
-  - id: enable-experience
+  # Routing lives in the head on this platform; SEO values live on the pages.
+  - id: routing-and-seo
     phase: 7
-    role: experience-enabler
-    title: Redirects, SEO, sitemap, robots, error pages and Graph webhooks
-    # Content and head code only: it runs while Visual Builder driving isn't connected.
-    uses: [optimizely-cms, sandbox, build-repo, blackboard, artifacts]
+    role: head-integrator
+    title: Redirects, sitemap, robots, error pages and Graph webhooks
+    uses: [sandbox, build-repo, optimizely-cms, blackboard, artifacts]
+    acceptance: [validator:experience.redirects-resolve]
+  - id: seo-properties
+    phase: 7
+    role: content-migrator
+    title: Fill every page's SEO properties from the source
+    uses: [optimizely-cms, browser, blackboard, artifacts]
   - id: prove-experimentation
     phase: 7
-    role: experience-enabler
+    role: editor-experience-qa
     when: experimentation
     title: Proof experiment on the pilot experience
-    dependsOn: [enable-experience]
+    dependsOn: [routing-and-seo]
 
   # 8 — Deployment and publishing
   - id: finalize-head
@@ -228,8 +253,9 @@ templates:
     acceptance: [validator:deploy.commit-matches, validator:editing-host.responds]
   - id: export-manifest
     phase: 8
-    role: content-type-modeler
+    role: head-integrator
     title: Export the content model into the build repository
+    dependsOn: [finalize-head]
     acceptance: [validator:manifest.replays]
   - id: publish-site
     phase: 8

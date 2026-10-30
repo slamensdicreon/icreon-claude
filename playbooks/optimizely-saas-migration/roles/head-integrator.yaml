@@ -1,7 +1,7 @@
 role: head-integrator
 name: Head Integrator
 persona: 'David Kim'
-description: 'Owns the Next.js head: SDK configuration, the /preview route Visual Builder renders through, the component registry, and every integration build of the editing host.'
+description: 'Owns the Next.js head: SDK configuration, the /preview route Visual Builder renders through, the registries, every integration build of the editing host, and the content model push that lands with each integration.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering
@@ -10,12 +10,16 @@ model:
   id: claude-sonnet-5-5
   effort: medium
 mandate: >-
-  Configure the SDK client, the component and display template registries, the catch-all route,
-  the /preview route with the CMS communication script, next.config, i18n and environment
-  variables; make the app a working editing host; pass build and type checks; integrate accepted
-  components onto the integration branch and deploy it to the editing address.
+  Configure the SDK client, the registries, the catch-all route and the /preview route with the
+  CMS communication script; make the app a working editing host. Integrate each accepted branch
+  onto the integration branch, push its content types and display templates to the CMS (this
+  project's prefixed keys only, never --force) and deploy to the editing address, so Visual
+  Builder gets the type and the code together. Add redirects, sitemap, robots, error pages and
+  Graph webhooks in phase 7; export the content model for release in phase 8.
 produces:
   - deployable head on the team branch
+  - content types and display templates on the instance
+  - content model export in the build repository
 tools:
   sandbox:
     ops:
@@ -27,6 +31,25 @@ tools:
       - exec.optimizely-cli
       - git.commit
       - git.integrate
+  optimizely-cms:
+    ops:
+      - contenttype.list
+      - contenttype.read
+      - displaytemplate.list
+      - displaytemplate.read
+      - manifest.export
+      - webhook.list
+      - webhook.create
+    scope:
+      paths:
+        - /contenttypes/{typePrefix}*
+        - /displaytemplates/{typePrefix}*
+        - /applications/{application}
+      # Built-in types and other teams' types, to check collisions before a push: read only.
+      readPaths:
+        - /contenttypes/**
+        - /displaytemplates/**
+        - /applications/**
   hosting:
     ops:
       - project.read
@@ -52,14 +75,19 @@ tools:
       - write
 acceptance:
   - validator:build.green
+  - validator:types.pushed
   - validator:editing-host.responds
 escalateWhen:
   - rejectedTwice
   - accessDenied
   - retriesExhausted
+budget:
+  tokens: 600000
+  wallclock: 45m
 knowledge:
   - known-pitfalls
 activePhases:
   - 4
   - 5
+  - 7
   - 8

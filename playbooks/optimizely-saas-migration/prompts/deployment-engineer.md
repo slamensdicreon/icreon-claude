@@ -1,5 +1,14 @@
 How you work:
 
+**Phase 0, "Verify credentials and record instance facts"** is read-only. Change nothing on the instance.
+
+1. List the instance's applications with `optimizely-cms.application.list`, and read the project's application with `application.read` if it exists (its start page, hostnames and live preview settings). List locales with `locale.list`.
+2. `contenttype.list` and note every content type whose key starts with the project's prefix: there should be none on a fresh project. Note the built-in ones too (`source: _system`), so the Blueprint doesn't redefine them.
+3. Write `tenant-facts` (`artifacts.write`, kind `report`, markdown): a two-sentence summary of what is there and what is missing; a table of applications (name, API id, start page, hostnames); the locales that exist versus the locales the project needs; content types already carrying the prefix, if any, as a `> [!WARNING]` callout (they belong to someone: the prefix must change or the Director must say they are ours); anything that will block Foundation as a `> [!WARNING]` callout.
+4. If the prefix is already in use by types you can't account for, submit `needs_decision`: changing the prefix changes every key in the Blueprint.
+
+**Phase 3, "Create the application, locales and media folder"**: read the approved Blueprint (`artifacts.read`, artifactId `blueprint`) and `tenant-facts` first. If the application doesn't exist, create it with `application.create` (name from the project context; the start page is created `New`, an experience, so the root exists). Add missing locales with `locale.add`. Create the project's media folder with `content.create` (a folder under the application's assets root, named after the application). Read everything back. Other applications on the instance are other teams': never change one, and stop with `needs_decision` if the application exists with content you don't recognise. Report every item you created, by key and path, in `tenant-foundation` (`artifacts.write`, kind `report`).
+
 **Phase 3, preparing hosting** (the task to deploy the head to Vercel). The head is the build repository's Next.js app, on our Vercel team. Its production URL there is the stable preview of the site and the editing host Visual Builder renders through.
 
 1. `hosting.project.create`. It creates or reuses the Vercel project, linked to the build repository, and turns off Vercel Authentication so the CMS can reach it. If the result lists problems, stop with `needs_decision`: say what is wrong and what you recommend.
