@@ -1,6 +1,13 @@
-import type { CypherConversation, CypherMessage, CypherProposal } from '@lw/contracts';
+import type {
+  CypherConversation,
+  CypherConversationSummary,
+  CypherConversations,
+  CypherMessage,
+  CypherProposal,
+} from '@lw/contracts';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiProblem, del, get, postFor } from '../lib/api';
+import { Icon } from '../lib/icons';
 import { age } from '../lib/fmt';
 import { NewProject } from '../overlays/NewProject';
 import { useApp } from '../state';
@@ -128,27 +135,81 @@ function Message({ m }: { m: CypherMessage }) {
   );
 }
 
+/** "just now", "12 min ago", "3 h ago", "4 days ago": when a conversation was last touched. */
+function when(t: string): string {
+  const h = (Date.now() - Date.parse(t)) / 3_600_000;
+  if (h < 2) return age(t);
+  if (h < 48) return `${Math.round(h)} h ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+
+function Recent({
+  items,
+  activeId,
+  onOpen,
+  onDelete,
+}: {
+  items: CypherConversationSummary[];
+  activeId: string | null;
+  onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="cy-recent">
+      <div className="cy-section-label">Recent</div>
+      <ul className="cy-list">
+        {items.map((c) => (
+          <li key={c.id} className={`cy-item${c.id === activeId ? ' on' : ''}`}>
+            <button className="cy-item-open" onClick={() => onOpen(c.id)}>
+              <span className="cy-item-title">{c.title ?? 'Untitled conversation'}</span>
+              {c.summary && <span className="cy-item-sum">{c.summary}</span>}
+              <span className="cy-item-meta">
+                {when(c.updatedAt)} · {c.messageCount} messages
+              </span>
+            </button>
+            <button
+              className="cy-item-del"
+              title="Delete conversation"
+              aria-label={`Delete conversation ${c.title ?? ''}`}
+              onClick={() => onDelete(c.id)}
+            >
+              <Icon name="close" sm />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * Cypher above every project: ask about the portfolio, describe a project for him to draft, or
  * ask for a site like an existing one. He drafts; the Director reviews and creates in the wizard.
+ * Conversations are saved: the page opens on a new chat with the earlier ones listed beneath,
+ * each with the title and summary Cypher gave it.
  */
 export function CypherHome() {
   const { toast } = useApp();
-  const [convo, setConvo] = useState<CypherConversation | null>(null);
+  const [list, setList] = useState<CypherConversations | null>(null);
+  /** The open conversation; null is a new chat. */
+  const [active, setActive] = useState<CypherConversation | null>(null);
   const [text, setText] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
+  const refresh = () =>
+    get<CypherConversations>('/cypher')
+      .then(setList)
+      .catch(() => setList((l) => l ?? { available: false, conversations: [] }));
   useEffect(() => {
-    get<CypherConversation>('/cypher')
-      .then(setConvo)
-      .catch(() => setConvo({ available: false, messages: [] }));
+    void refresh();
   }, []);
   useEffect(() => {
     // Scrolls the conversation, never the page around it.
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [convo?.messages.length, pending]);
+  }, [active?.messages.length, pending]);
 
   const send = async () => {
     const body = text.trim();
@@ -156,25 +217,54 @@ export function CypherHome() {
     setPending(body);
     setText('');
     try {
-      setConvo(await postFor<CypherConversation>('/cypher', { body }));
+      const next = await postFor<CypherConversation>('/cypher', {
+        body,
+        ...(active ? { conversationId: active.id } : {}),
+      });
+      setActive(next);
+      void refresh();
     } catch (err) {
       setText(body);
+      if (err instanceof ApiProblem && err.status === 404) {
+        setActive(null);
+        void refresh();
+      }
       toast(err instanceof ApiProblem ? err.message : 'Cypher could not answer. Try again.');
     } finally {
       setPending(null);
     }
   };
 
-  const restart = async () => {
+  const open = async (id: string) => {
+    if (pending) return;
     try {
-      await del('/cypher');
-      setConvo((c) => (c ? { ...c, messages: [] } : c));
+      setActive(await get<CypherConversation>(`/cypher/${id}`));
     } catch (err) {
-      toast(err instanceof ApiProblem ? err.message : 'The conversation could not be cleared.');
+      toast(err instanceof ApiProblem ? err.message : 'That conversation could not be opened.');
+      void refresh();
     }
   };
 
-  const messages = convo?.messages ?? [];
+  const remove = async (id: string) => {
+    try {
+      await del(`/cypher/${id}`);
+      if (active?.id === id) setActive(null);
+      setList((l) => (l ? { ...l, conversations: l.conversations.filter((c) => c.id !== id) } : l));
+      toast('Conversation deleted');
+    } catch (err) {
+      toast(err instanceof ApiProblem ? err.message : 'The conversation could not be deleted.');
+    }
+  };
+
+  const fresh = () => {
+    if (pending) return;
+    setActive(null);
+    setText('');
+    input.current?.focus();
+  };
+
+  const messages = active?.messages ?? [];
+  const inChat = messages.length > 0 || pending !== null;
   return (
     <section className="cy-home">
       <header className="cy-head">
@@ -182,22 +272,22 @@ export function CypherHome() {
           C
         </span>
         <div>
-          <h2>Cypher</h2>
-          <p>Chief of Staff</p>
+          <h2>{active?.title ?? 'Cypher'}</h2>
+          <p>{active ? `Chief of Staff · ${when(active.updatedAt)}` : 'Chief of Staff'}</p>
         </div>
         <div className="cy-actions">
-          {messages.length > 0 && (
-            <button className="btn sm" onClick={restart} disabled={Boolean(pending)}>
+          {(active || inChat) && (
+            <button className="btn sm" onClick={fresh} disabled={Boolean(pending)}>
               New chat
             </button>
           )}
         </div>
       </header>
-      {convo && !convo.available ? (
+      {list && !list.available ? (
         <p className="quiet-line">Cypher needs the model, which isn’t configured on this server.</p>
       ) : (
         <>
-          {(messages.length > 0 || pending) && (
+          {inChat && (
             <div className="cy-convo" aria-live="polite" ref={box}>
               {messages.map((m) => (
                 <Message key={m.id} m={m} />
@@ -215,20 +305,32 @@ export function CypherHome() {
               )}
             </div>
           )}
-          {messages.length === 0 && !pending && (
-            <div className="cy-starters">
-              {STARTERS.map((s) => (
-                <button
-                  key={s}
-                  className="dash-chip"
-                  onClick={() => {
-                    setText(s.replace(/…$/, ''));
-                    input.current?.focus();
-                  }}
-                >
-                  {s}
-                </button>
-              ))}
+          {!inChat && (
+            <div className="cy-fresh">
+              <div className="cy-starters">
+                {STARTERS.map((s) => (
+                  <button
+                    key={s}
+                    className="dash-chip"
+                    onClick={() => {
+                      setText(s.replace(/…$/, ''));
+                      input.current?.focus();
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              {list ? (
+                <Recent
+                  items={list.conversations}
+                  activeId={active?.id ?? null}
+                  onOpen={open}
+                  onDelete={remove}
+                />
+              ) : (
+                <p className="quiet-line">Loading conversations…</p>
+              )}
             </div>
           )}
           <form
@@ -242,7 +344,11 @@ export function CypherHome() {
               ref={input}
               value={text}
               rows={3}
-              placeholder="Ask about a project, give a brief, or ask for “a site like Ansco for …”"
+              placeholder={
+                active
+                  ? 'Continue this conversation…'
+                  : 'Ask about a project, give a brief, or ask for “a site like Ansco for …”'
+              }
               aria-label="Message Cypher"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {

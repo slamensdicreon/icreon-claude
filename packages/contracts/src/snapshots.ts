@@ -912,10 +912,29 @@ export const CypherMessage = z.object({
 });
 export type CypherMessage = z.infer<typeof CypherMessage>;
 
-/** GET /cypher — the portfolio conversation, oldest first. */
-export const CypherConversation = z.object({
-  /** False when no model is configured: Cypher can't answer. */
-  available: z.boolean(),
+/** One saved conversation with Cypher, as the Dashboard's rail lists it. */
+export const CypherConversationSummary = z.object({
+  id: z.string(),
+  /** A short title from the first exchange; null until Cypher has answered once. */
+  title: z.string().nullable(),
+  /** One sentence on what was asked and what came of it, refreshed as the conversation grows. */
+  summary: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  messageCount: z.number().int().nonnegative(),
+});
+export type CypherConversationSummary = z.infer<typeof CypherConversationSummary>;
+
+/** GET /cypher/:id — one conversation, oldest message first. */
+export const CypherConversation = CypherConversationSummary.omit({ messageCount: true }).extend({
   messages: z.array(CypherMessage),
 });
 export type CypherConversation = z.infer<typeof CypherConversation>;
+
+/** GET /cypher — whether Cypher can answer, and the saved conversations, newest first. */
+export const CypherConversations = z.object({
+  /** False when no model is configured: Cypher can't answer. */
+  available: z.boolean(),
+  conversations: z.array(CypherConversationSummary),
+});
+export type CypherConversations = z.infer<typeof CypherConversations>;

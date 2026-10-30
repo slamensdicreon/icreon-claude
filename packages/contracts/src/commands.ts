@@ -256,7 +256,11 @@ export const RotateConnectionCredential = z.object({ secret: Secret });
 export type RotateConnectionCredential = z.infer<typeof RotateConnectionCredential>;
 
 /** POST /cypher — a message to Cypher on the Dashboard, about the portfolio or a new project. */
-export const AskCypher = z.object({ body: z.string().trim().min(1).max(4000) });
+export const AskCypher = z.object({
+  body: z.string().trim().min(1).max(4000),
+  /** The conversation to continue; left out, the message starts a new one. */
+  conversationId: z.string().optional(),
+});
 export type AskCypher = z.infer<typeof AskCypher>;
 
 const RuleText = z.string().trim().min(3).max(600);

@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { CypherConversation, type ProjectIntakeInput } from '@lw/contracts';
+import { CypherConversation, CypherConversations, type ProjectIntakeInput } from '@lw/contracts';
 import type { ModelClient } from '@lw/agent-runtime';
 import { InMemoryEventStore, MemoryIntegrationStore, MemoryVault, Projections } from '@lw/events';
 import { loadCatalog } from '@lw/playbook-sdk';
@@ -128,9 +128,9 @@ function scripted(turns: Turn[]) {
 
 it('says Cypher is unavailable without a model, and refuses a message', async () => {
   await start();
-  expect(CypherConversation.parse((await call('GET', '/cypher')).body)).toEqual({
+  expect(CypherConversations.parse((await call('GET', '/cypher')).body)).toEqual({
     available: false,
-    messages: [],
+    conversations: [],
   });
   const r = await call('POST', '/cypher', { body: 'hello' });
   expect(r.status).toBe(503);
@@ -153,6 +153,10 @@ it('drafts a remix on the saved connection from a conversation, and creates noth
       }),
     },
     { text: 'Drafted Globex careers like Globex site. Open it to review and create.' },
+    // The small call that names the conversation after its first exchange.
+    {
+      text: '```json\n{"title": "Globex careers remix", "summary": "Drafted Globex careers from the Globex site on its saved connection, for the Director to create."}\n```',
+    },
   ]);
   const { store } = await start(model);
   projectId = (await call('POST', '/projects', first)).body.projectId;
@@ -164,6 +168,8 @@ it('drafts a remix on the saved connection from a conversation, and creates noth
   expect(r.status).toBe(200);
   const convo = CypherConversation.parse(r.body);
   expect(convo.messages.map((m) => m.role)).toEqual(['director', 'cypher']);
+  expect(convo.title).toBe('Globex careers remix');
+  expect(convo.summary).toMatch(/^Drafted Globex careers/);
   const reply = convo.messages[1]!;
   expect(reply.body).toMatch(/^Drafted Globex careers/);
   expect(reply.projects).toEqual([{ id: projectId, name: 'Globex site' }]);
@@ -200,6 +206,11 @@ it('drafts a remix on the saved connection from a conversation, and creates noth
   expect(results[1]).toContain('"name":"Globex tenant"');
   expect(results.join('\n')).not.toContain(SECRET);
   expect(requests[0].system).toMatch(/You are Cypher/);
+  // The title came from a separate, smaller call that saw the transcript and no tools.
+  const naming = requests.at(-1);
+  expect(naming.model).toBe('claude-haiku-5-5');
+  expect(naming.tools).toBeUndefined();
+  expect(naming.messages[0].content).toMatch(/^Director: Set up careers/);
   expect(requests[0].tools.map((t: { name: string }) => t.name)).toEqual([
     'list_projects',
     'project_detail',
@@ -212,14 +223,58 @@ it('drafts a remix on the saved connection from a conversation, and creates noth
   // Drafts only: still just the one project.
   expect(await store.projectIds()).toEqual([projectId]);
 
-  // The conversation is kept, and the next turn carries it, the draft included.
-  expect(CypherConversation.parse((await call('GET', '/cypher')).body).messages).toHaveLength(2);
-  await call('POST', '/cypher', { body: 'Thanks' });
+  // The conversation is saved and listed; the next turn in it carries the draft along.
+  const listed = CypherConversations.parse((await call('GET', '/cypher')).body);
+  expect(listed.available).toBe(true);
+  expect(listed.conversations).toMatchObject([
+    { id: convo.id, title: 'Globex careers remix', messageCount: 2 },
+  ]);
+  const again = await call('POST', '/cypher', { body: 'Thanks', conversationId: convo.id });
+  expect(again.status).toBe(200);
+  expect(CypherConversation.parse(again.body).messages).toHaveLength(4);
   const carried = requests.at(-1).messages.map((m: { content: unknown }) => m.content);
   expect(carried[1]).toMatch(/Proposed a remix of Globex site: "Globex careers"/);
+  expect(CypherConversation.parse((await call('GET', `/cypher/${convo.id}`)).body).title).toBe(
+    'Globex careers remix',
+  );
 
-  expect((await call('DELETE', '/cypher')).status).toBe(200);
-  expect(CypherConversation.parse((await call('GET', '/cypher')).body).messages).toEqual([]);
+  // A message without a conversation starts a new one, listed first; a deleted one is gone.
+  const fresh = CypherConversation.parse(
+    (await call('POST', '/cypher', { body: 'What needs me today?' })).body,
+  );
+  expect(fresh.id).not.toBe(convo.id);
+  expect(fresh.title).toBe('What needs me today?');
+  expect(
+    CypherConversations.parse((await call('GET', '/cypher')).body).conversations.map((c) => c.id),
+  ).toEqual([fresh.id, convo.id]);
+  expect((await call('DELETE', `/cypher/${convo.id}`)).status).toBe(200);
+  expect((await call('GET', `/cypher/${convo.id}`)).status).toBe(404);
+  expect(
+    (await call('POST', '/cypher', { body: 'Still there?', conversationId: convo.id })).status,
+  ).toBe(404);
+  expect(
+    CypherConversations.parse((await call('GET', '/cypher')).body).conversations.map((c) => c.id),
+  ).toEqual([fresh.id]);
+});
+
+it('keeps the one conversation from before conversations were saved apart', async () => {
+  const { connections } = await start();
+  const at = '2026-10-01T10:00:00.000Z';
+  await connections.put('cypher:portfolio', {
+    messages: [
+      { id: 'm1', role: 'director', body: 'What needs me?', at, proposals: [], projects: [] },
+      { id: 'm2', role: 'cypher', body: 'Two cards on Ansco.', at, proposals: [], projects: [] },
+    ],
+  });
+  const listed = CypherConversations.parse((await call('GET', '/cypher')).body);
+  expect(listed.conversations).toMatchObject([
+    { title: 'Earlier conversation', summary: null, messageCount: 2, updatedAt: at },
+  ]);
+  expect(await connections.get('cypher:portfolio')).toBeNull();
+  const c = CypherConversation.parse(
+    (await call('GET', `/cypher/${listed.conversations[0]!.id}`)).body,
+  );
+  expect(c.messages.map((m) => m.body)).toEqual(['What needs me?', 'Two cards on Ansco.']);
 });
 
 it('drafts a new project from a brief, telling the model what it got wrong', async () => {
@@ -242,11 +297,16 @@ it('drafts a new project from a brief, telling the model what it got wrong', asy
       },
     },
     { text: 'Drafted.' },
+    // The naming call answers nonsense: the first message stands in as the title.
+    { text: 'Sure! Here you go.' },
   ]);
   const { store } = await start(model);
   const r = await call('POST', '/cypher', {
     body: 'Initech wants www.initech.example on SitecoreAI, and a rebrand.',
   });
+  expect(CypherConversation.parse(r.body).title).toBe(
+    'Initech wants www.initech.example on SitecoreAI, and a…',
+  );
   expect(results[0]).toContain('"id":"sitecoreai-migration"');
   expect(results[1]).toMatch(/^ERROR No playbook "nope"/);
   const [p] = CypherConversation.parse(r.body).messages[1]!.proposals;

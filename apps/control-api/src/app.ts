@@ -722,18 +722,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         })
       : null;
 
+  // Saved conversations, newest first; a fresh one starts with the first message that names none.
   app.get('/cypher', async () =>
-    cypher ? cypher.conversation() : { available: false, messages: [] },
+    cypher ? cypher.conversations() : { available: false, conversations: [] },
   );
 
   app.post('/cypher', async (req, reply) => {
     if (!cypher) return fail(reply, 501, 'cypher_unavailable', 'Cypher is not wired in this mode.');
-    return cypher.ask(AskCypher.parse(req.body).body);
+    const { body, conversationId } = AskCypher.parse(req.body);
+    return cypher.ask(body, conversationId);
   });
 
-  app.delete('/cypher', async (_req, reply) => {
+  app.get<{ Params: { id: string } }>('/cypher/:id', async (req, reply) => {
+    const c = cypher ? await cypher.conversation(req.params.id) : null;
+    return c ?? fail(reply, 404, 'unknown_conversation', 'No such conversation.');
+  });
+
+  app.delete<{ Params: { id: string } }>('/cypher/:id', async (req, reply) => {
     if (!cypher) return fail(reply, 501, 'cypher_unavailable', 'Cypher is not wired in this mode.');
-    await cypher.clear();
+    await cypher.remove(req.params.id);
     return { ok: true };
   });
 
