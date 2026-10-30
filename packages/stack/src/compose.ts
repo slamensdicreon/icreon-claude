@@ -203,12 +203,26 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
               shoot(page.source),
               shoot(page.candidate),
             ]);
+            // What the Director settled (a widget left out, a deliberate accessibility change)
+            // is not a difference to report on every page again.
+            const state = opts.projections.get(projectId);
+            const accepted =
+              (await opts.rules
+                ?.matching({
+                  projectId,
+                  playbookId: state?.playbook?.id ?? opts.playbook.manifest.id,
+                  platform: state?.intake?.platform ?? null,
+                  category: 'scope',
+                  role: judge.role,
+                })
+                .catch(() => [])) ?? [];
             return await screens({
               path: page.path,
               source,
               candidate,
               model: judge.model.id,
               effort: judge.model.effort,
+              accepted: accepted.map((r) => `${r.ref}: when ${r.when} ${r.then}`),
             });
           } catch (err) {
             return { error: (err as Error).message };
