@@ -6,6 +6,7 @@ import { Sprite } from './lib/icons';
 import { live } from './lib/live';
 import { NewProject } from './overlays/NewProject';
 import { Palette } from './overlays/Palette';
+import { Boot, useBootState } from './parts/Boot';
 import { useCardActions } from './parts/Card';
 import { MobileNav, Sidebar, Strip, Toasts, useAwayLine } from './Shell';
 import { AppProvider, useApp, useMission, type Surface } from './state';
@@ -57,6 +58,7 @@ function Frame() {
   const app = useApp();
   const { projectId, projects, surface, layout, overlay } = app;
   const mc = useMission().data;
+  const boot = useBootState();
   useAwayLine();
   useKeys();
 
@@ -89,7 +91,9 @@ function Frame() {
   const Body = SURFACE[surface];
   return (
     <>
-      <div className={cls}>
+      {/* While the first load runs, the shell renders underneath the boot overlay (blurred) and
+          takes no focus or clicks. */}
+      <div className={cls} inert={boot.visible || undefined} aria-busy={boot.visible || undefined}>
         <Sidebar />
         <main className="canvas">
           <Strip />
@@ -103,6 +107,7 @@ function Frame() {
       <MobileNav />
       {overlay}
       <Toasts />
+      {boot.visible && <Boot state={boot} />}
     </>
   );
 }

@@ -1795,3 +1795,173 @@
   margin-top: 6px;
   flex-wrap: wrap;
 }
+
+/* Boot overlay: the first load, over the blurred shell. Above the dialog scrim (20) and toasts (30). */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--web-bg) 62%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+  animation: fade var(--motion-medium-1) var(--ease-decelerate);
+  transition:
+    opacity 380ms var(--ease-accelerate),
+    -webkit-backdrop-filter 380ms var(--ease-accelerate),
+    backdrop-filter 380ms var(--ease-accelerate);
+}
+.boot[data-leaving] {
+  opacity: 0;
+  -webkit-backdrop-filter: blur(0) saturate(1);
+  backdrop-filter: blur(0) saturate(1);
+  pointer-events: none;
+}
+.boot-card {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+  max-width: 420px;
+  animation: rise var(--motion-medium-2) var(--ease-decelerate);
+}
+.boot[data-leaving] .boot-card {
+  transform: scale(0.97);
+  transition: transform 380ms var(--ease-accelerate);
+}
+.boot-mark {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+.boot-mark .mark {
+  height: 44px;
+  width: auto;
+  display: block;
+  filter: drop-shadow(0 8px 20px rgba(56, 106, 255, 0.35));
+  animation: boot-breathe 2.4s var(--ease-standard) infinite;
+}
+.boot-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: boot-spin 1.5s linear infinite;
+  transform-origin: 50% 50%;
+}
+.boot-ring circle {
+  fill: none;
+  stroke: var(--web-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 96 256;
+}
+.boot-ring.two {
+  animation: boot-spin 2.6s linear infinite reverse;
+}
+.boot-ring.two circle {
+  stroke: var(--web-border-strong);
+  stroke-width: 2;
+  stroke-dasharray: 36 253;
+}
+.boot-title {
+  font-size: 15px;
+  font-weight: var(--fw-medium);
+  color: var(--web-fg);
+}
+.boot-line {
+  font-size: 13.5px;
+  color: var(--web-fg-2);
+  min-height: 20px;
+}
+.boot-detail {
+  font-size: 12.5px;
+  color: var(--web-fg-3);
+  margin-top: -6px;
+}
+.boot-steps {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.boot-step {
+  position: relative;
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--web-border);
+  overflow: hidden;
+}
+.boot-step[data-state='done'] {
+  background: var(--web-accent);
+}
+.boot-step[data-state='active']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--web-accent), transparent);
+  animation: boot-sweep 1.1s var(--ease-standard) infinite;
+}
+.boot-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.boot[data-phase='error'] .boot-ring {
+  animation: none;
+}
+.boot[data-phase='error'] .boot-ring.two {
+  display: none;
+}
+.boot[data-phase='error'] .boot-ring circle {
+  stroke: var(--danger);
+  stroke-dasharray: none;
+  opacity: 0.45;
+}
+.boot[data-phase='error'] .boot-mark .mark {
+  animation: none;
+  filter: none;
+}
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes boot-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.92;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+@keyframes boot-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-ring,
+  .boot-mark .mark,
+  .boot-step[data-state='active']::after {
+    animation: none !important;
+  }
+  .boot-ring circle {
+    stroke-dasharray: none;
+    opacity: 0.3;
+  }
+  .boot-step[data-state='active'] {
+    background: var(--web-accent-text);
+  }
+}

@@ -125,6 +125,11 @@ interface AppValue {
   setComposer: (c: { text: string; about?: string | null; focus?: boolean }) => void;
   /** Runs a command; refusals become a toast in the API's own words. */
   run: (fn: () => Promise<unknown>, done?: string) => Promise<boolean>;
+  /**
+   * The first load: whether the project list has arrived, and why not when it hasn't. The boot
+   * overlay reads it; background refreshes never touch it once the list is in.
+   */
+  boot: { projectsLoaded: boolean; error: string | null; retry: () => void };
 }
 
 const Ctx = createContext<AppValue | null>(null);
@@ -197,6 +202,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // The project list: on load, after each command, and every few seconds for the switcher's
   // health and badges.
+  const [boot, setBoot] = useState<{ projectsLoaded: boolean; error: string | null }>({
+    projectsLoaded: false,
+    error: null,
+  });
   const loadProjects = useCallback(
     () =>
       get<ProjectListItem[]>('/projects')
@@ -204,8 +213,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setProjects(list);
           // No project in the address means the Dashboard; a project that's gone does too.
           setProjectId((cur) => (cur && list.some((p) => p.id === cur) ? cur : null));
+          setBoot({ projectsLoaded: true, error: null });
         })
-        .catch(() => {}),
+        .catch((err: unknown) => {
+          // Only the first load reports: a refresh that fails later shouldn't bring the overlay back.
+          setBoot((b) =>
+            b.projectsLoaded
+              ? b
+              : {
+                  projectsLoaded: false,
+                  error:
+                    err instanceof ApiProblem
+                      ? err.message
+                      : 'The Control API could not be reached.',
+                },
+          );
+        }),
     [],
   );
   useEffect(() => {
@@ -324,6 +347,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     composer,
     setComposer: ({ text, about = null, focus = false }) =>
       setComposerState((c) => ({ text, about, focus: focus ? c.focus + 1 : c.focus })),
+    boot: { ...boot, retry: () => void loadProjects() },
     run: async (fn, done) => {
       try {
         await fn();
