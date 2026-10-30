@@ -11,11 +11,12 @@ import type {
 import { briefApplies, SOURCE_REPO } from '@lw/contracts';
 import { useEffect, useState } from 'react';
 import { ApiProblem, get, post } from '../lib/api';
-import { useApp } from '../state';
-import { Scrim } from './Dialogs';
+import { Icon } from '../lib/icons';
+import { catalogGroups, readiness, type CatalogGroup } from '../lib/showcase';
+import { useApp, type NewProjectIntent } from '../state';
 
 /**
- * The New Project wizard. The Director first picks the entity (the platform the site is built
+ * The New Project page. The Director first picks the entity (the platform the site is built
  * on), then one of its playbooks: what the team will deliver. The playbook then decides the rest: whether there is a source repository and live site, which
  * target values and which credentials, in which steps. Each credential is tested against the live
  * service here; the API tests them again, seals them in the vault and records the project ready
@@ -50,28 +51,11 @@ const URL_OK = /^https?:\/\/[^\s]+\.[^\s]+/;
  * A remix starts from an existing project: its playbook, client, budgets, brief and the tenant
  * facts its connection shares. Credentials the connection provides aren't asked for.
  */
-export interface Remix {
-  /** A remix of a project, or a project Cypher drafted (with its name and source). */
-  draft: RemixDraft | ProjectDraft;
-  connectionName: string | null;
-}
+export type Remix = NonNullable<NewProjectIntent['remix']>;
 
-/** The entities in the catalog, in catalog order, each with its playbooks. */
-function entitiesOf(playbooks: PlaybookSummary[]) {
-  const out: { entity: PlaybookSummary['platform']; playbooks: PlaybookSummary[] }[] = [];
-  for (const p of playbooks) {
-    const e = out.find((x) => x.entity.id === p.platform.id);
-    if (e) e.playbooks.push(p);
-    else out.push({ entity: p.platform, playbooks: [p] });
-  }
-  return out;
-}
-
-export function NewProject({
-  remix,
-  preset,
-}: { remix?: Remix; preset?: { playbookId: string } } = {}) {
-  const { closeOverlay, switchProject, toast } = useApp();
+export function NewProject() {
+  const { home, switchProject, toast, newProjectIntent } = useApp();
+  const { remix, preset } = newProjectIntent;
   const draft = remix?.draft;
   const drafted = draft && 'name' in draft ? draft : null;
   const [playbooks, setPlaybooks] = useState<PlaybookSummary[] | null>(null);
@@ -134,8 +118,8 @@ export function NewProject({
   const questions = (pb?.intake.brief ?? []).filter((q) =>
     briefApplies(q, f.repo.trim() ? [SOURCE_REPO] : []),
   );
-  const entities = entitiesOf(playbooks ?? []);
-  const entity = entities.find((e) => e.entity.id === entityId) ?? null;
+  const groups = catalogGroups(playbooks ?? []);
+  const entity: CatalogGroup | null = groups.find((g) => g.entity.id === entityId) ?? null;
   const TITLES = [
     'Entity',
     'Playbook',
@@ -225,7 +209,7 @@ export function NewProject({
   const repoOk = REPO.test(f.repo.trim());
   const urlOk = f.sourceUrl.trim() ? URL_OK.test(f.sourceUrl.trim()) : source?.url !== 'required';
   const valid = [
-    Boolean(entity),
+    Boolean(entity && entity.entity.status === 'ready'),
     Boolean(pb && pb.platform.id === entityId),
     Boolean(f.name.trim() && f.client.trim() && +f.usd > 0 && +f.tokensM > 0 && +f.hours > 0),
     ...(hasSource
@@ -291,9 +275,8 @@ export function NewProject({
     setError(null);
     try {
       const r = (await post('/projects', body())) as unknown as { projectId: string };
-      closeOverlay();
       toast(`${f.name.trim()} is set up. Its credentials are verified and sealed.`);
-      window.setTimeout(() => switchProject(r.projectId), 800);
+      switchProject(r.projectId);
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : 'The project could not be created.');
       setBusy(false);
@@ -409,13 +392,19 @@ export function NewProject({
   );
 
   const pickEntity = (id: string) => {
+    const g = groups.find((x) => x.entity.id === id);
+    if (!g) return;
+    if (g.entity.status !== 'ready') {
+      toast(`${g.entity.name} is on the roadmap: its playbooks are readable now, runnable later.`);
+      return;
+    }
     setEntityId(id);
-    const e = entities.find((x) => x.entity.id === id);
-    // One playbook on the entity: it is the choice; otherwise a playbook from elsewhere is dropped.
+    const ready = g.playbooks.filter((p) => p.status === 'ready');
+    // One runnable playbook on the entity: it is the choice; otherwise a playbook from elsewhere is dropped.
     setPlaybookId(
-      e && e.playbooks.length === 1
-        ? e.playbooks[0]!.id
-        : e?.playbooks.some((p) => p.id === playbookId)
+      ready.length === 1
+        ? ready[0]!.id
+        : ready.some((p) => p.id === playbookId)
           ? playbookId
           : null,
     );
@@ -424,65 +413,90 @@ export function NewProject({
 
   const entityPage = (
     <>
-      <p>Which platform is the site built on? Its playbooks come next.</p>
+      <p className="np-lead">
+        Which platform is the site built on? Each entity brings its own playbooks, credentials and
+        team. Entities on the roadmap are shown so the catalog reads as a whole.
+      </p>
       {loadError && <p className="cred-miss">{loadError}</p>}
       {!playbooks && !loadError && <p className="muted">Loading the catalog…</p>}
-      <div className="wiz-playbooks" role="radiogroup" aria-label="Entity">
-        {entities.map(({ entity: e, playbooks: ps }) => (
-          <button
-            key={e.id}
-            type="button"
-            role="radio"
-            aria-checked={e.id === entityId}
-            className={`wiz-playbook ${e.id === entityId ? 'on' : ''}`}
-            onClick={() => pickEntity(e.id)}
-          >
-            <span className="eyebrow">
-              {e.vendor} · {e.category}
-            </span>
-            <b>{e.name}</b>
-            <span className="muted">{e.description}</span>
-            <span className="wiz-count">
-              {ps.length === 1 ? '1 playbook' : `${ps.length} playbooks`}:{' '}
-              {ps.map((p) => p.name).join(', ')}
-            </span>
-          </button>
-        ))}
+      <div className="np-tiles" role="radiogroup" aria-label="Entity">
+        {groups.map((g) => {
+          const coming = g.entity.status !== 'ready';
+          return (
+            <button
+              key={g.entity.id}
+              type="button"
+              role="radio"
+              aria-checked={g.entity.id === entityId}
+              aria-disabled={coming || undefined}
+              className={`np-tile${g.entity.id === entityId ? ' on' : ''}${coming ? ' coming' : ''}`}
+              onClick={() => pickEntity(g.entity.id)}
+            >
+              <span className="np-tile-top">
+                <span className="eyebrow">
+                  {g.entity.vendor} · {g.entity.category}
+                </span>
+                {coming && <span className="np-pill">Coming soon</span>}
+              </span>
+              <b>{g.entity.name}</b>
+              <span className="muted">{g.entity.description}</span>
+              <span className="np-tile-meta">{readiness(g)}</span>
+            </button>
+          );
+        })}
       </div>
     </>
   );
 
   const pickPage = (
     <>
-      <p>
+      <p className="np-lead">
         What will the team deliver on {entity?.entity.name ?? 'this platform'}? The playbook sets
-        the team, its plan and what intake needs.
+        the team, its plan, its gates and what intake needs. Playbooks on the roadmap are readable
+        here and will become runnable as they are written.
       </p>
-      <div className="wiz-playbooks" role="radiogroup" aria-label="Playbook">
-        {(entity?.playbooks ?? []).map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            role="radio"
-            aria-checked={p.id === playbookId}
-            className={`wiz-playbook ${p.id === playbookId ? 'on' : ''}`}
-            onClick={() => {
-              setPlaybookId(p.id);
-              setChecks({});
-            }}
-          >
-            <span className="eyebrow">
-              {p.platform.name} · v{p.version}
-            </span>
-            <b>{p.name}</b>
-            <span className="muted">{p.charter.mission}</span>
-            <ul>
-              {p.charter.outcomes.map((o) => (
-                <li key={o.id}>{o.title}</li>
-              ))}
-            </ul>
-          </button>
-        ))}
+      <div className="np-tiles" role="radiogroup" aria-label="Playbook">
+        {(entity?.playbooks ?? []).map((p) => {
+          const coming = p.status !== 'ready';
+          const sum = p.summary;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={p.id === playbookId}
+              aria-disabled={coming || undefined}
+              className={`np-tile${p.id === playbookId ? ' on' : ''}${coming ? ' coming' : ''}`}
+              onClick={() => {
+                if (coming) {
+                  toast(`${p.name} is on the roadmap: readable now, runnable later.`);
+                  return;
+                }
+                setPlaybookId(p.id);
+                setChecks({});
+              }}
+            >
+              <span className="np-tile-top">
+                <span className="eyebrow">
+                  {entity?.entity.name}
+                  {sum ? ` · v${sum.version}` : ''}
+                </span>
+                <span className={`np-pill${coming ? '' : ' ready'}`}>
+                  {coming ? 'Coming soon' : 'Ready'}
+                </span>
+              </span>
+              <b>{p.name}</b>
+              <span className="muted">{sum ? sum.charter.mission : p.description}</span>
+              {sum && (
+                <ul>
+                  {sum.charter.outcomes.slice(0, 4).map((o) => (
+                    <li key={o.id}>{o.title}</li>
+                  ))}
+                </ul>
+              )}
+            </button>
+          );
+        })}
       </div>
     </>
   );
@@ -710,41 +724,56 @@ export function NewProject({
     reviewPage,
   ];
   const last = TITLES.length - 1;
+  /** Steps the rail may jump to: every step before it is valid. */
+  const canJump = (i: number) => i <= step || valid.slice(0, i).every(Boolean);
+  const verified = credentials.filter((c) => ok(c.credentialId)).length;
+  const fromConnection = credentials.filter(
+    (c) => provided.has(c.credentialId) && !touched(c),
+  ).length;
+
+  const title = draft?.from
+    ? `New project like ${draft.from.name}`
+    : draft
+      ? 'New project drafted by Cypher'
+      : 'New project';
 
   return (
-    <Scrim>
-      <div className="dialog wiz" role="dialog" aria-labelledby="np-t">
-        <h2 id="np-t">
-          {draft?.from
-            ? `New project like ${draft.from.name}`
-            : draft
-              ? 'New project drafted by Cypher'
-              : 'New project'}
-        </h2>
-        <ol className="wiz-steps" aria-label="Steps">
-          {TITLES.map((s, i) => (
+    <div className="np">
+      <aside className="np-rail" aria-label="Steps">
+        <button type="button" className="np-back" onClick={home}>
+          <Icon name="chevron--left" sm /> Dashboard
+        </button>
+        <h1>{title}</h1>
+        <ol className="np-steps">
+          {TITLES.map((t, i) => (
             <li
-              key={`${i}-${s}`}
+              key={`${i}-${t}`}
               aria-current={i === step ? 'step' : undefined}
               className={i < step ? 'done' : ''}
             >
-              <span>{i + 1}</span>
-              {s}
+              <button type="button" disabled={!canJump(i)} onClick={() => setStep(i)}>
+                <span className="np-num">{i < step ? <Icon name="checkmark" sm /> : i + 1}</span>
+                <span className="np-step-label">{t}</span>
+              </button>
             </li>
           ))}
         </ol>
-        <div className="wiz-body">{pages[step]}</div>
+      </aside>
+      <section className="np-main">
+        <header className="np-head">
+          <div className="eyebrow">
+            Step {step + 1} of {TITLES.length}
+          </div>
+          <h2>{TITLES[step]}</h2>
+        </header>
+        <div className="np-body">{pages[step]}</div>
         {error && (
           <p className="cred-miss" role="alert" style={{ marginTop: 8 }}>
             {error}
           </p>
         )}
-        <div className="btn-row" style={{ justifyContent: 'flex-end', marginTop: 12 }}>
-          <button
-            type="button"
-            className="btn"
-            onClick={step ? () => setStep(step - 1) : closeOverlay}
-          >
+        <footer className="np-foot">
+          <button type="button" className="btn" onClick={step ? () => setStep(step - 1) : home}>
             {step ? 'Back' : 'Cancel'}
           </button>
           {step < last ? (
@@ -766,8 +795,104 @@ export function NewProject({
               {busy ? 'Checking and creating…' : 'Create project'}
             </button>
           )}
+        </footer>
+      </section>
+      <aside className="np-side" aria-label="Summary">
+        <div className="np-sum">
+          <div className="np-sum-row">
+            <span className="eyebrow">Entity</span>
+            {entity ? (
+              <>
+                <b>{entity.entity.name}</b>
+                <span className="muted">
+                  {entity.entity.vendor} · {entity.entity.category}
+                </span>
+              </>
+            ) : (
+              <span className="muted">Choose a platform</span>
+            )}
+          </div>
+          <div className="np-sum-row">
+            <span className="eyebrow">Playbook</span>
+            {pb ? (
+              <>
+                <b>{pb.name}</b>
+                <span className="muted">{pb.charter.mission}</span>
+              </>
+            ) : (
+              <span className="muted">Choose what the team delivers</span>
+            )}
+          </div>
+          {pb && (
+            <>
+              <div className="np-sum-row">
+                <span className="eyebrow">What you get</span>
+                <ul>
+                  {pb.charter.outcomes.map((o) => (
+                    <li key={o.id}>{o.title}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="np-sum-row">
+                <span className="eyebrow">How it runs</span>
+                <span className="muted">
+                  {pb.phases.length} phases, {pb.phases.filter((ph) => ph.gate).length} Director
+                  gates · a team of {pb.roles.length}
+                </span>
+              </div>
+            </>
+          )}
+          {(f.name.trim() || f.client.trim()) && (
+            <div className="np-sum-row">
+              <span className="eyebrow">Project</span>
+              <b>{f.name.trim() || '…'}</b>
+              <span className="muted">
+                {[f.client.trim(), f.timezone].filter(Boolean).join(' · ')}
+              </span>
+              <span className="muted">
+                ${f.usd} · {f.tokensM}M tokens · {f.hours} h
+              </span>
+            </div>
+          )}
+          {hasSource && (f.repo.trim() || f.sourceUrl.trim()) && (
+            <div className="np-sum-row">
+              <span className="eyebrow">Source</span>
+              {f.repo.trim() && (
+                <span className="muted">
+                  {f.repo.trim()} ({f.branch.trim() || 'main'})
+                </span>
+              )}
+              {f.sourceUrl.trim() && <span className="muted">{f.sourceUrl.trim()}</span>}
+            </div>
+          )}
+          {steps.flatMap((st) => st.fields).some((fs) => fieldValue(fs)) && (
+            <div className="np-sum-row">
+              <span className="eyebrow">Target</span>
+              {steps
+                .flatMap((st) => st.fields)
+                .filter((fs) => fieldValue(fs))
+                .map((fs) => (
+                  <span key={fs.key} className="muted">
+                    {fs.label}: {fieldValue(fs)}
+                  </span>
+                ))}
+            </div>
+          )}
+          {credentials.length > 0 && (
+            <div className="np-sum-row">
+              <span className="eyebrow">Credentials</span>
+              <span className="muted">
+                {verified} of {credentials.length} verified
+                {fromConnection ? `, ${fromConnection} from the connection` : ''}
+              </span>
+            </div>
+          )}
+          <p className="np-sum-note">
+            Every credential is checked here and again when the project is created; secrets are
+            sealed and never shown again. Nothing runs until you press Start on Mission Control.
+          </p>
         </div>
-      </div>
-    </Scrim>
+      </aside>
+    </div>
   );
 }

@@ -2,13 +2,12 @@ import { post } from '../lib/api';
 import { Icon } from '../lib/icons';
 import { live } from '../lib/live';
 import { useApp, useProjectResource, type Surface } from '../state';
-import { NewProject } from './NewProject';
 import { Scrim } from './Dialogs';
 
 const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
 
 export function ProjectMenu() {
-  const { projects, projectId, switchProject, home, closeOverlay, openOverlay } = useApp();
+  const { projects, projectId, switchProject, home, closeOverlay, newProject } = useApp();
   return (
     <Scrim style={{ placeItems: 'start start', padding: '120px 0 0 12px' }}>
       <div className="menu pmenu">
@@ -58,7 +57,7 @@ export function ProjectMenu() {
             </span>
           </button>
         ))}
-        <button onClick={() => openOverlay(<NewProject />)}>+ New project</button>
+        <button onClick={() => newProject()}>+ New project</button>
       </div>
     </Scrim>
   );

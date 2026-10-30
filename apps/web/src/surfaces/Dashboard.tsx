@@ -11,11 +11,11 @@ import { useEffect, useState } from 'react';
 import { ApiProblem, get, post, put } from '../lib/api';
 import { age, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
-import { NewProject } from '../overlays/NewProject';
 import { CypherHome } from './CypherHome';
 import { Rules } from './Rules';
 import { PlaybookComparison } from './Scorecard';
 import { useApp } from '../state';
+import { catalogGroups, readiness } from '../lib/showcase';
 
 type Tab = 'projects' | 'connections' | 'playbooks' | 'rules' | 'diagnostics';
 type Filter = 'active' | 'needs' | 'completed' | 'all';
@@ -65,7 +65,7 @@ function usePoll<T>(path: string | null, everyMs: number) {
  * project can run, and the health of the services and orchestrators behind them.
  */
 export function Dashboard() {
-  const { openOverlay } = useApp();
+  const { newProject } = useApp();
   const [tab, setTab] = useState<Tab>('projects');
   const portfolio = usePoll<PortfolioItem[]>('/portfolio', 10_000);
   const needs = (portfolio.data ?? []).filter((p) => p.waitingCount > 0).length;
@@ -77,7 +77,7 @@ export function Dashboard() {
             <h1>Dashboard</h1>
             <p>Every project, the playbooks you can run, and how the system is doing.</p>
           </div>
-          <button className="btn primary" onClick={() => openOverlay(<NewProject />)}>
+          <button className="btn primary" onClick={() => newProject()}>
             New project
           </button>
         </div>
@@ -279,103 +279,134 @@ function Compare({ playbookId }: { playbookId: string }) {
 }
 
 function Playbooks({ projects }: { projects: PortfolioItem[] }) {
-  const { openOverlay } = useApp();
+  const { newProject, toast } = useApp();
   const { data, error } = usePoll<PlaybookSummary[]>('/playbooks', 60_000);
   if (error && !data) return <p className="quiet-line">Playbooks could not be loaded: {error}</p>;
   if (!data) return <p className="quiet-line">Loading playbooks…</p>;
-  // The catalog is entities first, then each entity's playbooks.
-  const entities: { entity: PlaybookSummary['platform']; playbooks: PlaybookSummary[] }[] = [];
-  for (const pb of data) {
-    const e = entities.find((x) => x.entity.id === pb.platform.id);
-    if (e) e.playbooks.push(pb);
-    else entities.push({ entity: pb.platform, playbooks: [pb] });
-  }
+  // The catalog is entities first, then each entity's playbooks; the roadmap's are readable tiles.
+  const groups = catalogGroups(data);
   return (
     <section className="dash-playbooks">
-      {entities.map(({ entity, playbooks }) => (
+      {groups.map(({ entity, playbooks }) => (
         <div key={entity.id} className="dash-entity">
           <div className="dash-entity-head">
             <h2>
               {entity.name}{' '}
               <small>
-                {entity.vendor} · {entity.category}
+                {entity.vendor} · {entity.category} · {readiness({ entity, playbooks })}
               </small>
+              {entity.status === 'coming' && <span className="np-pill">Coming soon</span>}
             </h2>
             <p className="muted">{entity.description}</p>
           </div>
-          {playbooks.map((pb) => {
-            const ran = projects.filter((p) => p.playbook?.id === pb.id);
-            return (
-              <article key={pb.id} className="panel">
-                <div className="panel-head">
-                  <h2>
-                    {pb.name} <small>{pb.version}</small>
-                  </h2>
-                  <button
-                    className="btn sm primary"
-                    onClick={() => openOverlay(<NewProject preset={{ playbookId: pb.id }} />)}
-                  >
-                    Start a project
-                  </button>
-                </div>
-                <p>{pb.description}</p>
-                <p className="muted">{pb.charter.mission}</p>
-                {ran.some((p) => !p.demo) && <Compare playbookId={pb.id} />}
-                <h3>Outcomes</h3>
-                <ul className="dash-list">
-                  {pb.charter.outcomes.map((o) => (
-                    <li key={o.id}>
-                      <b>{o.title}.</b> {o.measure}
-                    </li>
-                  ))}
-                </ul>
-                {pb.phases.length > 0 && (
-                  <>
-                    <h3>Phases</h3>
-                    <ol className="dash-phases" start={0}>
-                      {pb.phases.map((ph) => (
-                        <li key={ph.number}>
-                          {ph.name}
-                          {ph.gate && <span className="pcard-pill">{ph.gate}</span>}
-                        </li>
-                      ))}
-                    </ol>
-                  </>
-                )}
-                {pb.roles.length > 0 && (
-                  <details>
-                    <summary>The team ({pb.roles.length} roles)</summary>
-                    <ul className="dash-list">
-                      {pb.roles.map((r) => (
-                        <li key={r.role}>
-                          <b>{r.name}.</b> {r.description}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-                <details>
-                  <summary>What intake asks for</summary>
+          {playbooks
+            .filter((p) => p.status === 'ready')
+            .map((p) => p.summary!)
+            .map((pb) => {
+              const ran = projects.filter((p) => p.playbook?.id === pb.id);
+              return (
+                <article key={pb.id} className="panel">
+                  <div className="panel-head">
+                    <h2>
+                      {pb.name} <small>{pb.version}</small>
+                    </h2>
+                    <button
+                      className="btn sm primary"
+                      onClick={() => newProject({ preset: { playbookId: pb.id } })}
+                    >
+                      Start a project
+                    </button>
+                  </div>
+                  <p>{pb.description}</p>
+                  <p className="muted">{pb.charter.mission}</p>
+                  {ran.some((p) => !p.demo) && <Compare playbookId={pb.id} />}
+                  <h3>Outcomes</h3>
                   <ul className="dash-list">
-                    <li>
-                      Source repository: {pb.intake.source.repo}; live site: {pb.intake.source.url}
-                    </li>
-                    {pb.intake.steps.map((st) => (
-                      <li key={st.title}>
-                        <b>{st.title}.</b> {st.intro}
+                    {pb.charter.outcomes.map((o) => (
+                      <li key={o.id}>
+                        <b>{o.title}.</b> {o.measure}
                       </li>
                     ))}
-                    <li>{pb.intake.brief.length} brief questions</li>
                   </ul>
-                </details>
-                <p className="muted">
-                  {ran.length
-                    ? `Projects on it: ${ran.map((p) => `${p.name} (${p.playbook?.version})`).join(', ')}`
-                    : 'No projects on it yet.'}
-                </p>
-              </article>
-            );
-          })}
+                  {pb.phases.length > 0 && (
+                    <>
+                      <h3>Phases</h3>
+                      <ol className="dash-phases" start={0}>
+                        {pb.phases.map((ph) => (
+                          <li key={ph.number}>
+                            {ph.name}
+                            {ph.gate && <span className="pcard-pill">{ph.gate}</span>}
+                          </li>
+                        ))}
+                      </ol>
+                    </>
+                  )}
+                  {pb.roles.length > 0 && (
+                    <details>
+                      <summary>The team ({pb.roles.length} roles)</summary>
+                      <ul className="dash-list">
+                        {pb.roles.map((r) => (
+                          <li key={r.role}>
+                            <b>{r.name}.</b> {r.description}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  <details>
+                    <summary>What intake asks for</summary>
+                    <ul className="dash-list">
+                      <li>
+                        Source repository: {pb.intake.source.repo}; live site:{' '}
+                        {pb.intake.source.url}
+                      </li>
+                      {pb.intake.steps.map((st) => (
+                        <li key={st.title}>
+                          <b>{st.title}.</b> {st.intro}
+                        </li>
+                      ))}
+                      <li>{pb.intake.brief.length} brief questions</li>
+                    </ul>
+                  </details>
+                  <p className="muted">
+                    {ran.length
+                      ? `Projects on it: ${ran.map((p) => `${p.name} (${p.playbook?.version})`).join(', ')}`
+                      : 'No projects on it yet.'}
+                  </p>
+                </article>
+              );
+            })}
+          {playbooks.some((p) => p.status === 'coming') && (
+            <div className="dash-roadmap">
+              <h3>
+                {playbooks.some((p) => p.status === 'ready')
+                  ? 'Also on the roadmap'
+                  : 'On the roadmap'}
+              </h3>
+              <div className="np-tiles">
+                {playbooks
+                  .filter((p) => p.status === 'coming')
+                  .map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="np-tile coming"
+                      aria-disabled="true"
+                      onClick={() =>
+                        toast(`${p.name} is on the roadmap: readable now, runnable later.`)
+                      }
+                    >
+                      <span className="np-tile-top">
+                        <span className="eyebrow">{entity.name}</span>
+                        <span className="np-pill">Coming soon</span>
+                      </span>
+                      <b>{p.name}</b>
+                      <span className="muted">{p.description}</span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </section>
@@ -454,7 +485,7 @@ function Diagnostics() {
 
 /** Opens the wizard for a new project like this one: its playbook, client, brief and tenant. */
 function RemixButton({ project }: { project: PortfolioItem }) {
-  const { openOverlay, toast } = useApp();
+  const { newProject, toast } = useApp();
   const [busy, setBusy] = useState(false);
   return (
     <button
@@ -465,14 +496,12 @@ function RemixButton({ project }: { project: PortfolioItem }) {
         try {
           const draft = await get<RemixDraft>(`/projects/${project.id}/remix`);
           const list = draft.connectionId ? await get<ConnectionView[]>('/connections') : [];
-          openOverlay(
-            <NewProject
-              remix={{
-                draft,
-                connectionName: list.find((c) => c.id === draft.connectionId)?.name ?? null,
-              }}
-            />,
-          );
+          newProject({
+            remix: {
+              draft,
+              connectionName: list.find((c) => c.id === draft.connectionId)?.name ?? null,
+            },
+          });
         } catch (err) {
           toast(err instanceof ApiProblem ? err.message : 'The remix could not be prepared.');
         } finally {
@@ -490,7 +519,7 @@ function RemixButton({ project }: { project: PortfolioItem }) {
  * Secrets are never shown: a hint, when they were last checked, and a way to replace one.
  */
 function Connections({ projects }: { projects: PortfolioItem[] }) {
-  const { openOverlay, toast } = useApp();
+  const { openOverlay, newProject, toast } = useApp();
   const [version, setVersion] = useState(0);
   const { data, error } = usePoll<ConnectionView[]>(`/connections?v=${version}`, 30_000);
   const playbooks = usePoll<PlaybookSummary[]>('/playbooks', 300_000).data;
@@ -524,7 +553,7 @@ function Connections({ projects }: { projects: PortfolioItem[] }) {
                     const draft = await get<RemixDraft>(
                       `/projects/${c.createdFrom!.projectId}/remix`,
                     );
-                    openOverlay(<NewProject remix={{ draft, connectionName: c.name }} />);
+                    newProject({ remix: { draft, connectionName: c.name } });
                   } catch (err) {
                     toast(err instanceof ApiProblem ? err.message : 'Could not start a project.');
                   }

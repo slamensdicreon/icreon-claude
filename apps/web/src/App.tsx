@@ -4,7 +4,7 @@ import { Dock } from './dock/Dock';
 import { Inspector } from './Inspector';
 import { Sprite } from './lib/icons';
 import { live } from './lib/live';
-import { NewProject } from './overlays/NewProject';
+import { NewProject } from './surfaces/NewProject';
 import { Palette } from './overlays/Palette';
 import { Boot, useBootState } from './parts/Boot';
 import { useCardActions } from './parts/Card';
@@ -56,7 +56,7 @@ export function App() {
 
 function Frame() {
   const app = useApp();
-  const { projectId, projects, surface, layout, overlay } = app;
+  const { projectId, projects, surface, layout, overlay, view, newProjectIntent } = app;
   const mc = useMission().data;
   const boot = useBootState();
   useAwayLine();
@@ -98,7 +98,15 @@ function Frame() {
         <main className="canvas">
           <Strip />
           <div className="surface" ref={surfaceRef} tabIndex={-1}>
-            {projectId ? <Body key={projectId} /> : projects.length ? <Dashboard /> : <Empty />}
+            {projectId ? (
+              <Body key={projectId} />
+            ) : view === 'new' ? (
+              <NewProject key={newProjectIntent.key} />
+            ) : projects.length ? (
+              <Dashboard />
+            ) : (
+              <Empty />
+            )}
           </div>
           <Inspector />
         </main>
@@ -113,18 +121,18 @@ function Frame() {
 }
 
 function Empty() {
-  const { openOverlay } = useApp();
+  const { newProject } = useApp();
   return (
     <>
       <div className="page-head">
         <div>
           <h1>No projects yet</h1>
           <p>
-            Start one with the New Project wizard: the client&rsquo;s repository, their SitecoreAI
-            environment and its automation client, and budgets.
+            Start one from the catalog: pick the platform and the playbook, then the client&rsquo;s
+            source, their environment and its credentials, and budgets.
           </p>
         </div>
-        <button className="btn primary" onClick={() => openOverlay(<NewProject />)}>
+        <button className="btn primary" onClick={() => newProject()}>
           New project
         </button>
       </div>

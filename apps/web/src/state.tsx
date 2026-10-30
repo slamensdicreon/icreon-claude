@@ -2,7 +2,9 @@ import type {
   AgentView,
   ConversationSnapshot,
   MissionControlSnapshot,
+  ProjectDraft,
   ProjectListItem,
+  RemixDraft,
   TeamSnapshot,
 } from '@lw/contracts';
 import {
@@ -97,10 +99,25 @@ export interface Toast {
   action?: { label: string; run: () => void };
 }
 
+/**
+ * What the New Project page starts from: a playbook already chosen (from the catalog), or a
+ * remix or Cypher draft (its playbook, client, budgets, brief and tenant facts).
+ */
+export interface NewProjectIntent {
+  preset?: { playbookId: string };
+  remix?: { draft: RemixDraft | ProjectDraft; connectionName: string | null };
+}
+
 interface AppValue {
   me: { name: string; login: string | null };
   projects: ProjectListItem[];
   projectId: string | null;
+  /** Above any project: the Dashboard, or the New Project page. */
+  view: 'dashboard' | 'new';
+  /** The New Project page is being opened for the n-th time: a fresh form each time. */
+  newProjectIntent: NewProjectIntent & { key: number };
+  /** Opens the New Project page (its own page, not a dialog). */
+  newProject: (intent?: NewProjectIntent) => void;
   switchProject: (id: string) => void;
   /** The Dashboard: every project, the playbook catalog and diagnostics, above any one project. */
   home: () => void;
@@ -157,16 +174,24 @@ const store = {
   },
 };
 
-function parsePath(): { projectId: string | null; surface: Surface } {
+function parsePath(): { projectId: string | null; surface: Surface; view: 'dashboard' | 'new' } {
   const m = /^\/p\/([^/]+)(?:\/([a-z]+))?/.exec(location.pathname);
   const surface = (m?.[2] && SURFACES.includes(m[2] as Surface) ? m[2] : 'mission') as Surface;
-  return { projectId: m?.[1] ? decodeURIComponent(m[1]) : null, surface };
+  return {
+    projectId: m?.[1] ? decodeURIComponent(m[1]) : null,
+    surface,
+    view: location.pathname === '/new' ? 'new' : 'dashboard',
+  };
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const initial = parsePath();
   const [projectId, setProjectId] = useState<string | null>(initial.projectId);
   const [surface, setSurface] = useState<Surface>(initial.surface);
+  const [view, setView] = useState<'dashboard' | 'new'>(initial.view);
+  const [newProjectIntent, setNewProjectIntent] = useState<NewProjectIntent & { key: number }>({
+    key: 0,
+  });
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [me, setMe] = useState<{ name: string; login: string | null }>({
     name: 'Director',
@@ -239,14 +264,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Keep the URL in step, and follow the back button.
   useEffect(() => {
-    const path = projectId ? `/p/${encodeURIComponent(projectId)}/${surface}` : '/';
+    const path = projectId
+      ? `/p/${encodeURIComponent(projectId)}/${surface}`
+      : view === 'new'
+        ? '/new'
+        : '/';
     if (location.pathname !== path) history.pushState(null, '', path);
-  }, [projectId, surface]);
+  }, [projectId, surface, view]);
   useEffect(() => {
     const onPop = () => {
       const p = parsePath();
       setProjectId(p.projectId);
       setSurface(p.surface);
+      setView(p.view);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -311,6 +341,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     home: () => {
       setInspector(null);
       setProjectId(null);
+      setView('dashboard');
+      setLayoutState((l) => ({ ...l, dockOpen: false }));
+    },
+    view,
+    newProjectIntent,
+    newProject: (intent = {}) => {
+      setInspector(null);
+      setOverlay(null);
+      setProjectId(null);
+      setNewProjectIntent((cur) => ({ ...intent, key: cur.key + 1 }));
+      setView('new');
       setLayoutState((l) => ({ ...l, dockOpen: false }));
     },
     surface,

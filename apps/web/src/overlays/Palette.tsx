@@ -11,7 +11,6 @@ import {
   useRoster,
 } from '../state';
 import { Scrim } from './Dialogs';
-import { NewProject } from './NewProject';
 
 interface Item {
   label: string;
@@ -93,7 +92,7 @@ export function Palette() {
         k: 'verb',
         run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
       },
-      { label: 'New project', k: 'verb', run: () => openOverlay(<NewProject />) },
+      { label: 'New project', k: 'verb', run: () => app.newProject() },
       ...projects
         .filter((p) => p.id !== projectId)
         .map((p) => ({

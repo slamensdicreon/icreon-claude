@@ -3,7 +3,6 @@ import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from
 import { ApiProblem } from '../lib/api';
 import { cypher, useCypher } from '../lib/cypher';
 import { age } from '../lib/fmt';
-import { NewProject } from '../overlays/NewProject';
 import { useApp } from '../state';
 
 const STARTERS = [
@@ -56,7 +55,7 @@ function Prose({ text }: { text: string }) {
 }
 
 function Proposal({ p }: { p: CypherProposal }) {
-  const { openOverlay } = useApp();
+  const { newProject } = useApp();
   const d = p.draft;
   const source = [d.sourceUrl, d.repo].filter(Boolean).join(' · ') || 'No source yet';
   return (
@@ -89,7 +88,7 @@ function Proposal({ p }: { p: CypherProposal }) {
       )}
       <button
         className="btn primary sm"
-        onClick={() => openOverlay(<NewProject remix={{ draft: d, connectionName: null }} />)}
+        onClick={() => newProject({ remix: { draft: d, connectionName: null } })}
       >
         Review and create
       </button>
