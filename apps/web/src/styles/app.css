@@ -1367,31 +1367,40 @@
 /* The Dashboard: Cypher in a third on the left, the portfolio in two thirds on the right. */
 .dash-split {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(0, 2fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
+  gap: 0;
   align-items: start;
-}
-.dash-cypher {
-  position: sticky;
-  top: 0;
-  /* The surface's height less its own padding: the column stays put while the portfolio scrolls. */
-  height: calc(100dvh - 64px - 28px - 32px);
-  min-height: 420px;
 }
 .dash-main {
   min-width: 0;
+  padding-right: 32px;
+}
+/* Cypher's rail: the full height of the canvas, flush with its right edge, one divider on the
+   left. It stays put while the portfolio scrolls. The margins cancel the surface's padding. */
+.dash-cypher {
+  position: sticky;
+  top: 0;
+  margin: -28px -32px -64px 0;
+  height: calc(100dvh - 64px);
+  min-height: 480px;
 }
 @container canvas (max-width: 900px) {
   .dash-split {
     grid-template-columns: minmax(0, 1fr);
   }
   .dash-main {
-    order: -1;
+    padding-right: 0;
   }
   .dash-cypher {
     position: static;
     height: auto;
     min-height: 0;
+    margin: 24px 0 0;
+  }
+  .dash-cypher .cy-home {
+    border-left: 0;
+    border-top: 1px solid var(--web-border);
+    padding: 20px 0 0;
   }
   .dash-cypher .cy-convo {
     max-height: 60vh;
@@ -1401,10 +1410,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--web-surface);
-  border: 1px solid var(--web-border);
-  border-radius: var(--web-radius-2);
-  padding: 16px;
+  border-left: 1px solid var(--web-border);
+  padding: 20px 32px 20px 24px;
 }
 .cy-head {
   display: flex;

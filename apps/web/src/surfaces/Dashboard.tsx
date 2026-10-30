@@ -71,9 +71,6 @@ export function Dashboard() {
   const needs = (portfolio.data ?? []).filter((p) => p.waitingCount > 0).length;
   return (
     <div className="dash-split">
-      <aside className="dash-cypher" aria-label="Cypher">
-        <CypherHome />
-      </aside>
       <div className="dash-main">
         <div className="page-head">
           <div>
@@ -112,6 +109,9 @@ export function Dashboard() {
         {tab === 'rules' && <Rules projects={portfolio.data ?? []} />}
         {tab === 'diagnostics' && <Diagnostics />}
       </div>
+      <aside className="dash-cypher" aria-label="Cypher">
+        <CypherHome />
+      </aside>
     </div>
   );
 }
