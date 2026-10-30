@@ -4,7 +4,7 @@ import type {
   CypherConversationSummary,
 } from '@lw/contracts';
 import { useSyncExternalStore } from 'react';
-import { del, get, postFor } from './api';
+import { ApiProblem, del, get, postFor } from './api';
 
 /**
  * Saved conversations with Cypher on the Dashboard, shared by the sidebar (the list, New chat)
@@ -63,7 +63,7 @@ class CypherStore {
     if (this.state.activeId === id && this.state.active) return;
     this.set({ activeId: id, opening: id, active: null });
     try {
-      const c = await get<CypherConversation>(`/cypher/${id}`);
+      const c = asConversation(await get<unknown>(`/cypher/${id}`));
       if (this.state.activeId === id) this.set({ active: c, opening: null });
     } catch (err) {
       if (this.state.activeId === id) this.set({ activeId: null, active: null, opening: null });
@@ -79,10 +79,12 @@ class CypherStore {
   /** Sends in the open conversation, or starts one; the list follows. */
   async send(body: string): Promise<CypherConversation> {
     const { activeId } = this.state;
-    const next = await postFor<CypherConversation>('/cypher', {
-      body,
-      ...(activeId ? { conversationId: activeId } : {}),
-    });
+    const next = asConversation(
+      await postFor<unknown>('/cypher', {
+        body,
+        ...(activeId ? { conversationId: activeId } : {}),
+      }),
+    );
     this.set({ activeId: next.id, active: next, opening: null });
     void this.load();
     return next;
@@ -95,6 +97,28 @@ class CypherStore {
       ...(this.state.activeId === id ? { activeId: null, active: null, opening: null } : {}),
     });
   }
+}
+
+/**
+ * The API answers a conversation; anything else (a misrouted request answered by the web app's
+ * own page, say) is refused here rather than rendered.
+ */
+function asConversation(x: unknown): CypherConversation {
+  const c = x as Partial<CypherConversation> | null;
+  if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !Array.isArray(c.messages))
+    throw new ApiProblem(
+      502,
+      'not_a_conversation',
+      'The Control API did not answer with a conversation. Reload and try again.',
+    );
+  return {
+    ...c,
+    messages: c.messages.map((m) => ({
+      ...m,
+      proposals: m.proposals ?? [],
+      projects: m.projects ?? [],
+    })),
+  } as CypherConversation;
 }
 
 export const cypher = new CypherStore();

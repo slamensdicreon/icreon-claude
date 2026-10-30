@@ -104,6 +104,12 @@
       }
     },
     {
+      "source": "/cypher/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/connections",
       "destination": {
         "service": "api"

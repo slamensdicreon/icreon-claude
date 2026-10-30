@@ -4,7 +4,6 @@ import { clock, elapsed, usd, zoneLabel } from './lib/fmt';
 import { Icon, Lockup, LOCKUP_SVG } from './lib/icons';
 import { useConn } from './lib/live';
 import { DemoMenu, MoreSheet, ProjectMenu } from './overlays/Menus';
-import { NewProject } from './overlays/NewProject';
 import { Palette } from './overlays/Palette';
 import { useApp, useMission, useNow, useProjectResource, type Surface } from './state';
 import { ApiProblem } from './lib/api';
@@ -96,7 +95,7 @@ export function Sidebar() {
               {s === 'inbox' && waiting > 0 && <span className="count">{waiting}</span>}
             </button>
           ))}
-        <div className="side-label">Manage</div>
+        {(projectId || scenarios.length > 0) && <div className="side-label">Manage</div>}
         {projectId && (
           <button
             className="nav sl"
@@ -108,10 +107,6 @@ export function Sidebar() {
             <span className="lbl">Settings</span>
           </button>
         )}
-        <button className="nav sl" title="New project" onClick={() => openOverlay(<NewProject />)}>
-          <Icon name="application" />
-          <span className="lbl">New project</span>
-        </button>
         {scenarios.length > 0 && (
           <button
             className="nav sl"

@@ -1,5 +1,5 @@
 import type { CypherMessage, CypherProposal } from '@lw/contracts';
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiProblem } from '../lib/api';
 import { cypher, useCypher } from '../lib/cypher';
 import { age } from '../lib/fmt';
@@ -142,7 +142,53 @@ export function when(t: string): string {
  * ask for a site like an existing one. He drafts; the Director reviews and creates in the wizard.
  * The page opens on a new chat; saved conversations are listed in the sidebar and open here.
  */
+/** A bad conversation never takes the Dashboard down: the panel shows what happened and offers a new chat. */
+class CypherBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <section className="cy-home">
+        <header className="cy-head">
+          <span className="cy-avatar" aria-hidden="true">
+            C
+          </span>
+          <div>
+            <h2>Cypher</h2>
+            <p>Chief of Staff</p>
+          </div>
+        </header>
+        <p className="quiet-line" style={{ marginTop: 14 }}>
+          This conversation could not be shown ({this.state.error.message}).
+        </p>
+        <div>
+          <button
+            className="btn sm"
+            onClick={() => {
+              cypher.fresh();
+              this.setState({ error: null });
+            }}
+          >
+            New chat
+          </button>
+        </div>
+      </section>
+    );
+  }
+}
+
 export function CypherHome() {
+  return (
+    <CypherBoundary>
+      <CypherPanel />
+    </CypherBoundary>
+  );
+}
+
+function CypherPanel() {
   const { toast } = useApp();
   const s = useCypher();
   const [text, setText] = useState('');
