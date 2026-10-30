@@ -174,7 +174,13 @@ describe('New Project wizard', () => {
     await start();
     const list = (await app!.inject('/playbooks')).json() as PlaybookSummary[];
     const pb = list.find((p) => p.id === 'sitecoreai-migration')!;
-    expect(pb.platform).toEqual({ id: 'sitecoreai', name: 'SitecoreAI' });
+    expect(pb.platform).toMatchObject({
+      id: 'sitecoreai',
+      name: 'SitecoreAI',
+      vendor: 'Sitecore',
+      category: 'Headless CMS, SaaS',
+    });
+    expect(pb.platform.description).toMatch(/Page builder/);
     expect(pb.charter.outcomes.map((o) => o.id)).toContain('marketer-autonomy');
     expect(pb.intake.source).toMatchObject({ repo: 'optional', url: 'optional' });
     expect(pb.intake.steps.map((s) => s.title)).toEqual(['SitecoreAI', 'Edge and hosting']);

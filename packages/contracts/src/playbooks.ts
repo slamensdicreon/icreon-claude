@@ -108,7 +108,16 @@ export const PlaybookSummary = z.object({
   version: z.string(),
   name: z.string(),
   description: z.string(),
-  platform: z.object({ id: z.string(), name: z.string() }),
+  /** The entity (platform) the playbook runs on; the catalog groups playbooks by it. */
+  platform: z.object({
+    id: z.string(),
+    name: z.string(),
+    vendor: z.string(),
+    /** "Headless CMS, SaaS": one line of what kind of platform it is. */
+    category: z.string(),
+    /** One or two sentences on the platform as the method sees it. */
+    description: z.string(),
+  }),
   charter: Charter,
   intake: IntakeSpec,
   /** The engagement's phases in order, with the Director's gates. */

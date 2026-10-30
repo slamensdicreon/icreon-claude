@@ -283,80 +283,101 @@ function Playbooks({ projects }: { projects: PortfolioItem[] }) {
   const { data, error } = usePoll<PlaybookSummary[]>('/playbooks', 60_000);
   if (error && !data) return <p className="quiet-line">Playbooks could not be loaded: {error}</p>;
   if (!data) return <p className="quiet-line">Loading playbooks…</p>;
+  // The catalog is entities first, then each entity's playbooks.
+  const entities: { entity: PlaybookSummary['platform']; playbooks: PlaybookSummary[] }[] = [];
+  for (const pb of data) {
+    const e = entities.find((x) => x.entity.id === pb.platform.id);
+    if (e) e.playbooks.push(pb);
+    else entities.push({ entity: pb.platform, playbooks: [pb] });
+  }
   return (
     <section className="dash-playbooks">
-      {data.map((pb) => {
-        const ran = projects.filter((p) => p.playbook?.id === pb.id);
-        return (
-          <article key={pb.id} className="panel">
-            <div className="panel-head">
-              <h2>
-                {pb.name} <small>{pb.version}</small>
-              </h2>
-              <button className="btn sm primary" onClick={() => openOverlay(<NewProject />)}>
-                Start a project
-              </button>
-            </div>
-            <p>{pb.description}</p>
-            <p className="muted">
-              {pb.platform.name} · {pb.charter.mission}
-            </p>
-            {ran.some((p) => !p.demo) && <Compare playbookId={pb.id} />}
-            <h3>Outcomes</h3>
-            <ul className="dash-list">
-              {pb.charter.outcomes.map((o) => (
-                <li key={o.id}>
-                  <b>{o.title}.</b> {o.measure}
-                </li>
-              ))}
-            </ul>
-            {pb.phases.length > 0 && (
-              <>
-                <h3>Phases</h3>
-                <ol className="dash-phases" start={0}>
-                  {pb.phases.map((ph) => (
-                    <li key={ph.number}>
-                      {ph.name}
-                      {ph.gate && <span className="pcard-pill">{ph.gate}</span>}
-                    </li>
-                  ))}
-                </ol>
-              </>
-            )}
-            {pb.roles.length > 0 && (
-              <details>
-                <summary>The team ({pb.roles.length} roles)</summary>
+      {entities.map(({ entity, playbooks }) => (
+        <div key={entity.id} className="dash-entity">
+          <div className="dash-entity-head">
+            <h2>
+              {entity.name}{' '}
+              <small>
+                {entity.vendor} · {entity.category}
+              </small>
+            </h2>
+            <p className="muted">{entity.description}</p>
+          </div>
+          {playbooks.map((pb) => {
+            const ran = projects.filter((p) => p.playbook?.id === pb.id);
+            return (
+              <article key={pb.id} className="panel">
+                <div className="panel-head">
+                  <h2>
+                    {pb.name} <small>{pb.version}</small>
+                  </h2>
+                  <button
+                    className="btn sm primary"
+                    onClick={() => openOverlay(<NewProject preset={{ playbookId: pb.id }} />)}
+                  >
+                    Start a project
+                  </button>
+                </div>
+                <p>{pb.description}</p>
+                <p className="muted">{pb.charter.mission}</p>
+                {ran.some((p) => !p.demo) && <Compare playbookId={pb.id} />}
+                <h3>Outcomes</h3>
                 <ul className="dash-list">
-                  {pb.roles.map((r) => (
-                    <li key={r.role}>
-                      <b>{r.name}.</b> {r.description}
+                  {pb.charter.outcomes.map((o) => (
+                    <li key={o.id}>
+                      <b>{o.title}.</b> {o.measure}
                     </li>
                   ))}
                 </ul>
-              </details>
-            )}
-            <details>
-              <summary>What intake asks for</summary>
-              <ul className="dash-list">
-                <li>
-                  Source repository: {pb.intake.source.repo}; live site: {pb.intake.source.url}
-                </li>
-                {pb.intake.steps.map((st) => (
-                  <li key={st.title}>
-                    <b>{st.title}.</b> {st.intro}
-                  </li>
-                ))}
-                <li>{pb.intake.brief.length} brief questions</li>
-              </ul>
-            </details>
-            <p className="muted">
-              {ran.length
-                ? `Projects on it: ${ran.map((p) => `${p.name} (${p.playbook?.version})`).join(', ')}`
-                : 'No projects on it yet.'}
-            </p>
-          </article>
-        );
-      })}
+                {pb.phases.length > 0 && (
+                  <>
+                    <h3>Phases</h3>
+                    <ol className="dash-phases" start={0}>
+                      {pb.phases.map((ph) => (
+                        <li key={ph.number}>
+                          {ph.name}
+                          {ph.gate && <span className="pcard-pill">{ph.gate}</span>}
+                        </li>
+                      ))}
+                    </ol>
+                  </>
+                )}
+                {pb.roles.length > 0 && (
+                  <details>
+                    <summary>The team ({pb.roles.length} roles)</summary>
+                    <ul className="dash-list">
+                      {pb.roles.map((r) => (
+                        <li key={r.role}>
+                          <b>{r.name}.</b> {r.description}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                <details>
+                  <summary>What intake asks for</summary>
+                  <ul className="dash-list">
+                    <li>
+                      Source repository: {pb.intake.source.repo}; live site: {pb.intake.source.url}
+                    </li>
+                    {pb.intake.steps.map((st) => (
+                      <li key={st.title}>
+                        <b>{st.title}.</b> {st.intro}
+                      </li>
+                    ))}
+                    <li>{pb.intake.brief.length} brief questions</li>
+                  </ul>
+                </details>
+                <p className="muted">
+                  {ran.length
+                    ? `Projects on it: ${ran.map((p) => `${p.name} (${p.playbook?.version})`).join(', ')}`
+                    : 'No projects on it yet.'}
+                </p>
+              </article>
+            );
+          })}
+        </div>
+      ))}
     </section>
   );
 }

@@ -117,6 +117,12 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
   return {
     id: 'optimizely',
     name: 'Optimizely CMS (SaaS)',
+    about: {
+      vendor: 'Optimizely',
+      category: 'Headless CMS, SaaS',
+      description:
+        'Content types defined in code, pages composed in Visual Builder, delivered through Optimizely Graph, with a Next.js head on the JavaScript SDK.',
+    },
     fields: {
       cmsUrl: {
         label: 'CMS instance URL',

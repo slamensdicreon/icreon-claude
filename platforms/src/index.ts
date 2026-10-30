@@ -42,6 +42,8 @@ export interface PlatformCredential extends Omit<
 export interface PlatformPack {
   id: string;
   name: string;
+  /** What the catalog shows about the entity before any playbook is chosen. */
+  about: { vendor: string; category: string; description: string };
   fields: Record<string, PlatformField>;
   credentials: Record<string, PlatformCredential>;
   /**
@@ -229,7 +231,7 @@ export function playbookSummary(playbook: Playbook, pack: PlatformPack): Playboo
     version: m.version,
     name: m.name,
     description: m.description,
-    platform: { id: pack.id, name: pack.name },
+    platform: { id: pack.id, name: pack.name, ...pack.about },
     charter: m.charter,
     intake: intakeSpec(playbook, pack),
     phases: m.phases.map((p) => ({

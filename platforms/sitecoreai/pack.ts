@@ -88,6 +88,12 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
   return {
     id: 'sitecoreai',
     name: 'SitecoreAI',
+    about: {
+      vendor: 'Sitecore',
+      category: 'Headless CMS, SaaS',
+      description:
+        'SXA sites marketers build in Page builder, delivered through Experience Edge, with a Next.js head on the Content SDK.',
+    },
     fields: {
       cmHost: {
         label: 'CM host',

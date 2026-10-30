@@ -15,8 +15,8 @@ import { useApp } from '../state';
 import { Scrim } from './Dialogs';
 
 /**
- * The New Project wizard. The Director first picks a playbook: what the team will deliver. The
- * playbook then decides the rest: whether there is a source repository and live site, which
+ * The New Project wizard. The Director first picks the entity (the platform the site is built
+ * on), then one of its playbooks: what the team will deliver. The playbook then decides the rest: whether there is a source repository and live site, which
  * target values and which credentials, in which steps. Each credential is tested against the live
  * service here; the API tests them again, seals them in the vault and records the project ready
  * to start.
@@ -56,14 +56,31 @@ export interface Remix {
   connectionName: string | null;
 }
 
-export function NewProject({ remix }: { remix?: Remix } = {}) {
+/** The entities in the catalog, in catalog order, each with its playbooks. */
+function entitiesOf(playbooks: PlaybookSummary[]) {
+  const out: { entity: PlaybookSummary['platform']; playbooks: PlaybookSummary[] }[] = [];
+  for (const p of playbooks) {
+    const e = out.find((x) => x.entity.id === p.platform.id);
+    if (e) e.playbooks.push(p);
+    else out.push({ entity: p.platform, playbooks: [p] });
+  }
+  return out;
+}
+
+export function NewProject({
+  remix,
+  preset,
+}: { remix?: Remix; preset?: { playbookId: string } } = {}) {
   const { closeOverlay, switchProject, toast } = useApp();
   const draft = remix?.draft;
   const drafted = draft && 'name' in draft ? draft : null;
   const [playbooks, setPlaybooks] = useState<PlaybookSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [playbookId, setPlaybookId] = useState<string | null>(draft?.playbookId ?? null);
-  const [step, setStep] = useState(draft ? 1 : 0);
+  const chosen = draft?.playbookId ?? preset?.playbookId ?? null;
+  const [entityId, setEntityId] = useState<string | null>(null);
+  const [playbookId, setPlaybookId] = useState<string | null>(chosen);
+  // A draft or a chosen playbook skips the two catalog steps; Back still reaches them.
+  const [step, setStep] = useState(chosen ? 2 : 0);
   const [f, setF] = useState({
     name: drafted?.name ?? '',
     client: draft?.client ?? '',
@@ -93,7 +110,12 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
     get<PlaybookSummary[]>('/playbooks')
       .then((list) => {
         setPlaybooks(list);
-        if (list.length === 1 && !draft) setPlaybookId(list[0]!.id);
+        const picked = list.find((p) => p.id === chosen);
+        if (picked) setEntityId(picked.platform.id);
+        else if (list.length === 1) {
+          setEntityId(list[0]!.platform.id);
+          setPlaybookId(list[0]!.id);
+        }
       })
       .catch((err: unknown) =>
         setLoadError(
@@ -112,7 +134,10 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
   const questions = (pb?.intake.brief ?? []).filter((q) =>
     briefApplies(q, f.repo.trim() ? [SOURCE_REPO] : []),
   );
+  const entities = entitiesOf(playbooks ?? []);
+  const entity = entities.find((e) => e.entity.id === entityId) ?? null;
   const TITLES = [
+    'Entity',
     'Playbook',
     'Project',
     ...(hasSource ? ['Source'] : []),
@@ -200,7 +225,8 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
   const repoOk = REPO.test(f.repo.trim());
   const urlOk = f.sourceUrl.trim() ? URL_OK.test(f.sourceUrl.trim()) : source?.url !== 'required';
   const valid = [
-    Boolean(pb),
+    Boolean(entity),
+    Boolean(pb && pb.platform.id === entityId),
     Boolean(f.name.trim() && f.client.trim() && +f.usd > 0 && +f.tokensM > 0 && +f.hours > 0),
     ...(hasSource
       ? [
@@ -382,13 +408,58 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
     </div>
   );
 
+  const pickEntity = (id: string) => {
+    setEntityId(id);
+    const e = entities.find((x) => x.entity.id === id);
+    // One playbook on the entity: it is the choice; otherwise a playbook from elsewhere is dropped.
+    setPlaybookId(
+      e && e.playbooks.length === 1
+        ? e.playbooks[0]!.id
+        : e?.playbooks.some((p) => p.id === playbookId)
+          ? playbookId
+          : null,
+    );
+    setChecks({});
+  };
+
+  const entityPage = (
+    <>
+      <p>Which platform is the site built on? Its playbooks come next.</p>
+      {loadError && <p className="cred-miss">{loadError}</p>}
+      {!playbooks && !loadError && <p className="muted">Loading the catalog…</p>}
+      <div className="wiz-playbooks" role="radiogroup" aria-label="Entity">
+        {entities.map(({ entity: e, playbooks: ps }) => (
+          <button
+            key={e.id}
+            type="button"
+            role="radio"
+            aria-checked={e.id === entityId}
+            className={`wiz-playbook ${e.id === entityId ? 'on' : ''}`}
+            onClick={() => pickEntity(e.id)}
+          >
+            <span className="eyebrow">
+              {e.vendor} · {e.category}
+            </span>
+            <b>{e.name}</b>
+            <span className="muted">{e.description}</span>
+            <span className="wiz-count">
+              {ps.length === 1 ? '1 playbook' : `${ps.length} playbooks`}:{' '}
+              {ps.map((p) => p.name).join(', ')}
+            </span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
   const pickPage = (
     <>
-      <p>What will the team deliver? The playbook sets the team, its plan and what intake needs.</p>
-      {loadError && <p className="cred-miss">{loadError}</p>}
-      {!playbooks && !loadError && <p className="muted">Loading playbooks…</p>}
+      <p>
+        What will the team deliver on {entity?.entity.name ?? 'this platform'}? The playbook sets
+        the team, its plan and what intake needs.
+      </p>
       <div className="wiz-playbooks" role="radiogroup" aria-label="Playbook">
-        {playbooks?.map((p) => (
+        {(entity?.playbooks ?? []).map((p) => (
           <button
             key={p.id}
             type="button"
@@ -511,9 +582,13 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
         shown again.
       </p>
       <dl className="contract wiz-review">
+        <dt>Entity</dt>
+        <dd>
+          {pb.platform.name} ({pb.platform.vendor})
+        </dd>
         <dt>Playbook</dt>
         <dd>
-          {pb.name} ({pb.platform.name}, v{pb.version})
+          {pb.name} (v{pb.version})
         </dd>
         <dt>Project</dt>
         <dd>
@@ -626,6 +701,7 @@ export function NewProject({ remix }: { remix?: Remix } = {}) {
   );
 
   const pages = [
+    entityPage,
     pickPage,
     projectPage,
     ...(hasSource ? [sourcePage] : []),

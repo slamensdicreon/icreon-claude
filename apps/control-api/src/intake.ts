@@ -107,11 +107,15 @@ export class IntakeService {
     return Boolean(this.deps.start);
   }
 
-  /** The playbooks a new project can run, as the wizard shows them. */
+  /**
+   * The playbooks a new project can run, as the wizard shows them: entities in the order their
+   * packs are registered (the established one first), each entity's playbooks in catalog order.
+   */
   playbooks(): PlaybookSummary[] {
-    return [...this.deps.catalog.values()].map((e) =>
-      playbookSummary(e.playbook, this.resolve(e.playbook.manifest.id).pack),
-    );
+    const order = [...this.deps.platforms.keys()];
+    return [...this.deps.catalog.values()]
+      .map((e) => playbookSummary(e.playbook, this.resolve(e.playbook.manifest.id).pack))
+      .sort((a, b) => order.indexOf(a.platform.id) - order.indexOf(b.platform.id));
   }
 
   private resolve(playbookId: string): {
