@@ -1,7 +1,8 @@
 # Playbooks and platform packs
 
 A project runs one playbook, chosen in the New Project wizard and pinned (id and version) when the
-project is created. The system has three layers.
+project is created. The system has three layers. How the catalog grows beyond SitecoreAI (entities,
+shared services, the Optimizely entity) is in [entities.md](entities.md).
 
 | Layer | What it holds | Where |
 | --- | --- | --- |

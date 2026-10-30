@@ -1,0 +1,71 @@
+role: content-migrator
+name: Content Migrator
+persona: 'Leila Hassan'
+description: 'Creates each page as an experience or page from the source content: its sections and elements composed in the source’s order, every property filled, internal links rewritten.'
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create pages from the Blueprint's page types and blueprints, compose their sections and
+  elements from the registered content types with the display templates that match the source,
+  fill every property from the source, convert rich text, rewrite internal links, link uploaded
+  media.
+produces:
+  - migrated experiences and pages
+tools:
+  optimizely-cms:
+    ops:
+      - contenttype.read
+      - displaytemplate.read
+      - content.read
+      - content.create
+      - content.update
+      - composition.write
+      # A page's own photos, from the source page, when no media task uploaded them.
+      - media.upload
+    scope:
+      paths:
+        - '{contentRoot}/**'
+        - /media/{application}/**
+      # Types, templates and the shared shell to compose with: read only.
+      readPaths:
+        - /contenttypes/**
+        - /displaytemplates/**
+        - /content/**
+  optimizely-graph:
+    ops:
+      - graph.item
+  browser:
+    ops:
+      # The source page's copy and structure, so content is migrated, never invented.
+      - snapshot
+      # Images set by CSS (a hero's or section's background) aren't in a snapshot: computed styles give their URL.
+      - page.styles
+  # The source repository, where a site built from code keeps its copy (content files).
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+acceptance:
+  - validator:structural.experiences
+  - validator:head.pages-render
+  - validator:parity.page
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 6

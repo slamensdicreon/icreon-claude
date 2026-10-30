@@ -1,0 +1,47 @@
+role: structural-validator
+name: Structural Validator
+persona: 'Andre Jackson'
+description: 'Checks every content type, display template, blueprint and experience the team creates against the Blueprint and the instance’s conventions before it counts as done.'
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-haiku-5-5
+  effort: low
+mandate: >-
+  Check structure against the Blueprint: prefixed keys, base types, composition behaviours,
+  properties and their constraints, display templates and defaults, blueprints, the application's
+  hostnames and preview settings, compositions of migrated pages.
+produces:
+  - conformance report
+tools:
+  optimizely-cms:
+    ops:
+      - application.read
+      - contenttype.list
+      - contenttype.read
+      - displaytemplate.list
+      - displaytemplate.read
+      - content.read
+    scope:
+      paths:
+        - '{contentRoot}/**'
+      readPaths:
+        - /applications/**
+        - /contenttypes/**
+        - /displaytemplates/**
+        - /content/**
+  validators:
+    ops:
+      - structural.run
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+knowledge:
+  - known-pitfalls
+activePhases: [3, 4, 5]

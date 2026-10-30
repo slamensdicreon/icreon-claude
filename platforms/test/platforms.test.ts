@@ -1,12 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import { IntakeFacts } from '@lw/contracts';
-import { SITECORE_DEFAULTS } from '@lw/connectors';
+import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
 import { loadCatalog } from '@lw/playbook-sdk';
 import { describe, expect, it } from 'vitest';
 import { createPlatforms, IntakeError, intakeSpec, sitecoreTarget, validateTarget } from '../src';
 
 const PLAYBOOKS = fileURLToPath(new URL('../../playbooks', import.meta.url));
-const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS });
+const platforms = createPlatforms({
+  sitecore: SITECORE_DEFAULTS,
+  optimizely: OPTIMIZELY_DEFAULTS,
+});
 
 describe('platform packs', () => {
   it('give every playbook in the catalog its intake fields and credentials', async () => {
@@ -777,6 +780,146 @@ describe('SitecoreAI checks', () => {
         { path: '/', ok: true, targetWords: 6 },
         { path: '/about', ok: false, problem: 'title not found' },
       ],
+    });
+  });
+});
+
+describe('Optimizely pack', () => {
+  const okJson = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  const withFetch = (fetchImpl: typeof fetch) =>
+    createPlatforms({
+      sitecore: SITECORE_DEFAULTS,
+      optimizely: { ...OPTIMIZELY_DEFAULTS, fetch: fetchImpl },
+    }).get('optimizely')!;
+
+  it('validates the target, normalizes the instance URL and binds the project scopes', async () => {
+    const catalog = await loadCatalog(PLAYBOOKS);
+    const pack = platforms.get('optimizely')!;
+    const spec = intakeSpec(catalog.get('optimizely-saas-migration')!.playbook, pack);
+    const target = pack.normalize(
+      validateTarget(spec, {
+        cmsUrl: 'app-abc123.cms.optimizely.com/ui/',
+        application: 'Globex Website',
+        typePrefix: 'Globex',
+        languages: 'en, sv',
+        hostingProject: 'globex-site',
+      }),
+    );
+    expect(target).toEqual({
+      cmsUrl: 'https://app-abc123.cms.optimizely.com',
+      application: 'Globex Website',
+      typePrefix: 'Globex',
+      languages: ['en', 'sv'],
+      hostingProject: 'globex-site',
+    });
+    expect(pack.bindings(target)).toMatchObject({
+      typePrefix: 'Globex',
+      contentRoot: '/content/Globex Website',
+    });
+    expect(pack.toolCredential('optimizely-cms')?.credentialId).toBe('cms-api-client');
+    expect(pack.toolCredential('optimizely-graph')?.credentialId).toBe('graph-single-key');
+    expect(pack.toolCredential('sitecore-authoring')).toBeUndefined();
+    expect(() => validateTarget(spec, { ...target, typePrefix: 'globex' })).toThrow(IntakeError);
+    expect(pack.describe(target).target).toEqual({
+      collection: 'app-abc123.cms.optimizely.com',
+      site: 'Globex Website',
+      hosting: 'Vercel, globex-site',
+    });
+  });
+
+  it('checks the REST API key with a token and a content-type read, and the single key against Graph', async () => {
+    const calls: string[] = [];
+    const pack = withFetch(async (input, init) => {
+      const url = String(input);
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url.endsWith('/oauth/token')) {
+        const body = JSON.parse(String(init?.body)) as { client_secret: string };
+        return body.client_secret === 'good'
+          ? okJson({ access_token: 'tok', expires_in: 300 })
+          : okJson({ error: 'invalid_client' }, 401);
+      }
+      if (url.includes('/v1/contenttypes')) {
+        expect((init?.headers as Record<string, string>).authorization).toBe('Bearer tok');
+        return okJson({
+          items: [
+            { key: '_page', source: '_system' },
+            { key: 'GlobexHero', source: '' },
+          ],
+          totalItemCount: 2,
+        });
+      }
+      if (url.startsWith('https://cg.optimizely.com/')) {
+        const auth = (init?.headers as Record<string, string>).authorization;
+        return auth === 'epi-single sk'
+          ? okJson({ data: { _Content: { total: 42 } } })
+          : okJson({ errors: [{ message: 'unauthorized' }] }, 401);
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    const target = {
+      cmsUrl: 'https://app-x.cms.optimizely.com',
+      application: 'A',
+      typePrefix: 'A',
+    };
+    const client = pack.credentials['cms-api-client']!;
+    const good = await client.check({ clientId: 'id', clientSecret: 'good' }, target);
+    expect(good.ok).toBe(true);
+    expect(good.detail).toContain('2 content types');
+    expect(good.detail).toContain('1 of them');
+    const bad = await client.check({ clientId: 'id', clientSecret: 'bad' }, target);
+    expect(bad.ok).toBe(false);
+    expect(bad.detail).toContain('rejected');
+    const graph = pack.credentials['graph-single-key']!;
+    expect((await graph.check({ singleKey: 'sk' }, target)).detail).toContain('42 published');
+    expect((await graph.check({ singleKey: 'nope' }, target)).ok).toBe(false);
+    const hmac = pack.credentials['graph-hmac']!;
+    expect((await hmac.check({ appKey: 'a', secret: 'short' }, target)).ok).toBe(false);
+    expect(calls.filter((c) => c.includes('/oauth/token'))).toHaveLength(2);
+  });
+
+  it('gives the head the Graph keys and the sandbox the REST API key too', async () => {
+    const pack = platforms.get('optimizely')!;
+    const target = {
+      cmsUrl: 'https://app-x.cms.optimizely.com',
+      application: 'A',
+      typePrefix: 'A',
+      languages: ['en'],
+    };
+    const creds: Record<string, Record<string, string>> = {
+      'graph-single-key': { singleKey: 'sk' },
+      'cms-api-client': { clientId: 'cid', clientSecret: 'cs' },
+    };
+    const credential = async (id: string) => creds[id] ?? null;
+    const head = await pack.headEnv!(target, 'production', {
+      credential,
+      editingSecret: async () => ({ problem: 'none on Optimizely' }),
+    });
+    expect(head.vars).toContainEqual({
+      key: 'OPTIMIZELY_CMS_URL',
+      value: 'https://app-x.cms.optimizely.com',
+      sensitive: false,
+    });
+    expect(head.vars).toContainEqual({
+      key: 'OPTIMIZELY_GRAPH_SINGLE_KEY',
+      value: 'sk',
+      sensitive: false,
+    });
+    expect(head.vars.map((v) => v.key)).not.toContain('OPTIMIZELY_CMS_CLIENT_SECRET');
+    expect(head.missing.join(' ')).toContain('app key and secret');
+    const build = await pack.buildEnv!(target, { credential });
+    expect(build.vars).toContainEqual({
+      key: 'OPTIMIZELY_CMS_CLIENT_SECRET',
+      value: 'cs',
+      sensitive: true,
+    });
+    expect(build.vars).toContainEqual({
+      key: 'OPTIMIZELY_CMS_API_URL',
+      value: 'https://api.cms.optimizely.com',
+      sensitive: false,
     });
   });
 });

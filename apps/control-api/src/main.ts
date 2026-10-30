@@ -34,7 +34,7 @@ import { z } from 'zod';
 import { buildApp, type WorkerHeartbeat } from './app';
 import { GithubApp } from '@lw/connectors';
 import { IntakeService, type StartInput } from './intake';
-import { SITECORE_DEFAULTS } from '@lw/connectors';
+import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
 import { policyRows } from './policy';
 import { demoCommands, remoteCommands, simulationCommands, type ProjectCommands } from './commands';
 
@@ -176,7 +176,7 @@ const { store } = opened;
 const projections = new Projections(store);
 await projections.start({ eager: env.PROJECTIONS === 'eager' });
 const catalog = await loadCatalog(env.PLAYBOOKS_DIR);
-const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS });
+const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS, optimizely: OPTIMIZELY_DEFAULTS });
 // The scripted demo, the simulator and the local sample project run the SitecoreAI build.
 const DEFAULT_PLAYBOOK = 'sitecoreai-migration';
 const { playbook, dir: playbookDir } = catalog.get(DEFAULT_PLAYBOOK) ?? [...catalog.values()][0]!;

@@ -1,0 +1,40 @@
+role: parity-auditor
+name: Parity Auditor
+persona: 'Samantha Wright'
+description: 'Compares text, links and media between the source and the Optimizely build, page by page, and lists every gap.'
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-haiku-5-5
+  effort: low
+mandate: Diff text, links and media between the source inventory and the target site.
+produces:
+  - content parity report
+tools:
+  validators:
+    ops:
+      - parity.run
+  optimizely-graph:
+    ops:
+      - graph.query
+      - graph.item
+  optimizely-cms:
+    ops:
+      - content.read
+    scope:
+      paths:
+        - '{contentRoot}/**'
+      readPaths:
+        - /content/**
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+knowledge:
+  - definition-of-done
+activePhases: [6]

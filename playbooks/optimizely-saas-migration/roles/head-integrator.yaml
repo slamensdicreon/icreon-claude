@@ -1,0 +1,65 @@
+role: head-integrator
+name: Head Integrator
+persona: 'David Kim'
+description: 'Owns the Next.js head: SDK configuration, the /preview route Visual Builder renders through, the component registry, and every integration build of the editing host.'
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: agent-sdk
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Configure the SDK client, the component and display template registries, the catch-all route,
+  the /preview route with the CMS communication script, next.config, i18n and environment
+  variables; make the app a working editing host; pass build and type checks; integrate accepted
+  components onto the integration branch and deploy it to the editing address.
+produces:
+  - deployable head on the team branch
+tools:
+  sandbox:
+    ops:
+      - workspace.open
+      - fs.list
+      - fs.read
+      - fs.write
+      - exec.build
+      - exec.optimizely-cli
+      - git.commit
+      - git.integrate
+  hosting:
+    ops:
+      - project.read
+      - deploy.preview
+      - deploy.status
+  build-repo:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+      - branch.commit
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+acceptance:
+  - validator:build.green
+  - validator:editing-host.responds
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 4
+  - 5
+  - 8

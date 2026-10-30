@@ -1,0 +1,59 @@
+role: tenant-provisioner
+name: Instance Provisioner
+persona: 'Jamal Washington'
+description: 'Sets up the project on the Optimizely instance: the application, its locales and media folder, and the type prefix nothing else uses.'
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Read-only probe in phase 0: applications, locales, content types already carrying the prefix.
+  In phase 3 create the application, add missing locales, create the project's media folder.
+  Other applications on the instance are other teams'.
+produces:
+  - instance facts
+  - application skeleton
+tools:
+  optimizely-cms:
+    ops:
+      - application.list
+      - application.read
+      - application.create
+      - locale.list
+      - locale.add
+      - contenttype.list
+      - content.read
+      - content.create
+    scope:
+      paths:
+        - /applications/{application}
+        - '{contentRoot}/**'
+        - /media/{application}/**
+      readPaths:
+        - /applications/**
+        - /contenttypes/**
+        - /content/**
+  build-repo:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+      - branch.commit
+  artifacts:
+    ops:
+      - read
+      - write
+acceptance:
+  - validator:structural.application
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 0
+  - 3

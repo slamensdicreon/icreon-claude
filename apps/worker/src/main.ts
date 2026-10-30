@@ -7,7 +7,12 @@ import {
   reviewTask,
   triageQuestion,
 } from '@lw/agent-runtime';
-import { GithubApp, SITECORE_DEFAULTS, VaultCredentials } from '@lw/connectors';
+import {
+  GithubApp,
+  OPTIMIZELY_DEFAULTS,
+  SITECORE_DEFAULTS,
+  VaultCredentials,
+} from '@lw/connectors';
 import {
   masterKey,
   openStore,
@@ -82,7 +87,7 @@ const blobs = openBlobStore(env.BLOB_STORE, env.DATA_DIR);
 const projections = new Projections(opened.store);
 await projections.start();
 const catalog = await loadCatalog(env.PLAYBOOKS_DIR);
-const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS });
+const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS, optimizely: OPTIMIZELY_DEFAULTS });
 
 // Real connections, from the secrets the project and the app hold. Without the vault key nothing
 // that needs a project credential connects, and those roles block on live projects.
@@ -332,11 +337,17 @@ if (
       buildEnv: async (id) => {
         const s = await project(id);
         const pack = s?.intake ? platforms.get(s.intake.platform) : undefined;
-        if (!s?.intake || !pack?.headEnv) return {};
-        const { vars } = await pack.headEnv(s.intake.target, 'preview', {
-          credential: (c) => credential(id, c),
-          editingSecret: async () => ({ problem: 'builds never read the editing secret' }),
-        });
+        if (!s?.intake) return {};
+        // A platform whose CLI needs more than the head (a management API key) says so in
+        // buildEnv; the rest build with exactly what the head reads.
+        const { vars } = pack?.buildEnv
+          ? await pack.buildEnv(s.intake.target, { credential: (c) => credential(id, c) })
+          : pack?.headEnv
+            ? await pack.headEnv(s.intake.target, 'preview', {
+                credential: (c) => credential(id, c),
+                editingSecret: async () => ({ problem: 'builds never read the editing secret' }),
+              })
+            : { vars: [] };
         return Object.fromEntries(vars.map((v) => [v.key, v.value]));
       },
     }),

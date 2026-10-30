@@ -1,0 +1,269 @@
+# Playbook manifest: what the team delivers, what intake collects, phases and gates. Roles live in
+# roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
+# Optimizely platform pack in platforms/optimizely. The method (Director, Chief of Staff, Leads,
+# gates, cards, evidence) is the one every Launchworks playbook shares; what differs from the
+# SitecoreAI playbook is the platform's model: content types instead of renderings, Visual
+# Builder experiences instead of page designs, Optimizely Graph instead of Experience Edge.
+id: optimizely-saas-migration
+version: 0.1.0
+name: Build an Optimizely CMS (SaaS) website
+description: >-
+  Rebuilds a client's live site as an Optimizely CMS (SaaS) application with a Next.js head on
+  the Optimizely JavaScript SDK: content types and display templates defined in code, pages
+  composed as Visual Builder experiences, content delivered through Optimizely Graph, and hands it
+  over running.
+platform: optimizely
+charter:
+  mission: >-
+    Rebuild the client's site on Optimizely CMS (SaaS) so their marketers can compose, edit and
+    publish it themselves in Visual Builder, then hand it over running, documented and owned by
+    the client.
+  outcomes:
+    - id: marketer-autonomy
+      title: Marketers compose and edit pages in Visual Builder without a developer
+      measure: >-
+        Every Blueprint component is a content type editors can add as a section or element,
+        edits inline in live preview, has sensible defaults and display templates, and a new
+        experience created from a blueprint stands on its own (Definition of Done: inline editing,
+        new component, collections, independence).
+    - id: content-parity
+      title: Everything that should move is on the new site
+      measure: >-
+        Content parity at or above 98%, every media item uploaded with alt text, no broken
+        internal links, every route resolving through Optimizely Graph.
+    - id: brand-fidelity
+      title: The site looks and behaves like the live source
+      measure: Visual parity within tolerance at three breakpoints; menus, hero and search behave as the source does.
+    - id: quality
+      title: Accessible and fast
+      measure: The brief's accessibility target and performance budgets met on representative pages, with the reports as evidence.
+    - id: release-ready
+      title: Releasable and recoverable
+      measure: >-
+        The reviewed commit runs on the editing and delivery hosts, the content model replays from
+        the repository (manifest export and a clean dry-run push), every migrated page is
+        published and indexed in Graph, and the runbook covers release and rollback.
+    - id: client-ownership
+      title: The client owns it
+      measure: >-
+        The build repository and hosting move to the client, with the component catalog, editor
+        guide and known-gaps register delivered.
+intake:
+  source:
+    repo: optional
+    url: required
+    intro: >-
+      The live site being migrated, and its code when there is a repository. Agents read the live
+      site as visitors see it; with a repository they also read the code. The new site is built in
+      a repository of its own.
+  steps:
+    - title: Optimizely CMS (SaaS)
+      intro: >-
+        The CMS instance the site is built in, the application (website) it becomes, and the
+        prefix its content types carry. Content types are shared by every site on the instance;
+        the prefix keeps this project's apart.
+      fields: [cmsUrl, application, typePrefix, languages]
+      credentials:
+        - { id: cms-api-client, required: true }
+    - title: Optimizely Graph and hosting
+      intro: >-
+        The Graph keys the head reads content with, and the Vercel project it deploys to. The app
+        key and secret are optional now and can be added later in Settings.
+      fields: [hostingProject]
+      credentials:
+        - { id: graph-single-key, required: true }
+        - { id: graph-hmac }
+  brief:
+    - key: experimentation
+      label: Is Optimizely Web or Feature Experimentation licensed and in scope?
+      kind: yesno
+      required: true
+      feature: experimentation
+      hint: >-
+        The CMS alone has no A/B testing. Yes adds a proof experiment on the pilot experience to
+        phase 7.
+    - key: forms
+      label: Does the site have forms, and is Optimizely Forms in scope?
+      kind: text
+      hint: >-
+        Forms render through the SDK but the client owns the submission endpoint. Say where
+        submissions should go.
+    - key: editorialOperations
+      label: What must editors be able to do?
+      kind: text
+      placeholder: Add, remove and reorder cards; create landing pages from a blueprint; share the header and footer
+    - key: integrations
+      label: Search, commerce, analytics and consent
+      kind: text
+      hint: Which are real integrations, and which only look like them on the source site?
+    - key: rights
+      label: Image and copy rights
+      kind: text
+      hint: Which assets and copy may move, and who approves them?
+    - key: accessibility
+      label: Accessibility target
+      kind: choice
+      options: [WCAG 2.2 AA, WCAG 2.1 AA, Other (see notes)]
+      required: true
+    - key: performance
+      label: Performance budgets
+      kind: text
+      placeholder: LCP under 2.5 s on mobile; under 200 KB of JavaScript per route
+    - key: browsers
+      label: Supported browsers and devices
+      kind: text
+    - key: codeExtraction
+      label: May agents read and reuse the source code?
+      kind: choice
+      options: [Yes, Structure only (no copy or assets from code), No]
+      required: true
+      when: source-repo
+defaults:
+  concurrency: 6
+  # Who may settle each category of card. Lead-decidable categories start in shadow: the Lead
+  # answers for the record and the card still reaches the Director, until the scorecard shows
+  # they agree; then switch the category to lead in Settings.
+  autonomy:
+    media: shadow
+    tool: shadow
+    retry: shadow
+    ownership: shadow
+    naming: shadow
+    content: shadow
+    access: ask
+    scope: ask
+    release: ask
+    other: ask
+  budgets:
+    tokens: 60000000
+    usd: 1500
+    hours: 40
+  escalationDeadlines:
+    blocker: 4h
+    decision: 2h
+    access: 4h
+    budget: 1h
+    risk: 24h
+    gate: 24h
+  escalationPolicy:
+    blocker:
+      { default: false, behaviour: Pauses that path. No default, notifies: 'Immediately, Slack' }
+    access: { default: true, behaviour: Proceeds with the default, notifies: 'Immediately, Slack' }
+    decision:
+      { default: true, behaviour: Proceeds with the default, notifies: 'Digest, unless under 2 h' }
+    gate: { default: false, behaviour: Waits for you. No default, notifies: 'Immediately, Slack' }
+    budget:
+      { default: false, behaviour: Pauses dispatch. No default, notifies: 'Immediately, email' }
+    risk: { default: true, behaviour: Proceeds; logged, notifies: Digest }
+  stats:
+    - {
+        metric: components_registered,
+        label: Content types,
+        icon: application,
+        note: Pushed to the CMS and enabled in Visual Builder,
+      }
+    - { metric: pages_migrated, label: Experiences, icon: document, note: Composed and published }
+    - { metric: media_uploaded, label: Media, icon: image, note: Uploaded with alt text }
+    - { metric: qa_pass, label: QA pass, icon: task--complete, note: Of content types pushed }
+  toolLabels:
+    browser: Browser
+    validators: Validators
+    artifacts: Workbench
+    blackboard: Blackboard
+    decision-log: Decision Log
+    model: Model
+    plan: Planner
+    optimizely-cms: CMS REST API
+    optimizely-graph: Optimizely Graph
+    github: GitHub
+    build-repo: Build repo
+    sandbox: Sandbox
+    hosting: Vercel
+    research: Docs
+phases:
+  - number: 0
+    name: Intake and access verification
+    shortName: Intake
+    exitCriteria: >-
+      Every credential verified against its endpoint (GitHub clone, CMS REST API v1, Optimizely
+      Graph, hosting); instance facts recorded (applications, locales, content types already
+      carrying the prefix); the application and prefix the project owns are fixed, and other
+      applications on the instance are left alone.
+  - number: 1
+    name: Discovery and analysis
+    shortName: Discovery
+    exitCriteria: >-
+      Component inventory, page inventory, asset manifest and risk list complete; every sitemap URL
+      crawled or marked excluded.
+  - number: 2
+    name: Blueprint
+    shortName: Blueprint
+    gate: director
+    gateLabel: 'Gate 1: Director approves the Blueprint'
+    exitCriteria: >-
+      Every source component mapped to a content type (or merged, split, dropped), every page to a
+      page or experience type; the model contract approved: exact type keys with the prefix,
+      property names and types, composition behaviour (section or element), display templates per
+      variant, list limits, shared or per-page content; naming fixed; open decisions listed.
+  - number: 3
+    name: Foundation
+    shortName: Foundation
+    exitCriteria: >-
+      The application exists with the project's locales and media folder; design tokens and shared
+      primitives extracted from the source; hosting project and env vars exist; the head's
+      /preview route loads the CMS communication script; an empty experience renders on the
+      editing host; zero critical findings.
+  - number: 4
+    name: Component build and content types
+    shortName: Components
+    optionalGates:
+      - pilot-slice-review
+    exitCriteria: >-
+      Pilot slice proven end to end first: its components built, their content types and display
+      templates pushed, the editing host added as the application's hostname with live preview,
+      an experience composed from them, published, read back from Optimizely Graph, and a real
+      Visual Builder edit (including a new experience from a blueprint). Then 100% of Blueprint
+      components built, pushed and enabled in Visual Builder on the editing host.
+  - number: 5
+    name: Page types, blueprints and site shell
+    shortName: Templates
+    dependsOn:
+      - 3
+    exitCriteria: >-
+      Every page template is a page or experience type with its properties and a blueprint of its
+      default sections; the shared header and footer render on every page from shared content.
+  - number: 6
+    name: Content and media migration
+    shortName: Migration
+    dependsOn:
+      - 4
+      - 5
+    exitCriteria: >-
+      Content parity at or above 98%; all media uploaded with alt text; no broken internal links;
+      visual sample within tolerance.
+  - number: 7
+    name: Experience enablement
+    shortName: Experience
+    exitCriteria: >-
+      Redirects, SEO properties, sitemap, robots, 404/500 pages and Graph webhooks for
+      revalidation in place; when the brief confirms Experimentation is licensed, one experiment
+      on the pilot experience resolves on the editing host.
+  - number: 8
+    name: Deployment and publishing
+    shortName: Deployment
+    exitCriteria: >-
+      Three releases, each verified on its own: the deployed commit is the reviewed commit on the
+      editing and delivery hosts; the content model replays from the repository (manifest export
+      committed, dry-run push clean); every migrated page is published, indexed in Graph and
+      resolves on the delivery host. Smoke test green.
+  # Acceptance is the Director's, in the live systems (Visual Builder, the editing and delivery
+  # hosts), against the Definition of Done in the handover pack: agents don't re-check the site.
+  - number: 9
+    name: Handover and acceptance
+    shortName: Acceptance
+    gate: director
+    gateLabel: 'Gate 2: Director accepts'
+    exitCriteria: >-
+      Runbook, marketer component catalog, decision register, known-gaps register and the Director's
+      acceptance checklist delivered; the Director has accepted the site in the live systems;
+      project archived with full audit trail.

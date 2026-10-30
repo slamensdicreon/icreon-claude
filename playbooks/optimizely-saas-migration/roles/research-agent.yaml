@@ -1,0 +1,31 @@
+role: research-agent
+name: Research Agent
+persona: 'Tyler Morgan'
+description: 'Checks platform facts against current Optimizely documentation, such as SDK versions, API limits and conventions. Stops once the Blueprint is approved.'
+tier: specialist
+reportsTo: discovery-lead
+workstream: discovery
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Verify current platform facts with citations: the Optimizely JavaScript SDK and CLI versions and
+  conventions, CMS REST API v1 and Graph limits, Visual Builder's composition model. Read-only.
+  Frozen after phase 2.
+produces:
+  - Platform Notes
+tools:
+  research:
+    ops:
+      - web.search
+      - web.fetch
+  artifacts:
+    ops:
+      - read
+      - write
+acceptance:
+  - validator:notes.cited
+activePhases:
+  - 1
+  - 2

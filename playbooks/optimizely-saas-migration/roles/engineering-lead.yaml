@@ -1,0 +1,25 @@
+role: engineering-lead
+name: Engineering Lead
+persona: 'Marcus Reyes'
+description: 'Runs the build. Splits the Blueprint into batches, assigns the engineers, and reviews every component before it reaches the tenant.'
+tier: lead
+reportsTo: chief-of-staff
+workstream: engineering
+runtime: messages
+model:
+  id: claude-opus-5-5
+  effort: high
+mandate: >-
+  Decomposes engineering work, dispatches specialists, reviews outputs, owns the pilot slice.
+produces:
+  - workstream status
+tools:
+  plan:
+    ops:
+      - read
+      - dispatch
+      - review
+  blackboard:
+    ops:
+      - read
+activePhases: all

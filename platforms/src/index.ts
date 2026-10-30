@@ -5,8 +5,14 @@ import type {
   PlaybookSummary,
   ProjectTarget,
 } from '@lw/contracts';
-import type { VerifyConfig, VerifyResult } from '@lw/connectors';
+import {
+  OPTIMIZELY_DEFAULTS,
+  type OptimizelyVerifyConfig,
+  type VerifyConfig,
+  type VerifyResult,
+} from '@lw/connectors';
 import type { Playbook } from '@lw/playbook-sdk';
+import { createOptimizely } from '../optimizely/pack';
 import { createSitecoreAI } from '../sitecoreai/pack';
 
 /**
@@ -70,6 +76,14 @@ export interface PlatformPack {
     target: TargetValues,
     which: 'preview' | 'production',
     deps: HeadEnvDeps,
+  ): Promise<{ vars: HeadEnvVar[]; missing: string[] }>;
+  /**
+   * The environment the sandbox builds and runs the platform's CLI in, when it needs more than
+   * the head does (a management API key for pushing content types). Defaults to `headEnv`.
+   */
+  buildEnv?(
+    target: TargetValues,
+    deps: Pick<HeadEnvDeps, 'credential'>,
   ): Promise<{ vars: HeadEnvVar[]; missing: string[] }>;
 }
 
@@ -148,11 +162,17 @@ export interface HeadEnvDeps {
 
 export interface PlatformConfig {
   sitecore: VerifyConfig;
+  /** Optimizely's endpoints and fetch; the production defaults when left out. */
+  optimizely?: OptimizelyVerifyConfig;
 }
 
 /** Every platform pack, by id. */
 export function createPlatforms(cfg: PlatformConfig): Map<string, PlatformPack> {
-  return new Map([createSitecoreAI(cfg.sitecore)].map((p) => [p.id, p]));
+  const packs = [
+    createSitecoreAI(cfg.sitecore),
+    createOptimizely(cfg.optimizely ?? OPTIMIZELY_DEFAULTS),
+  ];
+  return new Map(packs.map((p) => [p.id, p]));
 }
 
 export class IntakeError extends Error {
@@ -270,3 +290,9 @@ export {
   sitecoreTarget,
   type SitecoreTarget,
 } from '../sitecoreai/pack';
+export {
+  optimizelyBindings,
+  optimizelyOwnedPaths,
+  optimizelyTarget,
+  type OptimizelyTarget,
+} from '../optimizely/pack';
