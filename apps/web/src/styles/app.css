@@ -1966,102 +1966,69 @@
   }
 }
 
-/* Saved Cypher conversations: the new chat is ready on load; earlier ones sit beneath the starters. */
-.cy-fresh {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  margin-top: 14px;
-  padding-right: 4px;
+/* Saved Cypher conversations in the sidebar, while the Dashboard is open. */
+.side-convos {
+  display: contents;
 }
-.cy-fresh .cy-starters {
-  margin-top: 0;
-}
-.cy-section-label {
-  font-size: 11px;
-  font-weight: var(--fw-medium);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--web-fg-3);
-  margin: 2px 0 6px;
-}
-.cy-list {
+.cv-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
-.cy-item {
+.cv-row {
   position: relative;
-  display: flex;
-  align-items: stretch;
-  border: 1px solid var(--web-border);
-  border-radius: var(--web-radius-2);
-  background: var(--web-surface);
-  transition:
-    border-color var(--motion-short-2) var(--ease-standard),
-    background var(--motion-short-2) var(--ease-standard);
 }
-.cy-item:hover {
-  border-color: var(--web-border-strong);
-  background: var(--web-surface-2);
+.nav.cv-item {
+  height: auto;
+  align-items: flex-start;
+  padding: 7px 28px 7px 12px;
+  white-space: normal;
 }
-.cy-item.on {
-  border-color: var(--web-accent);
+.nav.cv-item .ic {
+  flex: none;
+  margin-top: 2px;
+  color: var(--web-fg-3);
 }
-.cy-item-open {
-  flex: 1;
-  min-width: 0;
+.nav.cv-item .lbl {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  text-align: left;
-  padding: 10px 36px 10px 12px;
-  background: none;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  border-radius: inherit;
+  gap: 1px;
+  min-width: 0;
 }
-.cy-item-open:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
-}
-.cy-item-title {
-  font-size: 13.5px;
+.cv-title {
+  font-size: 13px;
   font-weight: var(--fw-medium);
-  color: var(--web-fg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cy-item-sum {
-  font-size: 12.5px;
-  line-height: 1.35;
-  color: var(--web-fg-2);
+  line-height: 1.25;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
-.cy-item-meta {
+.cv-sum {
   font-size: 11.5px;
+  font-weight: var(--fw-regular);
+  line-height: 1.3;
   color: var(--web-fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.cy-item-del {
+.nav.cv-item[aria-current='page'] .cv-sum {
+  color: var(--web-accent-text);
+  opacity: 0.8;
+}
+.cv-del {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 7px;
+  right: 6px;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: 0;
   border-radius: 6px;
   background: none;
@@ -2070,16 +2037,19 @@
   opacity: 0;
   transition: opacity var(--motion-short-2) var(--ease-standard);
 }
-.cy-item:hover .cy-item-del,
-.cy-item-del:focus-visible {
+.cv-row:hover .cv-del,
+.cv-del:focus-visible {
   opacity: 1;
 }
-.cy-item-del:hover {
+.cv-del:hover {
   color: var(--danger);
   background: var(--danger-bg);
 }
 @media (hover: none) {
-  .cy-item-del {
+  .cv-del {
     opacity: 1;
   }
+}
+.app.side-collapsed .cv-list {
+  display: none;
 }

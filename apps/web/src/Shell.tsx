@@ -7,6 +7,9 @@ import { DemoMenu, MoreSheet, ProjectMenu } from './overlays/Menus';
 import { NewProject } from './overlays/NewProject';
 import { Palette } from './overlays/Palette';
 import { useApp, useMission, useNow, useProjectResource, type Surface } from './state';
+import { ApiProblem } from './lib/api';
+import { cypher, useCypher } from './lib/cypher';
+import { when } from './surfaces/CypherHome';
 import type { SinceSummary } from '@lw/contracts';
 
 const HEALTH_DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
@@ -77,6 +80,7 @@ export function Sidebar() {
           <Icon name="dashboard" />
           <span className="lbl">Dashboard</span>
         </button>
+        {!projectId && <CypherRail />}
         {projectId && <div className="side-label">Project</div>}
         {projectId &&
           NAV.map(([s, icon, label]) => (
@@ -154,6 +158,77 @@ export function Sidebar() {
         </div>
       </div>
     </nav>
+  );
+}
+
+/**
+ * Saved conversations with Cypher, in the sidebar while the Dashboard is open: New chat first,
+ * then each conversation with the title and summary Cypher gave it, newest first. Picking one
+ * opens it in the Cypher panel; the new chat is what the page opens on.
+ */
+function CypherRail() {
+  const { toast } = useApp();
+  const s = useCypher();
+  useEffect(() => {
+    if (!s.loaded) void cypher.load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (s.loaded && !s.available) return null;
+  const open = (id: string) =>
+    cypher.open(id).catch((err: unknown) => {
+      toast(err instanceof ApiProblem ? err.message : 'That conversation could not be opened.');
+    });
+  const remove = (id: string, title: string) =>
+    cypher
+      .remove(id)
+      .then(() => toast(`Deleted “${title}”`))
+      .catch((err: unknown) => {
+        toast(err instanceof ApiProblem ? err.message : 'The conversation could not be deleted.');
+      });
+  return (
+    <div className="side-convos">
+      <div className="side-label">Conversations</div>
+      <button
+        className="nav sl"
+        aria-current={!s.activeId ? 'page' : undefined}
+        title="New chat with Cypher"
+        onClick={() => cypher.fresh()}
+      >
+        <Icon name="chat" />
+        <span className="lbl">New chat</span>
+      </button>
+      {s.conversations.length > 0 && (
+        <ul className="cv-list">
+          {s.conversations.map((c) => {
+            const title = c.title ?? 'Untitled conversation';
+            return (
+              <li key={c.id} className="cv-row">
+                <button
+                  className="nav sl cv-item"
+                  aria-current={s.activeId === c.id ? 'page' : undefined}
+                  title={c.summary ? `${title}: ${c.summary}` : title}
+                  onClick={() => void open(c.id)}
+                >
+                  <Icon name="time" />
+                  <span className="lbl">
+                    <span className="cv-title">{title}</span>
+                    <span className="cv-sum">{c.summary ?? when(c.updatedAt)}</span>
+                  </span>
+                </button>
+                <button
+                  className="cv-del"
+                  title="Delete conversation"
+                  aria-label={`Delete conversation ${title}`}
+                  onClick={() => void remove(c.id, title)}
+                >
+                  <Icon name="close" sm />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
