@@ -1,4 +1,4 @@
-import type { ReviewInput, ReviewVerdict } from '@lw/agent-runtime';
+import { HARD_GROUNDS, type ReviewInput, type ReviewVerdict } from '@lw/agent-runtime';
 import type { LwEvent, NewEvent } from '@lw/contracts';
 import type { ProjectState } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
@@ -423,6 +423,35 @@ export interface ReviewDeps {
   onAccepted?: (projectId: string, taskId: string) => Promise<void>;
 }
 
+/**
+ * The rule the Lead's prompt promises, made binding. A rejection on grounds of report detail is
+ * an acceptance with the Lead's note. On the third review of a task whose checks all pass, a
+ * rejection stands only on hard grounds (a failed check, missing work, a write outside the task)
+ * with a citation; anything softer is accepted, the Lead's remaining concern recorded. This is
+ * what ended Lambert's Cable's loops by hand: forty cards where the Director read "checks pass"
+ * and accepted.
+ */
+export function settleVerdict<V extends ReviewVerdict>(
+  verdict: V,
+  standing: { failed: number; priorRejections: number },
+): V {
+  if (verdict.verdict !== 'reject' || standing.failed > 0) return verdict;
+  if (verdict.grounds === 'report')
+    return {
+      ...verdict,
+      verdict: 'accept',
+      reason: `Accepted: the steps show the work was done. The Lead's note on the report: ${verdict.reason}`,
+    };
+  const hard = verdict.grounds && HARD_GROUNDS.has(verdict.grounds) && verdict.cites?.trim();
+  if (standing.priorRejections >= 2 && !hard)
+    return {
+      ...verdict,
+      verdict: 'accept',
+      reason: `Accepted on the checks after ${standing.priorRejections + 1} reviews: every check passes and the Lead's remaining objection names no failed check, missing work or write outside the task. The Lead's note: ${verdict.reason}`,
+    };
+  return verdict;
+}
+
 export function withReview(base: Activities, deps: ReviewDeps): Activities {
   const checks = deps.checks ?? CHECKS;
   const roles = new Map(deps.playbook.roles.map((r) => [r.role, r]));
@@ -535,11 +564,19 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
       const pending = results.filter((r) => r.status === 'pending').map((r) => r.id);
 
       // 2. The Lead's review, against the audit trail.
-      let verdict: { verdict: 'accept' | 'reject'; reason: string; tokens: number };
+      const priorRejections = log.filter(
+        (e) =>
+          e.type === 'review.recorded' &&
+          e.data.taskId === task.taskId &&
+          e.data.verdict === 'reject',
+      ).length;
+      let verdict: ReviewVerdict & { tokens: number };
       if (fails.length) {
         verdict = {
           verdict: 'reject',
           reason: fails.map((f) => `${f.id}: ${f.detail}`).join(' '),
+          grounds: 'failed-check',
+          cites: fails.map((f) => f.id).join(', '),
           tokens: 0,
         };
       } else if (deps.review && lead) {
@@ -559,33 +596,36 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
           )
           .map((e) => e.data.summary);
         try {
-          verdict = await deps.review({
-            lead: {
-              name: lead.name,
-              mandate: lead.mandate,
-              model: lead.model.id,
-              effort: lead.model.effort,
-            },
-            specialist: role?.name ?? task.role,
-            charter: deps.playbook.manifest.charter,
-            task: { title: task.title, acceptance },
-            summary: req.result.summary ?? '',
-            steps: trail,
-            artifacts,
-            checks: results,
-            director: req.instructions ?? null,
-            previous: log
-              .filter(
-                (e): e is Extract<LwEvent, { type: 'review.recorded' }> =>
-                  e.type === 'review.recorded' && e.data.taskId === task.taskId,
-              )
-              .slice(-4)
-              .map((e) => `${e.data.verdict}: ${e.data.note ?? ''}`),
-            permissions: Object.entries(role?.tools ?? {}).map(
-              ([server, grant]) =>
-                `${server}: ${grant.ops.join(', ')}${grant.scope?.paths?.length ? ` (writes only under ${grant.scope.paths.join(', ')})` : ''}`,
-            ),
-          });
+          verdict = settleVerdict(
+            await deps.review({
+              lead: {
+                name: lead.name,
+                mandate: lead.mandate,
+                model: lead.model.id,
+                effort: lead.model.effort,
+              },
+              specialist: role?.name ?? task.role,
+              charter: deps.playbook.manifest.charter,
+              task: { title: task.title, acceptance },
+              summary: req.result.summary ?? '',
+              steps: trail,
+              artifacts,
+              checks: results,
+              director: req.instructions ?? null,
+              previous: log
+                .filter(
+                  (e): e is Extract<LwEvent, { type: 'review.recorded' }> =>
+                    e.type === 'review.recorded' && e.data.taskId === task.taskId,
+                )
+                .slice(-4)
+                .map((e) => `${e.data.verdict}: ${e.data.note ?? ''}`),
+              permissions: Object.entries(role?.tools ?? {}).map(
+                ([server, grant]) =>
+                  `${server}: ${grant.ops.join(', ')}${grant.scope?.paths?.length ? ` (writes only under ${grant.scope.paths.join(', ')})` : ''}`,
+              ),
+            }),
+            { failed: fails.length, priorRejections },
+          );
         } catch (err) {
           // A review that can't run doesn't hold the project up; it says so on the record.
           verdict = {
@@ -615,13 +655,16 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
           subject: task.title,
           note,
           tokens: verdict.tokens,
+          checks: results.map((r) => ({ id: r.id, status: r.status })),
+          grounds: verdict.verdict === 'reject' ? (verdict.grounds ?? null) : null,
         },
       });
       await deps.store.append(req.projectId, events);
       if (verdict.verdict === 'accept') await deps.onAccepted?.(req.projectId, task.taskId);
+      const standing = results.map((r) => ({ id: r.id, status: r.status }));
       return verdict.verdict === 'accept'
-        ? { pass: true, reason: null }
-        : { pass: false, reason: verdict.reason };
+        ? { pass: true, reason: null, checks: standing }
+        : { pass: false, reason: verdict.reason, checks: standing };
     },
   };
 }

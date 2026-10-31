@@ -507,6 +507,12 @@ export const EventBody = z.discriminatedUnion('type', [
       note: z.string().nullable().default(null),
       /** Model tokens the review took. */
       tokens: z.number().int().nonnegative().default(0),
+      /** The automated checks as they stood at this review. */
+      checks: z
+        .array(z.object({ id: z.string(), status: z.enum(['pass', 'fail', 'pending']) }))
+        .default([]),
+      /** What a rejection stood on (failed-check, missing-work, outside-task), when the Lead said. */
+      grounds: z.string().nullable().default(null),
     }),
   ),
   /** The Chief of Staff changing the plan ("close pilot slice, open batch 2"). */

@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import type { ReviewInput } from '@lw/agent-runtime';
+import type { ReviewInput, ReviewVerdict } from '@lw/agent-runtime';
 import type { LwEvent } from '@lw/contracts';
 import { createProjectState } from '@lw/domain';
 import { InMemoryEventStore, type Projections } from '@lw/events';
@@ -9,7 +9,7 @@ import { loadPlaybook } from '@lw/playbook-sdk';
 import { MemoryBlobStore } from '@lw/tool-gateway';
 import { ArtifactLibrary } from '@lw/tool-workspace';
 import { describe, expect, it } from 'vitest';
-import { CHECKS, withReview } from '../src';
+import { CHECKS, settleVerdict, withReview } from '../src';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 
@@ -48,11 +48,7 @@ const component = (key: string, attrs: Record<string, unknown> = {}) => ({
 });
 
 async function setup(
-  review:
-    | ((
-        i: ReviewInput,
-      ) => Promise<{ verdict: 'accept' | 'reject'; reason: string; tokens: number }>)
-    | null,
+  review: ((i: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null,
 ) {
   const store = new InMemoryEventStore();
   const library = new ArtifactLibrary(store, new MemoryBlobStore());
@@ -137,6 +133,7 @@ describe('acceptance on live projects', () => {
     expect(r).toEqual({
       pass: false,
       reason: 'blueprint.coverage: No Blueprint has been written.',
+      checks: [{ id: 'blueprint.coverage', status: 'fail' }],
     });
   });
 
@@ -177,7 +174,10 @@ describe('acceptance on live projects', () => {
       }),
       'Published and verified.',
     );
-    expect(r).toEqual({ pass: false, reason: 'The steps show no read-back after the publish.' });
+    expect(r).toMatchObject({
+      pass: false,
+      reason: 'The steps show no read-back after the publish.',
+    });
     expect(seen[0]!.lead.name).toBe('Engineering Lead');
     expect(seen[0]!.steps).toEqual([
       expect.stringMatching(/ \[release\] sitecore-authoring\.publish → 200: Published 12 items$/),
@@ -191,6 +191,78 @@ describe('acceptance on live projects', () => {
       tokens: 1234,
     });
     expect(rec.data.note).toMatch(/Pending, not passed: edge.published, routes.resolve/);
+  });
+
+  it('records how the checks stood on every review, and the grounds of a rejection', async () => {
+    const { validate, reviews } = await setup(async () => ({
+      verdict: 'reject',
+      reason: 'The steps show no read-back after the publish.',
+      grounds: 'missing-work',
+      cites: '10:00:00 sitecore-authoring.publish',
+      tokens: 10,
+    }));
+    const r = await validate(
+      task({
+        taskId: 'publish-edge',
+        role: 'deployment-engineer',
+        acceptance: ['validator:edge.published'],
+      }),
+    );
+    expect(r.checks).toEqual([{ id: 'edge.published', status: 'pending' }]);
+    const rec = (await reviews())[0]!;
+    expect(rec.data.checks).toEqual([{ id: 'edge.published', status: 'pending' }]);
+    expect(rec.data.grounds).toBe('missing-work');
+  });
+
+  it('turns a rejection on grounds of report detail into an acceptance with the note', async () => {
+    const { validate, reviews } = await setup(async () => ({
+      verdict: 'reject',
+      reason: 'The summary does not quote the diff.',
+      grounds: 'report',
+      cites: '',
+      tokens: 10,
+    }));
+    const r = await validate(
+      task({ taskId: 'port-cta-band', role: 'component-engineer', acceptance: [] }),
+    );
+    expect(r.pass).toBe(true);
+    const rec = (await reviews())[0]!;
+    expect(rec.data.verdict).toBe('accept');
+    expect(rec.data.note).toMatch(/steps show the work was done.*does not quote the diff/);
+  });
+
+  it('on the third review of passing work, a rejection stands only on hard grounds with a citation', async () => {
+    const rejected = (prior: number, verdict: ReviewVerdict) =>
+      settleVerdict({ ...verdict, tokens: 1 }, { failed: 0, priorRejections: prior });
+    const soft: ReviewVerdict = {
+      verdict: 'reject',
+      reason: 'Still thin.',
+      grounds: 'none',
+      cites: '',
+    };
+    const hard: ReviewVerdict = {
+      verdict: 'reject',
+      reason: 'The variant was never registered.',
+      grounds: 'missing-work',
+      cites: '10:02 sitecore-authoring.item.read',
+    };
+    // First and second rejections stand whatever their grounds.
+    expect(rejected(0, soft).verdict).toBe('reject');
+    expect(rejected(1, soft).verdict).toBe('reject');
+    // The third does not, unless it is hard and cited.
+    expect(rejected(2, soft)).toMatchObject({ verdict: 'accept' });
+    expect(rejected(2, soft).reason).toMatch(/Accepted on the checks after 3 reviews.*Still thin/);
+    expect(rejected(2, { ...hard, cites: '' }).verdict).toBe('accept');
+    expect(rejected(2, hard).verdict).toBe('reject');
+    // A stub reviewer with no grounds at all is treated as soft.
+    expect(rejected(2, { verdict: 'reject', reason: 'No.' }).verdict).toBe('accept');
+    // A failed check always stands, on any review.
+    expect(
+      settleVerdict(
+        { ...soft, grounds: 'failed-check', tokens: 1 },
+        { failed: 1, priorRejections: 5 },
+      ).verdict,
+    ).toBe('reject');
   });
 
   it('accepts on checks alone when no Lead review is connected, and says so', async () => {

@@ -167,6 +167,14 @@ export type ArtifactKind = Extract<NewEvent, { type: 'artifact.versioned' }>['da
 export interface ValidationResult {
   pass: boolean;
   reason: string | null;
+  /** The automated checks as they stood, for the card a rejected task may end in. */
+  checks?: CheckStanding[];
+}
+
+/** One acceptance check's standing at a review. */
+export interface CheckStanding {
+  id: string;
+  status: 'pass' | 'fail' | 'pending';
 }
 
 export type DirectiveInterpretation =
@@ -195,7 +203,7 @@ export interface TaskInput {
 /** `state` is where the child left the task, so the parent's next transition starts from it. */
 export type TaskOutcome = { state: TaskState; attempt: number } & (
   | { outcome: 'done'; result: AgentResult }
-  | { outcome: 'escalate'; reason: string; spent: AgentResult }
+  | { outcome: 'escalate'; reason: string; spent: AgentResult; checks?: CheckStanding[] }
   | {
       outcome: 'access_denied';
       reason: string;

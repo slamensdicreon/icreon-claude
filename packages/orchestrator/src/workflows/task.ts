@@ -216,6 +216,7 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
         attempt,
         reason: `Rejected ${rejections} times: ${feedback}`,
         spent,
+        checks: verdict.checks,
       };
     }
     attempt += 1;

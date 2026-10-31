@@ -42,6 +42,7 @@ import {
   workflowInfo,
 } from '@temporalio/workflow';
 import type { Activities } from '../activities';
+import { checksLine } from '../evidence';
 import {
   cancelTask,
   changeBudgets,
@@ -1054,7 +1055,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             : {
                 type: 'decision',
                 title: clip(`${t.title}: needs a decision`),
-                context: `The Lead rejected this output and retries did not fix it. ${outcome.reason}`,
+                context: [
+                  `The Lead rejected this output and retries did not fix it. ${outcome.reason}`,
+                  outcome.outcome === 'escalate' ? checksLine(outcome.checks) : '',
+                ]
+                  .filter(Boolean)
+                  .join(' '),
                 impact: `${t.title} and its dependents wait. Other work continues.`,
                 options: [
                   { id: 'retry', label: 'Retry with the Lead feedback', recommended: true },

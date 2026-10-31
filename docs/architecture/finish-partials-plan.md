@@ -45,6 +45,44 @@ Closes the Lead-loop half of task 88 and everything of M2.8 that is not the Dire
 Director's part, later: Settings → Autonomy, switch `retry` (and `naming`, `content` if their
 agreement holds) from `shadow` to `lead`. The Lead's accept then applies without a card.
 
+### Result (2026-10-31)
+
+Measured first, from Lambert's recorded validator steps rather than the notes: of the 96
+"needs a decision" cards the Director answered, how did the checks stand at the Lead's last
+rejection?
+
+| Director's answer | Every check passed | Passed or pending | A check failed | Cards |
+| --- | --- | --- | --- | --- |
+| Accept the current output | 13 | 3 | 23 | 41 (2 without a review or checks) |
+| Retry with the Lead feedback | 1 | 1 | 53 | 55 |
+
+Two findings changed the build. First, the loop the rule can end is the **18 cards on passing
+work**: the Director accepted 16 of them (89%), so a third review that may only reject on hard,
+cited grounds agrees with the Director there and costs two cards they chose to retry. Second,
+**76 of the 96 cards had a failing check**, and the check was `parity.visual` in 64 of them,
+`parity.render` in 12, `head.sections` in 5: pages failing because of components and a visual
+judge stricter than the Director (who accepted 13 pages it had failed). Those are section 2's
+work (component failures) and the 0.7.0 merge of Visual QA into the Parity Auditor, not a
+triage problem.
+
+Built:
+
+- The Lead's verdict is structured: `grounds` (failed-check, missing-work, outside-task, report,
+  none) and `cites` (the check id, step or document). `report` never rejects: it is recorded as
+  an acceptance with the Lead's note. On the third review of a task whose checks all pass, a
+  rejection stands only on hard grounds with a citation (`settleVerdict` in the stack, tested).
+- Every `review.recorded` event now carries the checks' standing and the grounds, so the next
+  measurement reads them directly.
+- The "needs a decision" card says how the checks stood on the last attempt (failed, passed,
+  pending by id), so the Director, the Lead's triage and a rule can tell a loop on passing work
+  from a real failure without opening the log.
+- Triage is unchanged on purpose: the orchestrator forwards any Lead answer that would accept work
+  the Lead itself rejected ("accepting work its Lead rejected is your call"), and that guard is
+  right. The loop ends at the review, where the evidence is.
+
+Not done: an offline re-score with the model (no model key in this environment). The table
+above is the measurement instead, and the new event fields make the next one exact.
+
 ## 2. Component failures stop costing page retries
 
 The other half of task 88. Lambert's rounds were: fix a component, integrate it, rerun the pages

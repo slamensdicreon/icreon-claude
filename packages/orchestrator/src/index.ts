@@ -5,6 +5,7 @@ export * from './agent-activities';
 export * from './client';
 export * from './live-guard';
 export * from './definitions';
+export * from './evidence';
 export * from './stub-activities';
 export * from './types';
 export * from './worker';
