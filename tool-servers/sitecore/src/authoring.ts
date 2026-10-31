@@ -1069,9 +1069,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         alt = null;
       }
     }
+    // Its ID, for links that name media by ID (rich text's -/media/<id>.ashx); best effort.
+    const back = await readBack(q, a.data.itemPath, lang()).catch(() => null);
     return {
       code: 200,
-      body: { itemPath: a.data.itemPath, bytes: bytes.length, alt },
+      body: { itemPath: a.data.itemPath, itemId: back?.itemId ?? null, bytes: bytes.length, alt },
       summary: `Uploaded ${a.data.itemPath} (${Math.round(bytes.length / 1024)} KB)${a.data.alt && !alt ? '; no Alt field on this media type, so no alt text' : ''}`,
     };
   }

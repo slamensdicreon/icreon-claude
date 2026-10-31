@@ -12,3 +12,4 @@ export * from './errors';
 export * from './schedule';
 export * from './time';
 export * from './views';
+export * from './facts';

@@ -159,6 +159,28 @@ harvested rules once the Director approves them.
 | M5.6 | Prompts: read facts before asking; publish what you create; self-check before submitting | prompts, `known-pitfalls.md` | Review |
 | M5.7 | Deploy; scorecard shows the change in rejections and "which ID?" waits | — | Scorecard |
 
+Built 2026-10-31 (playbooks SitecoreAI 0.8.0, Optimizely 0.3.0). What landed, against the rows:
+
+- **M5.1** `fact.published` and `state.facts`, keyed `kind:key` (key compared without case), each
+  with its task, recorder, version and the value it replaced. Kinds the tools record: `rendering`,
+  `template`, `page` (by route), `layout` (a page's components in order), `datasource`,
+  `presentation`, `setting`, `item`, `media` (by source URL). Agents publish any other kind.
+- **M5.2** `facts.read` (kind, key, search) and `facts.publish`, in-process; granted to every role.
+- **M5.3** The pack's `facts` hook, called by the gateway on a successful call and appended with
+  its step. SitecoreAI reads `rendering.create`, `template.create`, `item.create`,
+  `layout.compose` and `media.upload`; `media.upload` now returns the media item's ID, for
+  `mediaid` links.
+- **M5.4** Briefs list the facts of the task's upstream tasks (through checkpoints) and its items
+  in full, the rest counted by kind (all of them when there are 60 or fewer). A changed fact flags
+  finished tasks that came after the old value and build on its task or its item: on the
+  Workbench's Project facts page ("Changed after use") rather than Mission Control, beside the
+  facts themselves.
+- **M5.5** `acceptance.check` runs the review's own checks (`runChecks`, shared with the Lead's
+  review) and records nothing; three per session, then the review.
+- **M5.6** In the platform rules every agent works under, not per-role prompts.
+- **M5.7** Deploy done; the scorecard comparison waits on the next project, since no project is
+  running.
+
 ## M6 — Knowledge store and retrospectives (A4) (2½ sessions)
 
 | Task | What | Where | Proof |

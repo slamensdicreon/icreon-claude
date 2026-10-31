@@ -48,6 +48,7 @@ import {
   agentDetail,
   conversation,
   decisions,
+  factsSnapshot,
   missionControl,
   plan,
   projectListItem,
@@ -876,6 +877,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<P>('/projects/:id/decisions', async (req, reply) => {
     const s = project(req.params.id);
     return s ? decisions(s) : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+  });
+
+  // What the project's tasks made (IDs, paths), and changes that may have left finished work behind.
+  app.get<P>('/projects/:id/facts', async (req, reply) => {
+    const s = project(req.params.id);
+    return s
+      ? factsSnapshot(s)
+      : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
   });
 
   app.get<P>('/projects/:id/workbench', async (req, reply) => {

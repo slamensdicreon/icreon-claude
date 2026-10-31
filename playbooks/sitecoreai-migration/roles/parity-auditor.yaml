@@ -26,6 +26,15 @@ tools:
     ops:
       - read
       - write
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
 knowledge:
   - definition-of-done
 activePhases: [6]

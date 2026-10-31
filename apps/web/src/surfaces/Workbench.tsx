@@ -7,6 +7,8 @@ import type {
   DecisionView,
   DocBlock,
   DocCell,
+  FactsSnapshot,
+  FactView,
   MissionControlSnapshot,
   PullRequestDocument,
   WorkbenchSnapshot,
@@ -20,6 +22,7 @@ import { MarkdownDoc } from '../parts/Doc';
 import { useApp, useMission, useProjectResource, useRoster, useTz } from '../state';
 
 const DECISIONS = 'decisions';
+const FACTS = 'facts';
 
 /** Rail sections, in order: which artifact kinds each holds. */
 const SECTIONS: { label: string; kinds: string[] | null }[] = [
@@ -28,6 +31,7 @@ const SECTIONS: { label: string; kinds: string[] | null }[] = [
   { label: 'Reports', kinds: ['report'] },
   { label: 'Handover', kinds: ['handover_pack'] },
   { label: 'Decision Log', kinds: [] },
+  { label: 'Project facts', kinds: [] },
   { label: 'Pull requests', kinds: ['pull_request'] },
   { label: 'Other documents', kinds: null },
 ];
@@ -43,7 +47,7 @@ export function Workbench() {
   const page = useRef<HTMLDivElement>(null);
   const [toc, setToc] = useState<{ id: string; text: string; level: number }[]>([]);
   const docs = (wb?.artifacts ?? []).filter((a) => !['screenshot', 'video'].includes(a.kind));
-  const ids = [...docs.map((a) => a.artifactId), DECISIONS];
+  const ids = [...docs.map((a) => a.artifactId), DECISIONS, FACTS];
   const current = ids.includes(ui.wbArtifact ?? '')
     ? ui.wbArtifact!
     : (docs[0]?.artifactId ?? DECISIONS);
@@ -84,6 +88,13 @@ export function Workbench() {
         label: sec.label,
         items: match('Decision Log')
           ? [{ id: DECISIONS, title: 'Decision Log', meta: 'append-only' }]
+          : [],
+      };
+    if (sec.label === 'Project facts')
+      return {
+        label: sec.label,
+        items: match('Project facts')
+          ? [{ id: FACTS, title: 'Project facts', meta: 'IDs and paths' }]
           : [],
       };
     const list = docs
@@ -184,6 +195,8 @@ export function Workbench() {
         <div className="viewer clean wiki-doc">
           {current === DECISIONS ? (
             <DecisionLog />
+          ) : current === FACTS ? (
+            <ProjectFacts />
           ) : artifact?.kind === 'blueprint' ? (
             <BlueprintViewer />
           ) : artifact ? (
@@ -395,6 +408,169 @@ function DecisionLog() {
           ))}
         </tbody>
       </table>
+    </>
+  );
+}
+
+const FACT_KINDS: Record<string, string> = {
+  rendering: 'Renderings',
+  template: 'Templates',
+  page: 'Pages',
+  layout: 'Page layouts',
+  datasource: 'Datasources',
+  media: 'Media',
+};
+
+/** A fact's value, one field a line. */
+function FactValue({ v }: { v: FactView['value'] }) {
+  return (
+    <dl className="fact-value">
+      {Object.entries(v)
+        .filter(([, x]) => x !== null && x !== '')
+        .map(([k, x]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd>{String(x)}</dd>
+          </div>
+        ))}
+    </dl>
+  );
+}
+
+const kindLabel = (k: string, one = false) => {
+  const label = FACT_KINDS[k] ?? k.charAt(0).toUpperCase() + k.slice(1);
+  return one ? label.replace(/s$/, '') : label;
+};
+
+/**
+ * What the team's tasks made, as later tasks look it up: renderings, templates, pages, media with
+ * their IDs and paths, recorded from tool results or published by agents. A value that changed
+ * after other tasks finished on the old one is shown first, with those tasks.
+ */
+function ProjectFacts() {
+  const tz = useTz();
+  const roster = useRoster();
+  const snap = useProjectResource<FactsSnapshot>('/facts').data;
+  const [kind, setKind] = useState('all');
+  const [q, setQ] = useState('');
+  if (!snap) return <p className="quiet-line">Loading facts…</p>;
+  const kinds = [...new Set(snap.facts.map((f) => f.kind))].sort();
+  const words = q.trim().toLowerCase();
+  const shown = snap.facts.filter(
+    (f) =>
+      (kind === 'all' || f.kind === kind) &&
+      (!words ||
+        `${f.key} ${f.summary} ${Object.values(f.value).join(' ')}`.toLowerCase().includes(words)),
+  );
+  const who = (role: string) =>
+    (roster.byId(role) ?? roster.agents.find((a) => a.role === role))?.name ?? role;
+  return (
+    <>
+      <div className="viewer-head">
+        <h2>Project facts</h2>
+        <span className="muted">{snap.facts.length} recorded</span>
+      </div>
+      <p className="muted">
+        What the team&rsquo;s tasks made, with the IDs and paths later tasks look up instead of
+        asking. Most are recorded from what Sitecore answered; agents publish the rest.
+      </p>
+      {snap.changed.length > 0 && (
+        <>
+          <h3>Changed after use</h3>
+          <p className="muted">
+            These values changed after other tasks finished with the old one. Those tasks may still
+            point at the old value: re-run them from the Plan if they do.
+          </p>
+          <table className="facts-table">
+            <thead>
+              <tr>
+                <th>Fact</th>
+                <th>Was</th>
+                <th>Now</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snap.changed.map((c) => (
+                <tr key={`${c.kind}:${c.key}`}>
+                  <td>
+                    <small className="muted">{kindLabel(c.kind, true)}</small>
+                    <strong className="fact-key">{c.key}</strong>
+                    <small className="muted dl-why">
+                      Changed {stamp(c.at, tz)}. Finished before:{' '}
+                      {c.tasks.map((t) => t.title).join(', ')}
+                    </small>
+                  </td>
+                  <td>
+                    <FactValue v={c.from} />
+                  </td>
+                  <td>
+                    <FactValue v={c.to} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {snap.facts.length === 0 ? (
+        <p className="quiet-line">
+          Nothing recorded yet. Facts appear as tasks create renderings, templates, pages and media.
+        </p>
+      ) : (
+        <>
+          <div className="dash-filters" role="group" aria-label="Kind">
+            {['all', ...kinds].map((k) => (
+              <button
+                key={k}
+                className={`dash-chip ${kind === k ? 'on' : ''}`}
+                onClick={() => setKind(k)}
+              >
+                {k === 'all' ? 'Everything' : kindLabel(k)}
+                <small>
+                  {k === 'all' ? snap.facts.length : snap.facts.filter((f) => f.kind === k).length}
+                </small>
+              </button>
+            ))}
+            <input
+              className="wiki-search"
+              type="search"
+              placeholder="Search facts"
+              aria-label="Search facts"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <table className="facts-table">
+            <thead>
+              <tr>
+                <th>Fact</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.slice(0, 500).map((f) => (
+                <tr key={`${f.kind}:${f.key}`}>
+                  <td>
+                    <small className="muted">{kindLabel(f.kind, true)}</small>
+                    <strong className="fact-key">{f.key}</strong>
+                    <small className="muted dl-why">
+                      {who(f.by)}
+                      {f.source === 'agent' ? ' published' : ''} · {stamp(f.at, tz)}
+                      {f.version > 1 ? ` · version ${f.version}` : ''}
+                    </small>
+                  </td>
+                  <td>
+                    <FactValue v={f.value} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {shown.length > 500 && (
+            <p className="quiet-line">Showing 500 of {shown.length}; search to narrow.</p>
+          )}
+        </>
+      )}
     </>
   );
 }

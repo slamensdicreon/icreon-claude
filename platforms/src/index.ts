@@ -1,4 +1,5 @@
 import type {
+  FactDraft,
   IntakeCredentialSpec,
   IntakeFieldSpec,
   IntakeSpec,
@@ -80,6 +81,15 @@ export interface PlatformPack {
   buildRecipe?: { generate: string[]; build: string; readOnly: string[] };
   /** Acceptance checks only the platform knows how to run, by validator id. */
   checks?: Record<string, PlatformCheck>;
+  /**
+   * What a successful tool call made that later tasks look up (a rendering's ID, a page's item),
+   * read from its result. Absent: only facts agents publish themselves are recorded.
+   */
+  facts?(
+    call: { server: string; op: string; args: Record<string, unknown> },
+    body: unknown,
+    target: TargetValues,
+  ): FactDraft[];
   /**
    * The environment variables the head needs on its host, resolved from the project's sealed
    * credentials and the platform's own APIs. Absent for platforms with no head.

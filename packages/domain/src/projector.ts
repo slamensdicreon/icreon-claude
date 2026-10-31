@@ -3,6 +3,7 @@ import type {
   AgentDetail,
   AgentView,
   ArtifactView,
+  FactView,
   Budgets,
   ConversationItem,
   ConversationSnapshot,
@@ -98,6 +99,8 @@ export interface ProjectState {
   buildRepo: BuildRepo | null;
   hosting: HostingState | null;
   conventions: { key: string; value: string }[];
+  /** What tasks made that later tasks look up, by `kind:key`. */
+  facts: Record<string, FactView>;
   /** What agents' tools couldn't do, by capability (lower case): engineering's backlog. */
   capabilityGaps: Record<string, CapabilityGapRecord>;
   /** Per task: how its work went (runs, reviews, waits, tokens), for the scorecard. */
@@ -196,6 +199,7 @@ export function createProjectState(projectId: string): ProjectState {
     hosting: null,
     settings: {},
     conventions: [],
+    facts: {},
     capabilityGaps: {},
     ledger: {},
   };
@@ -636,6 +640,27 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     case 'conventions.recorded':
       s.conventions = e.data.entries;
       break;
+    case 'fact.published': {
+      const id = factId(e.data.kind, e.data.key);
+      const was = s.facts[id];
+      const changed = !was || JSON.stringify(was.value) !== JSON.stringify(e.data.value);
+      s.facts[id] = {
+        kind: e.data.kind,
+        key: e.data.key,
+        value: e.data.value,
+        summary: e.data.summary,
+        taskId: e.data.taskId,
+        by: e.data.by,
+        source: e.data.source,
+        at: e.ts,
+        version: !was ? 1 : changed ? was.version + 1 : was.version,
+        previous:
+          was && changed
+            ? { value: was.value, at: was.at, taskId: was.taskId, by: was.by }
+            : (was?.previous ?? null),
+      };
+      break;
+    }
     case 'tool.health':
       break;
   }
@@ -645,6 +670,11 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     if (!(item.toolServer && NOT_LATEST_SERVERS.has(item.toolServer)))
       s.latest = [item, ...s.latest].slice(0, 4);
   }
+}
+
+/** A fact's identity: its kind and key, the key compared without case or extra spaces. */
+export function factId(kind: string, key: string) {
+  return `${kind}:${key.trim().replace(/\s+/g, ' ').toLowerCase()}`;
 }
 
 function newAgent(r: RosterEntry): AgentRecord {

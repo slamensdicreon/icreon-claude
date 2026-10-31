@@ -62,6 +62,8 @@ export interface RuntimeDeps {
   board?(projectId: string, task: PlannedTask): Promise<string | null>;
   /** The approved Blueprint's entries for the task's items (a page's URL, a media file's source). */
   items?(projectId: string, task: PlannedTask): Promise<string | null>;
+  /** What other tasks made that this one needs (IDs, paths), from the project's facts. */
+  facts?(projectId: string, task: PlannedTask): Promise<string | null>;
   /** System prompt text for a role, from the playbook's prompts folder; null to derive one. */
   prompt?: (role: RoleDef) => string | null;
   /**
@@ -113,8 +115,9 @@ export class AgentRuntime {
     const spent: Spend = { tokens: 0, usd: 0 };
     const board = (await deps.board?.(req.projectId, req.task)) ?? null;
     const items = (await deps.items?.(req.projectId, req.task)) ?? null;
+    const facts = (await deps.facts?.(req.projectId, req.task).catch(() => null)) ?? null;
     const messages: BetaMessageParam[] = [
-      { role: 'user', content: taskBrief({ ...req, board, items }) },
+      { role: 'user', content: taskBrief({ ...req, board, items, facts }) },
     ];
     let stepIndex = 0;
     let maxTokens = deps.maxTokensPerTurn ?? DEFAULT_MAX_TOKENS;

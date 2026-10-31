@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import type { LwEvent } from '@lw/contracts';
+import type { FactDraft, LwEvent } from '@lw/contracts';
 import { InMemoryEventStore } from '@lw/events';
 import { loadPlaybook, type Playbook } from '@lw/playbook-sdk';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -87,6 +87,7 @@ function setup(
     recipe?: boolean;
     approved?: boolean;
     onInjection?: (c: ToolCall, r: string) => Promise<void>;
+    facts?: (c: ToolCall, body: unknown) => FactDraft[];
   } = {},
 ) {
   const store = new InMemoryEventStore();
@@ -102,6 +103,7 @@ function setup(
     limiter: new TokenBucketLimiter(1000, 1000),
     store,
     onInjection: opts.onInjection,
+    facts: opts.facts,
   });
   return { gateway, store, servers };
 }
@@ -186,7 +188,68 @@ describe('authorization matrix (every role × every operation)', () => {
       { server: 'research', op: 'web.fetch' },
       { server: 'artifacts', op: 'read' },
       { server: 'artifacts', op: 'write' },
+      { server: 'facts', op: 'read' },
+      { server: 'facts', op: 'publish' },
+      { server: 'acceptance', op: 'check' },
     ]);
+  });
+});
+
+describe('facts', () => {
+  it('records what a successful call made with its step, and nothing from a failed or bad one', async () => {
+    const server = fakeServer('sitecore-authoring', catalogs['sitecore-authoring']!, (_op, args) =>
+      args.path === '/sitecore/content/Acme/Corporate/Data/Fail'
+        ? { code: 409, body: { error: 'exists' } }
+        : { code: 200, body: { itemId: 'abc', path: String(args.path) } },
+    );
+    const facts = (c: ToolCall, body: unknown): FactDraft[] => {
+      const b = body as { itemId: string; path: string };
+      if (c.op !== 'item.create') return [];
+      return [
+        { kind: 'datasource', key: b.path, value: { id: b.itemId }, summary: 'made' },
+        // Invalid (a kind must be lower case): dropped, the rest kept.
+        { kind: 'Bad Kind', key: 'x', value: {} },
+      ];
+    };
+    const { gateway, store } = setup({ servers: [server], facts });
+    const ok = await gateway.call(
+      call('rendering-registrar', 'sitecore-authoring', 'item.create', {
+        path: '/sitecore/content/Acme/Corporate/Data/Header',
+      }),
+    );
+    expect(ok.ok).toBe(true);
+    await gateway.call(
+      call('rendering-registrar', 'sitecore-authoring', 'item.create', {
+        path: '/sitecore/content/Acme/Corporate/Data/Fail',
+      }),
+    );
+    const log = await store.read('p1');
+    const published = log.filter((e) => e.type === 'fact.published');
+    expect(published).toHaveLength(1);
+    expect(published[0]).toMatchObject({
+      data: {
+        kind: 'datasource',
+        key: '/sitecore/content/Acme/Corporate/Data/Header',
+        value: { id: 'abc' },
+        taskId: 't1',
+        by: 'rendering-registrar',
+        source: 'tool',
+      },
+    });
+    // Recorded right after its step, in the same append.
+    const at = log.indexOf(published[0]!);
+    expect(log[at - 1]).toMatchObject({ type: 'step.recorded' });
+  });
+
+  it('never fails a call when reading its facts throws', async () => {
+    const { gateway, store } = setup({
+      facts: () => {
+        throw new Error('boom');
+      },
+    });
+    const r = await gateway.call(call('research-agent', 'research', 'web.search', { q: 'x' }));
+    expect(r.ok).toBe(true);
+    expect((await store.read('p1')).some((e) => e.type === 'fact.published')).toBe(false);
   });
 });
 

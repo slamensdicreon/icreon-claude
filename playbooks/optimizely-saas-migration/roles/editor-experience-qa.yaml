@@ -39,6 +39,15 @@ tools:
     ops:
       - graph.query
       - graph.item
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
 knowledge:
   - known-pitfalls
   - definition-of-done

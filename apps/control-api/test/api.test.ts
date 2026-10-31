@@ -3,6 +3,7 @@ import {
   ActivityPage,
   AgentDetail,
   ConversationSnapshot,
+  FactsSnapshot,
   LwEvent,
   MissionControlSnapshot,
   PlanSnapshot,
@@ -282,6 +283,31 @@ describe('control-api', () => {
     await until(async () => {
       const mc = MissionControlSnapshot.parse((await get(h, '/projects/p1/mission-control')).body);
       return mc.phases.find((p) => p.number === 3)?.status === 'current';
+    });
+  });
+
+  it('serves the facts tasks recorded, newest first', async () => {
+    const h = await start();
+    await h.store.append('p1', [
+      {
+        type: 'fact.published',
+        actor: { kind: 'agent', id: 'rendering-registrar' },
+        subject: { kind: 'task', id: 'register-hero' },
+        severity: 'routine',
+        data: {
+          kind: 'rendering',
+          key: 'Hero Banner',
+          value: { id: 'abc', path: '/sitecore/layout/Renderings/Project/acme/Hero Banner' },
+          summary: 'Rendering Hero Banner is abc',
+          taskId: 'register-hero',
+          by: 'rendering-registrar',
+        },
+      },
+    ]);
+    const r = await get(h, '/projects/p1/facts');
+    expect(FactsSnapshot.parse(r.body)).toMatchObject({
+      facts: [{ kind: 'rendering', key: 'Hero Banner', value: { id: 'abc' }, version: 1 }],
+      changed: [],
     });
   });
 

@@ -8,6 +8,7 @@ import {
   type VerifyConfig,
 } from '@lw/connectors';
 import type { PlatformPack } from '../src/index';
+import { sitecoreFacts } from './facts';
 import { sitecoreChecks } from './checks';
 import { list, text, type TargetValues } from '../src/values';
 
@@ -241,6 +242,7 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
       };
     },
     bindings: sitecoreBindings,
+    facts: (call, body, target) => sitecoreFacts(call, body, sitecoreBindings(target)),
     context: (t) => {
       const s = sitecoreTarget({ target: t });
       return [

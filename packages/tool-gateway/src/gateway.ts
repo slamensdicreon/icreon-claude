@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { WriteLocks } from './locks';
-import type { NewEvent, Severity } from '@lw/contracts';
+import { FactDraft, type NewEvent, type Severity } from '@lw/contracts';
 import type { EventStore } from '@lw/events';
 import type { Playbook, ToolGrant } from '@lw/playbook-sdk';
 import { heuristicDetector, redact, wrapUntrusted, type InjectionDetector } from './sanitize';
@@ -37,6 +37,11 @@ export interface GatewayDeps {
   detector?: InjectionDetector;
   /** Called when fetched content looks like an injection attempt (raise a Risk escalation). */
   onInjection?: (call: ToolCall, reason: string) => Promise<void>;
+  /**
+   * What a successful call made that later tasks will look for (a rendering's id, a page's path),
+   * read from its result. Recorded with the step; a reader that throws records nothing.
+   */
+  facts?: (call: ToolCall, body: unknown) => FactDraft[];
   now?: () => number;
 }
 
@@ -170,6 +175,8 @@ export class ToolGateway {
 
     let severity: Severity = spec.mutates ? 'notable' : 'routine';
     let line = summary;
+    // Read before untrusted content is wrapped; nothing is read from a quarantined result.
+    let facts = this.factsOf(call, body);
     if (spec.untrusted) {
       const verdict = await this.detector.scan(JSON.stringify(body));
       if (verdict.flagged) {
@@ -180,6 +187,7 @@ export class ToolGateway {
         };
         severity = 'warning';
         line = `${summary} (quarantined: ${verdict.reason})`;
+        facts = [];
         await this.deps.onInjection?.(call, verdict.reason ?? 'suspected injection');
       } else {
         body = wrapUntrusted(call.server, call.op, body);
@@ -187,8 +195,32 @@ export class ToolGateway {
     }
 
     await this.deps.idempotency.put(key, { code: result.code, body, summary: line });
-    await this.record(call, requestHash, result.code, started, line, severity);
+    await this.record(call, requestHash, result.code, started, line, severity, facts);
     return { ok: true, code: result.code, body, replayed: false };
+  }
+
+  /** The facts a result carries, valid ones only; never fails the call. */
+  private factsOf(call: ToolCall, body: unknown): NewEvent[] {
+    if (!this.deps.facts) return [];
+    let drafts: FactDraft[];
+    try {
+      drafts = this.deps.facts(call, body);
+    } catch {
+      return [];
+    }
+    return drafts.flatMap((d) => {
+      const f = FactDraft.safeParse(d);
+      if (!f.success) return [];
+      return [
+        {
+          type: 'fact.published' as const,
+          actor: { kind: 'agent' as const, id: call.role },
+          subject: { kind: 'task' as const, id: call.taskId },
+          severity: 'routine' as const,
+          data: { ...f.data, taskId: call.taskId, by: call.role, source: 'tool' as const },
+        },
+      ];
+    });
   }
 
   private async authorize(
@@ -261,6 +293,7 @@ export class ToolGateway {
     started: number,
     summary: string,
     severity: Severity,
+    after: NewEvent[] = [],
   ) {
     const event: NewEvent = {
       type: 'step.recorded',
@@ -280,7 +313,7 @@ export class ToolGateway {
         requestHash,
       },
     };
-    await this.deps.store.append(call.projectId, [event]);
+    await this.deps.store.append(call.projectId, [event, ...after]);
   }
 }
 

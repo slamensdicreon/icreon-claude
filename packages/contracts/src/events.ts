@@ -357,6 +357,25 @@ export type SettingKey = z.infer<typeof SettingKey>;
 // Event union
 // ---------------------------------------------------------------------------
 
+/**
+ * Something a task made that later tasks look up instead of asking for: a rendering's id, a
+ * template's path, a page's route. Recorded from tool results (an authoring create) or published
+ * by an agent (a query name, an environment variable).
+ */
+export const FactDraft = z.object({
+  /** What it is: rendering, template, page, datasource, media, or what an agent names. */
+  kind: z
+    .string()
+    .min(1)
+    .max(40)
+    .regex(/^[a-z][a-z0-9-]*$/, 'lower-case kind'),
+  /** How others find it: a name, a route, a Blueprint item key. */
+  key: z.string().min(1).max(200),
+  value: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  summary: z.string().max(300).default(''),
+});
+export type FactDraft = z.input<typeof FactDraft>;
+
 const ev = <T extends string, D extends z.ZodType>(type: T, data: D) =>
   z.object({ type: z.literal(type), data });
 
@@ -718,6 +737,16 @@ export const EventBody = z.discriminatedUnion('type', [
   ev(
     'conventions.recorded',
     z.object({ entries: z.array(z.object({ key: z.string(), value: z.string() })) }),
+  ),
+  /** A fact recorded: from a tool's result, or published by the agent. */
+  ev(
+    'fact.published',
+    FactDraft.extend({
+      taskId: z.string().nullable(),
+      /** The agent (its role) whose call or publish recorded it. */
+      by: z.string(),
+      source: z.enum(['tool', 'agent']).default('tool'),
+    }),
   ),
   ev(
     'tool.health',

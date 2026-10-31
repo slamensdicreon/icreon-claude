@@ -223,6 +223,9 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
     served('sitecore-authoring', ['item.read', 'item.create', 'item.update']),
     served('blackboard', ['read']),
     served('artifacts', ['read', 'write']),
+    // In-process, like the blackboard: every stack has them.
+    served('facts', ['read', 'publish']),
+    served('acceptance', ['check']),
   ]);
   expect(missing.get('experience-enabler') ?? []).toEqual([]);
   const enabler = (templateId: string) =>

@@ -2580,3 +2580,37 @@
 .floor-hero .replay {
   border-top: 0;
 }
+
+/* Project facts: a value's fields one a line; long Sitecore paths wrap inside the column. */
+.fact-value {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+}
+.fact-value div {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px;
+}
+.fact-value dt {
+  flex: none;
+  color: var(--web-fg-2);
+  font-size: 12px;
+}
+.fact-value dd {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.facts-table td:first-child {
+  width: 34%;
+}
+.fact-key {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.facts-table + .dash-filters {
+  margin-top: 20px;
+}

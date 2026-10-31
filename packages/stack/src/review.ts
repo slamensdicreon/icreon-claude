@@ -570,8 +570,125 @@ export async function routeFailures(a: {
   };
 }
 
-export function withReview(base: Activities, deps: ReviewDeps): Activities {
+/** One automated check's result on a task. */
+export interface CheckRow {
+  id: string;
+  status: CheckResult['status'];
+  detail: string;
+}
+
+type CheckDeps = Pick<ReviewDeps, 'checks' | 'library' | 'fetch' | 'platform'>;
+
+/**
+ * A task's acceptance checks (its `validator:` entries), run the way the Lead's review runs them:
+ * the shared checks first, then the platform's. Records nothing; a check that can't run is pending.
+ */
+export async function runChecks(
+  deps: CheckDeps,
+  req: {
+    projectId: string;
+    state: ProjectState;
+    steps: StepEvent[];
+    task: { taskId: string; collection: string | null; itemKeys: string[] };
+    acceptance: string[];
+  },
+): Promise<CheckRow[]> {
   const checks = deps.checks ?? CHECKS;
+  const { state, task } = req;
+  const ctx: CheckContext = {
+    projectId: req.projectId,
+    state,
+    library: deps.library,
+    fetch: deps.fetch ?? ((...a) => fetch(...a)),
+    steps: req.steps,
+    taskId: task.taskId,
+    read: (server, op, args) =>
+      deps.platform
+        ? deps.platform.read(req.projectId, server, op, args)
+        : Promise.resolve({ code: 404, body: { error: 'Not connected' } }),
+  };
+  const platform = deps.platform;
+  const platformCheck = async (check: PlatformCheck): Promise<CheckResult> => {
+    if (!state.intake || !platform) return { status: 'pending', detail: 'No platform to check.' };
+    let blueprint: PlatformCheckContext['blueprint'] = null;
+    try {
+      const doc = await deps.library.read(req.projectId, 'blueprint');
+      blueprint = doc ? JSON.parse(doc.content) : null;
+    } catch {
+      /* unreadable: the check sees none */
+    }
+    return check({
+      projectId: req.projectId,
+      target: state.intake.target,
+      scope: { collection: task.collection, items: task.itemKeys },
+      blueprint,
+      read: (server, op, args) => platform.read(req.projectId, server, op, args),
+      credential: (id) => platform.credential(req.projectId, id),
+      compareScreens:
+        platform.compareScreens && ((page) => platform.compareScreens!(req.projectId, page)),
+      document: async (id) => {
+        const d = await deps.library.read(req.projectId, id);
+        try {
+          return d ? (JSON.parse(d.content) as unknown) : null;
+        } catch {
+          return null;
+        }
+      },
+    });
+  };
+  const results: CheckRow[] = [];
+  for (const a of req.acceptance) {
+    const id = a.startsWith('validator:') ? a.slice('validator:'.length) : null;
+    if (!id) continue;
+    const check = checks[id];
+    const fromPlatform = platform?.checks?.[id];
+    let r: CheckResult;
+    try {
+      r = check
+        ? await check(ctx)
+        : fromPlatform
+          ? await platformCheck(fromPlatform)
+          : { status: 'pending', detail: 'No automated check exists for this yet.' };
+    } catch (err) {
+      r = { status: 'pending', detail: `The check could not run: ${(err as Error).message}` };
+    }
+    results.push({ id, ...r });
+  }
+  return results;
+}
+
+/**
+ * The checks the Lead's review will run on a task, for the agent doing it to run first (its
+ * acceptance tool). Nothing is recorded; null when the task isn't known here.
+ */
+export function selfCheck(
+  deps: CheckDeps & Pick<ReviewDeps, 'store' | 'projections' | 'playbook'>,
+) {
+  const templates = new Map(deps.playbook.plan.templates.map((t) => [t.id, t]));
+  return async (
+    projectId: string,
+    task: {
+      taskId: string;
+      templateId: string;
+      acceptance: string[];
+      collection: string | null;
+      itemKeys: string[];
+    },
+  ): Promise<CheckRow[]> => {
+    await deps.projections.catchUp(projectId);
+    const state = deps.projections.get(projectId);
+    if (!state) return [];
+    const steps = (await deps.store.read(projectId)).filter(
+      (e): e is StepEvent => e.type === 'step.recorded' && e.data.taskId === task.taskId,
+    );
+    const acceptance = [
+      ...new Set([...task.acceptance, ...(templates.get(task.templateId)?.acceptance ?? [])]),
+    ];
+    return runChecks(deps, { projectId, state, steps, task, acceptance });
+  };
+}
+
+export function withReview(base: Activities, deps: ReviewDeps): Activities {
   const roles = new Map(deps.playbook.roles.map((r) => [r.role, r]));
   // A project's plan is compiled when it starts. Checks the playbook adds to a task template later
   // still apply to that project's tasks: a task is judged on the union.
@@ -598,69 +715,15 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
       const steps = log.filter(
         (e): e is StepEvent => e.type === 'step.recorded' && e.data.taskId === task.taskId,
       );
-      const ctx: CheckContext = {
+      // 1. Automated checks.
+      const acceptance = acceptanceOf(task);
+      const results = await runChecks(deps, {
         projectId: req.projectId,
         state,
-        library: deps.library,
-        fetch: deps.fetch ?? ((...a) => fetch(...a)),
         steps,
-        taskId: task.taskId,
-        read: (server, op, args) =>
-          deps.platform
-            ? deps.platform.read(req.projectId, server, op, args)
-            : Promise.resolve({ code: 404, body: { error: 'Not connected' } }),
-      };
-      const platform = deps.platform;
-      const platformCheck = async (check: PlatformCheck): Promise<CheckResult> => {
-        if (!state.intake || !platform)
-          return { status: 'pending', detail: 'No platform to check.' };
-        let blueprint: PlatformCheckContext['blueprint'] = null;
-        try {
-          const doc = await deps.library.read(req.projectId, 'blueprint');
-          blueprint = doc ? JSON.parse(doc.content) : null;
-        } catch {
-          /* unreadable: the check sees none */
-        }
-        return check({
-          projectId: req.projectId,
-          target: state.intake.target,
-          scope: { collection: task.collection, items: task.itemKeys },
-          blueprint,
-          read: (server, op, args) => platform.read(req.projectId, server, op, args),
-          credential: (id) => platform.credential(req.projectId, id),
-          compareScreens:
-            platform.compareScreens && ((page) => platform.compareScreens!(req.projectId, page)),
-          document: async (id) => {
-            const d = await deps.library.read(req.projectId, id);
-            try {
-              return d ? (JSON.parse(d.content) as unknown) : null;
-            } catch {
-              return null;
-            }
-          },
-        });
-      };
-
-      // 1. Automated checks.
-      const results: { id: string; status: CheckResult['status']; detail: string }[] = [];
-      const acceptance = acceptanceOf(task);
-      for (const a of acceptance) {
-        const id = a.startsWith('validator:') ? a.slice('validator:'.length) : null;
-        if (!id) continue;
-        const check = checks[id];
-        const fromPlatform = platform?.checks?.[id];
-        let r: CheckResult;
-        try {
-          r = check
-            ? await check(ctx)
-            : fromPlatform
-              ? await platformCheck(fromPlatform)
-              : { status: 'pending', detail: 'No automated check exists for this yet.' };
-        } catch (err) {
-          r = { status: 'pending', detail: `The check could not run: ${(err as Error).message}` };
-        }
-        results.push({ id, ...r });
-      }
+        task,
+        acceptance,
+      });
       const events: NewEvent[] = results.map((r) => ({
         type: 'step.recorded',
         actor: { kind: 'agent', id: reviewerId },

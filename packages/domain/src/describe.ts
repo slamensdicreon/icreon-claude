@@ -125,6 +125,8 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
       return `Setting ${e.data.key} changed`;
     case 'conventions.recorded':
       return `Conventions recorded (${e.data.entries.length})`;
+    case 'fact.published':
+      return e.data.summary || `${capitalize(e.data.kind)} ${e.data.key} recorded`;
     case 'tool.health':
       return `${e.data.server} ${e.data.status}`;
   }

@@ -26,7 +26,8 @@ import {
 } from '@lw/orchestrator';
 import { Blueprint, releaseApprovalId, type PlannedTask } from '@lw/plan';
 import type { PlatformCheck, PlatformPack, ScreenComparison, ScreenPair } from '@lw/platforms';
-import { withReview } from './review';
+import { selfCheck, withReview } from './review';
+import { factsBrief } from './facts';
 import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
@@ -42,10 +43,12 @@ import {
 } from '@lw/tool-gateway';
 import { ValidatorsToolServer } from '@lw/tool-validators';
 import {
+  AcceptanceToolServer,
   ArtifactLibrary,
   ArtifactsToolServer,
   BlackboardToolServer,
   DecisionLogToolServer,
+  FactsToolServer,
 } from '@lw/tool-workspace';
 
 export interface StackOptions {
@@ -264,6 +267,24 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       },
     });
   };
+  // How the platform's checks reach the project's systems: for the Lead's review and self-checks.
+  const platformAccess = {
+    checks: opts.platform.checks,
+    read: readOnly,
+    credential,
+    compareScreens,
+  };
+  // The task each agent session is running, so its self-check knows what to run.
+  const running = new Map<string, PlannedTask>();
+  const selfChecks = new Map<string, number>();
+  const SELF_CHECKS = 3;
+  const runChecks = selfCheck({
+    store: opts.store,
+    projections: opts.projections,
+    playbook: opts.playbook,
+    library,
+    platform: platformAccess,
+  });
   const STRUCTURE = ['site', 'templates', 'renderings'] as const;
   const servers: ToolServer[] = [
     new BrowserToolServer({
@@ -305,6 +326,40 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     new ArtifactsToolServer(library),
     new BlackboardToolServer(library),
     new DecisionLogToolServer((id) => opts.projections.get(id)?.decisions ?? []),
+    new FactsToolServer({
+      facts: async (projectId) => {
+        await opts.projections.catchUp(projectId);
+        return Object.values(opts.projections.get(projectId)?.facts ?? {});
+      },
+      publish: async (projectId, fact, ctx) => {
+        await opts.store.append(projectId, [
+          {
+            type: 'fact.published',
+            actor: { kind: 'agent', id: ctx.role },
+            subject: { kind: 'task', id: ctx.taskId },
+            severity: 'routine',
+            data: { ...fact, taskId: ctx.taskId, by: ctx.role, source: 'agent' },
+          },
+        ]);
+      },
+    }),
+    new AcceptanceToolServer(async (projectId, taskId) => {
+      const key = `${projectId}:${taskId}`;
+      const task = running.get(key);
+      if (!task) return null;
+      // Checks can take screenshots and a model's look: a few runs per session, then the review.
+      const n = (selfChecks.get(key) ?? 0) + 1;
+      selfChecks.set(key, n);
+      if (n > SELF_CHECKS)
+        return [
+          {
+            id: 'self-check',
+            status: 'pending',
+            detail: `Already checked ${SELF_CHECKS} times this session; submit, and your Lead's review runs the checks.`,
+          },
+        ];
+      return runChecks(projectId, task);
+    }),
     ...(opts.servers ?? []),
   ];
   // One writer per item; a task's locks go when its result is accepted.
@@ -330,6 +385,11 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     },
     limiter: new TokenBucketLimiter(10, 5),
     store: opts.store,
+    // What a create made (a rendering's ID, a page's item), for later tasks to look up.
+    facts: (call, body) => {
+      const i = opts.projections.get(call.projectId)?.intake;
+      return i && opts.platform.facts ? opts.platform.facts(call, body, i.target) : [];
+    },
   });
 
   const { blueprint: fixture, outputs } = await loadFixtures(opts.playbookDir);
@@ -485,6 +545,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           context: projectContext(opts.projections, opts.platform),
           board: (projectId, task) => teamBoard(opts.projections, projectId, task.taskId),
           items: (projectId, task) => blueprintEntries(library, projectId, task),
+          facts: (projectId, task) => factsBrief(opts.projections, projectId, task),
           prompt: (role) => prompts[role.role] ?? null,
           // The source repository's tools, on a project built from its live site alone.
           unavailable: async (projectId) => {
@@ -500,9 +561,14 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   const sessions: Activities = {
     ...agents,
     async runAgent(req) {
+      const key = `${req.projectId}:${req.task.taskId}`;
+      running.set(key, req.task);
+      selfChecks.delete(key);
       try {
         return await agents.runAgent(req);
       } finally {
+        running.delete(key);
+        selfChecks.delete(key);
         await locks.release(req.projectId, req.task.taskId);
       }
     },
@@ -521,7 +587,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       return !spec ? null : spec.releases ? 'release' : spec.mutates ? 'write' : 'read';
     },
     onAccepted: (projectId, taskId) => locks.release(projectId, taskId),
-    platform: { checks: opts.platform.checks, read: readOnly, credential, compareScreens },
+    platform: platformAccess,
   });
   const activities = withLiveGuard(reviewed, {
     store: opts.store,

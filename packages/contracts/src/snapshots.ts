@@ -946,3 +946,53 @@ export const CypherConversations = z.object({
   conversations: z.array(CypherConversationSummary),
 });
 export type CypherConversations = z.infer<typeof CypherConversations>;
+
+const FactScalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+/** One recorded fact as it stands: the latest value, who recorded it, and what it replaced. */
+export const FactView = z.object({
+  kind: z.string(),
+  key: z.string(),
+  value: z.record(z.string(), FactScalar),
+  summary: z.string(),
+  taskId: z.string().nullable(),
+  by: z.string(),
+  source: z.enum(['tool', 'agent']),
+  at: z.iso.datetime(),
+  /** 1 when first recorded; each different value counts up. */
+  version: z.number().int().positive(),
+  /** The value before the latest change, when it changed. */
+  previous: z
+    .object({
+      value: z.record(z.string(), FactScalar),
+      at: z.iso.datetime(),
+      taskId: z.string().nullable(),
+      by: z.string(),
+    })
+    .nullable(),
+});
+export type FactView = z.infer<typeof FactView>;
+
+/**
+ * A fact whose value changed after other tasks finished on the old one (a rendering re-created
+ * with a new ID): those tasks may still point at the old value.
+ */
+export const FactChange = z.object({
+  kind: z.string(),
+  key: z.string(),
+  from: z.record(z.string(), FactScalar),
+  to: z.record(z.string(), FactScalar),
+  at: z.iso.datetime(),
+  by: z.string(),
+  /** Finished tasks that came after the old value and build on its task or its item. */
+  tasks: z.array(z.object({ taskId: z.string(), title: z.string() })),
+});
+export type FactChange = z.infer<typeof FactChange>;
+
+/** GET /projects/:id/facts — newest first, and the changes that may have left tasks behind. */
+export const FactsSnapshot = z.object({
+  seq: Seq,
+  facts: z.array(FactView),
+  changed: z.array(FactChange),
+});
+export type FactsSnapshot = z.infer<typeof FactsSnapshot>;
