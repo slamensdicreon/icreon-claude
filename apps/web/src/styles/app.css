@@ -2570,3 +2570,12 @@
 .app.present .floor {
   height: calc(100vh - 150px);
 }
+/* Mission Control's presentation centrepiece: the live floor above the preview panel. */
+.app.present .floor.floor-hero {
+  height: min(62vh, 760px);
+  min-height: 480px;
+  margin-bottom: 32px;
+}
+.floor-hero .replay {
+  border-top: 0;
+}

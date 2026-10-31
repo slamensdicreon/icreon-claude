@@ -455,7 +455,11 @@ function stationSeat(st: Station, layout: Layout, who: string): Point {
   const spread = ((hash(who) % 5) - 2) * 15;
   if (Math.abs(dx) > Math.abs(dy))
     return { x: st.pos.x + Math.sign(dx) * 46, y: st.pos.y + spread };
-  return { x: st.pos.x + (Math.sign(dx) || 1) * 42, y: st.pos.y + Math.min(spread, 18) };
+  // Beside and a little above, so a Lead's name clears the station's label.
+  return {
+    x: st.pos.x + (Math.sign(dx) || 1) * (44 + Math.abs(spread)),
+    y: st.pos.y - 22 + (spread < 0 ? -10 : 0),
+  };
 }
 const LEAD_SEAT = 38;
 const CYPHER_SEAT = 46;
@@ -622,10 +626,10 @@ export function applyTeam(
 }
 
 const SPEED = 420; // px per second, cap
-const TRAIL = 24;
+export const TRAIL = 24;
 
-/** Advances the motion by `dt` seconds at time `now` (ms). */
-export function tick(state: SceneState, dt: number, now: number): void {
+/** Advances the motion by `dt` seconds at time `now` (ms); `trail` points are kept per figure. */
+export function tick(state: SceneState, dt: number, now: number, trail = TRAIL): void {
   for (const f of state.figures.values()) {
     const trip = f.trips[0];
     const target = trip ? trip.to : f.home;
@@ -665,7 +669,7 @@ export function tick(state: SceneState, dt: number, now: number): void {
       const last = f.trail.at(-1);
       if (!last || Math.hypot(last.x - f.pos.x, last.y - f.pos.y) > 4) {
         f.trail.push({ ...f.pos });
-        if (f.trail.length > TRAIL) f.trail.shift();
+        while (f.trail.length > trail) f.trail.shift();
       } else if (f.trail.length) {
         // Standing still: the trail fades away.
         f.trail.shift();

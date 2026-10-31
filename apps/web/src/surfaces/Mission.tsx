@@ -1,8 +1,9 @@
-import type { PreviewSnapshot, Scorecard, SettingsSnapshot } from '@lw/contracts';
+import type { ActivityPage, PreviewSnapshot, Scorecard, SettingsSnapshot } from '@lw/contracts';
 import { post } from '../lib/api';
 import { age, clock } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { TYPE_LABEL } from '../parts/Card';
+import { Floor } from '../scene/Floor';
 import { useApp, useMission, useNow, useProjectResource, useRoster, useTz } from '../state';
 
 const clean = (op: string) =>
@@ -44,9 +45,13 @@ export function Mission() {
         </div>
       )}
       {layout.present ? (
-        <h1 className="present-title">
-          {p.target?.site ?? p.name} on SitecoreAI, phase {lead?.number ?? 0} of {phases.length - 1}
-        </h1>
+        <>
+          <h1 className="present-title">
+            {p.target?.site ?? p.name} on SitecoreAI, phase {lead?.number ?? 0} of{' '}
+            {phases.length - 1}
+          </h1>
+          <FloorHero />
+        </>
       ) : (
         <div className="page-head">
           <div>
@@ -279,6 +284,12 @@ export function Mission() {
       </div>
     </>
   );
+}
+
+/** The floor, live, as the presentation's centrepiece; it reads the same rows the Activity list does. */
+function FloorHero() {
+  const act = useProjectResource<ActivityPage>('/activity?view=log&limit=150').data;
+  return <Floor items={act?.items ?? null} hero />;
 }
 
 /** A project the wizard recorded: what it will work on, its credentials, and Start. */

@@ -19,6 +19,7 @@ import {
   WORKSTREAM_LABEL,
   WORKSTREAMS,
   type Beat,
+  TRAIL,
   type SceneState,
   type TaskLookup,
   type Workstream,
@@ -116,7 +117,10 @@ function useTheme(): Theme {
 
 type Mode = 'live' | 'replay';
 
-export function Floor({ items }: { items: ActivityItem[] | null }) {
+/** Trail length: a short wake normally, a long one on a presentation screen. */
+const TRAIL_PRESENT = 72;
+
+export function Floor({ items, hero = false }: { items: ActivityItem[] | null; hero?: boolean }) {
   const { inspect, layout: appLayout, projectId } = useApp();
   const team = useTeam().data;
   const plan = useProjectResource<PlanSnapshot>('/plan').data;
@@ -333,7 +337,7 @@ export function Floor({ items }: { items: ActivityItem[] | null }) {
         // A backlog drains faster than a trickle.
         nextBeatAt = now + (pending.current.length > 8 ? BEAT_GAP_MS / 3 : BEAT_GAP_MS);
       }
-      tick(s, dt, now);
+      tick(s, dt, now, present ? TRAIL_PRESENT : TRAIL);
       draw(canvas, s, theme, now, present, hoverRef.current);
     };
     raf = requestAnimationFrame(loop);
@@ -350,7 +354,9 @@ export function Floor({ items }: { items: ActivityItem[] | null }) {
     let best: { id: string; d: number } | null = null;
     for (const [id, f] of s.figures) {
       const d = Math.hypot(f.pos.x - x, f.pos.y - y);
-      const radius = f.spec.tier === 'chief_of_staff' ? 24 : f.spec.tier === 'lead' ? 18 : 15;
+      const radius =
+        (f.spec.tier === 'chief_of_staff' ? 24 : f.spec.tier === 'lead' ? 18 : 15) *
+        (present ? 1.18 : 1);
       if (d <= radius + 4 && (!best || d < best.d)) best = { id, d };
     }
     return best?.id ?? null;
@@ -375,7 +381,7 @@ export function Floor({ items }: { items: ActivityItem[] | null }) {
             ? 'Live'
             : 'Idle';
   return (
-    <div className="floor">
+    <div className={hero ? 'floor floor-hero' : 'floor'}>
       <div className="floor-canvas" ref={wrapRef}>
         <canvas
           ref={canvasRef}
@@ -659,6 +665,7 @@ function drawStrip(canvas: HTMLCanvasElement, r: Replay, d: Density, th: Theme) 
   ctx.font = `600 9px ${th.font}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
+  let lastLabelX = -Infinity;
   for (const p of d.phases) {
     const x = Math.round(p.at * W) + 0.5;
     ctx.strokeStyle = th.fg3;
@@ -669,7 +676,10 @@ function drawStrip(canvas: HTMLCanvasElement, r: Replay, d: Density, th: Theme) 
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = th.fg3;
-    ctx.fillText(`P${p.phase}`, x + 3, 1);
+    // Two phases starting close together: the second label steps down a line.
+    const crowded = x - lastLabelX < 22;
+    ctx.fillText(`P${p.phase}`, x + 3, crowded ? 11 : 1);
+    lastLabelX = crowded ? -Infinity : x;
   }
   // Cards raised.
   for (const at of d.cards) {
@@ -768,6 +778,8 @@ function draw(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const dim = s.paused ? 0.55 : 1;
+  // On a presentation screen everything that moves is a little larger and brighter.
+  const k = present ? 1.18 : 1;
 
   // Islands.
   for (const isl of s.layout.islands) {
@@ -795,6 +807,12 @@ function draw(
   // Stations, the Workbench and the live site.
   for (const st of s.layout.stations) {
     const busy = [...s.figures.values()].some((f) => f.at === st.id);
+    if (busy && present) {
+      ctx.fillStyle = alpha(th.accent, 0.1);
+      ctx.beginPath();
+      ctx.arc(st.pos.x, st.pos.y, 34, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillStyle = busy ? alpha(th.accent, 0.14) : th.surface2;
     ctx.strokeStyle = busy ? th.accent : th.borderStrong;
     roundRect(ctx, st.pos.x - 22, st.pos.y - 14, 44, 28, 8);
@@ -825,9 +843,11 @@ function draw(
           : f.spec.workstream
             ? th.ws[f.spec.workstream]
             : th.fg3;
+      ctx.lineCap = 'round';
       for (let i = 1; i < f.trail.length; i++) {
-        ctx.strokeStyle = alpha(col, (i / f.trail.length) * 0.35);
-        ctx.lineWidth = 2;
+        const t = i / f.trail.length;
+        ctx.strokeStyle = alpha(col, t * 0.45);
+        ctx.lineWidth = 1 + t * 3;
         ctx.beginPath();
         ctx.moveTo(f.trail[i - 1]!.x, f.trail[i - 1]!.y);
         ctx.lineTo(f.trail[i]!.x, f.trail[i]!.y);
@@ -849,23 +869,28 @@ function draw(
             : th.accent;
     ctx.fillStyle = alpha(col, 0.22);
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 9, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y, 9 * k, 0, Math.PI * 2);
     ctx.fill();
+    if (present) {
+      ctx.shadowColor = alpha(col, 0.7);
+      ctx.shadowBlur = 14;
+    }
     ctx.fillStyle = col;
     if (p.kind === 'doc') {
-      roundRect(ctx, pos.x - 4, pos.y - 5, 8, 10, 1.5);
+      roundRect(ctx, pos.x - 4 * k, pos.y - 5 * k, 8 * k, 10 * k, 1.5);
       ctx.fill();
     } else {
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, 4 * k, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.shadowBlur = 0;
   }
 
   // Figures: specialists, then Leads, then Cypher on top.
   const order = [...s.figures.values()].sort((a, b) => rank(a.spec.tier) - rank(b.spec.tier));
   for (const f of order) {
-    const r = f.spec.tier === 'chief_of_staff' ? 22 : f.spec.tier === 'lead' ? 16 : 13;
+    const r = (f.spec.tier === 'chief_of_staff' ? 22 : f.spec.tier === 'lead' ? 16 : 13) * k;
     const col =
       f.spec.tier === 'chief_of_staff'
         ? th.accent
@@ -922,12 +947,12 @@ function draw(
       ctx.stroke();
     }
     ctx.fillStyle = f.spec.tier === 'lead' ? col : th.onAccent;
-    ctx.font = `600 ${f.spec.tier === 'chief_of_staff' ? 13 : 10.5}px ${th.font}`;
+    ctx.font = `600 ${(f.spec.tier === 'chief_of_staff' ? 13 : 10.5) * k}px ${th.font}`;
     ctx.fillText(f.spec.initials, f.pos.x, f.pos.y + 0.5);
     // Names: Cypher and Leads always, others on hover.
     if (f.spec.tier !== 'specialist' || hover === f.spec.id) {
       ctx.fillStyle = th.fg2;
-      ctx.font = `11px ${th.font}`;
+      ctx.font = `${11 * k}px ${th.font}`;
       const label = f.spec.tier === 'chief_of_staff' ? 'Cypher' : f.spec.name;
       ctx.fillText(label, f.pos.x, f.pos.y + r + 11);
       if (hover === f.spec.id && f.spec.tier !== 'chief_of_staff') {
