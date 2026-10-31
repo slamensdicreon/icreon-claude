@@ -609,8 +609,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         .filter((r) => r.status !== 'retired')
         .flatMap((r) => r.sources.map((x) => x.escalationId)),
     );
+    // A card already behind a rule is left out; the rest of its group still counts.
     const worth = [...groups.values()]
-      .filter((g) => g.cards.length >= 2 && !g.cards.some((c) => covered.has(c.escalationId)))
+      .map((g) => ({ ...g, cards: g.cards.filter((c) => !covered.has(c.escalationId)) }))
+      .filter((g) => g.cards.length >= 2)
       .sort((a, b) => b.cards.length - a.cards.length)
       .slice(0, 20);
     const created: RuleViewT[] = [];

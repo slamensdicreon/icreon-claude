@@ -87,6 +87,44 @@ scoped to the playbook. Nothing applies until approved.
 Director's part: approve or reject the proposals (M3.7). About twenty minutes, from the table in
 4.2.
 
+### Result (2026-10-31)
+
+The harvest ran on all three projects: 21 proposals (Ansco 10, Lambert 6, Star 5), each a
+`playbook` rule for `sitecoreai-migration`. Fifteen were reworded as a second version (general,
+no project names, no tool names that belong to one project); three were retired as duplicates or
+contradictions; three are left as proposed with a recommendation to reject. One fix to the
+harvest itself: a card already behind a rule used to disqualify its whole group, which hid the
+largest group of all (Lambert's forty "accept the current output" answers, one of which the
+Director had already turned into R-1). Now only the covered card is left out.
+
+| Rule | Category | Cards | Recommendation | What it says |
+| --- | --- | --- | --- | --- |
+| R-4 | retry | 55 (Lambert) | Approve | A page rejected while a site-wide defect was open: once it is fixed, retry and fix only what belongs to the page |
+| R-5 | access | 14 (Lambert) | Approve | No source repository: never wait on GitHub; take copy and structure from a browser snapshot and the inventories |
+| R-6 | ownership | 5 (Lambert) | Approve | Prerequisite fix done: restore the held component, snapshot to confirm, remove it again if it fails |
+| R-7 | ownership | 4 (Lambert) | Approve | A component renders nothing: check its datasource and parameters, report, never substitute an asset |
+| R-8 | retry | 3 (Lambert) | Approve | Upstream integration sent back: wait for its fix, fill content meanwhile |
+| R-9 | tool | 2 (Lambert) | Approve | Build repository access fixed: re-verify, retry once |
+| R-10 | media | 20 (Ansco) | Approve | Access denied and the Director says it is fixed: re-verify, retry once, ask again only on a second refusal |
+| R-11 | retry | 14 (Ansco) | Approve | Rejected for incompleteness with concrete fixes listed: retry and do each |
+| R-13 | other | 4 (Ansco) | Approve | Retries lost to a timeout: a run that never finished is not a rejection |
+| R-14 | other | 12 (Star) | Approve | Retries lost to the model account's credit: retry once restored, never accept the empty output |
+| R-15 | retry | 4 (Ansco) | Approve | Upload blocked on a missing source URL or alt text: look again, never guess |
+| R-16 | retry | 10 (Star) | Approve | Page blocked on a component fix its owner owes: look again, don't compensate in content or code |
+| R-19 | retry | 9 (Star) | Approve | Page blocked only by missing content while code fixes run separately: fill the content now |
+| R-22 | retry | 2 (Ansco) | Approve | Validation blocked on a deliberate datasource or template choice: accept the registration, log the follow-up |
+| R-23 | media | 2 (Ansco) | Approve | Page blocked on media not yet uploaded: migrate the copy now, leave the files to their upload task |
+| R-12 | retry | 20 (Star) | Reject | Deploy rejected for an unrecorded production URL; moot since the hosting tool records it (`e39ab59`) |
+| R-17 | other | 2 (Ansco) | Reject | "Budget used up: retry": budget is the Director's, not a rule |
+| R-24 | other | 2 (Ansco) | Reject | "Workflow failed: accept the output": circumstance, not a rule |
+| R-18, R-20 | tool | 2 + 2 (Ansco) | Retired | Not-connected QA tasks, answered both ways; moot once those tasks become Director checklist cards (0.7.0) |
+| R-21 | content | 5 (Star) | Retired | Duplicate of R-14 |
+
+The Lead-loop rule ("every check passes and the Lead's objection is not a failed check or
+missing work: accept") is not among them yet: with the fix above it will be drafted from
+Lambert's thirty-nine remaining accept cards on the next harvest, and section 1 gives the card
+the evidence the rule needs first.
+
 ## 5. What the second and third sites taught (M4.3, M4.4)
 
 | # | What | Where | Proof |

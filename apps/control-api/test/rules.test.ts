@@ -267,4 +267,34 @@ it('harvests a project’s answers into proposed rules, one per cause, once', as
   expect(first.proposed[0]!.sources.map((x) => x.escalationId)).toEqual(['x1', 'x2']);
   // Run again: the cause already has a rule.
   expect((await harvest()).proposed).toEqual([]);
+  // A card already behind a rule (the Director's, or an earlier harvest) is left out; the rest of
+  // its group still counts.
+  await store.append('p1', [
+    task('upload-d', 'd.png'),
+    task('upload-e', 'e.png'),
+    task('upload-f', 'f.png'),
+    ...(answered('x4', 'upload-d', 'd.png') as never[]),
+    ...(answered('x5', 'upload-e', 'e.png') as never[]),
+    ...(answered('x6', 'upload-f', 'f.png') as never[]),
+  ]);
+  await rulesStore.create({
+    when: 'the source refuses d.png',
+    then: 'skip it',
+    category: 'media',
+    scope: { kind: 'project', id: 'p1' },
+    roles: [],
+    sources: [
+      {
+        projectId: 'p1',
+        escalationId: 'x4',
+        title: 'Access denied: Upload d.png',
+        answer: 'Skip it and log the gap',
+      },
+    ],
+    author: 'director',
+    status: 'active',
+  });
+  const third = await harvest();
+  expect(third.proposed).toHaveLength(1);
+  expect(third.proposed[0]!.sources.map((x) => x.escalationId)).toEqual(['x5', 'x6']);
 });
