@@ -11,6 +11,8 @@ import {
   type ScreenVerdict,
   type Triage,
   type TriageInput,
+  type AttributeInput,
+  type Attribution,
 } from '@lw/agent-runtime';
 import { DECISION_CATEGORY_LABEL } from '@lw/contracts';
 import { autonomyFor } from '@lw/domain';
@@ -64,6 +66,8 @@ export interface StackOptions {
   directives?: ((input: DirectiveInput) => Promise<DirectiveReading>) | null;
   /** A Lead's review of each finished task on live projects (Claude); without it, checks only. */
   review?: ((input: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null;
+  /** Sorts failed checks into a task's own work and its components' (the Lead's model). */
+  attribute?: ((input: AttributeInput) => Promise<Attribution>) | null;
   /**
    * A Lead's triage of an agent's question on live projects (Claude), for the categories the
    * project lets a Lead decide or shadow; without it, every question reaches the Director.
@@ -511,6 +515,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     playbook: opts.playbook,
     isLive,
     review: opts.review ?? null,
+    attribute: opts.attribute ?? null,
     effect: (server, op) => {
       const spec = servers.find((x) => x.name === server)?.catalog[op];
       return !spec ? null : spec.releases ? 'release' : spec.mutates ? 'write' : 'read';

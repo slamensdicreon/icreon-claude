@@ -145,6 +145,23 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** How often agents sent each finished task back; past the limit, the Director decides. */
   const sentBack: Record<string, number> = {};
   const MAX_SEND_BACKS = 2;
+  /**
+   * Tasks sent back together run in plan order: a component's integration waits for its port to
+   * be redone, or it would merge the old branch.
+   */
+  const holdUntil = new Map<string, string[]>();
+  /** Tasks to check again without running their agent: the review sent their failure elsewhere. */
+  const revalidate = new Set<string>();
+  /** Tasks redone after a review sent them back, until they finish again. */
+  const redoing = new Set<string>();
+  /**
+   * Finished tasks counted in order, and when each redone task finished and each task was last
+   * dispatched, on that count: a check made before a fix landed is stale, not a new failure. Not
+   * carried across continue-as-new: nothing is in flight then, so every later check is fresh.
+   */
+  let finishedCount = 0;
+  const redoneAt: Record<string, number> = {};
+  const dispatchedAt: Record<string, number> = {};
   /** Tasks parked until engineering adds a capability their agent's tools lack, and which. */
   const capabilityWait = new Map<string, string>();
   /** Lead answers in a row per task, and what they were; a Director answer on the task resets them. */
@@ -760,11 +777,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             from,
             attempt: attempts[t.taskId] ?? 0,
             instructions: instructions[t.taskId] ?? null,
+            ...(revalidate.has(t.taskId) ? { revalidate: true } : {}),
           })),
         },
       ],
     });
     for (const t of batch) {
+      revalidate.delete(t.taskId);
+      dispatchedAt[t.taskId] = finishedCount;
       children.set(t.taskId, handle);
       // The child owns these tasks' transitions now; marking them in flight means they are
       // never dispatched twice.
@@ -792,6 +812,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   }
 
   async function onOutcome(t: PlannedTask, outcome: TaskOutcome) {
+    if (outcome.outcome === 'done') {
+      finishedCount += 1;
+      if (redoing.delete(t.taskId)) redoneAt[t.taskId] = finishedCount;
+    }
     children.delete(t.taskId);
     running.get(t.role)?.delete(t.taskId);
     states[t.taskId] = outcome.state;
@@ -888,8 +912,31 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         if (!(instructions[x.taskId] ?? '').includes(note))
           instructions[x.taskId] = [instructions[x.taskId], note].filter(Boolean).join('\n\n');
       }
+      if (backNow.length > 1 && patched('send-back-order')) {
+        const at = (id: string) => plan.tasks.findIndex((p) => p.taskId === id);
+        const ordered = [...backNow].sort((a, b) => at(a.taskId) - at(b.taskId));
+        ordered.forEach((x, i) => {
+          if (i)
+            holdUntil.set(
+              x.taskId,
+              ordered.slice(0, i).map((y) => y.taskId),
+            );
+        });
+      }
+      // A review that finds a component already being redone (its port done again, its
+      // integration not yet) waits for that round instead of starting another: the page was
+      // checked before the fix reached it.
+      // And one whose fix landed after the page was dispatched only needs the page checked again.
+      const landed = (id: string) => (redoneAt[id] ?? -1) > (dispatchedAt[t.taskId] ?? Infinity);
+      const reworking =
+        !!w.review && backNow.some((x) => redoing.has(x.taskId) || landed(x.taskId));
       for (const x of backNow) {
-        sentBack[x.taskId] = (sentBack[x.taskId] ?? 0) + 1;
+        if (reworking && stateOf(x.taskId) === 'done') continue;
+        // Several pages failing on one component send it back once: a send-back counts toward
+        // the limit only when the work is redone, not when it is already queued for it.
+        if (stateOf(x.taskId) === 'done' || !patched('send-back-order'))
+          sentBack[x.taskId] = (sentBack[x.taskId] ?? 0) + 1;
+        if (w.review) redoing.add(x.taskId);
         const note = `Sent back by ${by}: ${x.fixes}`;
         if (stateOf(x.taskId) === 'done') {
           await rerun([x.taskId], note, `Sent back by ${by}`);
@@ -916,10 +963,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             handOn.length
               ? `Your fixes for ${handOn.map((x) => titleOf(x.taskId)).join(', ')} are in ${handOn.length === 1 ? 'its' : 'their'} brief for when ${handOn.length === 1 ? 'it runs' : 'they run'} in a later phase. Don't wait on or send back to ${handOn.length === 1 ? 'it' : 'them'} again: finish now, and say in your summary what you handed on.`
               : '',
+            w.review?.fixes ? `The review also found what is yours to fix: ${w.review.fixes}` : '',
           ]
             .filter(Boolean)
             .join(' ') || undefined,
       });
+      if (w.review && !w.review.fixes) revalidate.add(t.taskId);
       events.push(
         taskMove(t, 'waiting', `Waiting on ${named.map(titleOf).join(', ')}: ${w.what}`),
         agentRefresh(t.role),
@@ -1212,6 +1261,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       waitingOn.delete(taskId);
       capabilityWait.delete(taskId);
       retryFromBlocked.delete(taskId);
+      revalidate.delete(taskId);
+      holdUntil.delete(taskId);
       instructions[taskId] = notes;
       if (st !== 'ready') await send(taskMove(t, 'ready', `Run again: ${by}`));
     }
@@ -2124,6 +2175,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     Object.assign(instructions, r.instructions);
     Object.assign(waits, r.waits);
     Object.assign(sentBack, r.sentBack);
+    for (const [id, ids] of r.holdUntil ?? []) holdUntil.set(id, ids);
+    for (const id of r.revalidate ?? []) revalidate.add(id);
+    for (const id of r.redoing ?? []) redoing.add(id);
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
@@ -2168,6 +2222,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       leadNotes: { ...leadNotes },
       waits: { ...waits },
       sentBack: { ...sentBack },
+      holdUntil: [...holdUntil],
+      revalidate: [...revalidate],
+      redoing: [...redoing],
       taskEscalation: [...taskEscalation],
       started: [...started],
       done: [...done],
@@ -2308,6 +2365,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           !children.has(t.taskId) &&
           !held(t) &&
           t.dependsOn.every((d) => stateOf(d) === 'done' || stateOf(d) === 'cancelled') &&
+          !(holdUntil.get(t.taskId) ?? []).some(
+            (d) => stateOf(d) !== 'done' && stateOf(d) !== 'cancelled',
+          ) &&
           !(behindCanary(t) && patched('canary-dispatch'))
         );
       });
@@ -2339,6 +2399,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         waitingOn.delete(id);
         const t = task(id);
         if (!t || stateOf(id) !== 'waiting') continue;
+        revalidate.delete(id);
         instructions[id] = [
           w.prior,
           `Nothing is working on what you waited for (${w.what}): the tasks that would make it can't start until this work moves. Finish what is yours now, don't wait on ${w.ids.length ? w.ids.map(titleOf).join(', ') : 'them'} again, and say in your summary what is left and for whom.`,

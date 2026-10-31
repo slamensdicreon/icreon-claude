@@ -111,6 +111,8 @@ export async function launch(
     runner?: AgentRunner;
     /** Stands in for the Lead's triage (stub projects send every question to the Director). */
     triage?: Activities['triage'];
+    /** Stands in for acceptance: the checks and the Lead's review. */
+    validate?: Activities['validate'];
   } = {},
 ) {
   const projectId = `p${++counter}`;
@@ -123,7 +125,11 @@ export async function launch(
     script: opts.script,
   });
   const acts = opts.runner ? withAgentRunner(stubs, opts.runner) : stubs;
-  h.projects.set(projectId, opts.triage ? { ...acts, triage: opts.triage } : acts);
+  h.projects.set(projectId, {
+    ...acts,
+    ...(opts.triage ? { triage: opts.triage } : {}),
+    ...(opts.validate ? { validate: opts.validate } : {}),
+  });
   const policy = defaultPolicy(h.playbook, {
     budgets: { tokens: 50_000_000, usd: 10_000, hours: 10_000 },
     // Undo has its own tests; elsewhere choices take effect at once.

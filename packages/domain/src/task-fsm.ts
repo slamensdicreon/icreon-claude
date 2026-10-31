@@ -7,7 +7,8 @@ const TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
   planned: ['ready', 'waiting', 'cancelled'],
   ready: ['running', 'paused', 'blocked', 'waiting', 'cancelled'],
   running: ['validating', 'blocked', 'paused', 'waiting', 'cancelled'],
-  validating: ['done', 'rejected', 'blocked'],
+  // Waiting: the review found the failure in another task's work (a component the page uses).
+  validating: ['done', 'rejected', 'blocked', 'waiting'],
   rejected: ['running', 'blocked'],
   blocked: ['running', 'ready', 'cancelled'],
   paused: ['running', 'ready', 'cancelled'],

@@ -109,6 +109,8 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
 
   let feedback: string | null = null;
   let rejections = 0;
+  // What it waited on was redone: the work stands as it was until the checks say otherwise.
+  let recheck = input.revalidate === true;
   attempt += 1;
   await move('running', input.from === 'blocked' ? 'Escalation resolved' : null);
 
@@ -123,7 +125,14 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
     };
     let result: AgentResult;
     try {
-      result = await agents.runAgent(request);
+      if (recheck) {
+        recheck = false;
+        result = {
+          tokens: 0,
+          usd: 0,
+          summary: 'Checked again without a new attempt: the work it waited on has been redone.',
+        };
+      } else result = await agents.runAgent(request);
     } catch (err) {
       const cause = err instanceof ActivityFailure ? err.cause : err;
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -205,6 +214,10 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
         result: { ...result, tokens: spent.tokens, usd: spent.usd },
       };
     }
+
+    // The failure is in other tasks' work: wait for them instead of retrying what can't fix it.
+    if (verdict.waitOn)
+      return { outcome: 'waiting', state, attempt, waiting: verdict.waitOn, spent };
 
     rejections += 1;
     feedback = verdict.reason ?? 'Acceptance criteria not met';

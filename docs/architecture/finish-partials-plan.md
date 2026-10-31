@@ -98,6 +98,32 @@ twice at full cost, and raises a card nobody but a component engineer can act on
 | 2.4 | Simulator scenario: a component defect on three pages. | `packages/simulator` | Scenario test: one card at most (the component's, if its own rework fails) |
 | 2.5 | Lead review of page tasks: a rejection whose only grounds are a component's behaviour is not a rejection; the reason becomes a note and the page waits on the component as in 2.2. | `agent-runtime/src/review.ts` prompt and `cites` | Test |
 
+### Result (2026-10-31)
+
+Built as planned, with two timing cases the workflow test found:
+
+- **Attribution** (`attributeFailures`, the Lead's model, low effort): when a task whose role
+  can't change code (no `sandbox` grant) fails its checks, each failure is sorted into the task's
+  own or a named component's, from the Blueprint's kept components only. Anything it can't
+  place, or leaves out, stays the task's in the check's own words.
+- **Routing** (`routeFailures` in the stack): a component's failures go back to every code task
+  of that component (its port and its integration) with the fixes in their briefs, and the page
+  waits. With nothing of its own to fix, the page is checked again without running its agent
+  when they are redone; with fixes of its own, its agent runs once more with them.
+- **Ordering** (workflow, `patched('send-back-order')`): tasks sent back together run in plan
+  order, so a component's integration waits for its port and never merges the old branch.
+- **One rework, however many pages:** a send-back counts toward the limit only when the work is
+  actually redone. A page checked while its component is being redone, or checked before the fix
+  landed (dispatched before the redo finished), waits for that round instead of starting another.
+- **Proof:** a workflow test with three pages failing on the Hero: no cards, each page's agent
+  runs once, each page passes on a second check without it, the Hero is redone once, port before
+  integration. The replay tests over recorded history pass unchanged.
+
+Not built: 2.3 (re-validating pages already done when a component is reworked). The phase's
+`audit-parity` task runs `parity.render`, `parity.visual` and `parity.page` across every page
+after migration, which catches a page a rework broke; a dedicated re-validation can follow if
+the next site shows it is needed.
+
 ## 3. Merged Blueprint items, behind a workflow patch
 
 Task 84. Shipped once as playbook 0.6.2 and reverted because the workflow compiles the plan

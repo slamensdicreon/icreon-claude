@@ -1,8 +1,14 @@
-import { HARD_GROUNDS, type ReviewInput, type ReviewVerdict } from '@lw/agent-runtime';
+import {
+  HARD_GROUNDS,
+  type AttributeInput,
+  type Attribution,
+  type ReviewInput,
+  type ReviewVerdict,
+} from '@lw/agent-runtime';
 import type { LwEvent, NewEvent } from '@lw/contracts';
 import type { ProjectState } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
-import type { Activities } from '@lw/orchestrator';
+import type { Activities, AgentWaiting } from '@lw/orchestrator';
 import type { Playbook } from '@lw/playbook-sdk';
 import type {
   PlatformCheck,
@@ -404,6 +410,11 @@ export interface ReviewDeps {
   effect?(server: string, op: string): 'read' | 'write' | 'release' | null;
   /** The Lead's review with Claude; without it only the checks decide. */
   review: ((input: ReviewInput) => Promise<ReviewVerdict & { tokens: number }>) | null;
+  /**
+   * Sorts a failed check into the task's own work and its components', with the Lead's model.
+   * Without it every failure goes back to the task, as before.
+   */
+  attribute?: ((input: AttributeInput) => Promise<Attribution>) | null;
   checks?: Record<string, Check>;
   /** The playbook's platform pack, for its own checks, and how they read the project's systems. */
   platform?: {
@@ -450,6 +461,96 @@ export function settleVerdict<V extends ReviewVerdict>(
       reason: `Accepted on the checks after ${standing.priorRejections + 1} reviews: every check passes and the Lead's remaining objection names no failed check, missing work or write outside the task. The Lead's note: ${verdict.reason}`,
     };
   return verdict;
+}
+
+type RoleDef = Playbook['roles'][number];
+type FailedCheck = { id: string; status: CheckResult['status']; detail: string };
+
+/**
+ * Sends the component part of a task's failed checks to the tasks that own those components'
+ * code, and returns the wait the task goes into, or null when everything is the task's own (or
+ * nothing can be routed). The page waits on, and sends back, every code task of each component
+ * it names (its port, then its integration), with the fixes in their briefs.
+ */
+export async function routeFailures(a: {
+  deps: Pick<ReviewDeps, 'attribute' | 'library'>;
+  projectId: string;
+  state: ProjectState;
+  task: { taskId: string; title: string; role: string };
+  role: RoleDef;
+  lead: RoleDef;
+  fails: FailedCheck[];
+  codeRoles: Set<string>;
+}): Promise<{ waitOn: AgentWaiting; reason: string; tokens: number } | null> {
+  if (!a.deps.attribute) return null;
+  let components: { key: string; name: string }[] = [];
+  try {
+    const doc = await a.deps.library.read(a.projectId, 'blueprint');
+    const bp = doc
+      ? (JSON.parse(doc.content) as {
+          collections?: { components?: { key: string; name: string; status?: string }[] };
+        })
+      : null;
+    components = (bp?.collections?.components ?? [])
+      .filter((c) => c.status !== 'drop')
+      .map((c) => ({ key: c.key, name: c.name }));
+  } catch {
+    return null;
+  }
+  if (!components.length) return null;
+  let read: Attribution;
+  try {
+    read = await a.deps.attribute({
+      lead: { model: a.lead.model.id, effort: a.lead.model.effort },
+      task: { title: a.task.title, role: a.role.name },
+      permissions: Object.entries(a.role.tools ?? {}).map(
+        ([server, grant]) => `${server}: ${grant.ops.join(', ')}`,
+      ),
+      failures: a.fails.map((f) => ({ id: f.id, detail: f.detail })),
+      components,
+    });
+  } catch {
+    // An attribution that can't run leaves the failure with the task, as before.
+    return null;
+  }
+  const tasks = Object.values(a.state.tasks);
+  const owners = (key: string) =>
+    tasks.filter(
+      (t) => t.itemKeys.includes(key) && a.codeRoles.has(t.role) && t.taskId !== a.task.taskId,
+    );
+  const own: string[] = [];
+  const byKey = new Map<string, string[]>();
+  for (const f of read.failures) {
+    if (f.owner === 'component' && f.component && owners(f.component).length)
+      byKey.set(f.component, [...(byKey.get(f.component) ?? []), f.fix]);
+    else own.push(`${f.check}: ${f.fix}`);
+  }
+  // A failed check the attribution left out stays the task's, in the check's own words.
+  for (const f of a.fails)
+    if (!read.failures.some((x) => x.check === f.id)) own.push(`${f.id}: ${f.detail}`);
+  if (!byKey.size) return null;
+  const nameOf = (key: string) => components.find((c) => c.key === key)?.name ?? key;
+  const names = [...byKey.keys()].map(nameOf);
+  const sendBack = [...byKey].flatMap(([key, fixes]) =>
+    owners(key).map((t) => ({
+      taskId: t.taskId,
+      fixes: `${a.task.title} fails on ${nameOf(key)}: ${fixes.join(' ')}`,
+    })),
+  );
+  const listed =
+    names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  const reason = `${listed} ${names.length === 1 ? 'needs' : 'need'} fixing in code, which this task can't change: sent to ${names.length === 1 ? 'its owner' : 'their owners'}, and this task waits for ${names.length === 1 ? 'it' : 'them'}.${own.length ? ` Yours to fix when it runs again: ${own.join(' ')}` : ' It is checked again once they are redone.'}`;
+  return {
+    reason,
+    tokens: read.tokens,
+    waitOn: {
+      summary: reason,
+      taskIds: [],
+      sendBack,
+      what: `fixes to ${listed}`,
+      review: { fixes: own.length ? own.join(' ') : null },
+    },
+  };
 }
 
 export function withReview(base: Activities, deps: ReviewDeps): Activities {
@@ -563,6 +664,24 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
       const fails = results.filter((r) => r.status === 'fail');
       const pending = results.filter((r) => r.status === 'pending').map((r) => r.id);
 
+      // 1b. A failure in a component's code goes to the component, and this task waits for it:
+      // a page migrator can't change a component, so a retry costs an attempt and fixes nothing.
+      const routed =
+        fails.length && lead && role && !role.tools?.sandbox
+          ? await routeFailures({
+              deps,
+              projectId: req.projectId,
+              state,
+              task,
+              role,
+              lead,
+              fails,
+              codeRoles: new Set(
+                [...roles.values()].filter((r) => r.tools?.sandbox).map((r) => r.role),
+              ),
+            })
+          : null;
+
       // 2. The Lead's review, against the audit trail.
       const priorRejections = log.filter(
         (e) =>
@@ -571,7 +690,15 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
           e.data.verdict === 'reject',
       ).length;
       let verdict: ReviewVerdict & { tokens: number };
-      if (fails.length) {
+      if (routed) {
+        verdict = {
+          verdict: 'reject',
+          reason: routed.reason,
+          grounds: 'failed-check',
+          cites: fails.map((f) => f.id).join(', '),
+          tokens: routed.tokens,
+        };
+      } else if (fails.length) {
         verdict = {
           verdict: 'reject',
           reason: fails.map((f) => `${f.id}: ${f.detail}`).join(' '),
@@ -656,7 +783,12 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
           note,
           tokens: verdict.tokens,
           checks: results.map((r) => ({ id: r.id, status: r.status })),
-          grounds: verdict.verdict === 'reject' ? (verdict.grounds ?? null) : null,
+          grounds:
+            verdict.verdict === 'reject'
+              ? routed
+                ? 'component'
+                : (verdict.grounds ?? null)
+              : null,
         },
       });
       await deps.store.append(req.projectId, events);
@@ -664,7 +796,12 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
       const standing = results.map((r) => ({ id: r.id, status: r.status }));
       return verdict.verdict === 'accept'
         ? { pass: true, reason: null, checks: standing }
-        : { pass: false, reason: verdict.reason, checks: standing };
+        : {
+            pass: false,
+            reason: verdict.reason,
+            checks: standing,
+            ...(routed ? { waitOn: routed.waitOn } : {}),
+          };
     },
   };
 }

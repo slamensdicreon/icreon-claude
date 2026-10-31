@@ -116,6 +116,12 @@ export interface ProjectSnapshot {
   leadNotes?: Record<string, string[]>;
   waits: Record<string, number>;
   sentBack: Record<string, number>;
+  /** Sent-back tasks held until the earlier ones of their group are redone (absent before). */
+  holdUntil?: [string, string[]][];
+  /** Tasks to check again without their agent when they next run (absent before). */
+  revalidate?: string[];
+  /** Tasks redone after a review sent them back, until they finish again (absent before). */
+  redoing?: string[];
   taskEscalation: [string, string][];
   started: number[];
   done: number[];
@@ -167,6 +173,8 @@ export type ArtifactKind = Extract<NewEvent, { type: 'artifact.versioned' }>['da
 export interface ValidationResult {
   pass: boolean;
   reason: string | null;
+  /** Failed because of other tasks' work: wait on them (and send them back) instead of retrying. */
+  waitOn?: AgentWaiting;
   /** The automated checks as they stood, for the card a rejected task may end in. */
   checks?: CheckStanding[];
 }
@@ -191,6 +199,8 @@ export interface TaskItem {
   /** Attempts already made. */
   attempt: number;
   instructions: string | null;
+  /** Check the task again without running its agent: what it waited on has been redone. */
+  revalidate?: boolean;
 }
 
 export interface TaskInput {
@@ -238,6 +248,11 @@ export interface AgentWaiting {
   /** Finished tasks sent back to their owners with fixes; the agent waits on them too. */
   sendBack?: { taskId: string; fixes: string }[];
   what: string;
+  /**
+   * Set when the Lead's review, not the agent, found the work waits on others: once they are
+   * redone, the task is checked again without running its agent, unless it has fixes of its own.
+   */
+  review?: { fixes: string | null };
 }
 
 export interface AgentDecision {

@@ -9,7 +9,7 @@ import { loadPlaybook } from '@lw/playbook-sdk';
 import { MemoryBlobStore } from '@lw/tool-gateway';
 import { ArtifactLibrary } from '@lw/tool-workspace';
 import { describe, expect, it } from 'vitest';
-import { CHECKS, settleVerdict, withReview } from '../src';
+import { CHECKS, routeFailures, settleVerdict, withReview } from '../src';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 
@@ -469,5 +469,120 @@ describe('head.sections', () => {
     );
     expect(r.status).toBe('pass');
     expect(refs[0]).toBe('launchworks/port-card-grid');
+  });
+});
+
+describe('routing failed checks to the components that own them', () => {
+  const lead = {
+    role: 'content-lead',
+    name: 'Content Lead',
+    model: { id: 'claude-sonnet-5-5', effort: 'low' as const },
+  } as never;
+  const migrator = {
+    role: 'content-migrator',
+    name: 'Content Migrator',
+    tools: { 'sitecore-authoring': { ops: ['item.update'] } },
+  } as never;
+  const page = { taskId: 'migrate-pages-home', title: 'Migrate Home', role: 'content-migrator' };
+  const taskView = (taskId: string, role: string, itemKeys: string[]) =>
+    ({ taskId, role, itemKeys, title: taskId }) as never;
+
+  async function route(
+    failures: { check: string; owner: 'task' | 'component'; component: string; fix: string }[],
+  ) {
+    const store = new InMemoryEventStore();
+    const library = new ArtifactLibrary(store, new MemoryBlobStore());
+    await library.write('p1', {
+      artifactId: 'blueprint',
+      kind: 'blueprint',
+      title: 'Blueprint',
+      format: 'json',
+      content: JSON.stringify({
+        collections: {
+          components: [
+            { key: 'hero', name: 'Hero Banner' },
+            { key: 'cards', name: 'Service Cards' },
+            { key: 'old', name: 'Old', status: 'drop' },
+          ],
+        },
+      }),
+      producer: 'solution-architect',
+    });
+    const state = createProjectState('p1');
+    state.tasks = {
+      'port-hero': taskView('port-hero', 'component-engineer', ['hero']),
+      'register-hero': taskView('register-hero', 'rendering-registrar', ['hero']),
+      'integrate-hero': taskView('integrate-hero', 'head-integrator', ['hero']),
+      'port-cards': taskView('port-cards', 'component-engineer', ['cards']),
+      'migrate-pages-home': taskView('migrate-pages-home', 'content-migrator', ['home']),
+    };
+    const seen: string[][] = [];
+    const routed = await routeFailures({
+      deps: {
+        library,
+        attribute: async (input) => {
+          seen.push(input.components.map((c) => c.key));
+          return {
+            failures: failures.map((f) => ({
+              ...f,
+              component: f.owner === 'component' ? f.component : null,
+            })),
+            tokens: 50,
+            usd: 0.01,
+          };
+        },
+      },
+      projectId: 'p1',
+      state,
+      task: page,
+      role: migrator,
+      lead,
+      fails: [
+        { id: 'parity.visual', status: 'fail', detail: 'Hero: grey band shows black.' },
+        { id: 'parity.render', status: 'fail', detail: '/ shows 80% of the text.' },
+      ],
+      codeRoles: new Set(['component-engineer', 'head-integrator']),
+    });
+    return { routed, seen };
+  }
+
+  it('sends a component failure to every code task of that component, and the page re-checks', async () => {
+    const { routed, seen } = await route([
+      { check: 'parity.visual', owner: 'component', component: 'hero', fix: 'Make the band grey.' },
+    ]);
+    // Dropped components are not offered.
+    expect(seen[0]).toEqual(['hero', 'cards']);
+    expect(routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual(['port-hero', 'integrate-hero']);
+    expect(routed!.waitOn.sendBack![0]!.fixes).toMatch(
+      /Migrate Home fails on Hero Banner: Make the band grey/,
+    );
+    // parity.render was left out by the model: it is the page's own, in its words.
+    expect(routed!.waitOn.review).toEqual({ fixes: 'parity.render: / shows 80% of the text.' });
+    expect(routed!.reason).toMatch(
+      /Hero Banner needs fixing in code.*Yours to fix when it runs again/,
+    );
+    expect(routed!.tokens).toBe(50);
+  });
+
+  it('re-checks without the agent when everything failed was a component’s', async () => {
+    const { routed } = await route([
+      { check: 'parity.visual', owner: 'component', component: 'hero', fix: 'Grey band.' },
+      { check: 'parity.render', owner: 'component', component: 'cards', fix: 'Show the cards.' },
+    ]);
+    expect(routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual([
+      'port-hero',
+      'integrate-hero',
+      'port-cards',
+    ]);
+    expect(routed!.waitOn.review).toEqual({ fixes: null });
+    expect(routed!.waitOn.what).toBe('fixes to Hero Banner and Service Cards');
+  });
+
+  it('leaves everything with the task when nothing is a component’s', async () => {
+    const { routed } = await route([
+      { check: 'parity.visual', owner: 'task', component: '', fix: 'Use the source hero image.' },
+      { check: 'parity.render', owner: 'task', component: '', fix: 'Add the missing copy.' },
+    ]);
+    expect(routed).toBeNull();
   });
 });
