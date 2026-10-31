@@ -1014,7 +1014,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const ActivityQuery = z.object({
     before: z.coerce.number().int().positive().optional(),
-    limit: z.coerce.number().int().min(1).max(500).default(100),
+    limit: z.coerce.number().int().min(1).max(2000).default(100),
+    /** Rows at or after this instant only; paging stops there (the floor's replay window). */
+    since: z.iso.datetime().optional(),
     severity: z.string().optional(), // comma-separated
     agent: z.string().optional(),
     type: z.string().optional(), // comma-separated
@@ -1038,18 +1040,29 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         (!q.agent || i.agentId === q.agent) &&
         (q.phase === undefined || i.phase === q.phase);
 
-      // Newest first, keyset-paginated on seq; read in chunks until the page is full.
+      // Newest first, keyset-paginated on seq; read in chunks until the page is full or the
+      // window's start is reached.
+      const sinceMs = q.since ? Date.parse(q.since) : null;
       const items: ActivityItem[] = [];
       let before = q.before ?? s.seq + 1;
-      while (items.length < q.limit && before > 1) {
+      let reachedSince = false;
+      while (items.length < q.limit && before > 1 && !reachedSince) {
         const chunk = await store.read(s.projectId, { before, limit: 500, order: 'desc' });
         if (!chunk.length) break;
         for (const e of chunk) {
+          if (sinceMs !== null && Date.parse(e.ts) < sinceMs) {
+            reachedSince = true;
+            break;
+          }
           const item = toActivity(s, e);
           if (keep(item)) items.push(item);
           if (items.length === q.limit) break;
         }
-        before = items.length === q.limit ? items.at(-1)!.seq : chunk.at(-1)!.seq;
+        before = reachedSince
+          ? 0
+          : items.length === q.limit
+            ? items.at(-1)!.seq
+            : chunk.at(-1)!.seq;
       }
       const page: ActivityPage = { items, nextBefore: before > 1 ? before : null };
       return page;

@@ -698,6 +698,7 @@ export function phaseViews(s: ProjectState): PhaseView[] {
         name: p.name,
         shortName: p.shortName ?? p.name,
         status: p.status,
+        enteredAt: p.enteredAt,
         gate: p.gate,
         gateLabel: p.gateLabel,
         exitCriteria: p.exitCriteria,

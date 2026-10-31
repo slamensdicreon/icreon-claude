@@ -219,6 +219,11 @@ function columns(
         agentId: null,
       };
     }
+    // Not log rows (no tool), but the state they carry lets the floor replay history.
+    case 'task.state':
+      return { tool: null, op: e.data.to, outcome: e.data.from, agentId: null };
+    case 'agent.state':
+      return { tool: null, op: e.data.state, outcome: null, agentId: e.data.agentId };
     default:
       return { tool: null, op: null, outcome: null, agentId: null };
   }

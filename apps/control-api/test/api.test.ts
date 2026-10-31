@@ -178,6 +178,28 @@ describe('control-api', () => {
     expect(steps.items.every((i) => i.type === 'step.recorded' && i.toolServer)).toBe(true);
   });
 
+  it('bounds the activity log with `since`, and carries task and agent states for the floor', async () => {
+    const h = await start();
+    await until(async () => (await get(h, '/projects/p1/mission-control')).body.seq > 60);
+    const all = ActivityPage.parse(
+      (await get(h, '/projects/p1/activity?view=all&limit=2000')).body,
+    );
+    expect(all.items.length).toBeGreaterThan(60);
+    const mid = all.items[Math.floor(all.items.length / 2)]!;
+    const page = ActivityPage.parse(
+      (await get(h, `/projects/p1/activity?view=all&limit=2000&since=${mid.ts}`)).body,
+    );
+    expect(page.items.every((i) => Date.parse(i.ts) >= Date.parse(mid.ts))).toBe(true);
+    expect(page.items.at(-1)!.seq).toBeLessThanOrEqual(mid.seq);
+    expect(page.nextBefore).toBeNull();
+    const task = all.items.find((i) => i.type === 'task.state');
+    expect(task?.operation).toMatch(/^(running|validating|done|ready|blocked|waiting|rejected)$/);
+    expect(task?.toolLabel).toBeNull();
+    const agent = all.items.find((i) => i.type === 'agent.state');
+    expect(agent?.agentId).toBeTruthy();
+    expect(agent?.operation).toMatch(/^(active|idle|waiting|blocked|inactive|done|paused|failed)$/);
+  });
+
   it('exports the activity log as CSV, oldest first, with full text', async () => {
     const h = await start();
     await until(async () => (await get(h, '/projects/p1/mission-control')).body.seq > 40);

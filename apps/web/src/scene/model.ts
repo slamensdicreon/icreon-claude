@@ -195,16 +195,52 @@ export type Beat =
   | { kind: 'handoff'; fromAgentId: string; toAgentId: string }
   | { kind: 'done'; agentId: string }
   | { kind: 'deploy'; agentId: string | null }
-  | { kind: 'hold'; held: boolean };
+  | { kind: 'hold'; held: boolean }
+  /** An agent's state changed (from `agent.state` rows): who works, who is out of this phase. */
+  | { kind: 'presence'; agentId: string; state: string }
+  | { kind: 'phase'; phase: number };
 
-/** Beats from activity rows (oldest first), with the plan to name a reviewed task's agent. */
+/** What the scene needs to know about a task: who runs it and who waits on it. */
+export interface TaskLookup {
+  agentOf: (taskId: string) => string | null;
+  heirsOf?: (taskId: string) => string[];
+}
+
+const asLookup = (l: TaskLookup | ((taskId: string) => string | null)): TaskLookup =>
+  typeof l === 'function' ? { agentOf: l } : l;
+
+/**
+ * Beats from activity rows (oldest first). Log rows (tool calls, reviews, cards…) drive the live
+ * floor; `task.state` and `agent.state` rows, which only the full feed carries, drive the replay
+ * where no plan diff exists.
+ */
 export function beatsFromItems(
   items: ActivityItem[],
-  taskAgent: (taskId: string) => string | null,
+  lookup: TaskLookup | ((taskId: string) => string | null),
 ): Beat[] {
+  const { agentOf, heirsOf } = asLookup(lookup);
+  const taskAgent = agentOf;
   const out: Beat[] = [];
   for (const i of items) {
     switch (i.type) {
+      case 'task.state': {
+        const agentId = i.taskId ? agentOf(i.taskId) : null;
+        if (!agentId || !i.operation) break;
+        if (i.operation === 'running') out.push({ kind: 'dispatch', agentId });
+        else if (i.operation === 'done') {
+          out.push({ kind: 'done', agentId });
+          for (const h of (heirsOf?.(i.taskId!) ?? []).slice(0, 3))
+            if (h !== agentId) out.push({ kind: 'handoff', fromAgentId: agentId, toAgentId: h });
+        } else if (i.operation === 'blocked') out.push({ kind: 'card', agentId });
+        break;
+      }
+      case 'agent.state':
+        if (i.agentId && i.operation)
+          out.push({ kind: 'presence', agentId: i.agentId, state: i.operation });
+        break;
+      case 'phase.entered':
+        if (i.phase !== null) out.push({ kind: 'phase', phase: i.phase });
+        break;
       case 'step.recorded': {
         if (!i.agentId || !i.toolServer) break;
         if (i.toolServer === 'artifacts' && (i.operation ?? '').startsWith('write')) {
@@ -319,6 +355,8 @@ export interface SceneState {
   still: boolean;
   /** Steps counted since the floor opened, for the state pill. */
   beats: number;
+  /** The phase the latest beat belonged to (replay caption); null until one is seen. */
+  phase: number | null;
 }
 
 export function createScene(layout: Layout, specs: FigureSpec[], still: boolean): SceneState {
@@ -339,7 +377,7 @@ export function createScene(layout: Layout, specs: FigureSpec[], still: boolean)
       at: null,
     });
   }
-  return { layout, figures, packets: [], paused: false, still, beats: 0 };
+  return { layout, figures, packets: [], paused: false, still, beats: 0, phase: null };
 }
 
 /** Keeps motion in flight when the roster or the canvas size changes. */
@@ -358,7 +396,39 @@ export function relayout(state: SceneState, layout: Layout, specs: FigureSpec[])
   }
   next.paused = state.paused;
   next.beats = state.beats;
+  next.phase = state.phase;
   return next;
+}
+
+/** Everyone at their desk, nothing in flight, nobody working: the replay's starting point. */
+export function resetScene(state: SceneState): void {
+  for (const f of state.figures.values()) {
+    f.pos = { ...f.home };
+    f.trips = [];
+    f.dwellUntil = null;
+    f.working = false;
+    f.tasks = 0;
+    f.trail = [];
+    f.flash = 0;
+    f.at = null;
+    f.spec.inactive = false;
+  }
+  state.packets = [];
+  state.paused = false;
+  state.phase = null;
+}
+
+/** Ends every walk where it was headed, without the walking: used after a seek. */
+export function settle(state: SceneState): void {
+  for (const f of state.figures.values()) {
+    const last = f.trips.at(-1);
+    f.trips = last ? [last] : [];
+    f.pos = { ...(last?.to ?? f.home) };
+    f.dwellUntil = null;
+    f.trail = [];
+    f.flash = 0;
+  }
+  state.packets = [];
 }
 
 const near = (p: Point, dx: number, dy: number): Point => ({ x: p.x + dx, y: p.y + dy });
@@ -372,18 +442,20 @@ function seat(target: Point, who: string, radius: number): Point {
   const a = ((hash(who) % 360) * Math.PI) / 180;
   return near(target, Math.cos(a) * radius, Math.sin(a) * radius);
 }
-/** A seat at a station: on the floor side of it, never over the box or its label, spread sideways. */
+/**
+ * A seat at a station: beside the box, never over it or its label, spread so visitors don't
+ * stack. Edge stations seat toward the floor; the bottom pair seat toward the middle, in the
+ * aisle between the two lower islands.
+ */
 function stationSeat(st: Station, layout: Layout, who: string): Point {
   const cx = layout.width / 2;
   const cy = layout.height / 2;
   const dx = cx - st.pos.x;
   const dy = cy - st.pos.y;
-  const horizontal = Math.abs(dx) > Math.abs(dy);
-  const dir = horizontal ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) };
   const spread = ((hash(who) % 5) - 2) * 15;
-  return horizontal
-    ? { x: st.pos.x + dir.x * 46, y: st.pos.y + spread }
-    : { x: st.pos.x + spread, y: st.pos.y + dir.y * 54 };
+  if (Math.abs(dx) > Math.abs(dy))
+    return { x: st.pos.x + Math.sign(dx) * 46, y: st.pos.y + spread };
+  return { x: st.pos.x + (Math.sign(dx) || 1) * 42, y: st.pos.y + Math.min(spread, 18) };
 }
 const LEAD_SEAT = 38;
 const CYPHER_SEAT = 46;
@@ -483,11 +555,25 @@ export function applyBeat(state: SceneState, b: Beat): void {
       if (lead && !state.still)
         state.packets.push({ from: { ...lead.pos }, to: f.home, t: 0, dur: 0.9, kind: 'task' });
       f.working = true;
+      f.tasks = Math.min(8, f.tasks + 1);
       return;
     }
+    case 'presence': {
+      const f = fig(b.agentId);
+      if (!f) return;
+      f.spec.inactive = b.state === 'inactive';
+      f.working = b.state === 'active' && !state.paused;
+      if (b.state === 'active') f.tasks = Math.max(1, f.tasks);
+      else if (b.state !== 'waiting') f.tasks = 0;
+      return;
+    }
+    case 'phase':
+      state.phase = b.phase;
+      return;
     case 'done': {
       const f = fig(b.agentId);
       if (!f) return;
+      f.tasks = Math.max(0, f.tasks - 1);
       const lead = fig(f.spec.reportsTo) ?? cos;
       if (lead && lead !== f) {
         queue(f, { to: seat(lead.home, f.spec.id, LEAD_SEAT), dwell: 900, kind: 'lead' });

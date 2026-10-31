@@ -2413,12 +2413,18 @@
   color: var(--web-bg);
 }
 .floor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 320px);
+  min-height: 560px;
+}
+.floor-canvas {
   position: relative;
-  height: calc(100vh - 330px);
-  min-height: 520px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
-.floor canvas {
+.floor-canvas canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -2467,6 +2473,92 @@
   background: var(--success);
   box-shadow: 0 0 0 3px var(--success-bg);
 }
+.floor-state[data-replay='true'] i {
+  background: var(--web-accent);
+  box-shadow: 0 0 0 3px var(--info-bg);
+}
+
+/* The replay bar under the floor: Live / Replay, window, transport, strip, clock. */
+.replay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding-top: 10px;
+  margin-top: 6px;
+  border-top: 1px solid var(--web-border);
+  min-height: 44px;
+}
+/* The strip takes a full row of its own under the controls. */
+.replay .rp-track {
+  flex: 1 0 100%;
+  order: 9;
+}
+.replay .rp-window {
+  height: 32px;
+  padding: 0 28px 0 10px;
+  font-size: 13px;
+}
+.rp-play {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--web-border-strong);
+  background: var(--web-surface);
+  color: var(--web-fg);
+  cursor: pointer;
+}
+.rp-play:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.rp-track {
+  height: 36px;
+  display: flex;
+  align-items: center;
+}
+.rp-strip {
+  display: block;
+  width: 100%;
+  height: 36px;
+  cursor: ew-resize;
+  border-radius: 6px;
+  outline-offset: 2px;
+}
+.rp-loading {
+  font-size: 12.5px;
+  color: var(--web-fg-3);
+}
+.rp-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  text-align: right;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.rp-time {
+  font-size: 12.5px;
+  color: var(--web-fg);
+  font-variant-numeric: tabular-nums;
+}
+.rp-sub {
+  font-size: 11.5px;
+  color: var(--web-fg-3);
+}
+.rp-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--web-fg-3);
+}
+.rp-hint .ic {
+  color: var(--web-fg-3);
+}
 .floor-empty {
   position: absolute;
   inset: 0;
@@ -2476,5 +2568,5 @@
   font-size: 14px;
 }
 .app.present .floor {
-  height: calc(100vh - 160px);
+  height: calc(100vh - 150px);
 }

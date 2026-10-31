@@ -45,6 +45,8 @@ export const PhaseView = z.object({
   name: z.string(),
   shortName: z.string(),
   status: PhaseStatus,
+  /** When the phase became current; null while future. */
+  enteredAt: z.iso.datetime().nullable(),
   gate: z.enum(['none', 'director']),
   gateLabel: z.string().nullable(),
   exitCriteria: z.string(),
