@@ -63,6 +63,8 @@ export interface ProjectUi {
   previewPage: string | null;
   breakpoint: 'desktop' | 'tablet' | 'phone';
   activity: { sev: 'all' | 'warn' | 'bad'; agent: string };
+  /** The Activity surface as a list of rows, or as the floor: agents moving as the feed moves. */
+  activityView: 'list' | 'floor';
   liveTail: boolean;
   /** The card open in the queue. */
   expanded: string | null;
@@ -79,6 +81,7 @@ const DEFAULT_UI: ProjectUi = {
   previewPage: null,
   breakpoint: 'desktop',
   activity: { sev: 'all', agent: 'all' },
+  activityView: 'list',
   liveTail: true,
   expanded: null,
   queueCollapsed: false,

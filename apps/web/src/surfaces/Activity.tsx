@@ -4,6 +4,8 @@ import { API, get } from '../lib/api';
 import { duration, stamp, tokens } from '../lib/fmt';
 import { live } from '../lib/live';
 import { AgentCell } from '../parts/bits';
+import { Icon } from '../lib/icons';
+import { Floor } from '../scene/Floor';
 import { useApp, useRoster, useTz } from '../state';
 
 const LOG_EVENTS = new Set([
@@ -76,11 +78,27 @@ export function Activity() {
           <h1>Activity</h1>
           <p>
             Every tool call, item, commit and response, in project time. Only warnings, failures and
-            escalations carry color.
+            escalations carry color. The floor shows the same feed as motion.
           </p>
         </div>
       </div>
       <div className="act-tools">
+        <div className="act-view" role="group" aria-label="View">
+          <button
+            type="button"
+            aria-pressed={ui.activityView === 'list'}
+            onClick={() => setUi({ activityView: 'list' })}
+          >
+            <Icon name="list" sm /> List
+          </button>
+          <button
+            type="button"
+            aria-pressed={ui.activityView === 'floor'}
+            onClick={() => setUi({ activityView: 'floor' })}
+          >
+            <Icon name="user-group" sm /> Floor
+          </button>
+        </div>
         <div className="filters">
           {(
             [
@@ -146,7 +164,8 @@ export function Activity() {
             {pending} new event{pending > 1 ? 's' : ''}
           </button>
         )}
-        <div className="act-scroll">
+        {ui.activityView === 'floor' && <Floor items={items} />}
+        <div className="act-scroll" hidden={ui.activityView === 'floor'}>
           <table className="act">
             <thead>
               <tr>
