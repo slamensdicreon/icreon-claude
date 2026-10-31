@@ -26,6 +26,10 @@ tools:
     ops:
       - read
       - write
+  # Reproduce a page on the head and read what the server logged (a 500 names what threw).
+  hosting:
+    ops:
+      - logs.runtime
   # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
   facts:
     ops:

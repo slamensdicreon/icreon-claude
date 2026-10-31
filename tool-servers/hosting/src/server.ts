@@ -59,6 +59,8 @@ export interface HostingServerOptions {
    */
   prepare?(projectId: string): Promise<string>;
   record(projectId: string, r: HostingRecord): Promise<void>;
+  /** How long a reproduction listens to the runtime log, and after the page answers (tests). */
+  logTiming?: { windowMs: number; graceMs: number };
   fetch?: typeof fetch;
   api?: string;
 }
@@ -74,6 +76,23 @@ const PreviewArgs = z.object({
 });
 const StatusArgs = z.object({ deploymentId: z.string().regex(/^dpl_[A-Za-z0-9]+$/) });
 const EnvArgs = z.object({ target: z.enum(['preview', 'production', 'both']).default('both') });
+const LogsArgs = z.object({
+  path: z
+    .string()
+    .regex(/^\/[^\s]*$/, 'a path on the site, starting with /')
+    .max(500),
+  target: z.enum(['editing', 'production']).default('editing'),
+  deploymentId: z
+    .string()
+    .regex(/^dpl_[A-Za-z0-9]+$/)
+    .optional(),
+  level: z.enum(['error', 'all']).default('all'),
+});
+
+/** How long a reproduction waits for the server's log lines, all told. */
+const LOG_WINDOW_MS = 12_000;
+/** After the page has answered, how long log lines still have to arrive. */
+const LOG_GRACE_MS = 4_000;
 
 export class HostingToolServer implements ToolServer {
   readonly name = 'hosting';
@@ -116,6 +135,24 @@ export class HostingToolServer implements ToolServer {
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       mutates: true,
       releases: true,
+    },
+    'logs.runtime': {
+      description:
+        "Reproduce a page on the head and read what the server logged while rendering it: errors and warnings with their stack (the component or field that threw), the request's path and status. Opens the deployment's runtime log, requests `path` on it, and returns the lines that arrived, with the page's own status and error digest. Use it when a page answers 500 or renders wrong. target: 'editing' (the editing host, the default) or 'production'; or give a deploymentId.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          target: { type: 'string', enum: ['editing', 'production'] },
+          deploymentId: { type: 'string' },
+          level: { type: 'string', enum: ['error', 'all'] },
+        },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      mutates: false,
+      // Log lines quote page content and whatever the app printed.
+      untrusted: true,
     },
     'deploy.status': {
       description:
@@ -171,6 +208,11 @@ export class HostingToolServer implements ToolServer {
         const a = StatusArgs.safeParse(args);
         if (!a.success) return bad(a.error.issues[0]!.message);
         return this.status(ctx.projectId, facts, a.data.deploymentId);
+      }
+      case 'logs.runtime': {
+        const a = LogsArgs.safeParse(args);
+        if (!a.success) return bad(a.error.issues[0]!.message);
+        return this.runtimeLogs(facts, a.data);
       }
       default:
         return { code: 404, body: { error: `Unknown operation ${op}` } };
@@ -445,6 +487,162 @@ export class HostingToolServer implements ToolServer {
     };
   }
 
+  /**
+   * The deployment a reproduction runs against, with the address to request it at: the editing
+   * host's current deployment, the latest production one, or one named (of this project only).
+   */
+  private async deploymentFor(
+    facts: HostingFacts,
+    a: z.infer<typeof LogsArgs>,
+  ): Promise<{ projectId: string; deploymentId: string; host: string } | ToolResult> {
+    const p = await this.request('GET', `/v9/projects/${encodeURIComponent(facts.project)}`);
+    if (p.status === 404)
+      return { code: 404, body: { error: `${facts.project} doesn't exist yet.` } };
+    if (p.status !== 200) return fail(p, `reading ${facts.project}`);
+    const project = p.body as VercelProject;
+    if (a.deploymentId) {
+      const d = await this.request('GET', `/v13/deployments/${encodeURIComponent(a.deploymentId)}`);
+      if (d.status !== 200) return fail(d, `reading ${a.deploymentId}`);
+      const dep = d.body as Deployment & { id: string; name?: string };
+      if (dep.name && dep.name !== facts.project)
+        return bad(`${a.deploymentId} isn't a deployment of ${facts.project}.`);
+      if (!dep.url) return bad(`${a.deploymentId} has no address yet.`);
+      return { projectId: project.id, deploymentId: dep.id, host: dep.url };
+    }
+    if (a.target === 'editing') {
+      const alias = editingHost(facts.project);
+      const held = await this.request('GET', `/v4/aliases/${encodeURIComponent(alias)}`);
+      const id = held.status === 200 ? (held.body as { deploymentId?: string }).deploymentId : null;
+      if (!id)
+        return {
+          code: 404,
+          body: { error: `No editing host yet: ${alias} points at no deployment.` },
+        };
+      return { projectId: project.id, deploymentId: id, host: alias };
+    }
+    const d = await this.request(
+      'GET',
+      `/v6/deployments?projectId=${encodeURIComponent(project.id)}&target=production&state=READY&limit=1`,
+    );
+    const latest =
+      d.status === 200 ? (d.body as { deployments?: Deployment[] }).deployments?.[0] : null;
+    const live = productionUrl(project);
+    if (!latest?.uid || !live)
+      return { code: 404, body: { error: `${facts.project} has no ready production deployment.` } };
+    return {
+      projectId: project.id,
+      deploymentId: latest.uid,
+      host: live.replace(/^https:\/\//, ''),
+    };
+  }
+
+  /**
+   * Reproduces a page and reads the server's log while it renders. Vercel's runtime log is a live
+   * tail: it shows what happens from the moment it is opened, so the page is requested once the
+   * tail is open, and the lines that arrive within the window are returned.
+   */
+  private async runtimeLogs(facts: HostingFacts, a: z.infer<typeof LogsArgs>): Promise<ToolResult> {
+    const found = await this.deploymentFor(facts, a);
+    if ('code' in found) return found;
+    const { projectId, deploymentId, host } = found;
+    const started = Date.now();
+    const { windowMs, graceMs } = this.opts.logTiming ?? {
+      windowMs: LOG_WINDOW_MS,
+      graceMs: LOG_GRACE_MS,
+    };
+    const abort = new AbortController();
+    const window = setTimeout(() => abort.abort(), windowMs);
+    const lines: LogLine[] = [];
+    let page: { status: number; digest: string | null; title: string | null } | null = null;
+    let tail = 'closed';
+    // The page, with a fresh query so a cached copy doesn't answer instead of the server.
+    const sep = a.path.includes('?') ? '&' : '?';
+    const request = (onAnswer: () => void) =>
+      this.fetch(`https://${host}${a.path}${sep}lw-log=${started}`, {
+        signal: AbortSignal.timeout(windowMs),
+        redirect: 'manual',
+      })
+        .then(async (r) => {
+          const html = await r.text().catch(() => '');
+          page = {
+            status: r.status,
+            digest: html.match(/digest["':\s]+([\w-]{4,})/i)?.[1] ?? null,
+            title: html.match(/<title>([^<]{0,200})<\/title>/i)?.[1] ?? null,
+          };
+          onAnswer();
+        })
+        .catch((err: unknown) => {
+          page = { status: 0, digest: null, title: (err as Error).message };
+        });
+    try {
+      const res = await this.fetch(
+        `${this.api}/v1/projects/${encodeURIComponent(projectId)}/deployments/${encodeURIComponent(deploymentId)}/runtime-logs?teamId=${encodeURIComponent(this.opts.teamId)}`,
+        {
+          headers: {
+            authorization: `Bearer ${this.opts.token}`,
+            accept: 'application/stream+json',
+          },
+          signal: abort.signal,
+        },
+      );
+      if (!res.ok || !res.body) {
+        tail = `refused (${res.status})`;
+        await request(() => undefined);
+      } else {
+        tail = 'open';
+        // Requested once the tail is listening; the log gets its grace period after the answer.
+        const requested = request(() => setTimeout(() => abort.abort(), graceMs));
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n');
+            buffer = parts.pop() ?? '';
+            for (const part of parts) {
+              const line = logLine(part);
+              if (line) lines.push(line);
+            }
+          }
+        } catch {
+          /* the window closed */
+        }
+        const last = logLine(buffer);
+        if (last) lines.push(last);
+        await requested;
+      }
+    } catch (err) {
+      if (!abort.signal.aborted) tail = `failed: ${(err as Error).message}`;
+    } finally {
+      clearTimeout(window);
+    }
+    const shown = lines.filter((l) => a.level === 'all' || l.level === 'error').slice(-80);
+    const errors = lines.filter((l) => l.level === 'error').length;
+    const answered = page as { status: number; digest: string | null; title: string | null } | null;
+    return {
+      code: 200,
+      body: {
+        deploymentId,
+        url: `https://${host}${a.path}`,
+        page: answered,
+        tail,
+        lines: shown,
+        ...(lines.length
+          ? {}
+          : {
+              note:
+                tail === 'open'
+                  ? 'No log lines arrived while the page rendered. A page served from the cache logs nothing; a 500 with a digest means the error was logged under that digest, so try again.'
+                  : `The runtime log could not be read (${tail}); the page's status and digest are above.`,
+            }),
+      },
+      summary: `${a.path} on ${host}: ${answered ? (answered.status ? `answered ${answered.status}` : `no answer (${answered.title})`) : 'not requested'}; ${lines.length} log line${lines.length === 1 ? '' : 's'}${errors ? `, ${errors} error${errors === 1 ? '' : 's'}` : ''}`,
+    };
+  }
+
   private async request(method: string, path: string, body?: unknown) {
     const sep = path.includes('?') ? '&' : '?';
     const res = await this.fetch(
@@ -488,6 +686,38 @@ interface Deployment {
   meta?: { githubCommitRef?: string; githubCommitSha?: string };
   gitSource?: { ref?: string };
   createdAt?: number;
+}
+
+/** One line of a deployment's runtime log, as the agent reads it. */
+interface LogLine {
+  at: string | null;
+  level: 'error' | 'warning' | 'info';
+  message: string;
+  path: string | null;
+  status: number | null;
+}
+
+/** A runtime log line from Vercel's stream (one JSON object a line); anything else is dropped. */
+function logLine(raw: string): LogLine | null {
+  const t = raw.trim();
+  if (!t) return null;
+  let d: Record<string, unknown>;
+  try {
+    d = JSON.parse(t) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const message = String(d.message ?? d.text ?? '').trim();
+  if (!message && d.responseStatusCode == null) return null;
+  const level = String(d.level ?? d.type ?? 'info').toLowerCase();
+  const ts = Number(d.timestampInMs ?? d.timestamp ?? d.date);
+  return {
+    at: Number.isFinite(ts) && ts > 0 ? new Date(ts).toISOString() : null,
+    level: /err|fatal/.test(level) ? 'error' : /warn/.test(level) ? 'warning' : 'info',
+    message: message.length > 4000 ? `${message.slice(0, 4000)}…` : message,
+    path: typeof d.requestPath === 'string' ? d.requestPath : null,
+    status: typeof d.responseStatusCode === 'number' ? d.responseStatusCode : null,
+  };
 }
 
 function productionUrl(p: VercelProject): string | null {

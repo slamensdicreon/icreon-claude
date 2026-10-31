@@ -110,6 +110,7 @@ const ctx = {
 
 function server(fetch: typeof globalThis.fetch, records: HostingRecord[] = []) {
   return new HostingToolServer({
+    logTiming: { windowMs: 2_000, graceMs: 50 },
     token: 'vt',
     teamId: 'team_x',
     facts: async () => ({
@@ -252,4 +253,102 @@ describe('HostingToolServer', () => {
       },
     ]);
   });
+});
+
+describe('logs.runtime', () => {
+  /**
+   * Vercel's runtime log is a live tail: nothing until a request comes in. This fake emits the
+   * render's lines only once the page has been requested, as the real one does.
+   */
+  function tailing(opts: { refuse?: boolean; quiet?: boolean } = {}) {
+    let requested: () => void = () => undefined;
+    const pageAsked = new Promise<void>((r) => (requested = r));
+    const seen: string[] = [];
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      seen.push(`${url.host}${url.pathname}`);
+      const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status });
+      if (url.host === 'acme-site-editing.vercel.app') {
+        requested();
+        return new Response(
+          '<html><head><title>500: Internal Server Error</title></head><body>Application error (Digest: 2817391044)</body></html>',
+          { status: 500 },
+        );
+      }
+      if (url.pathname === '/v9/projects/acme-site')
+        return json(200, { id: 'prj_1', name: 'acme-site', rootDirectory: null });
+      if (url.pathname === '/v4/aliases/acme-site-editing.vercel.app')
+        return json(200, { deploymentId: 'dpl_ed' });
+      if (url.pathname === '/v1/projects/prj_1/deployments/dpl_ed/runtime-logs') {
+        if (opts.refuse) return json(403, { error: { message: 'plan' } });
+        const enc = new TextEncoder();
+        const body = new ReadableStream<Uint8Array>({
+          async start(c) {
+            await pageAsked;
+            if (!opts.quiet) {
+              c.enqueue(
+                enc.encode(
+                  `${JSON.stringify({ level: 'info', message: 'GET /about', requestPath: '/about', responseStatusCode: 500, timestampInMs: 1 })}\n{"level":"error","message":"Error: Cannot read properties of undefined (reading 'jsonValue')\\n    at HeroBanner (HeroBanner.tsx:14)","requestPath":"/about"}\n`,
+                ),
+              );
+            }
+            // A live tail stays open; the reader stops it.
+            await new Promise((r) => init?.signal?.addEventListener('abort', r));
+            c.close();
+          },
+        });
+        return new Response(body, { status: 200 });
+      }
+      return json(404, {});
+    }) as typeof globalThis.fetch;
+    return { fetch, seen };
+  }
+
+  it('reproduces a page on the editing host and returns the error the server logged', async () => {
+    const { fetch, seen } = tailing();
+    const r = await server(fetch).call('logs.runtime', { path: '/about' }, ctx);
+    expect(r.code).toBe(200);
+    expect(r.body).toMatchObject({
+      deploymentId: 'dpl_ed',
+      tail: 'open',
+      page: { status: 500, digest: '2817391044', title: '500: Internal Server Error' },
+      lines: [
+        { level: 'info', path: '/about', status: 500 },
+        { level: 'error', message: expect.stringContaining('at HeroBanner (HeroBanner.tsx:14)') },
+      ],
+    });
+    expect(r.summary).toBe(
+      '/about on acme-site-editing.vercel.app: answered 500; 2 log lines, 1 error',
+    );
+    // The tail was opened before the page was requested.
+    expect(
+      seen.indexOf('api.vercel.com/v1/projects/prj_1/deployments/dpl_ed/runtime-logs'),
+    ).toBeLessThan(seen.indexOf('acme-site-editing.vercel.app/about'));
+    const errorsOnly = await server(tailing().fetch).call(
+      'logs.runtime',
+      { path: '/about', level: 'error' },
+      ctx,
+    );
+    expect((errorsOnly.body as { lines: unknown[] }).lines).toHaveLength(1);
+  });
+
+  it("still gives the page's status and digest when the log says nothing or can't be read", async () => {
+    const quiet = await server(tailing({ quiet: true }).fetch).call(
+      'logs.runtime',
+      { path: '/about' },
+      ctx,
+    );
+    expect(quiet.body).toMatchObject({ lines: [], page: { status: 500 } });
+    expect((quiet.body as { note: string }).note).toMatch(/No log lines arrived/);
+    const refused = await server(tailing({ refuse: true }).fetch).call(
+      'logs.runtime',
+      { path: '/about' },
+      ctx,
+    );
+    expect(refused.body).toMatchObject({ tail: 'refused (403)', page: { status: 500 } });
+    expect((refused.body as { note: string }).note).toMatch(/could not be read/);
+    expect((await server(tailing().fetch).call('logs.runtime', { path: 'about' }, ctx)).code).toBe(
+      422,
+    );
+  }, 30_000);
 });

@@ -55,6 +55,7 @@ tools:
       - project.read
       - deploy.preview
       - deploy.status
+      - logs.runtime
   build-repo:
     ops:
       - tree.read

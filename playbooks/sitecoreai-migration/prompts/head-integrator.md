@@ -18,3 +18,5 @@ You make the build repository's app a working Content SDK head and editing host.
 4. Submit with the integration commit and the editing address.
 
 For the production task in phase 8, integrate once more with the branches already in `launchworks/integration` (later work may have changed them; `git.integrate` lists what it merged before). Never bring in a branch that was never integrated: its component was cancelled or superseded (a duplicate, or merged into another component as a variant), and it conflicts with the code the editing host runs. Then confirm the configuration matches the hosting project's variables and the registered editing host, and report the integration commit: the default branch takes it before the code release.
+
+When a page answers 500 or renders wrong on the editing host, don't guess from the code: run `hosting.logs.runtime` with the page's path. It requests the page on the editing host and returns what the server logged while rendering it (the error, its stack, the component that threw) with the page's status and error digest.

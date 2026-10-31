@@ -30,6 +30,7 @@ tools:
       - deploy.preview
       - deploy.production
       - deploy.status
+      - logs.runtime
   sitecore-deploy:
     ops:
       - environment.read

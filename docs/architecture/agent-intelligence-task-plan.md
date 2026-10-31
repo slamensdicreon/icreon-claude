@@ -136,7 +136,7 @@ What the numbers say:
   (`add: true`, `65fd787`) and the ID guard (`0e146f6`).
 - **One bad field takes down every page.** A Parameters Template stored as a path 500ed every
   page with HeroBanner on Lambert (`97a2a84`). The editing host's runtime log named it; the agents
-  couldn't read it (task 86, hosting runtime logs, is still open).
+  couldn't read it then; since 2026-10-31 `hosting.logs.runtime` reproduces a page on the editing host and returns the server's log (task 86).
 
 What M5 should publish as facts, from what agents waited on or asked for: rendering IDs (the
 registrars' waits on each other's Available Renderings), media item IDs by source URL (pages

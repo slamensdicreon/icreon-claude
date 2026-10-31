@@ -27,6 +27,7 @@ tools:
       - deploy.preview
       - deploy.production
       - deploy.status
+      - logs.runtime
   optimizely-cms:
     ops:
       - application.list
