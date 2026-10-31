@@ -155,6 +155,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** Tasks redone after a review sent them back, until they finish again. */
   const redoing = new Set<string>();
   /**
+   * Whether merged Blueprint items get tasks of their own: decided once, when the Blueprint is
+   * first adopted, and kept, so a replan never reshapes a plan its history was written against.
+   */
+  let skipMerged = false;
+  /**
    * Finished tasks counted in order, and when each redone task finished and each task was last
    * dispatched, on that count: a check made before a fix landed is stale, not a new failure. Not
    * carried across continue-as-new: nothing is in flight then, so every later check is fresh.
@@ -1369,9 +1374,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** First gate approved: the Blueprint expands the plan's placeholders into real tasks. */
   async function adoptBlueprint() {
     const next = await acts.loadBlueprint(projectId);
+    skipMerged = patched('skip-merged');
     const newPlan = compilePlan(playbook, next, {
       enabledGates: policy.enabledGates,
       features: policy.features,
+      skipMerged,
     });
     await applyPlan(newPlan, next, `blueprint-v${next.version}`);
     await send(...metricEvents());
@@ -1561,6 +1568,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     const newPlan = compilePlan(playbook, nextBlueprint, {
       enabledGates: policy.enabledGates,
       features: policy.features,
+      skipMerged,
     });
     const impact: Impact = impactOf(
       diffPlans(plan, newPlan),
@@ -2178,6 +2186,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const [id, ids] of r.holdUntil ?? []) holdUntil.set(id, ids);
     for (const id of r.revalidate ?? []) revalidate.add(id);
     for (const id of r.redoing ?? []) redoing.add(id);
+    skipMerged = r.skipMerged ?? false;
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
@@ -2225,6 +2234,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       holdUntil: [...holdUntil],
       revalidate: [...revalidate],
       redoing: [...redoing],
+      skipMerged,
       taskEscalation: [...taskEscalation],
       started: [...started],
       done: [...done],

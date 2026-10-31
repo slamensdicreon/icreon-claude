@@ -135,6 +135,16 @@ Architect's `attrs.mergedInto`.
 | 3.1 | The planner skips `status: merge` items again, under `patched('skip-merged')`, so a workflow that started before the patch keeps the old plan and a new one gets the new plan. | `playbook-sdk` plan compiler takes a flag; `orchestrator/src/workflows/project.ts` passes `patched('skip-merged')` | Replay test with Lambert's recorded history stays deterministic; a new project has no tasks for merged items |
 | 3.2 | Merged items that already have tasks on Lambert and Star keep them; the Lead's review treats "nothing to build, merged into X" as accept. | `agent-runtime/src/review.ts` | Test |
 
+### Result (2026-10-31)
+
+Built. The compiler takes `skipMerged`; the workflow decides it once, at Gate 1 when it first
+adopts the Blueprint, under `patched('skip-merged')`, and keeps it across replans and
+continue-as-new. A project that adopted its Blueprint before keeps its merged items' tasks (its
+history was written against them); a new project gets none for an item with
+`status: merge` and `attrs.mergedInto`. A merge without a target stays its own work. Tested in
+both modes; the replay tests pass unchanged. 3.2 (the Lead accepting "merged into X" on legacy
+tasks) is not needed now that Lambert and Star will not run again.
+
 ## 4. Run the harvest; stage the Director's review
 
 M3.6 and the preparation of M3.7. The harvest groups a project's answered cards by category,

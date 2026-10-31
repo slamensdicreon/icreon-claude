@@ -120,6 +120,28 @@ describe('compilePlan', () => {
     assertTopological(plan);
   });
 
+  it('gives merged items no tasks of their own when the project compiles that way, and keeps them otherwise', () => {
+    const merged = blueprint({
+      components: COMPONENTS.map((k) => ({
+        key: k,
+        name: k,
+        pilot: PILOT.has(k),
+        // Tabs ships as a variant of Card Grid; a merge without a target stays its own work.
+        ...(k === 'tabs' ? { status: 'merge', attrs: { mergedInto: 'card-grid' } } : {}),
+        ...(k === 'quote-calculator' ? { status: 'merge' } : {}),
+      })),
+    });
+    const ids = (p: Plan) => p.tasks.map((t) => t.taskId);
+    const skipping = compilePlan(pb, merged, { skipMerged: true });
+    expect(ids(skipping).filter((id) => id.endsWith('-tabs'))).toEqual([]);
+    expect(ids(skipping)).toContain('port-card-grid');
+    expect(ids(skipping)).toContain('port-quote-calculator');
+    assertTopological(skipping);
+    // A project compiled before this existed keeps its merged items' tasks: its history has them.
+    const keeping = compilePlan(pb, merged);
+    expect(ids(keeping).filter((id) => id.endsWith('-tabs')).length).toBeGreaterThan(0);
+  });
+
   it('builds the pilot slice: non-pilot work waits on a checkpoint after the pilot items', () => {
     const plan = compilePlan(pb, blueprint());
     const byId = new Map(plan.tasks.map((t) => [t.taskId, t]));

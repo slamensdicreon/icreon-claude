@@ -1,6 +1,6 @@
 import type { MetricKey, TaskContract, Workstream } from '@lw/contracts';
 import type { Playbook, TaskTemplate } from '@lw/playbook-sdk';
-import type { Blueprint, BlueprintItem } from './blueprint';
+import { hasOwnWork, type Blueprint, type BlueprintItem } from './blueprint';
 
 export interface PlannedTask {
   taskId: string;
@@ -45,6 +45,11 @@ export interface CompileOptions {
   enabledGates?: string[];
   /** Project features from the brief (e.g. `personalization`); templates with `when` need one. */
   features?: string[];
+  /**
+   * Items merged into another (`status: 'merge'` with `attrs.mergedInto`) get no tasks of their
+   * own. Off for projects whose plan was compiled before this existed: their history has them.
+   */
+  skipMerged?: boolean;
 }
 
 export class PlanError extends Error {
@@ -86,7 +91,7 @@ export function compilePlan(
       continue;
     }
     const workstream = roles.get(template.role)?.workstream ?? null;
-    for (const unit of expand(template, blueprint, problems)) {
+    for (const unit of expand(template, blueprint, problems, options.skipMerged === true)) {
       if (expanded.has(unit.taskId)) {
         problems.push(`duplicate task id ${unit.taskId}`);
         continue;
@@ -131,7 +136,7 @@ export function compilePlan(
   if (pilot && blueprint) {
     pilotKeys = new Set(
       (blueprint.collections[pilot.collection] ?? [])
-        .filter((i) => i.pilot && i.status !== 'drop')
+        .filter((i) => i.pilot && (options.skipMerged ? hasOwnWork(i) : i.status !== 'drop'))
         .map((i) => i.key),
     );
     if (pilotKeys.size) {
@@ -275,7 +280,12 @@ interface Unit {
   itemKeys: string[];
 }
 
-function expand(template: TaskTemplate, blueprint: Blueprint | null, problems: string[]): Unit[] {
+function expand(
+  template: TaskTemplate,
+  blueprint: Blueprint | null,
+  problems: string[],
+  skipMerged: boolean,
+): Unit[] {
   if (!template.forEach) {
     return [
       {
@@ -306,7 +316,7 @@ function expand(template: TaskTemplate, blueprint: Blueprint | null, problems: s
     return [];
   }
   return collection
-    .filter((i) => i.status !== 'drop')
+    .filter((i) => (skipMerged ? hasOwnWork(i) : i.status !== 'drop'))
     .map((i: BlueprintItem) => ({
       taskId: template.id.replace('{key}', i.key),
       key: i.key,

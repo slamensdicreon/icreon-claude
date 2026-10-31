@@ -122,6 +122,8 @@ export interface ProjectSnapshot {
   revalidate?: string[];
   /** Tasks redone after a review sent them back, until they finish again (absent before). */
   redoing?: string[];
+  /** Merged Blueprint items get no tasks of their own (absent, so false, before). */
+  skipMerged?: boolean;
   taskEscalation: [string, string][];
   started: number[];
   done: number[];
