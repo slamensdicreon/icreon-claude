@@ -141,12 +141,12 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
   await sim.planTasks(0, [
     t(
       'p0-verify',
-      'tenant-provisioner',
+      'deployment-engineer',
       'Verify credentials and record tenant facts',
       'engineering',
     ),
   ]);
-  await work(sim, 'tenant-provisioner', 'p0-verify', 'Verifying access', [
+  await work(sim, 'deployment-engineer', 'p0-verify', 'Verifying access', [
     ['github', 'repo.clone', 'Cloned main @ 4f1c2a9 (212 MB)'],
     ['sitecore-authoring', 'token.exchange', 'Automation client token minted (xmcloud.cm:admin)'],
     [
@@ -327,7 +327,7 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
   await sim.planTasks(3, [
     t(
       'p3-site',
-      'tenant-provisioner',
+      'deployment-engineer',
       'Create site collection, site, languages and module folders',
       'engineering',
     ),
@@ -340,7 +340,7 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     t('p3-validate', 'structural-validator', 'Validate the site skeleton', 'quality', ['p3-site']),
   ]);
   await Promise.all([
-    work(sim, 'tenant-provisioner', 'p3-site', 'Creating the site', [
+    work(sim, 'deployment-engineer', 'p3-site', 'Creating the site', [
       ['sitecore-authoring', 'site.create', 'Created /sitecore/content/Acme/Corporate'],
       ['sitecore-authoring', 'language.add', 'Languages: en, fr-CA'],
       ['sitecore-cli', 'ser.push', 'Pushed 41 items (module Project.Acme)'],
@@ -691,18 +691,23 @@ async function templatesPhase(sim: Simulation) {
     ...TEMPLATES.map((name) =>
       t(
         `p5-${slug(name)}`,
-        'layout-engineer',
+        'rendering-registrar',
         `Create ${name} template and page design`,
         'engineering',
       ),
     ),
-    t('p5-partials', 'layout-engineer', 'Create header and footer partial designs', 'engineering'),
+    t(
+      'p5-partials',
+      'rendering-registrar',
+      'Create header and footer partial designs',
+      'engineering',
+    ),
   ]);
-  await work(sim, 'layout-engineer', 'p5-partials', 'Creating partial designs', [
+  await work(sim, 'rendering-registrar', 'p5-partials', 'Creating partial designs', [
     ['sitecore-authoring', 'item.create', 'Header and Footer partial designs created'],
   ]);
   for (const name of TEMPLATES) {
-    await work(sim, 'layout-engineer', `p5-${slug(name)}`, `Creating ${name}`, [
+    await work(sim, 'rendering-registrar', `p5-${slug(name)}`, `Creating ${name}`, [
       [
         'sitecore-authoring',
         'template.create',

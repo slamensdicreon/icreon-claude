@@ -53,12 +53,12 @@ describe('sitecoreai-migration playbook', () => {
     const broken = structuredClone(pb);
     const migrator = broken.roles.find((r) => r.role === 'content-migrator')!;
     migrator.reportsTo = 'nobody';
-    broken.roles.find((r) => r.role === 'visual-qa')!.activePhases = [42];
+    broken.roles.find((r) => r.role === 'parity-auditor')!.activePhases = [42];
     const problems = validatePlaybook(broken);
     expect(problems).toContain(
       'content-migrator: reportsTo "nobody" is not a role in this playbook',
     );
-    expect(problems).toContain('visual-qa: active in unknown phase 42');
+    expect(problems).toContain('parity-auditor: active in unknown phase 42');
   });
 
   it('ships autonomy defaults, and refuses handing releases or scope to anyone but the Director', async () => {
@@ -89,7 +89,6 @@ describe('role prompts', () => {
       'experience-enabler',
       'handover-writer',
       'head-integrator',
-      'layout-engineer',
       'media-migrator',
       'parity-auditor',
       'perf-a11y-qa',
@@ -99,12 +98,12 @@ describe('role prompts', () => {
       'research-agent',
       'solution-architect',
       'structural-validator',
-      'tenant-provisioner',
-      'visual-qa',
     ]);
-    expect(prompts['tenant-provisioner']).toMatch(
+    // The Deployment Engineer carries the tenant work since 0.7.0, and the Modeler the layouts.
+    expect(prompts['deployment-engineer']).toMatch(
       /own folders[\s\S]*Reference: known SitecoreAI pitfalls/,
     );
+    expect(prompts['rendering-registrar']).toContain('Page templates and designs');
     expect(prompts['editor-experience-qa']).toContain('Reference: Definition of Done');
     expect(prompts['content-analyst']).not.toContain('Reference:');
     expect(prompts['repo-analyst']).toContain('`repo-inventory`');

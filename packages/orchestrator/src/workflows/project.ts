@@ -759,6 +759,31 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
    * Starts one agent session for a batch of same-template tasks (usually one task). The ready
    * transitions are logged before the child starts, so the log always reads ready → running.
    */
+  /** A step no agent can do yet (Page builder before M7): the Director does it and marks it done. */
+  async function askByHand(t: PlannedTask, checklist: string) {
+    await send(
+      ...(stateOf(t.taskId) === 'planned' ? [taskMove(t, 'ready')] : []),
+      taskMove(t, 'blocked', 'A step for the Director, by hand'),
+    );
+    const id = await raise(
+      {
+        type: 'decision',
+        title: clip(`By hand: ${t.title}`),
+        context: checklist,
+        impact: `${t.title} and the tasks that depend on it wait for it. Other work continues.`,
+        options: [
+          { id: 'accept', label: 'Done: I checked it (say what you checked)', recommended: true },
+        ],
+        defaultOptionId: null,
+        evidence: [{ kind: 'log', label: 'Task', ref: `task:${t.taskId}` }],
+        sourceTaskId: t.taskId,
+        gate: null,
+      },
+      { kind: 'blocked', taskId: t.taskId },
+    );
+    taskEscalation.set(t.taskId, id);
+  }
+
   async function dispatch(batch: PlannedTask[], from: 'ready' | 'blocked') {
     const events: NewEvent[] = [];
     for (const t of batch) {
@@ -2386,6 +2411,13 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         // A pause or budget hold can land while this pass awaits an activity; re-check each time.
         if (projectPaused || budgetHold || inFlight() >= policy.concurrency) break;
         if (taken.has(t.taskId) || held(t)) continue;
+        // A step the Director does by hand: a card with its checklist, no agent.
+        if (t.manual && patched('manual-steps')) {
+          taken.add(t.taskId);
+          await askByHand(t, t.manual);
+          progressed = true;
+          continue;
+        }
         const batch = eligible
           .filter((o) => !taken.has(o.taskId) && o.templateId === t.templateId && !held(o))
           .slice(0, Math.max(1, t.batchSize));

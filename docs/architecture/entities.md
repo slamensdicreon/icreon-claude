@@ -142,22 +142,20 @@ plus deploy), compose, prove. Until a pilot has run, the entity-specific builder
 higher effort and the `tool` autonomy category should stay in shadow, because pushes touch a
 shared instance.
 
-### SitecoreAI team: proposed optimizations (version 0.7.0)
+### SitecoreAI team: optimizations applied (version 0.7.0)
 
-Looking back at the Ansco, Lambert's Cable and Star builds, the SitecoreAI team can lose three or
-four roles too. These are not applied yet: Lambert and Star still hold planned and blocked tasks
-whose role ids a change would orphan, and the catalog serves one version of a playbook. Apply them
-when both projects close, or once the catalog pins a project to its playbook version.
+Applied 2026-10-31, once the Director decided Lambert's Cable and Star LLC will not run again
+(a running project keeps the playbook it started with, but its agents use the catalog's roles,
+so those two could not resume on 0.7.0). The team goes from 24 roles to 21.
 
-| Change                                                                                                                                                              | Evidence                                                                                                                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Merge the Rendering Registrar and the Layout Engineer into one **Sitecore Modeler** (phases 4, 5, 8) with the union of their scopes                                | Same skill (SXA item modelling), overlapping scopes, and two access denials on Star (placeholder settings, Headless Variants) that each cost a card and a handoff |
-| Merge Visual QA into the Parity Auditor                                                                                                                             | The pixel diff at 0.5% tolerance flags every rebuilt page; the model judge in `parity.visual` already runs on every page task; Visual QA's claims on Lambert and Star were often wrong when measured |
-| Give the Performance and Accessibility QA a task, or remove it                                                                                                     | `activePhases: []` and no plan template: the role never runs, yet the Definition of Done needs its evidence. The Optimizely playbook gives it `perf-a11y-audit` in phase 8 |
-| Fold the Tenant Provisioner into the Deployment Engineer                                                                                                            | Phase 0 probe and phase 3 folders; the shared-tenant scope rules live in the pack and the gateway, not in the role                                              |
-| Move the personalization proof to Editor Experience QA; keep the Experience Enabler for items only                                                                 | Both need `page-builder.drive`; one role should own the Page builder driving                                                                                     |
-| Until M7 ships, make the Page builder tasks (`prove-pilot-slice`, `smoke-test`) Director checklist cards instead of agent tasks                                   | Without the driver they always end in a "not connected" card (Lambert's smoke test); an honest human step beats a permanent failure                               |
-
+| Change | Evidence |
+| --- | --- |
+| The Rendering Registrar and the Layout Engineer are one **Sitecore Modeler** (the registrar's id, phases 4, 5 and 8, the union of both scopes) | Same skill (SXA item modelling), overlapping scopes, and two access denials on Star (placeholder settings, Headless Variants) that each cost a card and a handoff |
+| Visual QA is folded into the Parity Auditor: its `visual-sample` task is gone | The Parity Auditor's `audit-parity` already runs `parity.visual` on every page with a model judge; the 0.5% pixel diff flagged every rebuilt page |
+| The Performance and Accessibility QA has a task: `perf-a11y-audit` in phase 8 | It had `activePhases: []` and no template, yet the Definition of Done needs its evidence. The live stack test now runs a real axe audit through it |
+| The Tenant Provisioner is folded into the Deployment Engineer (phases 0, 3, 4, 8) | A phase 0 probe and phase 3 folders; the shared-tenant scope rules live in the pack and the gateway, not in a role |
+| The personalization proof moved to the Editor Experience QA; the Experience Enabler works in Sitecore items only | Both needed `page-builder.drive`; one role owns Page builder work |
+| `prove-pilot-slice`, `smoke-test` and `prove-personalization` are **by-hand steps** (`manual:` in the plan) until M7 | Without a Page builder driver they always ended in a "not connected" card (Lambert's smoke test). The workflow (`patched('manual-steps')`) now raises a "By hand" card with the checklist and runs no agent; the task is done when the Director marks it done |
 
 ## The Optimizely entity: shipped now
 

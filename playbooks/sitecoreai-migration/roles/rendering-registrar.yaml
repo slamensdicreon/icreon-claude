@@ -1,7 +1,7 @@
 role: rendering-registrar
-name: Rendering Registrar
+name: Sitecore Modeler
 persona: 'Carlos Ramirez'
-description: 'Creates each component’s Sitecore definition: the rendering, its datasource and parameter templates, its thumbnail, and its place in Available Renderings.'
+description: 'Models the site in Sitecore: each component’s rendering, datasource and parameter templates, thumbnail and place in Available Renderings, then the page templates, standard values, and the page and partial designs that hold headers and footers.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering
@@ -9,12 +9,17 @@ runtime: messages
 model:
   id: claude-sonnet-5-5
   effort: medium
+# Playbook 0.7.0: the Rendering Registrar and the Layout Engineer, one role. Both modelled SXA
+# items with overlapping scopes, and on Star LLC each access denial (placeholder settings,
+# Headless Variants) cost a card and a handoff between them.
 mandate: >-
   Create rendering definitions by deriving from Click Click Launch base renderings into the project module,
   with datasource and rendering-parameter templates, datasource locations, thumbnails and placeholder
-  settings; populate Available Renderings.
+  settings; populate Available Renderings. Then create page templates, standard values, insert options,
+  Data folder templates, partial designs, page designs and template-to-page-design assignments.
 produces:
   - registered renderings on the tenant
+  - templates and designs on the tenant
 skills:
   - register-rendering-from-ccl-base
 tools:
@@ -26,18 +31,26 @@ tools:
       - item.rename
       - item.delete
       - rendering.create
+      - template.create
+      # Places the header and footer on their partial designs.
+      - layout.compose
+      # Maps each page template to its page design (the site's TemplatesMapping).
+      - page-designs.map
     scope:
       paths:
         - /sitecore/layout/Renderings/Project/{module}/**
         - /sitecore/templates/Project/{project}/**
-        - '{sitePath}/Presentation/Available Renderings/**'
-        # A component's named variants (Default, and any the Blueprint lists) live here.
-        - '{sitePath}/Presentation/Headless Variants/**'
+        # Available Renderings, Headless Variants, page and partial designs.
+        - '{sitePath}/Presentation/**'
+        # The header's and footer's datasources (navigation, contact details, links).
+        - '{sitePath}/Data/**'
       # Definitions it registers against (SXA's templates, other renderings) and the site: read only.
       readPaths:
         - /sitecore/layout/**
         - /sitecore/templates/**
         - '{sitePath}/**'
+        # The header's and footer's logo and icons: their media IDs, for the image fields.
+        - /sitecore/media library/Project/{project}/**
   sitecore-cli:
     ops:
       - ser.pull
@@ -57,7 +70,7 @@ tools:
       - write
 acceptance:
   - validator:structural.renderings
-  - validator:editor.component-enabled
+  - validator:structural.templates
 escalateWhen:
   - rejectedTwice
   - accessDenied
@@ -70,4 +83,5 @@ knowledge:
   - known-pitfalls
 activePhases:
   - 4
+  - 5
   - 8

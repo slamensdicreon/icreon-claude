@@ -151,18 +151,6 @@ function scriptedClaude(sourceUrl: () => string): ModelClient & { roles: string[
         }
         return msg([submit('Blueprint v1 maps every crawled page to the Content Page template.')]);
       }
-      if (who.includes('Visual QA')) {
-        if (turn === 1)
-          return msg([
-            call('browser__screenshot', { url: `${sourceUrl()}/`, breakpoints: ['desktop'] }),
-          ]);
-        if (turn === 3) {
-          const ref = lastResult(params).shots[0].ref as string;
-          return msg([call('validators__visual_diff', { baseline: ref, candidate: ref })]);
-        }
-        const d = lastResult(params) as { mismatchPercent: number };
-        return msg([submit(`Home matches at desktop: ${d.mismatchPercent}% of pixels differ.`)]);
-      }
       if (who.includes('Performance and Accessibility QA')) {
         if (turn === 1) return msg([call('validators__axe_run', { url: `${sourceUrl()}/` })]);
         const v = lastResult(params).content.violations as unknown[];
@@ -224,12 +212,11 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
     'handover-writer',
     'perf-a11y-qa',
     'solution-architect',
-    'visual-qa',
   ]);
   // Connected servers are not enough: Editor Experience QA's Page builder operations don't exist yet.
   expect(liveRoles(playbook, [])).toEqual([]);
-  // A task needs only the servers its template uses: the Experience Enabler's Sitecore items run
-  // without Page builder; its proof variant does not.
+  // The Experience Enabler works in Sitecore items only (0.7.0): nothing it needs is missing. A
+  // task needs only the servers its template uses.
   const served = (name: string, ops: string[]) =>
     ({ name, catalog: Object.fromEntries(ops.map((op) => [op, {}])) }) as unknown as ToolServer;
   const missing = missingOps(playbook, [
@@ -237,11 +224,10 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
     served('blackboard', ['read']),
     served('artifacts', ['read', 'write']),
   ]);
-  expect(missing.get('experience-enabler')).toEqual(['browser.page-builder.drive']);
+  expect(missing.get('experience-enabler') ?? []).toEqual([]);
   const enabler = (templateId: string) =>
     missingForTask(playbook, missing, { role: 'experience-enabler', templateId });
   expect(enabler('enable-experience')).toEqual([]);
-  expect(enabler('prove-personalization')).toEqual(['browser.page-builder.drive']);
 
   const worker = await createWorker({
     connection: env.nativeConnection,
@@ -339,14 +325,13 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
   );
   expect(plan(s).tasks.every((t) => t.state === 'done')).toBe(true);
 
-  // QA ran real checks during the build (the visual sample in phase 6); acceptance is the
-  // Director's, so no agent re-checks the finished site. The handover pack quotes the Decision Log.
+  // QA ran a real check during the build (the accessibility audit in phase 8, since 0.7.0 the
+  // Performance and Accessibility QA's task; Visual QA's sample is the Parity Auditor's visual
+  // check now). Acceptance is the Director's. The handover pack quotes the Decision Log.
   const op = (server: string, operation: string) =>
     steps.filter((e) => e.data.toolServer === server && e.data.operation === operation);
-  expect(op('validators', 'visual.diff').map((e) => e.data.summary)).toEqual([
-    'Visual match: 0% of pixels differ (tolerance 0.5%)',
-  ]);
-  expect(op('validators', 'axe.run')).toHaveLength(0);
+  expect(op('validators', 'visual.diff')).toHaveLength(0);
+  expect(op('validators', 'axe.run')).toHaveLength(1);
   expect(op('decision-log', 'read')[0]!.data.resultCode).toBe(200);
   expect(s.artifacts['handover-pack']).toMatchObject({ kind: 'handover_pack', latest: 1 });
   const pack = await stack.library.read('p1', 'handover-pack');
@@ -356,9 +341,9 @@ it('runs every role whose tools exist on live agents: the crawl becomes the plan
   expect([...new Set(claude.roles)].sort()).toEqual([
     'Your role: Content Analyst.',
     'Your role: Handover Writer.',
+    'Your role: Performance and Accessibility QA.',
     'Your role: Repo Analyst.',
     'Your role: Solution Architect.',
-    'Your role: Visual QA.',
   ]);
 
   const last = new Map<string, string>();

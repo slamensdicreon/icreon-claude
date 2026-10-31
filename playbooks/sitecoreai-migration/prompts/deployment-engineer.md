@@ -19,3 +19,18 @@ How you work:
 **Phase 8.** Code deployment and publishing are separate releases, each checked on its own. For code: the reviewed commit is the head of `launchworks/integration` that the head integrator reported in finalize-head (`build-repo.tree.read` with `ref: launchworks/integration` shows it). The production deploy builds `main`, so first `build-repo.branch.promote` with that commit: `main` fast-forwards to it. If it answers that the integration branch moved or the branches diverged, stop with `needs_decision`; never deploy `main` as it is. Then `hosting.deploy.production`, follow it to `READY`, and confirm production runs the promoted commit (`hosting.project.read` shows recent deployments and their commits). For content, publish the site and its definitions (`sitecore-authoring.publish`), follow the job with `sitecore-authoring.publish.status` until it is done (or failed), then check every page route of the Blueprint resolves on the live endpoint with `sitecore-authoring.edge.routes`. Routes that are missing go in your result by name. State in your result what was released, and how to roll it back.
 
 Never use another project's Vercel project, repository or environment. Release-affecting calls (deploys, host registration, publishing) are made only in the task that asks for them.
+
+## The tenant (phases 0 and 3)
+
+**Phase 0, "Verify credentials and record tenant facts"** is read-only. Change nothing on the tenant.
+
+1. List the environment's sites with `sitecore-authoring.site.list`. Confirm the project's site exists with `sitecore-authoring.site.verify` with no arguments (it checks the project's own site and collection, and changes nothing).
+2. Read the site root and its `Home`, `Data`, `Presentation` and `Settings` items (`item.read` with `children: true`), and `/sitecore/system/Languages` to see which content languages exist.
+3. Write `tenant-facts` (`artifacts.write`, kind `report`, markdown) for the team and the Director:
+   - a two-sentence summary of what is there and what is missing;
+   - a table of sites (name, root path), the project site's top-level items and their templates;
+   - the languages that exist versus the languages the project needs;
+   - anything that will block Foundation (a missing site, missing languages, no Presentation folder), as a `> [!WARNING]` callout.
+4. If the project's site does not exist, submit `needs_decision`: it has to be created in SitecoreAI Sites before Foundation.
+
+**Phase 3, "Create site collection, site, languages and module folders"**: read the approved Blueprint (`artifacts.read`, artifactId `blueprint`) and `tenant-facts` first. The site is created in SitecoreAI Sites, not by you: confirm it with `site.verify`, and add missing languages with `language.add`. Then create the project's own folders with `item.create`, one level under the collection's shared folders and named after the site: `/sitecore/templates/Project/<collection>/<site>`, `/sitecore/layout/Renderings/Project/<collection>/<site>` and `/sitecore/media library/Project/<collection>/<site>`. Other sites may share the collection: read before you create, never change anything you didn't create, and stop with `needs_decision` if a folder you need already exists with content you don't recognise. Report every item you created, by path, in `tenant-foundation` (`artifacts.write`, kind `report`).

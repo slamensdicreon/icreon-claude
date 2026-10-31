@@ -607,7 +607,7 @@ export class DemoProject {
             visual: p.visual ?? null,
             shots: await this.shotsFor(p.key),
           },
-          'visual-qa',
+          'parity-auditor',
           { kind: 'artifact', id: `page:${p.key}` },
         ),
       );

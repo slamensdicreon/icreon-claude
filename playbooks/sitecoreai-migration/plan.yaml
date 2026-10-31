@@ -14,7 +14,7 @@ templates:
   # 0 — Intake and access verification
   - id: verify-access
     phase: 0
-    role: tenant-provisioner
+    role: deployment-engineer
     title: Verify credentials and record tenant facts
     acceptance: [validator:credentials.verified]
 
@@ -52,7 +52,7 @@ templates:
   # 3 — Foundation
   - id: create-site
     phase: 3
-    role: tenant-provisioner
+    role: deployment-engineer
     title: Create site collection, site, languages and module folders
   - id: design-system
     phase: 3
@@ -127,6 +127,11 @@ templates:
     role: editor-experience-qa
     title: Prove the pilot slice end to end (publish, Experience Edge, Page builder)
     dependsOn: [switch-editing-host]
+    # Until an agent can work in Page builder (M7), the Director does this by hand.
+    manual: >-
+      In Page builder on the site: open the home page, add each pilot component from the toolbox,
+      create a new datasource for it and edit a field inline, save, publish, and check the page on
+      Experience Edge shows the change. Mark it done saying what you checked.
     acceptance:
       [
         validator:edge.published,
@@ -143,14 +148,14 @@ templates:
   # 5 — Templates, layouts and designs
   - id: partial-designs
     phase: 5
-    role: layout-engineer
+    role: rendering-registrar
     title: Create header and footer partial designs
     # Partial designs bind the header's and footer's renderings: they must be registered first.
     dependsOn: [register-*]
     acceptance: [validator:head.header-footer]
   - id: template-{key}
     phase: 5
-    role: layout-engineer
+    role: rendering-registrar
     forEach: templates
     title: Create {name} template and page design
     dependsOn: [partial-designs]
@@ -193,12 +198,6 @@ templates:
     title: Audit content parity
     dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
     acceptance: [validator:parity.render, validator:parity.visual, validator:parity.page]
-  - id: visual-sample
-    phase: 6
-    role: visual-qa
-    title: Screenshot-diff a page sample
-    dependsOn: [migrate-pages-*]
-    acceptance: [validator:parity.visual]
 
   # 7 — Experience enablement
   - id: enable-experience
@@ -209,10 +208,15 @@ templates:
     uses: [sitecore-authoring, blackboard, artifacts]
   - id: prove-personalization
     phase: 7
-    role: experience-enabler
+    # The Editor Experience QA owns Page builder work; the Experience Enabler keeps the items.
+    role: editor-experience-qa
     when: personalization
     title: Proof page variant and A/B/n test
     dependsOn: [enable-experience]
+    manual: >-
+      In Page builder: on one page, create a personalized variant for an audience and an A/B/n
+      test on one component, publish, and check both show as configured. Mark it done saying what
+      you set up.
 
   # 8 — Deployment and publishing
   - id: finalize-head
@@ -243,11 +247,20 @@ templates:
         Republish the previous item versions, or unpublish the new items; reverting the repository
         doesn't change what Experience Edge serves.
     acceptance: [validator:edge.published, validator:routes.resolve]
+  - id: perf-a11y-audit
+    phase: 8
+    role: perf-a11y-qa
+    title: Lighthouse and axe on representative pages
+    dependsOn: [publish-edge]
   - id: smoke-test
     phase: 8
     role: editor-experience-qa
     title: Smoke test Page builder on production
     dependsOn: [deploy-code, serialize-items, publish-edge]
+    manual: >-
+      In Page builder on production: open three pages of different templates, edit a field inline
+      on each and undo it, add and remove a component, and check the pages render on the live
+      site. Mark it done saying what you checked.
 
   # 9 — Handover and acceptance (the Director accepts in the live systems; no agent re-checks)
   - id: handover-pack

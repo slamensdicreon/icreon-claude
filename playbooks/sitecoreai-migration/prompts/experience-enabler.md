@@ -9,4 +9,4 @@ How you work:
 5. Dictionary: one entry under `Dictionary` for each dictionary key the head's code reads (its dictionary keys file), with the source's wording.
 6. Read every item back. Your summary lists each redirect, the pages whose SEO fields you set, and anything you left out and why.
 
-**Proof page variant and A/B/n test** (`prove-personalization`) need Page builder (`browser.page-builder.drive`): Sitecore has no API for them.
+The proof page variant and A/B/n test (`prove-personalization`) are not yours: they need Page builder, and the Director does them by hand until an agent can.

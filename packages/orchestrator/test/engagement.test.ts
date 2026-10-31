@@ -50,9 +50,26 @@ describe('project workflow', () => {
     const types = Object.values(s.escalations)
       .map((x) => x.type)
       .sort();
-    // Both phase gates, and the approval of each release (hosting, the site's editing host, code
-    // deploy, publish).
-    expect(types).toEqual(['access', 'decision', 'gate', 'gate', 'gate', 'gate', 'gate', 'gate']);
+    // Both phase gates, the approval of each release (hosting, the site's editing host, code
+    // deploy, publish), and the two Page builder steps the Director does by hand.
+    expect(types).toEqual([
+      'access',
+      'decision',
+      'decision',
+      'decision',
+      'gate',
+      'gate',
+      'gate',
+      'gate',
+      'gate',
+      'gate',
+    ]);
+    expect(
+      Object.values(s.escalations)
+        .filter((x) => x.title.startsWith('By hand'))
+        .map((x) => x.sourceTaskId)
+        .sort(),
+    ).toEqual(['prove-pilot-slice', 'smoke-test']);
     expect(
       Object.values(s.escalations)
         .filter((x) => x.title.startsWith('Approve release'))

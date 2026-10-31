@@ -35,7 +35,7 @@ describe('sitecore scenario', () => {
       total: 16,
     });
     expect(plan(state).tasks.every((t) => t.state === 'done')).toBe(true);
-    expect(team(state).agents).toHaveLength(24);
+    expect(team(state).agents).toHaveLength(21);
   }, 60_000);
 
   it('only emits legal task transitions and gap-free seqs', async () => {

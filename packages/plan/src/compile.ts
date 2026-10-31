@@ -30,6 +30,8 @@ export interface PlannedTask {
   /** Engagement-view row title. */
   groupTitle: string | null;
   contract: TaskContract | null;
+  /** A step the Director does by hand: the checklist its card shows (absent for agent work). */
+  manual?: string;
 }
 
 export interface Plan {
@@ -114,6 +116,8 @@ export function compilePlan(
         metric: template.metric ?? null,
         estimateHours: template.estimate ?? null,
         groupTitle: template.activity ?? activityTitle(template.title),
+        // Only when set, so plans of templates without it stay exactly as they were.
+        ...(template.manual ? { manual: fill(template.manual, unit.name) } : {}),
         contract: template.contract
           ? {
               inputs: fill(template.contract.inputs, unit.name),

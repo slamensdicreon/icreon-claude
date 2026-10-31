@@ -1,7 +1,7 @@
 role: deployment-engineer
 name: Deployment Engineer
 persona: 'Ryan Mitchell'
-description: 'Deploys the head to hosting, connects it to Page builder as the editing host, and publishes content to Experience Edge.'
+description: 'Sets up the SitecoreAI tenant (site, languages, module folders), deploys the head to hosting, connects it to Page builder as the editing host, and publishes content to Experience Edge.'
 tier: specialist
 reportsTo: engineering-lead
 workstream: engineering
@@ -9,13 +9,17 @@ runtime: messages
 model:
   id: claude-sonnet-5-5
   effort: medium
+# Playbook 0.7.0: also the Tenant Provisioner's work (a phase 0 probe and phase 3 folders); the
+# shared-tenant scope rules live in the pack and the gateway, not in a role of their own.
 mandate: >-
-  Deploy the head, register the rendering host to the site, configure environment variables, publish to
+  Verify the tenant read-only in phase 0 and record its facts; in phase 3 add the site's languages and
+  create the project's module folders. Deploy the head, register the rendering host to the site, configure environment variables, publish to
   Experience Edge, smoke test. Prepares hosting in phase 3 so phase 8 is a promotion. Code deployment,
   serialization and publishing are separate releases, each verified on its own: the deployed commit is
   the reviewed commit, serialization captures only the project's own items, and a publish job is
   tracked to its end and checked on Experience Edge.
 produces:
+  - tenant facts and the site's module folders
   - live editing and delivery hosts
 tools:
   hosting:
@@ -41,7 +45,11 @@ tools:
       - branch.promote
   sitecore-authoring:
     ops:
+      - site.list
+      - site.verify
       - item.read
+      - item.create
+      - language.add
       - publish
       # Follow a publish to its end, then check the delivery host reads every route.
       - publish.status
@@ -51,17 +59,23 @@ tools:
     scope:
       paths:
         # The site and the definitions it depends on: publishing related items does not
-        # reliably include rendering definitions, so they are published explicitly.
+        # reliably include rendering definitions, so they are published explicitly. Only what
+        # this project owns, and the shared parents its own folders are created in: other sites
+        # in the collection (a shared tenant) are out of reach.
         - '{sitePath}/**'
         - /sitecore/templates/Project/{project}/**
         - /sitecore/layout/Renderings/Project/{module}/**
         - /sitecore/media library/Project/{project}/**
+        - /sitecore/templates/Project/{collection}
+        - /sitecore/layout/Renderings/Project/{collection}
+        - /sitecore/media library/Project/{collection}
+        - /sitecore/system/Languages/**
   artifacts:
     ops:
       - read
       - write
 acceptance:
-  - validator:smoke.green
+  - validator:structural.site
   - validator:edge.published
 escalateWhen:
   - rejectedTwice
@@ -70,6 +84,7 @@ escalateWhen:
 knowledge:
   - known-pitfalls
 activePhases:
+  - 0
   - 3
   - 4
   - 8

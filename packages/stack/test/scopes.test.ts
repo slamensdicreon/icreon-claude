@@ -17,14 +17,14 @@ describe('write scopes in a shared collection', () => {
       );
     const can = (role: string, path: string) => inScope(path, paths(role), ansco);
 
-    expect(can('tenant-provisioner', '/sitecore/content/Brands/ansco/Home')).toBe(true);
-    expect(can('tenant-provisioner', '/sitecore/content/Brands/new-brand/Home')).toBe(false);
-    expect(can('tenant-provisioner', '/sitecore/templates/Project/Brands')).toBe(true);
-    expect(can('tenant-provisioner', '/sitecore/templates/Project/Brands/new-brand/Page')).toBe(
+    expect(can('deployment-engineer', '/sitecore/content/Brands/ansco/Home')).toBe(true);
+    expect(can('deployment-engineer', '/sitecore/content/Brands/new-brand/Home')).toBe(false);
+    expect(can('deployment-engineer', '/sitecore/templates/Project/Brands')).toBe(true);
+    expect(can('deployment-engineer', '/sitecore/templates/Project/Brands/new-brand/Page')).toBe(
       false,
     );
-    expect(can('layout-engineer', '/sitecore/templates/Project/Brands/ansco/Page')).toBe(true);
-    expect(can('layout-engineer', '/sitecore/templates/Project/Brands/Hero')).toBe(false);
+    expect(can('rendering-registrar', '/sitecore/templates/Project/Brands/ansco/Page')).toBe(true);
+    expect(can('rendering-registrar', '/sitecore/templates/Project/Brands/Hero')).toBe(false);
     expect(
       can('rendering-registrar', '/sitecore/layout/Renderings/Project/Brands/ansco/Hero'),
     ).toBe(true);

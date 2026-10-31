@@ -1,6 +1,21 @@
 # Finishing the partial work without the Director
 
-Status: plan, 2026-10-31. Companion to [agent-intelligence-task-plan.md](agent-intelligence-task-plan.md)
+Status: **done**, 2026-10-31. Revised scope: the Director decided Lambert's Cable and Star LLC
+will not be completed, so this is platform work only; the two projects are fixtures (recorded
+history and evidence), and the SitecoreAI team's 0.7.0 changes (section 8) ship now.
+
+| Section | Result |
+| --- | --- |
+| 1 Lead loops and triage | Built: structured review grounds, the third-review rule, checks on every card and review |
+| 2 Component failures | Built: attribution, routing, ordered send-backs, one rework for many pages |
+| 3 Merged Blueprint items | Built behind `patched('skip-merged')` |
+| 4 Rules harvest | Run: 21 proposals, 15 to approve, 3 to reject, 3 retired; waits on the Director |
+| 5 Lambert and Star's lessons | Written: task plan M4, eight pitfalls |
+| 6 Decoupling | Built: starter, build recipe, platform name, check coverage |
+| 7 Sandbox sync | Closed: already shipped |
+| 8 SitecoreAI team 0.7.0 | Built: 24 roles to 21, by-hand steps for Page builder ([entities.md](entities.md)) |
+
+Original plan, 2026-10-31. Companion to [agent-intelligence-task-plan.md](agent-intelligence-task-plan.md)
 and [entities.md](entities.md).
 
 Seven pieces of planned work are started but not finished. This plan takes each to the point where
@@ -248,6 +263,13 @@ replay, `git.commit` recovers a push an earlier run lost, `fresh: true` restarts
 builds drop the fetch cache. Nothing remains in code. Close the task; the next resumed run is the
 live confirmation (the FAQ Accordion pattern it fixed).
 
+## 8. SitecoreAI team 0.7.0
+
+Added when the scope changed: the role merges were held back only because Lambert and Star held
+tasks their role ids would orphan. Applied as the entities doc proposed, plus by-hand steps for
+the three Page builder tasks. See "SitecoreAI team: optimizations applied" in
+[entities.md](entities.md).
+
 ## Order and size
 
 | Order | Section | Size | Why here |
@@ -266,9 +288,9 @@ projects are paused; the first resumed phase is watched.
 
 ## What stays with the Director
 
-- Resume Lambert's Cable and Star LLC, and re-arm the watchers.
 - Approve or reject the harvested rules (section 4; one pass over a prepared table).
-- Switch autonomy levels from `shadow` to `lead` where the agreement holds (section 1.5).
-- The project punch lists: Lambert's smoke-test card and handover gaps, Star's round 3.
+- On the next project, switch autonomy levels from `shadow` to `lead` where the agreement holds
+  (section 1.5).
+- Whether to archive Lambert's Cable and Star LLC or leave them paused.
 - Decisions the roadmap already names: how the Pages agent signs in (M7.0), the worker's hosting,
   the Optimizely starter and pilot.

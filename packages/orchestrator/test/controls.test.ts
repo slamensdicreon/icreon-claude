@@ -70,8 +70,11 @@ describe('pause and cancel below the project', () => {
   it('holds one phase while its sibling runs, and shows the hold', async () => {
     const p = await launch(h);
     const g = await gate1(p);
-    // The Director approves releases (phase 3's hosting) as they come; the test answers the rest.
-    const bot = directorBot(p, (x) => (x.title.startsWith('Approve release') ? null : 'leave'));
+    // The Director approves releases (phase 3's hosting) and does the by-hand steps as they come;
+    // the test answers the rest.
+    const bot = directorBot(p, (x) =>
+      x.title.startsWith('Approve release') || x.title.startsWith('By hand') ? null : 'leave',
+    );
     const project = { kind: 'project' as const, id: p.projectId };
     await p.commands.control({ verb: 'pause', scope: project });
     await p.commands.resolve(g.escalationId, 'approve');

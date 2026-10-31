@@ -182,6 +182,12 @@ export const TaskTemplate = z.object({
    * shows the rollback plan, and only release tasks may call release-affecting operations.
    */
   release: z.object({ rollback: z.string() }).optional(),
+  /**
+   * A step the Director does by hand until an agent can (Page builder work before M7): the
+   * checklist the card shows. The task raises that card instead of running an agent, and is done
+   * when the Director marks it done.
+   */
+  manual: z.string().optional(),
   /** Name of a Blueprint collection. Without it the template yields exactly one task. */
   forEach: Kebab.optional(),
   /**

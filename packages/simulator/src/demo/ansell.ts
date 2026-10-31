@@ -47,15 +47,6 @@ const CONTRACTS: Record<string, TaskContract> = {
       'Delete created item IDs. Revert the serialization commit. Redeploy the previous preview',
     maxAttempts: 3,
   },
-  'layout-engineer': {
-    inputs: 'Blueprint v2 templates and page designs',
-    outputs:
-      'Data and page templates with standard values, partial and page designs. Serialization commit',
-    acceptance:
-      'Structural Validator: zero critical. Every template has standard values and insert options',
-    rollback: 'Delete created template items. Revert the serialization commit',
-    maxAttempts: 3,
-  },
   'head-integrator': {
     inputs: 'The Content SDK head on main, the batch branch, environment variables in the vault',
     outputs: 'A green preview build and deployment, editing host registered',
@@ -184,13 +175,13 @@ const TODAY_TASKS: DemoTask[] = [
     group: 'Register and validate each batch',
     itemKeys: ['sustainability-band', 'story'],
   }),
-  T('l1', 'layout-engineer', 'Data templates: Product, Brand, Hazard', 11, 13, 'done', [], {
+  T('l1', 'rendering-registrar', 'Data templates: Product, Brand, Hazard', 11, 13, 'done', [], {
     phase: 5,
     group: '9 data templates',
   }),
   T(
     't6',
-    'layout-engineer',
+    'rendering-registrar',
     'Data templates: Topic, Service, Sample Kit, 3 more',
     13,
     15,
@@ -198,15 +189,24 @@ const TODAY_TASKS: DemoTask[] = [
     ['l1'],
     { phase: 5, group: '9 data templates' },
   ),
-  T('l3', 'layout-engineer', 'Home page template and standard values', 15, 16, 'planned', ['t6'], {
+  T(
+    'l3',
+    'rendering-registrar',
+    'Home page template and standard values',
+    15,
+    16,
+    'planned',
+    ['t6'],
+    {
+      phase: 5,
+      group: 'Home template, partial and page designs',
+    },
+  ),
+  T('l4', 'rendering-registrar', 'Partial designs: header, footer', 16, 17, 'planned', ['l3'], {
     phase: 5,
     group: 'Home template, partial and page designs',
   }),
-  T('l4', 'layout-engineer', 'Partial designs: header, footer', 16, 17, 'planned', ['l3'], {
-    phase: 5,
-    group: 'Home template, partial and page designs',
-  }),
-  T('l5', 'layout-engineer', 'Page design: Home', 17, 17.5, 'planned', ['l4'], {
+  T('l5', 'rendering-registrar', 'Page design: Home', 17, 17.5, 'planned', ['l4'], {
     phase: 5,
     group: 'Home template, partial and page designs',
   }),
@@ -311,7 +311,7 @@ const ENGAGEMENT: DemoTask[] = [
   E(
     0,
     'e0a',
-    'tenant-provisioner',
+    'deployment-engineer',
     'Verify GitHub, SitecoreAI, Edge and Vercel access',
     d(0, 9),
     d(0, 10),
@@ -341,7 +341,7 @@ const ENGAGEMENT: DemoTask[] = [
   E(
     3,
     'e3a',
-    'tenant-provisioner',
+    'deployment-engineer',
     'Site collection, site, language, grid',
     d(2, 8),
     d(2, 11),
@@ -603,7 +603,7 @@ const AGENT_CALLS: [string, string, string, string, string, string][] = [
     'ok',
     '60ms',
   ],
-  ['tenant-provisioner', 'Wed 9:14 AM', 'Sitecore CLI', 'ser push (module: ansell)', '0', '31s'],
+  ['deployment-engineer', 'Wed 9:14 AM', 'Sitecore CLI', 'ser push (module: ansell)', '0', '31s'],
   [
     'component-engineer',
     '1:55 PM',
@@ -614,7 +614,7 @@ const AGENT_CALLS: [string, string, string, string, string, string][] = [
   ],
   ['rendering-registrar', '1:59 PM', 'Sitecore CLI', 'ser push (module: ansell)', '0', '12.8s'],
   [
-    'layout-engineer',
+    'rendering-registrar',
     '1:50 PM',
     'Authoring API',
     'createItem Templates/Project/ansell/Product',
@@ -1175,7 +1175,7 @@ export const ansell: DemoScenario = {
       tokens: 390_000,
       note: 'Owns the Implementation Blueprint. Consulted in phases 4 and 5.',
     },
-    'tenant-provisioner': {
+    'deployment-engineer': {
       tokens: 120_000,
       note: 'Creates the site collection, site, language, grid and module folders.',
     },
@@ -1191,21 +1191,11 @@ export const ansell: DemoScenario = {
       tokens: 430_000,
       note: 'Creates rendering definitions, datasource and parameter templates, thumbnails, Available Renderings.',
     },
-    'layout-engineer': {
-      state: 'active',
-      now: 'Data templates: Product, Brand, Hazard',
-      tokens: 170_000,
-      note: 'Page templates, standard values, partial and page designs.',
-    },
     'head-integrator': {
       state: 'active',
       now: 'Watching preview build 7',
       tokens: 380_000,
       note: 'Owns the new Content SDK Next.js head: sitecore.config.ts, middleware, editing host, and the Tailwind 4 and CSS carried over from Vite.',
-    },
-    'deployment-engineer': {
-      tokens: 70_000,
-      note: 'Deploys the head, registers the editing host, publishes to Edge.',
     },
     'content-migrator': {
       note: 'Creates the home page and the 89 data items from the corpus, composes placeholders, rewrites links.',
@@ -1222,14 +1212,11 @@ export const ansell: DemoScenario = {
       tokens: 90_000,
       note: 'Checks item structure against SXA and Click Click Launch rules.',
     },
-    'visual-qa': {
+    'parity-auditor': {
       note: 'Screenshot-diffs the Vite build against the Sitecore build at three breakpoints.',
     },
     'editor-experience-qa': { note: 'Drives Page builder as a marketer would.' },
     'perf-a11y-qa': { note: 'Lighthouse and axe on the home page.' },
-    'parity-auditor': {
-      note: 'Diffs text, links and media between the Vite build and the Sitecore build.',
-    },
     'handover-writer': { note: 'Writes the runbook, component catalog and known-gaps register.' },
   },
   tasks: [...ENGAGEMENT.slice(0, 11), ...TODAY_TASKS, ...ENGAGEMENT.slice(11)],
@@ -1506,12 +1493,6 @@ export const ansell: DemoScenario = {
         'Validating batch 2: Available Renderings',
         'Idle until batch 3 lands',
       ],
-      'layout-engineer': [
-        'Data templates: Product, Brand, Hazard',
-        'Data templates: Topic, Service, Sample Kit',
-        'Home page template: standard values',
-        'Partial designs: GlobalHeader, GlobalFooter',
-      ],
     },
     ops: [
       [
@@ -1533,7 +1514,7 @@ export const ansell: DemoScenario = {
       ],
       ['head-integrator', 'Vercel', 'build 7', 'green', '2 m 31 s', '0.3k'],
       [
-        'layout-engineer',
+        'rendering-registrar',
         'Authoring API',
         'createItem Templates/Project/ansell/Sample Kit',
         '200',
