@@ -1,0 +1,72 @@
+role: rendering-registrar
+name: Rendering Registrar
+persona: 'Carlos Ramirez'
+description: 'Creates each component’s Sitecore definition: the rendering, its datasource and parameter templates, its thumbnail, and its place in Available Renderings.'
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create rendering definitions by deriving from Click Click Launch base renderings into the project module,
+  with datasource and rendering-parameter templates, datasource locations, thumbnails and placeholder
+  settings; populate Available Renderings.
+produces:
+  - registered renderings on the tenant
+skills:
+  - register-rendering-from-ccl-base
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+      - item.rename
+      - rendering.create
+    scope:
+      paths:
+        - /sitecore/layout/Renderings/Project/{module}/**
+        - /sitecore/templates/Project/{project}/**
+        - '{sitePath}/Presentation/Available Renderings/**'
+        # A component's named variants (Default, and any the Blueprint lists) live here.
+        - '{sitePath}/Presentation/Headless Variants/**'
+      # Definitions it registers against (SXA's templates, other renderings) and the site: read only.
+      readPaths:
+        - /sitecore/layout/**
+        - /sitecore/templates/**
+        - '{sitePath}/**'
+  sitecore-cli:
+    ops:
+      - ser.pull
+      - ser.validate
+  build-repo:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+      - branch.commit
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+acceptance:
+  - validator:structural.renderings
+  - validator:editor.component-enabled
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+  - mappingAmbiguous
+budget:
+  tokens: 400000
+  wallclock: 30m
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 4
+  - 8

@@ -27,10 +27,11 @@ import {
 } from '@lw/events';
 import type { NewEvent } from '@lw/contracts';
 import { createWorker, taskQueueFor } from '@lw/orchestrator';
-import { loadCatalog } from '@lw/playbook-sdk';
+import { loadCatalog, versionOf, type Playbook } from '@lw/playbook-sdk';
 import { createPlatforms, ownedPaths, SITECOREAI, sitecoreTarget, text } from '@lw/platforms';
 import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw/tool-sandbox';
 import {
+  byVersion,
   composeStack,
   retrospectAtPhaseExit,
   seedPlatformKnowledge,
@@ -403,10 +404,40 @@ const seeded = await seedPlatformKnowledge(
 });
 if (seeded) console.log(`Knowledge: ${seeded} lesson(s) seeded from the platforms' pitfalls`);
 
-// One stack per playbook: its roles, prompts, grants and platform pack.
-const stacks: { id: string; stack: Stack }[] = [];
-for (const { playbook, dir } of catalog.values()) {
-  const stack = await composeStack({
+// One stack per playbook version kept: its roles, prompts, grants and platform pack. A project
+// runs on the version it was created on; new projects start on the current one.
+const stacks: { id: string; stack: Stack; activities: Stack['activities'] }[] = [];
+const pinned = (projectId: string) => projections.get(projectId)?.playbook?.version ?? null;
+for (const entry of catalog.values()) {
+  const older = new Map<string, Stack['activities']>();
+  for (const old of entry.older ?? []) {
+    const s = await compose(old.playbook, old.dir);
+    older.set(old.playbook.manifest.version, s.activities);
+  }
+  if (older.size)
+    console.log(
+      `Kept for pinned projects (${entry.playbook.manifest.id}): ${[...older.keys()].join(', ')}`,
+    );
+  const stack = await compose(entry.playbook, entry.dir);
+  const { playbook } = entry;
+  console.log(`Live agents (${playbook.manifest.id}): ${stack.liveRoles.join(', ') || 'none'}`);
+  const unchecked = uncheckedValidators(
+    playbook,
+    platforms.get(playbook.manifest.platform)?.checks ?? {},
+  );
+  if (unchecked.length)
+    console.log(
+      `Checks ${playbook.manifest.id} names that nothing implements (they stay pending): ${unchecked.join(', ')}`,
+    );
+  stacks.push({
+    id: playbook.manifest.id,
+    stack,
+    activities: byVersion(stack.activities, older, pinned),
+  });
+}
+
+async function compose(playbook: Playbook, dir: string): Promise<Stack> {
+  return composeStack({
     store: opened.store,
     projections,
     playbook,
@@ -429,16 +460,6 @@ for (const { playbook, dir } of catalog.values()) {
       return ref && vault ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
     },
   });
-  console.log(`Live agents (${playbook.manifest.id}): ${stack.liveRoles.join(', ') || 'none'}`);
-  const unchecked = uncheckedValidators(
-    playbook,
-    platforms.get(playbook.manifest.platform)?.checks ?? {},
-  );
-  if (unchecked.length)
-    console.log(
-      `Checks ${playbook.manifest.id} names that nothing implements (they stay pending): ${unchecked.join(', ')}`,
-    );
-  stacks.push({ id: playbook.manifest.id, stack });
 }
 // When a live project's phase ends, Cypher's retrospective proposes what the team should learn;
 // nothing reaches a brief until the Director approves it.
@@ -448,8 +469,10 @@ const stopRetros =
         projections,
         store: opened.store,
         knowledge,
-        playbookOf: (id) =>
-          (id ? catalog.get(id)?.playbook : undefined) ?? [...catalog.values()][0]!.playbook,
+        playbookOf: (id, version) => {
+          const entry = (id ? catalog.get(id) : undefined) ?? [...catalog.values()][0]!;
+          return versionOf(entry, version).playbook;
+        },
         retrospect: (input) => retrospect(input),
       })
     : () => undefined;
@@ -477,11 +500,11 @@ const connection = await NativeConnection.connect({
 console.log(`Temporal: connected to ${env.TEMPORAL_ADDRESS}, namespace ${env.TEMPORAL_NAMESPACE}`);
 
 const workers = await Promise.all(
-  stacks.map(({ id, stack }) =>
+  stacks.map(({ id, activities }) =>
     createWorker({
       connection,
       namespace: env.TEMPORAL_NAMESPACE,
-      activities: stack.activities,
+      activities,
       taskQueue: taskQueueFor(id),
     }),
   ),

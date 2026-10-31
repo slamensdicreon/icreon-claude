@@ -43,8 +43,16 @@ the server and in the worker.
 - The worker composes one stack per playbook and serves each on its own Temporal task queue
   (`taskQueueFor`). The first playbook, `sitecoreai-migration`, keeps the original queue name so
   projects started before the catalog keep running.
-- A project keeps the playbook version it was created with. A new version applies to new
-  projects, or to an existing one after a reset.
+- A project keeps the playbook version it was created with: its plan (the workflow carries it),
+  and its team (roles, prompts, tool grants, checks). Earlier versions are kept under
+  `playbooks/.versions/<id>/<version>/`; the catalog loads them beside the current one
+  (`CatalogEntry.older`), the worker composes a stack for each, and `byVersion` sends every
+  activity of a project to the stack of its version. A version that isn't kept falls back to the
+  current team. A new version applies to new projects, or to an existing one after a reset.
+- **Bumping a version:** run `pnpm playbook:archive <id>` first, so projects created on the
+  version being replaced keep their team, then change the version in `playbook.yaml`. Archive
+  only versions some unfinished project is pinned to; the Dashboard's playbook card lists the
+  kept versions. Kept today: SitecoreAI 0.6.3 (Star LLC) and 0.5.1 (Lambert's Cable).
 
 ## Not built yet
 

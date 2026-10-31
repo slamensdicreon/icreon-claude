@@ -375,6 +375,8 @@ function Playbooks({ projects }: { projects: PortfolioItem[] }) {
                     {ran.length
                       ? `Projects on it: ${ran.map((p) => `${p.name} (${p.playbook?.version})`).join(', ')}`
                       : 'No projects on it yet.'}
+                    {(pb.kept ?? []).length > 0 &&
+                      ` Versions ${pb.kept.join(' and ')} are kept: projects created on them run with their own team.`}
                   </p>
                 </article>
               );

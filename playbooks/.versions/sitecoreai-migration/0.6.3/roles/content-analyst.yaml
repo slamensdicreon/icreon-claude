@@ -1,0 +1,36 @@
+role: content-analyst
+name: Content Analyst
+persona: 'Maria Gonzalez'
+description: 'Builds the content inventory, page by page and item by item. Re-reads the source during migration to prove nothing was lost.'
+tier: specialist
+reportsTo: discovery-lead
+workstream: discovery
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Crawl the source pages (live site or repo content): page inventory, content blocks per page, media references,
+  repeated regions, languages. Re-crawl in phase 6 for parity.
+produces:
+  - page inventory
+  - content map
+  - partial-design candidates
+tools:
+  browser:
+    ops:
+      - crawl
+      - snapshot
+      - screenshot
+  artifacts:
+    ops:
+      - write
+acceptance:
+  - validator:inventory.sitemap-covered
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+activePhases:
+  - 1
+  - 6

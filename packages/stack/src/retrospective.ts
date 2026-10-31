@@ -8,8 +8,8 @@ export interface RetrospectiveDeps {
   projections: Projections;
   store: EventStore;
   knowledge: KnowledgeStore;
-  /** The playbook a project runs on, for its roles and the Chief of Staff's model. */
-  playbookOf(id: string | undefined): Playbook;
+  /** The playbook (and version) a project runs on, for its roles and the Chief of Staff's model. */
+  playbookOf(id: string | undefined, version?: string | null): Playbook;
   retrospect(input: RetroInput): Promise<Retro & { tokens: number }>;
 }
 
@@ -47,7 +47,7 @@ export async function runRetrospective(
       summary: 'Nothing in this phase cost a card, a rejection or a wait.',
       proposed: [],
     };
-  const playbook = deps.playbookOf(s.playbook?.id);
+  const playbook = deps.playbookOf(s.playbook?.id, s.playbook?.version);
   const platform = s.intake?.platform ?? null;
   const known = (await deps.knowledge.list()).filter((e) => e.status !== 'retired');
   const cos = playbook.roles.find((r) => r.role === 'chief-of-staff');

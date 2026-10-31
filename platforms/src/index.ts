@@ -244,11 +244,16 @@ export function intakeSpec(playbook: Playbook, pack: PlatformPack): IntakeSpec {
   };
 }
 
-export function playbookSummary(playbook: Playbook, pack: PlatformPack): PlaybookSummary {
+export function playbookSummary(
+  playbook: Playbook,
+  pack: PlatformPack,
+  kept: string[] = [],
+): PlaybookSummary {
   const m = playbook.manifest;
   return {
     id: m.id,
     version: m.version,
+    kept,
     name: m.name,
     description: m.description,
     platform: { id: pack.id, name: pack.name, ...pack.about },

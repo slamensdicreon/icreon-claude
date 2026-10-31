@@ -103,6 +103,41 @@ async function firstFile(paths: string[]): Promise<string | null> {
 export interface CatalogEntry {
   playbook: Playbook;
   dir: string;
+  /**
+   * Earlier versions kept for the projects pinned to them (`.versions/<id>/<version>`), newest
+   * first. New projects always start on the current one.
+   */
+  older?: { playbook: Playbook; dir: string }[];
+}
+
+/** A playbook's archived versions under `<root>/.versions/<id>`, newest first. */
+async function olderVersions(root: string, id: string) {
+  const base = join(root, '.versions', id);
+  const dirs = await readdir(base, { withFileTypes: true }).catch(() => []);
+  const out: { playbook: Playbook; dir: string }[] = [];
+  for (const d of dirs.filter((x) => x.isDirectory())) {
+    const dir = join(base, d.name);
+    const playbook = await loadPlaybook(dir);
+    if (playbook.manifest.id !== id || playbook.manifest.version !== d.name)
+      throw new PlaybookError([
+        `.versions/${id}/${d.name} holds ${playbook.manifest.id} ${playbook.manifest.version}`,
+      ]);
+    out.push({ playbook, dir });
+  }
+  const parts = (v: string) => v.split('.').map((n) => Number(n) || 0);
+  return out.sort((a, b) => {
+    const [x, y] = [parts(a.playbook.manifest.version), parts(b.playbook.manifest.version)];
+    for (let i = 0; i < Math.max(x.length, y.length); i++)
+      if ((y[i] ?? 0) !== (x[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0);
+    return 0;
+  });
+}
+
+/** The catalog entry a project runs on: its pinned version when kept, else the current one. */
+export function versionOf(entry: CatalogEntry, version: string | null | undefined): CatalogEntry {
+  if (!version || entry.playbook.manifest.version === version) return entry;
+  const older = entry.older?.find((o) => o.playbook.manifest.version === version);
+  return older ? { ...older, older: [] } : entry;
 }
 
 /**
@@ -124,7 +159,10 @@ export async function loadCatalog(root: string): Promise<Map<string, CatalogEntr
     const playbook = await loadPlaybook(dir);
     const id = playbook.manifest.id;
     if (catalog.has(id)) throw new PlaybookError([`two playbooks have the id ${id}`]);
-    catalog.set(id, { playbook, dir });
+    const older = (await olderVersions(root, id)).filter(
+      (o) => o.playbook.manifest.version !== playbook.manifest.version,
+    );
+    catalog.set(id, { playbook, dir, older });
   }
   if (!catalog.size) throw new PlaybookError([`no playbooks under ${root}`]);
   return catalog;

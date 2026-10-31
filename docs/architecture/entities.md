@@ -145,8 +145,9 @@ shared instance.
 ### SitecoreAI team: optimizations applied (version 0.7.0)
 
 Applied 2026-10-31, once the Director decided Lambert's Cable and Star LLC will not run again
-(a running project keeps the playbook it started with, but its agents use the catalog's roles,
-so those two could not resume on 0.7.0). The team goes from 24 roles to 21.
+(a running project kept the playbook it started with, but its agents used the catalog's roles,
+so those two could not resume on 0.7.0; since version pinning, 0.5.1 and 0.6.3 are kept and
+they would run with their own teams). The team goes from 24 roles to 21.
 
 | Change | Evidence |
 | --- | --- |

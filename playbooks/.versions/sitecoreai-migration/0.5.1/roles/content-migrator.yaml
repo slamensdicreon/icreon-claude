@@ -1,0 +1,61 @@
+role: content-migrator
+name: Content Migrator
+persona: 'Leila Hassan'
+description: 'Creates pages and data items from the source content, places components on each page, and rewrites internal links.'
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create pages from templates, compose placeholders with renderings and datasources, create Data folder
+  items, convert rich text, rewrite internal links.
+produces:
+  - migrated pages and data items
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+      - layout.compose
+    scope:
+      paths:
+        - '{sitePath}/Home/**'
+        - '{sitePath}/Data/**'
+      # Template and rendering IDs to compose with, and media to link: read only.
+      readPaths:
+        - /sitecore/templates/**
+        - /sitecore/layout/**
+        - '{sitePath}/**'
+        - /sitecore/media library/Project/{project}/**
+  browser:
+    ops:
+      # The source page's copy and structure, so content is migrated, never invented.
+      - snapshot
+  # The source repository, where a site built from code keeps its copy (content files).
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+acceptance:
+  - validator:structural.layouts
+  - validator:head.pages-render
+  - validator:parity.page
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 6

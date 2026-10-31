@@ -114,7 +114,13 @@ export class IntakeService {
   playbooks(): PlaybookSummary[] {
     const order = [...this.deps.platforms.keys()];
     return [...this.deps.catalog.values()]
-      .map((e) => playbookSummary(e.playbook, this.resolve(e.playbook.manifest.id).pack))
+      .map((e) =>
+        playbookSummary(
+          e.playbook,
+          this.resolve(e.playbook.manifest.id).pack,
+          (e.older ?? []).map((o) => o.playbook.manifest.version),
+        ),
+      )
       .sort((a, b) => order.indexOf(a.platform.id) - order.indexOf(b.platform.id));
   }
 

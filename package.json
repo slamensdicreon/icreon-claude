@@ -12,7 +12,8 @@
     "test": "turbo run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev:temporal": "ORCHESTRATOR=temporal STORE=pglite pnpm --filter @lw/control-api dev"
+    "dev:temporal": "ORCHESTRATOR=temporal STORE=pglite pnpm --filter @lw/control-api dev",
+    "playbook:archive": "node scripts/archive-playbook.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

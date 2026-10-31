@@ -106,6 +106,8 @@ export type IntakeSpec = z.infer<typeof IntakeSpec>;
 export const PlaybookSummary = z.object({
   id: z.string(),
   version: z.string(),
+  /** Earlier versions kept for the projects pinned to them, newest first. */
+  kept: z.array(z.string()).default([]),
   name: z.string(),
   description: z.string(),
   /** The entity (platform) the playbook runs on; the catalog groups playbooks by it. */

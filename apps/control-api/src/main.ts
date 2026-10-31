@@ -25,7 +25,7 @@ import {
   startProject,
   stopProject,
 } from '@lw/orchestrator';
-import { loadCatalog } from '@lw/playbook-sdk';
+import { loadCatalog, versionOf } from '@lw/playbook-sdk';
 import { createPlatforms } from '@lw/platforms';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import { composeStack, runRetrospective, seedPlatformKnowledge } from '@lw/stack';
@@ -182,8 +182,15 @@ const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS, optimizely: OPT
 // The scripted demo, the simulator and the local sample project run the SitecoreAI build.
 const DEFAULT_PLAYBOOK = 'sitecoreai-migration';
 const { playbook, dir: playbookDir } = catalog.get(DEFAULT_PLAYBOOK) ?? [...catalog.values()][0]!;
-const playbookOf = (id: string | undefined) =>
-  catalog.get(id ?? DEFAULT_PLAYBOOK)?.playbook ?? playbook;
+/** The playbook a project runs on: its pinned version when kept, else the current one. */
+const playbookOf = (id: string | undefined, version?: string | null) => {
+  const entry = catalog.get(id ?? DEFAULT_PLAYBOOK);
+  return entry ? versionOf(entry, version).playbook : playbook;
+};
+const pinnedPlaybook = (projectId: string) => {
+  const p = projections.get(projectId)?.playbook;
+  return playbookOf(p?.id, p?.version);
+};
 const cleanups: (() => Promise<void>)[] = [];
 // Shared with the worker's tool servers (one folder in dev; object storage when deployed). The
 // demo projects keep theirs in memory, with the event log.
@@ -437,9 +444,8 @@ const app = await buildApp({
   }),
   github,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
-  policyDefaults: (projectId) => policyRows(playbookOf(projections.get(projectId)?.playbook?.id)),
-  autonomyDefaults: (projectId) =>
-    playbookOf(projections.get(projectId)?.playbook?.id).manifest.defaults.autonomy,
+  policyDefaults: (projectId) => policyRows(pinnedPlaybook(projectId)),
+  autonomyDefaults: (projectId) => pinnedPlaybook(projectId).manifest.defaults.autonomy,
   corsOrigin: env.CORS_ORIGIN,
   auth,
   extraOrigins,

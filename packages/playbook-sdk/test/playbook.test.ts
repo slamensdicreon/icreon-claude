@@ -1,9 +1,16 @@
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadCatalog, loadPlaybook, loadRolePrompts, roster, validatePlaybook } from '../src';
+import {
+  loadCatalog,
+  loadPlaybook,
+  loadRolePrompts,
+  roster,
+  validatePlaybook,
+  versionOf,
+} from '../src';
 
 const DIR = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 // The playbook's platform pack holds the platform knowledge its roles list.
@@ -134,6 +141,31 @@ describe('role prompts', () => {
       name: 'Build a SitecoreAI website',
     });
     expect(pb.manifest.charter.outcomes.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the versions projects are pinned to, and finds a project its own', async () => {
+    const catalog = await loadCatalog(
+      fileURLToPath(new URL('../../../playbooks', import.meta.url)),
+    );
+    const entry = catalog.get('sitecoreai-migration')!;
+    // Lambert's Cable runs 0.5.1 and Star LLC 0.6.3: their teams stay as they were.
+    expect(entry.older?.map((o) => o.playbook.manifest.version)).toEqual(['0.6.3', '0.5.1']);
+    const lambert = versionOf(entry, '0.5.1');
+    expect(lambert.playbook.manifest.version).toBe('0.5.1');
+    expect(lambert.playbook.roles.map((r) => r.role)).toContain('layout-engineer');
+    expect(entry.playbook.roles.map((r) => r.role)).not.toContain('layout-engineer');
+    // A version that isn't kept, or none: the current one.
+    expect(versionOf(entry, '0.4.0')).toBe(entry);
+    expect(versionOf(entry, null)).toBe(entry);
+  });
+
+  it('refuses an archived version filed under the wrong name', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lw-cat-'));
+    await cp(DIR, join(root, 'sitecoreai-migration'), { recursive: true });
+    await cp(DIR, join(root, '.versions', 'sitecoreai-migration', '0.0.1'), { recursive: true });
+    await expect(loadCatalog(root)).rejects.toThrow(
+      /\.versions\/sitecoreai-migration\/0\.0\.1 holds/,
+    );
   });
 
   it('refuses a prompt for a role the playbook does not have', async () => {
