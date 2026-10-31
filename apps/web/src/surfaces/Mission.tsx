@@ -47,8 +47,8 @@ export function Mission() {
       {layout.present ? (
         <>
           <h1 className="present-title">
-            {p.target?.site ?? p.name} on SitecoreAI, phase {lead?.number ?? 0} of{' '}
-            {phases.length - 1}
+            {p.name}: phase {lead?.number ?? 0} of {phases.length - 1}
+            {lead ? `, ${lead.shortName}` : ''}
           </h1>
           <FloorHero />
         </>

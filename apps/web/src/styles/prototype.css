@@ -2625,11 +2625,13 @@ tr.changed td:first-child {
   padding-left: 72px;
 }
 .present-title {
-  font-size: 56px;
-  line-height: 1.02;
-  font-weight: var(--fw-light);
-  margin: 0 0 36px;
-  max-width: 20ch;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: var(--fw-regular);
+  margin: 0 0 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* responsive */

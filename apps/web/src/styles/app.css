@@ -2572,7 +2572,8 @@
 }
 /* Mission Control's presentation centrepiece: the live floor above the preview panel. */
 .app.present .floor.floor-hero {
-  height: min(62vh, 760px);
+  /* The top bar, the page padding, the one-line title and the replay bar; the floor gets the rest. */
+  height: calc(100vh - 318px);
   min-height: 480px;
   margin-bottom: 32px;
 }
