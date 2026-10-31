@@ -1008,6 +1008,10 @@ export const CypherMessage = z.object({
   proposals: z.array(CypherProposal).default([]),
   /** Projects the answer is about, to open. */
   projects: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
+  /** Rules and lessons Cypher proposed in this answer, waiting for the Director's approval. */
+  filed: z
+    .array(z.object({ kind: z.enum(['rule', 'lesson']), ref: z.string(), title: z.string() }))
+    .default([]),
 });
 export type CypherMessage = z.infer<typeof CypherMessage>;
 

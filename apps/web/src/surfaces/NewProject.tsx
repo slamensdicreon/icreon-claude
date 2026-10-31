@@ -268,6 +268,7 @@ export function NewProject() {
         .filter(([, v]) => v),
     ),
     connectionId: draft?.connectionId ?? null,
+    origin: newProjectIntent.origin ?? null,
   });
 
   const create = async () => {

@@ -396,6 +396,27 @@ export class IntakeService {
             : 'Nothing has run yet. The project starts once the orchestrator (Temporal Cloud) is connected.',
         },
       },
+      // Drafted with Cypher on the Dashboard: the project's conversation picks up from there.
+      ...(intake.origin
+        ? [
+            {
+              type: 'cos.message' as const,
+              actor: { kind: 'agent' as const, id: 'chief-of-staff' },
+              subject: { kind: 'project' as const, id: projectId },
+              severity: 'routine' as const,
+              data: {
+                messageId: randomUUID(),
+                kind: 'brief' as const,
+                title: 'From our conversation on the Dashboard',
+                label: 'Handoff',
+                body: intake.origin.reason,
+                rows: brief.map((b) => ({ label: b.label, value: b.answer })),
+                bullets: intake.origin.notCovered.map((n) => `Not covered by the playbook: ${n}`),
+                note: 'I drafted this project from what you told me there; ask me here about anything in it.',
+              },
+            },
+          ]
+        : []),
     ]);
     return projectId;
   }

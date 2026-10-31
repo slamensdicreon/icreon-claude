@@ -109,6 +109,8 @@ export interface Toast {
 export interface NewProjectIntent {
   preset?: { playbookId: string };
   remix?: { draft: RemixDraft | ProjectDraft; connectionName: string | null };
+  /** Drafted with Cypher: why, and what the playbook won't do, for the project's conversation. */
+  origin?: { conversationId: string | null; reason: string; notCovered: string[] };
 }
 
 interface AppValue {

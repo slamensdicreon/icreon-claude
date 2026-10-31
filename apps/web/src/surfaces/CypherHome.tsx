@@ -56,6 +56,7 @@ function Prose({ text }: { text: string }) {
 
 function Proposal({ p }: { p: CypherProposal }) {
   const { newProject } = useApp();
+  const conversationId = useCypher().active?.id ?? null;
   const d = p.draft;
   const source = [d.sourceUrl, d.repo].filter(Boolean).join(' · ') || 'No source yet';
   return (
@@ -88,7 +89,12 @@ function Proposal({ p }: { p: CypherProposal }) {
       )}
       <button
         className="btn primary sm"
-        onClick={() => newProject({ remix: { draft: d, connectionName: null } })}
+        onClick={() =>
+          newProject({
+            remix: { draft: d, connectionName: null },
+            origin: { conversationId, reason: p.reason, notCovered: p.notCovered },
+          })
+        }
       >
         Review and create
       </button>
@@ -115,6 +121,16 @@ function Message({ m }: { m: CypherMessage }) {
       {m.proposals.map((p, i) => (
         <Proposal key={i} p={p} />
       ))}
+      {(m.filed ?? []).length > 0 && (
+        <ul className="cy-filed">
+          {m.filed.map((f) => (
+            <li key={f.ref}>
+              Proposed <span className="mono">{f.ref}</span> {f.title}: waiting for you under
+              Dashboard → {f.kind === 'rule' ? 'Rules' : 'Knowledge'}.
+            </li>
+          ))}
+        </ul>
+      )}
       {m.projects.length > 0 && (
         <div className="cy-links">
           {m.projects.map((p) => (

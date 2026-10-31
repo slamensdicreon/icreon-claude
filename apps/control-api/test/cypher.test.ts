@@ -1,7 +1,14 @@
 import { fileURLToPath } from 'node:url';
 import { CypherConversation, CypherConversations, type ProjectIntakeInput } from '@lw/contracts';
 import type { ModelClient } from '@lw/agent-runtime';
-import { InMemoryEventStore, MemoryIntegrationStore, MemoryVault, Projections } from '@lw/events';
+import {
+  InMemoryEventStore,
+  MemoryIntegrationStore,
+  MemoryKnowledgeStore,
+  MemoryRuleStore,
+  MemoryVault,
+  Projections,
+} from '@lw/events';
 import { loadCatalog } from '@lw/playbook-sdk';
 import { createPlatforms } from '@lw/platforms';
 import { SITECORE_DEFAULTS } from '@lw/connectors';
@@ -55,7 +62,10 @@ afterEach(async () => {
   app = null;
 });
 
-async function start(model: ModelClient | null = null) {
+async function start(
+  model: ModelClient | null = null,
+  stores: { rules?: MemoryRuleStore; knowledge?: MemoryKnowledgeStore } = {},
+) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
@@ -75,6 +85,7 @@ async function start(model: ModelClient | null = null) {
       connections,
     }),
     cypher: { model, store: connections },
+    ...stores,
   });
   return { store, projections, connections };
 }
@@ -218,6 +229,7 @@ it('drafts a remix on the saved connection from a conversation, and creates noth
     'list_connections',
     'propose_project',
     'propose_remix',
+    'project_history',
   ]);
 
   // Drafts only: still just the one project.
@@ -325,4 +337,103 @@ it('drafts a new project from a brief, telling the model what it got wrong', asy
     },
   });
   expect(await store.projectIds()).toEqual([]);
+});
+
+it("reads a project's history and proposes a rule and a lesson, applying neither", async () => {
+  let projectId = '';
+  const rules = new MemoryRuleStore();
+  const knowledge = new MemoryKnowledgeStore();
+  await knowledge.create({
+    kind: 'lesson',
+    status: 'active',
+    scope: { kind: 'platform', id: 'sitecoreai' },
+    title: 'Media downloads refused by the source CDN',
+    text: 'Fetch through the browser tool with the page as referer.',
+    author: 'director',
+  });
+  const { model, requests, results } = scripted([
+    { tool: 'project_history', input: () => ({ projectId, search: 'intake' }) },
+    { tool: 'search_knowledge', input: { search: 'media' } },
+    {
+      tool: 'propose_rule',
+      input: {
+        when: 'the source site refuses a media download',
+        then: 'skip the file and log it as a gap',
+        category: 'media',
+        scope: 'playbook',
+        scopeId: 'sitecoreai-migration',
+      },
+    },
+    {
+      tool: 'propose_lesson',
+      input: {
+        title: 'Hero images missing alt text',
+        text: 'Take alt text from the source page, never from the file name.',
+        scope: 'platform',
+        scopeId: 'sitecoreai',
+        roles: ['media-migrator'],
+      },
+    },
+    { tool: 'propose_lesson', input: { title: 'No scope id', text: 'x x x', scope: 'project' } },
+    { text: 'Proposed R-1 and K-2; approve them under Rules and Knowledge.' },
+    { text: '{"title": "Media lessons", "summary": "Proposed a rule and a lesson."}' },
+  ]);
+  await start(model, { rules, knowledge });
+  projectId = (await call('POST', '/projects', first)).body.projectId;
+  const r = await call('POST', '/cypher', { body: 'What did Globex teach us about media?' });
+  expect(r.status).toBe(200);
+  const reply = CypherConversation.parse(r.body).messages[1]!;
+  // The history tool and the knowledge tools are offered when their stores are there.
+  const offered = requests[0].tools.map((t: { name: string }) => t.name);
+  expect(offered).toEqual(
+    expect.arrayContaining([
+      'project_history',
+      'search_knowledge',
+      'propose_rule',
+      'propose_lesson',
+    ]),
+  );
+  const history = JSON.parse(results[0]!);
+  expect(history).toMatchObject({ name: 'Globex site', search: 'intake' });
+  expect(history.activity.length + history.decisions.length).toBeGreaterThanOrEqual(0);
+  expect(JSON.parse(results[1]!).knowledge[0]).toMatchObject({
+    title: 'Media downloads refused by the source CDN',
+  });
+  expect(results[4]).toMatch(/^ERROR A project lesson needs the project's id/);
+  expect(reply.filed).toEqual([
+    { kind: 'rule', ref: 'R-1', title: 'When the source site refuses a media download' },
+    { kind: 'lesson', ref: 'K-2', title: 'Hero images missing alt text' },
+  ]);
+  expect(reply.projects).toEqual([{ id: projectId, name: 'Globex site' }]);
+  // Proposed only: nothing applies until the Director approves.
+  expect((await rules.list())[0]).toMatchObject({ status: 'proposed', author: 'cypher' });
+  expect((await knowledge.list({ status: 'proposed' }))[0]).toMatchObject({
+    author: 'cypher',
+    roles: ['media-migrator'],
+    scope: { kind: 'platform', id: 'sitecoreai' },
+  });
+});
+
+it('opens a project drafted with Cypher with his reasoning and the brief', async () => {
+  await start();
+  const r = await call('POST', '/projects', {
+    ...first,
+    origin: {
+      conversationId: 'c1',
+      reason: 'The SitecoreAI migration playbook fits: a live site moving to SitecoreAI.',
+      notCovered: ['A careers portal'],
+    },
+  });
+  expect(r.status).toBe(201);
+  const convo = (await call('GET', `/projects/${r.body.projectId}/conversation`)).body;
+  const handoff = convo.items.find(
+    (m: { title: string }) => m.title === 'From our conversation on the Dashboard',
+  );
+  expect(handoff).toMatchObject({
+    body: 'The SitecoreAI migration playbook fits: a live site moving to SitecoreAI.',
+    bullets: ['Not covered by the playbook: A careers portal'],
+  });
+  expect(handoff.rows).toEqual(
+    expect.arrayContaining([expect.objectContaining({ value: 'WCAG 2.2 AA' })]),
+  );
 });

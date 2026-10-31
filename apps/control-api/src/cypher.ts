@@ -11,9 +11,9 @@ import type {
   ProjectDraft,
   RemixDraft,
 } from '@lw/contracts';
-import { briefApplies, SOURCE_REPO } from '@lw/contracts';
+import { briefApplies, DecisionCategory, SOURCE_REPO } from '@lw/contracts';
 import type { ModelClient } from '@lw/agent-runtime';
-import type { IntegrationStore } from '@lw/events';
+import type { IntegrationStore, KnowledgeStore, RuleStore } from '@lw/events';
 import { CommandError } from '@lw/domain';
 
 type CreateParams = Parameters<ModelClient['create']>[0];
@@ -64,18 +64,28 @@ export interface CypherDeps {
   /** What one project is waiting on the Director for, and its status line. */
   detail(projectId: string): Promise<{ status: string; waitingOnYou: string[] } | null>;
   remixDraft(projectId: string): Promise<RemixDraft>;
+  /**
+   * One project's history: its Decision Log, Activity rows matching a search, its scorecard and
+   * what its retrospectives proposed. Null for an unknown project.
+   */
+  history?(projectId: string, search: string | null): Promise<unknown | null>;
+  /** Where Cypher files rules it proposes (they wait for the Director's approval). */
+  rules?: RuleStore;
+  /** Where Cypher reads the team's knowledge and files lessons it proposes. */
+  knowledge?: KnowledgeStore;
   now?: () => number;
 }
 
 const SYSTEM = `You are Cypher, Chief of Staff at Launchworks, an agentic studio that migrates and builds websites with teams of AI agents. You talk with the Director (the human in charge) on the Dashboard, above any one project.
 
-You help with two things:
+You help with three things:
 1. The portfolio: where projects stand, what needs the Director, what's blocked, what was delivered. Read it with your tools before answering; never guess numbers or states. Name projects by name.
 2. Starting projects. The Director gives a brief in their own words, or asks to set up a site "like" an existing project (a remix: same playbook, connection, brief and budgets, a new site).
    - Choose the playbook from list_playbooks that fits the brief. Say why in a sentence, and say plainly what the brief asks for that the playbook won't do.
    - Use a saved connection (list_connections) when the new site is on a tenant one already covers; its credentials are then reused and nothing is typed again.
    - A project needs a name, the client, and a source: the live site's URL, a GitHub repository (owner/name), or both. Without a repository the agents rebuild from the live site. Ask only for what's missing and can't be inferred; don't ask about budgets (the Director sets them in the wizard).
    - When you have enough, call propose_project or propose_remix. That only drafts: the Director opens it in the New Project wizard, reviews, adds any credentials and clicks Create. You never create, start, pause or change a project yourself, and you say so if asked.
+3. What the team has learned. project_history reads one project's Decision Log, Activity and scorecard: use it to answer how a project went, why something happened, or what was decided, citing decisions by their ref (D-07). search_knowledge reads the lessons, procedures and rules the team already has. When the Director asks you to remember something, or a pattern across projects should change how the team works, propose it: propose_rule for "when this kind of question comes up, answer it this way" (the Leads apply it to the next card like it), propose_lesson for what agents should know or do. Both only propose: nothing applies until the Director approves it under Rules or Knowledge, and you say so. Search first, so you don't propose what already exists.
 
 Be brief and plain: short paragraphs or a few bullets, no headings. Today is {today}.`;
 
@@ -161,7 +171,76 @@ const TOOLS: BetaTool[] = [
   },
 ];
 
+/** Tools that need a store or the history reader; offered only when it's there. */
+const HISTORY_TOOL: BetaTool = {
+  name: 'project_history',
+  description:
+    "One project's history: its Decision Log (question, answer, who decided, ref), Activity rows matching a search (newest first), its scorecard (cards by category, rejections, waits, runs) and what its retrospectives proposed. Give `search` to find specific events (a page, a component, an error).",
+  input_schema: {
+    type: 'object',
+    properties: { projectId: { type: 'string' }, search: { type: 'string' } },
+    required: ['projectId'],
+  },
+};
+const KNOWLEDGE_TOOLS: BetaTool[] = [
+  {
+    name: 'search_knowledge',
+    description:
+      "The team's lessons, procedures and gaps (with ref, status, scope and how often they were put in briefs) and the rules (when this happens, do that) matching a search; empty search lists the newest.",
+    input_schema: { type: 'object', properties: { search: { type: 'string' } } },
+  },
+  {
+    name: 'propose_lesson',
+    description:
+      'Propose a lesson (what agents should know or do), a procedure (steps that work) or a gap (needs code or a permission) for the Director to approve. Nothing applies until approved.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['lesson', 'procedure', 'gap'] },
+        title: { type: 'string', description: 'The problem, as an agent meets it.' },
+        text: { type: 'string', description: 'What to know or do, in one to three sentences.' },
+        scope: {
+          type: 'string',
+          enum: ['global', 'platform', 'playbook', 'project'],
+          description: 'Where it holds.',
+        },
+        scopeId: {
+          type: 'string',
+          description: 'The platform id, playbook id or project id the scope names.',
+        },
+        roles: { type: 'array', items: { type: 'string' }, description: 'Role ids, if only some.' },
+      },
+      required: ['title', 'text', 'scope'],
+    },
+  },
+  {
+    name: 'propose_rule',
+    description:
+      "Propose a rule the Leads apply to cards: when this kind of question comes up, answer it this way, so the Director isn't asked again. Nothing applies until approved.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        when: {
+          type: 'string',
+          description: 'The situation, starting lowercase, as after "When".',
+        },
+        then: { type: 'string', description: 'What to do, as one instruction.' },
+        category: {
+          type: 'string',
+          enum: [...DecisionCategory.options],
+          description: 'What kind of question it settles.',
+        },
+        scope: { type: 'string', enum: ['project', 'playbook', 'platform'] },
+        scopeId: { type: 'string' },
+        roles: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['when', 'then', 'category', 'scope', 'scopeId'],
+    },
+  },
+];
+
 type Input = Record<string, unknown>;
+type Filed = CypherMessage['filed'][number];
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const URL_OK = /^https?:\/\/[^\s]+\.[^\s]+/;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
@@ -233,6 +312,7 @@ export class PortfolioCypher {
       at: at(),
       proposals: [],
       projects: [],
+      filed: [],
     };
     const reply = await this.answer([...stored.messages, asked]);
     const messages = [...stored.messages, asked, { ...reply, at: at() }].slice(-KEEP);
@@ -324,6 +404,12 @@ export class PortfolioCypher {
     while (messages[0]?.role === 'assistant') messages.shift();
     const proposals: CypherProposal[] = [];
     const projects = new Map<string, string>();
+    const filed: Filed[] = [];
+    const tools = [
+      ...TOOLS,
+      ...(this.deps.history ? [HISTORY_TOOL] : []),
+      ...(this.deps.knowledge || this.deps.rules ? KNOWLEDGE_TOOLS : []),
+    ];
     const system = SYSTEM.replace(
       '{today}',
       new Date((this.deps.now ?? Date.now)()).toISOString().slice(0, 10),
@@ -334,7 +420,7 @@ export class PortfolioCypher {
         model: MODEL,
         max_tokens: 4000,
         system,
-        tools: TOOLS,
+        tools,
         messages,
         output_config: { effort: 'medium' },
       });
@@ -352,7 +438,13 @@ export class PortfolioCypher {
       const results: ToolResult[] = [];
       for (const use of uses) {
         try {
-          const out = await this.tool(use.name, (use.input ?? {}) as Input, proposals, projects);
+          const out = await this.tool(
+            use.name,
+            (use.input ?? {}) as Input,
+            proposals,
+            projects,
+            filed,
+          );
           results.push({ type: 'tool_result', tool_use_id: use.id, content: JSON.stringify(out) });
         } catch (err) {
           results.push({
@@ -374,6 +466,7 @@ export class PortfolioCypher {
       at: '',
       proposals,
       projects: [...projects].map(([id, name]) => ({ id, name })),
+      filed,
     };
   }
 
@@ -382,8 +475,96 @@ export class PortfolioCypher {
     input: Input,
     proposals: CypherProposal[],
     projects: Map<string, string>,
+    filed: Filed[],
   ): Promise<unknown> {
     switch (name) {
+      case 'project_history': {
+        const id = String(input.projectId ?? '');
+        const found = this.deps.history ? await this.deps.history(id, str(input.search)) : null;
+        if (!found) throw new Error(`No project "${id}". Use list_projects for ids.`);
+        const p = (await this.deps.portfolio()).find((x) => x.id === id);
+        if (p) projects.set(p.id, p.name);
+        return found;
+      }
+      case 'search_knowledge': {
+        const q = str(input.search);
+        const entries = this.deps.knowledge
+          ? await this.deps.knowledge.list({ q: q ?? undefined })
+          : [];
+        const words = (q ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+        const rules = this.deps.rules
+          ? (await this.deps.rules.list()).filter((r) =>
+              words.every((w) => `${r.when} ${r.then}`.toLowerCase().includes(w)),
+            )
+          : [];
+        return {
+          knowledge: entries.slice(0, 30).map((e) => ({
+            ref: e.ref,
+            kind: e.kind,
+            status: e.status,
+            scope: e.scope,
+            title: e.title,
+            text: e.text,
+            roles: e.roles,
+            usedInBriefs: e.used,
+          })),
+          rules: rules.slice(0, 30).map((r) => ({
+            ref: r.ref,
+            status: r.status,
+            category: r.category,
+            scope: r.scope,
+            when: r.when,
+            then: r.then,
+            applied: r.applied,
+            overridden: r.overridden,
+          })),
+        };
+      }
+      case 'propose_lesson': {
+        if (!this.deps.knowledge) throw new Error('Knowledge is not stored on this server.');
+        const scope = this.knowledgeScope(input);
+        const kind = ['lesson', 'procedure', 'gap'].includes(String(input.kind))
+          ? (input.kind as 'lesson' | 'procedure' | 'gap')
+          : 'lesson';
+        const e = await this.deps.knowledge.create({
+          kind,
+          status: 'proposed',
+          scope,
+          title: str(input.title) ?? '',
+          text: str(input.text) ?? '',
+          roles: Array.isArray(input.roles) ? input.roles.map(String) : [],
+          author: 'cypher',
+          evidence: [
+            { projectId: null, ref: 'cypher', label: 'Proposed in a conversation with Cypher' },
+          ],
+          source: { doc: null, projectId: scope.kind === 'project' ? scope.id : null, phase: null },
+        });
+        if (!e) throw new Error('That lesson was not saved.');
+        filed.push({ kind: 'lesson', ref: e.ref, title: e.title });
+        return { proposed: e.ref, note: 'Waiting for the Director under Dashboard → Knowledge.' };
+      }
+      case 'propose_rule': {
+        if (!this.deps.rules) throw new Error('Rules are not stored on this server.');
+        const category = DecisionCategory.safeParse(input.category);
+        if (!category.success) throw new Error(`"${String(input.category)}" is not a category.`);
+        const kind = ['project', 'playbook', 'platform'].includes(String(input.scope))
+          ? (input.scope as 'project' | 'playbook' | 'platform')
+          : null;
+        const scopeId = str(input.scopeId);
+        if (!kind || !scopeId)
+          throw new Error('A rule needs a scope: project, playbook or platform, and its id.');
+        const r = await this.deps.rules.create({
+          when: str(input.when) ?? '',
+          then: str(input.then) ?? '',
+          category: category.data,
+          scope: { kind, id: scopeId },
+          roles: Array.isArray(input.roles) ? input.roles.map(String) : [],
+          author: 'cypher',
+          status: 'proposed',
+        });
+        filed.push({ kind: 'rule', ref: r.ref, title: `When ${r.when}` });
+        return { proposed: r.ref, note: 'Waiting for the Director under Dashboard → Rules.' };
+      }
       case 'list_projects': {
         const items = (await this.deps.portfolio()).filter((p) => !p.demo);
         return items.map((p) => ({
@@ -470,6 +651,16 @@ export class PortfolioCypher {
       default:
         throw new Error(`No tool "${name}".`);
     }
+  }
+
+  private knowledgeScope(input: Input) {
+    const kind = ['global', 'platform', 'playbook', 'project'].includes(String(input.scope))
+      ? (input.scope as 'global' | 'platform' | 'playbook' | 'project')
+      : 'global';
+    if (kind === 'global') return { kind, id: '*' };
+    const id = str(input.scopeId);
+    if (!id) throw new Error(`A ${kind} lesson needs the ${kind}'s id in scopeId.`);
+    return { kind, id };
   }
 
   private async newDraft(input: Input): Promise<ProjectDraft> {

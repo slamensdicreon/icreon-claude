@@ -2617,3 +2617,9 @@
 .rules > .muted + .dash-filters {
   margin-top: 12px;
 }
+.cy-filed {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--web-fg-2);
+}

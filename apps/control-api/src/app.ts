@@ -89,6 +89,7 @@ import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from 
 import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
 import { PortfolioCypher } from './cypher';
+import { projectHistory } from './history';
 import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
@@ -892,6 +893,23 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             if (!s) throw new Error(`No project "${id}". Use list_projects for ids.`);
             return deps.intake!.remixDraft(s);
           },
+          history: async (id, search) => {
+            await projections.catchUp(id);
+            const s = project(id);
+            if (!s) return null;
+            return projectHistory(s, await deps.store.read(id), search, {
+              lessons: deps.knowledge
+                ? (await deps.knowledge.list({ projectId: id })).map((e) => ({
+                    ref: e.ref,
+                    status: e.status,
+                    title: e.title,
+                  }))
+                : [],
+              now: now(),
+            });
+          },
+          rules: deps.rules,
+          knowledge: deps.knowledge,
         })
       : null;
 

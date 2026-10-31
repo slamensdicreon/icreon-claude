@@ -220,7 +220,12 @@ Built 2026-10-31. What landed, against the rows:
   rejected or re-run afterwards; flagged at four or more tasks with half failing.
 - **M6.7** Dashboard → Knowledge: browse, search, filter by kind, write, edit, approve, reject,
   retire, history, export.
-- **M6.8** Retrospectives on Lambert's Cable's finished phases: results below once run.
+- **M6.8** Deployed (`d25476e`): 85 lessons seeded (67 SitecoreAI, 18 Optimizely).
+  Retrospectives on Lambert's Cable's eight finished phases (0 to 7) proposed 39 entries, K-93 to
+  K-131: 16 lessons, 10 procedures and 13 gaps, each citing its cards, rejections or waits. They
+  wait for the Director under Dashboard → Knowledge (and each phase's list is on Lambert's
+  Lessons learned page). Two gaps, K-113 and K-122 (no runtime errors for the Head Integrator
+  or the Content Migrator), are what task 86 (hosting runtime logs) closes.
 
 ## M7 — Page builder automation (2 sessions, plus a decision)
 
@@ -241,6 +246,18 @@ Four tasks per project need an agent working in SitecoreAI Pages as an editor (`
 | M8.1 | `project_history` tool: the Decision Log, activity search and the scorecard for one project | `control-api/src/cypher.ts` | Scripted-model test |
 | M8.2 | Handoff: a project created from a Cypher draft starts its own conversation with the brief and the reasoning from the Dashboard | `NewProject.tsx`, `intake.ts` | Test: first project message carries the brief |
 | M8.3 | Cypher can propose rules and lessons from the Dashboard (uses M3 and M6) | `cypher.ts` | Test |
+
+Built 2026-10-31:
+
+- **M8.1** `project_history`: the Decision Log, Activity rows matching a search (newest first),
+  the scorecard's totals, categories and repeated causes, and the project's retrospective
+  proposals (`control-api/src/history.ts`).
+- **M8.2** A Cypher draft opened in the wizard carries his reasoning and what the playbook won't
+  cover (`ProjectIntake.origin`); the project's conversation opens with it beside the brief
+  ("From our conversation on the Dashboard").
+- **M8.3** `search_knowledge`, `propose_lesson` and `propose_rule`: Cypher reads what the team
+  knows and files proposals, never active entries; his answer lists what he filed and where to
+  approve it.
 
 ---
 

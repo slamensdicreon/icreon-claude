@@ -89,6 +89,18 @@ export const ProjectIntake = z.object({
    * the intake doesn't give (each is still checked against the live service).
    */
   connectionId: z.string().max(80).nullable().default(null),
+  /**
+   * Drafted by Cypher on the Dashboard: why this playbook, and what the brief asks for that it
+   * won't do. The project's own conversation opens with it.
+   */
+  origin: z
+    .object({
+      conversationId: z.string().max(80).nullable().default(null),
+      reason: z.string().trim().max(2000),
+      notCovered: z.array(z.string().trim().max(400)).max(20).default([]),
+    })
+    .nullable()
+    .default(null),
 });
 export type ProjectIntake = z.infer<typeof ProjectIntake>;
 export type ProjectIntakeInput = z.input<typeof ProjectIntake>;
