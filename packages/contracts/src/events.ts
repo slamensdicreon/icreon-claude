@@ -738,6 +738,11 @@ export const EventBody = z.discriminatedUnion('type', [
     'conventions.recorded',
     z.object({ entries: z.array(z.object({ key: z.string(), value: z.string() })) }),
   ),
+  /** Knowledge entries put in a task's brief, for how well each one helps. */
+  ev(
+    'knowledge.used',
+    z.object({ taskId: z.string(), entries: z.array(z.string()), refs: z.array(z.string()) }),
+  ),
   /** A fact recorded: from a tool's result, or published by the agent. */
   ev(
     'fact.published',

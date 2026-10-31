@@ -101,6 +101,11 @@ export interface ProjectState {
   conventions: { key: string; value: string }[];
   /** What tasks made that later tasks look up, by `kind:key`. */
   facts: Record<string, FactView>;
+  /**
+   * Knowledge entries put in briefs: by entry, the tasks that got it, with the task's rejections
+   * and re-runs when it first did (what came after is how the entry did).
+   */
+  knowledgeUse: Record<string, Record<string, { rejections: number; reruns: number }>>;
   /** What agents' tools couldn't do, by capability (lower case): engineering's backlog. */
   capabilityGaps: Record<string, CapabilityGapRecord>;
   /** Per task: how its work went (runs, reviews, waits, tokens), for the scorecard. */
@@ -200,6 +205,7 @@ export function createProjectState(projectId: string): ProjectState {
     settings: {},
     conventions: [],
     facts: {},
+    knowledgeUse: {},
     capabilityGaps: {},
     ledger: {},
   };
@@ -640,6 +646,14 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     case 'conventions.recorded':
       s.conventions = e.data.entries;
       break;
+    case 'knowledge.used': {
+      const l = ledgerOf(s, e.data.taskId);
+      for (const id of e.data.entries) {
+        const tasks = (s.knowledgeUse[id] ??= {});
+        tasks[e.data.taskId] ??= { rejections: l.rejections, reruns: l.reruns };
+      }
+      break;
+    }
     case 'fact.published': {
       const id = factId(e.data.kind, e.data.key);
       const was = s.facts[id];

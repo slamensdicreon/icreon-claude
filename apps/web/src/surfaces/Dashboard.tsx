@@ -12,12 +12,13 @@ import { ApiProblem, get, post, put } from '../lib/api';
 import { age, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { CypherHome } from './CypherHome';
+import { Knowledge } from './Knowledge';
 import { Rules } from './Rules';
 import { PlaybookComparison } from './Scorecard';
 import { useApp } from '../state';
 import { catalogGroups, readiness } from '../lib/showcase';
 
-type Tab = 'projects' | 'connections' | 'playbooks' | 'rules' | 'diagnostics';
+type Tab = 'projects' | 'connections' | 'playbooks' | 'rules' | 'knowledge' | 'diagnostics';
 type Filter = 'active' | 'needs' | 'completed' | 'all';
 
 const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
@@ -88,6 +89,7 @@ export function Dashboard() {
               ['connections', 'Connections', null],
               ['playbooks', 'Playbooks', null],
               ['rules', 'Rules', null],
+              ['knowledge', 'Knowledge', null],
               ['diagnostics', 'Diagnostics', null],
             ] as [Tab, string, string | null][]
           ).map(([key, label, note]) => (
@@ -107,6 +109,7 @@ export function Dashboard() {
         {tab === 'connections' && <Connections projects={portfolio.data ?? []} />}
         {tab === 'playbooks' && <Playbooks projects={portfolio.data ?? []} />}
         {tab === 'rules' && <Rules projects={portfolio.data ?? []} />}
+        {tab === 'knowledge' && <Knowledge projects={portfolio.data ?? []} />}
         {tab === 'diagnostics' && <Diagnostics />}
       </div>
       <aside className="dash-cypher" aria-label="Cypher">

@@ -98,6 +98,18 @@
       }
     },
     {
+      "source": "/knowledge",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/knowledge/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/cypher",
       "destination": {
         "service": "api"

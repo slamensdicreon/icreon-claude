@@ -1,4 +1,4 @@
-import type { FactChange, FactsSnapshot, FactView } from '@lw/contracts';
+import type { FactChange, FactsSnapshot, FactView, KnowledgeEffect } from '@lw/contracts';
 import type { ProjectState } from './projector';
 
 const slug = (s: string) =>
@@ -62,4 +62,28 @@ export function factChanges(s: ProjectState): FactChange[] {
 export function factsSnapshot(s: ProjectState): FactsSnapshot {
   const facts: FactView[] = Object.values(s.facts).sort((a, b) => b.at.localeCompare(a.at));
   return { seq: s.seq, facts, changed: factChanges(s) };
+}
+
+/**
+ * How each knowledge entry has done across projects: the tasks whose brief carried it, and how
+ * many of those a Lead still rejected or sent back afterwards. Flagged when it has been carried
+ * by four or more tasks and half of them failed anyway: it isn't preventing what it's about.
+ */
+export function knowledgeEffects(states: ProjectState[]): KnowledgeEffect[] {
+  const by = new Map<string, { tasks: number; failed: number }>();
+  for (const s of states)
+    for (const [id, tasks] of Object.entries(s.knowledgeUse ?? {})) {
+      const e = by.get(id) ?? { tasks: 0, failed: 0 };
+      for (const [taskId, at] of Object.entries(tasks)) {
+        const now = s.ledger[taskId];
+        e.tasks++;
+        if (now && (now.rejections > at.rejections || now.reruns > at.reruns)) e.failed++;
+      }
+      by.set(id, e);
+    }
+  return [...by].map(([id, e]) => ({
+    id,
+    ...e,
+    flagged: e.tasks >= 4 && e.failed / e.tasks >= 0.5,
+  }));
 }

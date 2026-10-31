@@ -13,3 +13,4 @@ export * from './schedule';
 export * from './time';
 export * from './views';
 export * from './facts';
+export * from './retrospective';

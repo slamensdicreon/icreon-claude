@@ -21,6 +21,7 @@ const MIGRATIONS = [
   '003_secrets.sql',
   '004_integrations.sql',
   '005_rules.sql',
+  '006_knowledge.sql',
 ];
 
 /**

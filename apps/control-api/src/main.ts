@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient, draftRule } from '@lw/agent-runtime';
+import { anthropicModelClient, draftRule, retrospect } from '@lw/agent-runtime';
 import {
   CommandBus,
   masterKey,
@@ -11,6 +11,8 @@ import {
   PostgresIntegrationStore,
   PostgresRuleStore,
   MemoryRuleStore,
+  MemoryKnowledgeStore,
+  PostgresKnowledgeStore,
   PostgresVault,
   Projections,
   type SecretVault,
@@ -26,7 +28,7 @@ import {
 import { loadCatalog } from '@lw/playbook-sdk';
 import { createPlatforms } from '@lw/platforms';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
-import { composeStack } from '@lw/stack';
+import { composeStack, runRetrospective, seedPlatformKnowledge } from '@lw/stack';
 import { openBlobStore } from '@lw/tool-gateway';
 import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
@@ -394,6 +396,19 @@ const rules = opened.sql
   : env.STORE === 'memory'
     ? new MemoryRuleStore()
     : undefined;
+// The team's knowledge across projects; the worker seeds it too, and seeding adds only what's new.
+const knowledge = opened.sql
+  ? new PostgresKnowledgeStore(opened.sql)
+  : env.STORE === 'memory'
+    ? new MemoryKnowledgeStore()
+    : undefined;
+if (knowledge)
+  await seedPlatformKnowledge(
+    knowledge,
+    [...new Set([...catalog.values()].map((e) => e.playbook.manifest.platform))]
+      .map((id) => platforms.get(id))
+      .filter((p) => !!p),
+  ).catch((err: unknown) => console.error('Knowledge not seeded', err));
 const github = integrations
   ? new GithubApp({
       integrations,
@@ -436,6 +451,16 @@ const app = await buildApp({
   heartbeat: integrations ? () => integrations.get<WorkerHeartbeat>('heartbeat:worker') : undefined,
   rules,
   ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,
+  knowledge,
+  retrospective:
+    knowledge && process.env.ANTHROPIC_API_KEY
+      ? (projectId, phase) =>
+          runRetrospective(
+            { projections, store, knowledge, playbookOf, retrospect: (input) => retrospect(input) },
+            projectId,
+            phase,
+          )
+      : null,
   cypher: integrations
     ? {
         model:

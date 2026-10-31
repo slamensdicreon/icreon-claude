@@ -23,6 +23,9 @@ import {
   AutonomySetting,
   CreateRule,
   EditRule,
+  CreateKnowledge,
+  EditKnowledge,
+  RunRetrospective,
   DECISION_CATEGORY_LABEL,
   RotateConnectionCredential,
   ResolveEscalation,
@@ -42,6 +45,7 @@ import {
   type RuleDraftView,
   type RuleView as RuleViewT,
   type EscalationView as EscalationViewT,
+  type KnowledgeEntry,
   type ServiceHealth,
 } from '@lw/contracts';
 import {
@@ -49,6 +53,7 @@ import {
   conversation,
   decisions,
   factsSnapshot,
+  knowledgeEffects,
   missionControl,
   plan,
   projectListItem,
@@ -69,7 +74,13 @@ import {
   type ProjectState,
 } from '@lw/domain';
 import { Blueprint, blueprintSnapshot } from '@lw/plan';
-import type { EventStore, IntegrationStore, Projections, RuleStore } from '@lw/events';
+import type {
+  EventStore,
+  IntegrationStore,
+  KnowledgeStore,
+  Projections,
+  RuleStore,
+} from '@lw/events';
 import { CommandError } from '@lw/domain';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -115,6 +126,18 @@ export interface AppDeps {
   rules?: RuleStore;
   /** Drafts a rule from an answered card (Claude); without it, the draft copies the card. */
   ruleDrafter?: ((input: RuleDraftInput) => Promise<{ when: string; then: string }>) | null;
+  /** The team's knowledge across projects: lessons, procedures and gaps. */
+  knowledge?: KnowledgeStore;
+  /**
+   * Runs a finished phase's retrospective (Cypher proposes entries with evidence); absent where
+   * no model is configured.
+   */
+  retrospective?:
+    | ((
+        projectId: string,
+        phase: number,
+      ) => Promise<{ phase: number; summary: string; proposed: KnowledgeEntry[] }>)
+    | null;
   /** Cypher on the Dashboard: the model (null where none is configured) and where it keeps the conversation. */
   cypher?: { model: ModelClient | null; store: IntegrationStore };
 }
@@ -692,6 +715,153 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const found = await rule(reply, req.params.id);
     if (!found) return;
     return found.store.history(found.r.id);
+  });
+
+  // ---- Knowledge: what the team knows across projects ----------------------------------------
+
+  const knowledge = (reply: FastifyReply) => {
+    if (!deps.knowledge) {
+      fail(
+        reply,
+        501,
+        'knowledge_unavailable',
+        'Knowledge needs the database; this server has none.',
+      );
+      return null;
+    }
+    return deps.knowledge;
+  };
+  const entry = async (reply: FastifyReply, id: string) => {
+    const store = knowledge(reply);
+    if (!store) return null;
+    const e = await store.get(id);
+    if (!e) {
+      fail(reply, 404, 'unknown_entry', `No knowledge entry "${id}".`);
+      return null;
+    }
+    return { store, e };
+  };
+  const pick = <T extends string>(v: string | undefined, allowed: readonly T[]) =>
+    allowed.includes(v as T) ? (v as T) : undefined;
+
+  app.get<{ Querystring: { status?: string; kind?: string; q?: string } }>(
+    '/knowledge',
+    async (req, reply) => {
+      const store = knowledge(reply);
+      if (!store) return;
+      await projections.catchUpAll();
+      return {
+        entries: await store.list({
+          status: pick(req.query.status, ['proposed', 'active', 'retired'] as const),
+          kind: pick(req.query.kind, ['lesson', 'procedure', 'gap'] as const),
+          q: req.query.q?.slice(0, 200),
+        }),
+        effects: knowledgeEffects(projections.all()),
+      };
+    },
+  );
+
+  /** The active lessons of a platform as a Markdown table, like the pitfalls file they replace. */
+  app.get<{ Querystring: { platform?: string } }>('/knowledge/export', async (req, reply) => {
+    const store = knowledge(reply);
+    if (!store) return;
+    const platform = req.query.platform ?? null;
+    const rows = (await store.list({ status: 'active' })).filter(
+      (e) =>
+        e.kind !== 'gap' &&
+        (!platform ||
+          e.scope.kind === 'global' ||
+          (e.scope.kind === 'platform' && e.scope.id === platform)),
+    );
+    const cell = (t: string) => t.replace(/\|/g, '\\|').replace(/\s+/g, ' ');
+    const md = [
+      `## Known ${platform ?? ''} lessons`.replace(/\s+/g, ' '),
+      '',
+      '| Ref | Lesson | What to know | Applies to |',
+      '| --- | --- | --- | --- |',
+      ...rows.map(
+        (e) =>
+          `| ${e.ref} | ${cell(e.title)} | ${cell(e.text)} | ${cell(
+            [
+              e.scope.kind === 'global' ? 'everywhere' : `${e.scope.kind} ${e.scope.id}`,
+              ...e.roles,
+            ].join(', '),
+          )} |`,
+      ),
+      '',
+    ].join('\n');
+    return reply.type('text/markdown; charset=utf-8').send(md);
+  });
+
+  app.post('/knowledge', async (req, reply) => {
+    const store = knowledge(reply);
+    if (!store) return;
+    const input = CreateKnowledge.parse(req.body);
+    return reply.status(201).send(await store.create({ ...input, author: 'director' }));
+  });
+
+  app.put<{ Params: { id: string } }>('/knowledge/:id', async (req, reply) => {
+    const found = await entry(reply, req.params.id);
+    if (!found) return;
+    return found.store.edit(found.e.id, EditKnowledge.parse(req.body));
+  });
+
+  app.post<{ Params: { id: string; action: string } }>(
+    '/knowledge/:id/:action',
+    async (req, reply) => {
+      const status = {
+        approve: 'active',
+        activate: 'active',
+        retire: 'retired',
+        reject: 'retired',
+      }[req.params.action] as 'active' | 'retired' | undefined;
+      if (!status)
+        return fail(
+          reply,
+          404,
+          'unknown_action',
+          'Entries can be approved, activated, rejected or retired.',
+        );
+      const found = await entry(reply, req.params.id);
+      if (!found) return;
+      return found.store.setStatus(found.e.id, status);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>('/knowledge/:id/history', async (req, reply) => {
+    const found = await entry(reply, req.params.id);
+    if (!found) return;
+    return found.store.history(found.e.id);
+  });
+
+  /** A project's retrospectives: its phases, which can run, and what each proposed. */
+  app.get<P>('/projects/:id/lessons', async (req, reply) => {
+    const store = knowledge(reply);
+    if (!store) return;
+    const s = known(req.params.id);
+    const entries = await store.list({ projectId: s.projectId });
+    return {
+      phases: Object.values(s.phases)
+        .sort((a, b) => a.number - b.number)
+        .map((p) => ({
+          phase: p.number,
+          name: p.name,
+          exited: p.status === 'done',
+          proposed: entries.filter((e) => e.source?.phase === p.number).length,
+        })),
+      entries,
+      available: !!deps.retrospective,
+    };
+  });
+
+  app.post<P>('/projects/:id/retrospectives', async (req, reply) => {
+    if (!knowledge(reply)) return;
+    const s = known(req.params.id);
+    if (!deps.retrospective)
+      return fail(reply, 501, 'no_model', 'Retrospectives need Claude, and none is configured.');
+    const { phase } = RunRetrospective.parse(req.body);
+    if (!s.phases[phase]) return fail(reply, 404, 'unknown_phase', `No phase ${phase}.`);
+    return deps.retrospective(s.projectId, phase);
   });
 
   // Cypher on the Dashboard: a conversation about the portfolio that can draft projects, never

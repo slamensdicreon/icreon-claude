@@ -64,6 +64,8 @@ export interface RuntimeDeps {
   items?(projectId: string, task: PlannedTask): Promise<string | null>;
   /** What other tasks made that this one needs (IDs, paths), from the project's facts. */
   facts?(projectId: string, task: PlannedTask): Promise<string | null>;
+  /** Lessons from earlier work that apply to the task, from the knowledge store. */
+  lessons?(projectId: string, task: PlannedTask): Promise<string | null>;
   /** System prompt text for a role, from the playbook's prompts folder; null to derive one. */
   prompt?: (role: RoleDef) => string | null;
   /**
@@ -116,8 +118,9 @@ export class AgentRuntime {
     const board = (await deps.board?.(req.projectId, req.task)) ?? null;
     const items = (await deps.items?.(req.projectId, req.task)) ?? null;
     const facts = (await deps.facts?.(req.projectId, req.task).catch(() => null)) ?? null;
+    const lessons = (await deps.lessons?.(req.projectId, req.task).catch(() => null)) ?? null;
     const messages: BetaMessageParam[] = [
-      { role: 'user', content: taskBrief({ ...req, board, items, facts }) },
+      { role: 'user', content: taskBrief({ ...req, board, items, facts, lessons }) },
     ];
     let stepIndex = 0;
     let maxTokens = deps.maxTokensPerTurn ?? DEFAULT_MAX_TOKENS;

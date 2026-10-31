@@ -512,6 +512,97 @@ export const RuleView = z.object({
 });
 export type RuleView = z.infer<typeof RuleView>;
 
+/**
+ * Where a knowledge entry applies: everywhere, on a platform, on a playbook, for a role, or on
+ * one project.
+ */
+export const KnowledgeScope = z.object({
+  kind: z.enum(['global', 'platform', 'playbook', 'role', 'project']),
+  id: z.string(),
+});
+export type KnowledgeScope = z.infer<typeof KnowledgeScope>;
+
+/** What an entry stands on: a card, a task, a rejection, a seed document. */
+export const KnowledgeEvidence = z.object({
+  projectId: z.string().nullable(),
+  ref: z.string(),
+  label: z.string(),
+});
+export type KnowledgeEvidence = z.infer<typeof KnowledgeEvidence>;
+
+/**
+ * What the team knows, across projects: lessons ("insert options go on Standard Values"),
+ * procedures (the steps that worked), and gaps (a lesson that needs code or a permission, for
+ * engineering). Proposed entries reach no brief until the Director approves them.
+ */
+export const KnowledgeEntry = z.object({
+  id: z.string(),
+  /** Display id, "K-12". */
+  ref: z.string(),
+  kind: z.enum(['lesson', 'procedure', 'gap']),
+  status: z.enum(['proposed', 'active', 'retired']),
+  scope: KnowledgeScope,
+  title: z.string(),
+  text: z.string(),
+  /** What it applies to; empty for any. Operations are "server.op". */
+  roles: z.array(z.string()),
+  operations: z.array(z.string()),
+  templates: z.array(z.string()),
+  tags: z.array(z.string()),
+  evidence: z.array(KnowledgeEvidence),
+  author: z.enum(['seed', 'director', 'cypher']),
+  /** Where it came from: a seed document, or a project's retrospective of a phase. */
+  source: z
+    .object({
+      doc: z.string().nullable(),
+      projectId: z.string().nullable(),
+      phase: z.number().int().nullable(),
+    })
+    .nullable(),
+  version: z.number().int(),
+  /** Briefs it was put in. */
+  used: z.number().int(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type KnowledgeEntry = z.infer<typeof KnowledgeEntry>;
+
+/**
+ * How an entry has done: the tasks whose brief carried it, and how many of them a Lead still
+ * rejected or sent back. Flagged when it keeps being carried by work that fails anyway.
+ */
+export const KnowledgeEffect = z.object({
+  id: z.string(),
+  tasks: z.number().int(),
+  failed: z.number().int(),
+  flagged: z.boolean(),
+});
+export type KnowledgeEffect = z.infer<typeof KnowledgeEffect>;
+
+/** GET /knowledge — entries, newest first, with how each has done. */
+export const KnowledgeList = z.object({
+  entries: z.array(KnowledgeEntry),
+  effects: z.array(KnowledgeEffect),
+});
+export type KnowledgeList = z.infer<typeof KnowledgeList>;
+
+/** GET /projects/:id/lessons — a project's retrospectives: which phases ran, what they proposed. */
+export const LessonsSnapshot = z.object({
+  phases: z.array(
+    z.object({
+      phase: z.number().int(),
+      name: z.string(),
+      /** Exited phases can have a retrospective. */
+      exited: z.boolean(),
+      proposed: z.number().int(),
+    }),
+  ),
+  entries: z.array(KnowledgeEntry),
+  /** False when no model is connected: retrospectives can't run. */
+  available: z.boolean(),
+});
+export type LessonsSnapshot = z.infer<typeof LessonsSnapshot>;
+
 /** One thing that happened to a rule. */
 export const RuleHistoryItem = z.object({
   at: z.iso.datetime(),

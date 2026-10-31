@@ -7,6 +7,7 @@ import {
   reviewTask,
   attributeFailures,
   triageQuestion,
+  retrospect,
 } from '@lw/agent-runtime';
 import {
   GithubApp,
@@ -16,8 +17,10 @@ import {
 } from '@lw/connectors';
 import {
   masterKey,
+  MemoryKnowledgeStore,
   openStore,
   PostgresIntegrationStore,
+  PostgresKnowledgeStore,
   PostgresRuleStore,
   PostgresVault,
   Projections,
@@ -27,7 +30,13 @@ import { createWorker, taskQueueFor } from '@lw/orchestrator';
 import { loadCatalog } from '@lw/playbook-sdk';
 import { createPlatforms, ownedPaths, SITECOREAI, sitecoreTarget, text } from '@lw/platforms';
 import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw/tool-sandbox';
-import { composeStack, type Stack, uncheckedValidators } from '@lw/stack';
+import {
+  composeStack,
+  retrospectAtPhaseExit,
+  seedPlatformKnowledge,
+  type Stack,
+  uncheckedValidators,
+} from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
 import { ResearchToolServer } from '@lw/tool-research';
@@ -381,6 +390,19 @@ console.log(
   `Connected tool servers: ${servers.map((s) => s.name).join(', ') || 'none'}${vault ? '' : ' (CREDENTIALS_KEY not set: no project credentials)'}`,
 );
 
+// The team's knowledge across projects, seeded from each platform's pitfalls on every start.
+const knowledge = opened.sql ? new PostgresKnowledgeStore(opened.sql) : new MemoryKnowledgeStore();
+const seeded = await seedPlatformKnowledge(
+  knowledge,
+  [...new Set([...catalog.values()].map((e) => e.playbook.manifest.platform))]
+    .map((id) => platforms.get(id))
+    .filter((p) => !!p),
+).catch((err: unknown) => {
+  console.error('Knowledge not seeded', err);
+  return 0;
+});
+if (seeded) console.log(`Knowledge: ${seeded} lesson(s) seeded from the platforms' pitfalls`);
+
 // One stack per playbook: its roles, prompts, grants and platform pack.
 const stacks: { id: string; stack: Stack }[] = [];
 for (const { playbook, dir } of catalog.values()) {
@@ -398,6 +420,7 @@ for (const { playbook, dir } of catalog.values()) {
     attribute: env.AGENTS === 'claude' ? (input) => attributeFailures(input) : null,
     triage: env.AGENTS === 'claude' ? (input) => triageQuestion(input) : null,
     rules: opened.sql ? new PostgresRuleStore(opened.sql) : undefined,
+    knowledge,
     screens: env.AGENTS === 'claude' ? (input) => compareScreens(input) : null,
     servers,
     credentials,
@@ -417,6 +440,20 @@ for (const { playbook, dir } of catalog.values()) {
     );
   stacks.push({ id: playbook.manifest.id, stack });
 }
+// When a live project's phase ends, Cypher's retrospective proposes what the team should learn;
+// nothing reaches a brief until the Director approves it.
+const stopRetros =
+  env.AGENTS === 'claude'
+    ? retrospectAtPhaseExit({
+        projections,
+        store: opened.store,
+        knowledge,
+        playbookOf: (id) =>
+          (id ? catalog.get(id)?.playbook : undefined) ?? [...catalog.values()][0]!.playbook,
+        retrospect: (input) => retrospect(input),
+      })
+    : () => undefined;
+
 if (env.AGENTS === 'claude') {
   const models = [...catalog.values()].flatMap((e) => e.playbook.roles.map((r) => r.model.id));
   for (const m of await checkModels([...new Set(models)])) {
@@ -468,6 +505,7 @@ const beating = setInterval(() => void beat(), 30_000);
 // Vercel sends SIGTERM on rollout and gives the grace period to finish; the workers drain.
 const stop = () => {
   clearInterval(beating);
+  stopRetros();
   workers.forEach((w) => w.shutdown());
 };
 process.on('SIGINT', stop);

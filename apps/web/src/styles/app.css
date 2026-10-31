@@ -2614,3 +2614,6 @@
 .facts-table + .dash-filters {
   margin-top: 20px;
 }
+.rules > .muted + .dash-filters {
+  margin-top: 12px;
+}

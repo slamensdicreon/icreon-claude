@@ -92,6 +92,8 @@ export function taskBrief(req: {
   items?: string | null;
   /** What other tasks made that this one needs: IDs and paths from the project's facts. */
   facts?: string | null;
+  /** Lessons from earlier work that apply to this task. */
+  lessons?: string | null;
 }): string {
   const { task } = req;
   return [
@@ -107,6 +109,7 @@ export function taskBrief(req: {
       ? `Your Blueprint entries (the approved Blueprint's record for this task's items; use what they give, such as source URLs, before searching or asking):\n${req.items}`
       : '',
     req.facts ?? '',
+    req.lessons ?? '',
     req.board ? `Team plan:\n${req.board}` : '',
   ]
     .filter(Boolean)

@@ -20,9 +20,11 @@ import { Chip } from '../parts/bits';
 import { DataDoc } from '../parts/DataDoc';
 import { MarkdownDoc } from '../parts/Doc';
 import { useApp, useMission, useProjectResource, useRoster, useTz } from '../state';
+import { LessonsLearned } from './Knowledge';
 
 const DECISIONS = 'decisions';
 const FACTS = 'facts';
+const LESSONS = 'lessons';
 
 /** Rail sections, in order: which artifact kinds each holds. */
 const SECTIONS: { label: string; kinds: string[] | null }[] = [
@@ -32,6 +34,7 @@ const SECTIONS: { label: string; kinds: string[] | null }[] = [
   { label: 'Handover', kinds: ['handover_pack'] },
   { label: 'Decision Log', kinds: [] },
   { label: 'Project facts', kinds: [] },
+  { label: 'Lessons learned', kinds: [] },
   { label: 'Pull requests', kinds: ['pull_request'] },
   { label: 'Other documents', kinds: null },
 ];
@@ -40,14 +43,14 @@ const updatedAt = (a: ArtifactView) =>
   a.versions.reduce((m, v) => (v.ts > m ? v.ts : m), a.versions[0]?.ts ?? '');
 
 export function Workbench() {
-  const { ui, setUi } = useApp();
+  const { ui, setUi, projectId } = useApp();
   const tz = useTz();
   const wb = useProjectResource<WorkbenchSnapshot>('/workbench').data;
   const [query, setQuery] = useState('');
   const page = useRef<HTMLDivElement>(null);
   const [toc, setToc] = useState<{ id: string; text: string; level: number }[]>([]);
   const docs = (wb?.artifacts ?? []).filter((a) => !['screenshot', 'video'].includes(a.kind));
-  const ids = [...docs.map((a) => a.artifactId), DECISIONS, FACTS];
+  const ids = [...docs.map((a) => a.artifactId), DECISIONS, FACTS, LESSONS];
   const current = ids.includes(ui.wbArtifact ?? '')
     ? ui.wbArtifact!
     : (docs[0]?.artifactId ?? DECISIONS);
@@ -88,6 +91,13 @@ export function Workbench() {
         label: sec.label,
         items: match('Decision Log')
           ? [{ id: DECISIONS, title: 'Decision Log', meta: 'append-only' }]
+          : [],
+      };
+    if (sec.label === 'Lessons learned')
+      return {
+        label: sec.label,
+        items: match('Lessons learned')
+          ? [{ id: LESSONS, title: 'Lessons learned', meta: 'retrospectives' }]
           : [],
       };
     if (sec.label === 'Project facts')
@@ -197,6 +207,8 @@ export function Workbench() {
             <DecisionLog />
           ) : current === FACTS ? (
             <ProjectFacts />
+          ) : current === LESSONS && projectId ? (
+            <LessonsLearned projectId={projectId} />
           ) : artifact?.kind === 'blueprint' ? (
             <BlueprintViewer />
           ) : artifact ? (

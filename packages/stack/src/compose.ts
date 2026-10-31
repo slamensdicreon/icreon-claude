@@ -16,7 +16,7 @@ import {
 } from '@lw/agent-runtime';
 import { DECISION_CATEGORY_LABEL } from '@lw/contracts';
 import { autonomyFor } from '@lw/domain';
-import type { EventStore, Projections, RuleStore } from '@lw/events';
+import type { EventStore, KnowledgeStore, Projections, RuleStore } from '@lw/events';
 import {
   createStubActivities,
   loadFixtures,
@@ -28,6 +28,7 @@ import { Blueprint, releaseApprovalId, type PlannedTask } from '@lw/plan';
 import type { PlatformCheck, PlatformPack, ScreenComparison, ScreenPair } from '@lw/platforms';
 import { selfCheck, withReview } from './review';
 import { factsBrief } from './facts';
+import { lessonsFor } from './knowledge';
 import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
@@ -78,6 +79,8 @@ export interface StackOptions {
   triage?: ((input: TriageInput) => Promise<Triage>) | null;
   /** Rules from the Director's answers: triage shows the Lead the ones that cover a question. */
   rules?: RuleStore;
+  /** The team's knowledge across projects: the lessons that apply go in each brief. */
+  knowledge?: KnowledgeStore;
   /** Judges a migrated page against its source from screenshots (Claude); without it, the visual check is pending. */
   screens?: ((input: ScreenInput) => Promise<ScreenVerdict & { tokens: number }>) | null;
   /** Extra servers (tests); the browser and workspace servers are always connected. */
@@ -546,6 +549,19 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           board: (projectId, task) => teamBoard(opts.projections, projectId, task.taskId),
           items: (projectId, task) => blueprintEntries(library, projectId, task),
           facts: (projectId, task) => factsBrief(opts.projections, projectId, task),
+          lessons: opts.knowledge
+            ? (projectId, task) =>
+                lessonsFor(
+                  {
+                    knowledge: opts.knowledge!,
+                    projections: opts.projections,
+                    store: opts.store,
+                    playbook: opts.playbook,
+                  },
+                  projectId,
+                  task,
+                )
+            : undefined,
           prompt: (role) => prompts[role.role] ?? null,
           // The source repository's tools, on a project built from its live site alone.
           unavailable: async (projectId) => {

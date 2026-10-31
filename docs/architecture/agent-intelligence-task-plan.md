@@ -194,6 +194,34 @@ Built 2026-10-31 (playbooks SitecoreAI 0.8.0, Optimizely 0.3.0). What landed, ag
 | M6.7 | Knowledge page: browse, search, edit, retire | `web` | Screenshots |
 | M6.8 | Deploy; run a retrospective on the second site's finished phases | — | Approved lessons in production |
 
+Built 2026-10-31. What landed, against the rows:
+
+- **M6.1** `lw_knowledge` (migration `006`): lessons, procedures and gaps with scope (global,
+  platform, playbook, role, project), applies-to (roles, operations, templates, tags), evidence,
+  version, status and a generated full-text column. Rules stay in `lw_rules` and keep their own
+  page; joining them is left for when the two pages are merged.
+- **M6.2** Seeded from each platform's `known-pitfalls.md` (one lesson a row, keyed so seeding
+  again adds only new rows) at worker and API start. Role prompts keep the pitfalls document, so
+  a role that carries it isn't given its rows again; other roles get them by retrieval. The
+  Markdown export is `GET /knowledge/export?platform=`. Lessons inside role prompts were not
+  seeded: they are already in the prompt of the role they're for.
+- **M6.3** Briefs get up to six active entries within about 1,500 tokens, ranked by role,
+  template and operation fit, then text search. Each brief's entries are recorded
+  (`knowledge.used`).
+- **M6.4** `runRetrospective` (stack) and `retrospect` (agent runtime): the phase's cards,
+  rejections, waits, failed checks and gaps, grouped by cause into at most eight proposals with
+  evidence. The worker runs it when a live project's phase exits; `POST
+  /projects/:id/retrospectives` runs it on demand; proposals list on the Workbench's Lessons
+  learned page. Gaps are a kind of entry ("Needs engineering"), never put in briefs.
+- **M6.5** Procedure capture is part of the retrospective: tasks done after a rejection or a
+  second run are given with the steps of the attempt that worked, and Cypher proposes procedures
+  from them.
+- **M6.6** `knowledgeEffects`: for each entry, the tasks that carried it and how many were still
+  rejected or re-run afterwards; flagged at four or more tasks with half failing.
+- **M6.7** Dashboard → Knowledge: browse, search, filter by kind, write, edit, approve, reject,
+  retire, history, export.
+- **M6.8** Retrospectives on Lambert's Cable's finished phases: results below once run.
+
 ## M7 — Page builder automation (2 sessions, plus a decision)
 
 Four tasks per project need an agent working in SitecoreAI Pages as an editor (`prove-pilot-slice`,

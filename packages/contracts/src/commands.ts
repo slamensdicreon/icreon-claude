@@ -301,3 +301,40 @@ export const EditRule = z.object({
   roles: z.array(z.string().max(80)).max(20).optional(),
 });
 export type EditRule = z.infer<typeof EditRule>;
+
+const KnowledgeScopeInput = z.object({
+  kind: z.enum(['global', 'platform', 'playbook', 'role', 'project']),
+  id: z.string().min(1).max(120),
+});
+const Names = z.array(z.string().trim().min(1).max(120)).max(30);
+
+/** POST /knowledge — an entry the Director writes: what to know, and where it applies. */
+export const CreateKnowledge = z.object({
+  kind: z.enum(['lesson', 'procedure', 'gap']).default('lesson'),
+  title: z.string().trim().min(3).max(200),
+  text: z.string().trim().min(3).max(2000),
+  scope: KnowledgeScopeInput,
+  roles: Names.default([]),
+  operations: Names.default([]),
+  templates: Names.default([]),
+  tags: Names.default([]),
+  status: z.enum(['proposed', 'active']).default('active'),
+});
+export type CreateKnowledge = z.infer<typeof CreateKnowledge>;
+
+/** PUT /knowledge/:id — a new version of the entry. */
+export const EditKnowledge = z.object({
+  kind: z.enum(['lesson', 'procedure', 'gap']).optional(),
+  title: z.string().trim().min(3).max(200).optional(),
+  text: z.string().trim().min(3).max(2000).optional(),
+  scope: KnowledgeScopeInput.optional(),
+  roles: Names.optional(),
+  operations: Names.optional(),
+  templates: Names.optional(),
+  tags: Names.optional(),
+});
+export type EditKnowledge = z.infer<typeof EditKnowledge>;
+
+/** POST /projects/:id/retrospectives — run a finished phase's retrospective. */
+export const RunRetrospective = z.object({ phase: z.number().int().min(0).max(20) });
+export type RunRetrospective = z.infer<typeof RunRetrospective>;
