@@ -104,6 +104,49 @@ The build plan's "next site after rules". A no-repo remix of Ansco on the Brands
 | M4.3 | Run with triage in shadow (M2.8), rules active (M3) | Scorecard against Ansco after each phase |
 | M4.4 | Feed what it teaches into M5 and M6 (facts it kept asking for, lessons) | Notes in the build plan |
 
+### What Lambert's Cable and Star LLC taught (2026-10-31)
+
+The second and third sites ran no-repo on the Brands tenant, with Lead triage in shadow. Neither
+was finished: the Director stopped them at deployment (Lambert) and page content (Star) to take
+the lessons into the platform first. Scorecards from production:
+
+| | Ansco | Lambert's Cable | Star LLC |
+| --- | --- | --- | --- |
+| Tasks (done) | 203 (199) | 171 (169) | 140 (118) |
+| Cards | 353 | 156 | 85 |
+| Cards per task | 1.74 | 0.91 | 0.61 |
+| Settled without the Director | 27% | 1% | 45% |
+| Lead rejection rate | 38% | 63% | 53% |
+| Spend | $99 | $147 | $72 |
+| Hours | 62.5 | 61 | 51.4 |
+
+What the numbers say:
+
+- **Cards fell by half per task, rejections rose.** Media access (237 of Ansco's cards) is gone:
+  no-repo projects take media from the live site. In its place came the review loop: 98 of
+  Lambert's 156 cards and 31 of Star's 85 are "needs a decision" after three rejections.
+- **The loop has two causes.** 18 of Lambert's were on work whose checks all passed (the Lead
+  wanted report detail); the Director accepted 16. 76 had a failing page check, `parity.visual`
+  in 64: a component's code (a band, a layout) that the content migrator can't change. Star's own
+  agents found the second cause themselves: of its 28 waits, most are pages waiting on a port
+  for "visual fixes in the head code". Both are now fixed in the platform (the finish-partials
+  plan, sections 1 and 2).
+- **Registrars collide on shared lists.** 17 of Star's 20 register tasks retried because two
+  registrars wrote the same Available Renderings list; one retried six times. Fixed in the tool
+  (`add: true`, `65fd787`) and the ID guard (`0e146f6`).
+- **One bad field takes down every page.** A Parameters Template stored as a path 500ed every
+  page with HeroBanner on Lambert (`97a2a84`). The editing host's runtime log named it; the agents
+  couldn't read it (task 86, hosting runtime logs, is still open).
+
+What M5 should publish as facts, from what agents waited on or asked for: rendering IDs (the
+registrars' waits on each other's Available Renderings), media item IDs by source URL (pages
+waiting on uploads to link `mediaid`), which components a page uses and in what order (the
+Director's re-placement notes), and which template and page design a page uses (templates
+waiting on templates).
+
+What M6 should seed: the eight rows added to the SitecoreAI pitfalls on 2026-10-31, and the 15
+harvested rules once the Director approves them.
+
 ## M5 — Project facts and self-check (A3) (2 sessions)
 
 | Task | What | Where | Proof |

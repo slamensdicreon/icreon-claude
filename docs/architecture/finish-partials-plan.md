@@ -209,6 +209,14 @@ the evidence the rule needs first.
 
 M4.3's shadow comparison continues on its own when the projects run again.
 
+### Result (2026-10-31)
+
+Written: "What Lambert's Cable and Star LLC taught" in the task plan's M4 section (the three
+scorecards side by side, the two causes of the review loop, the registrar collisions, the facts
+M5 should publish and what M6 should seed), and eight new rows in the SitecoreAI pitfalls, each
+from a card, a Director's note or a commit. 5.3's screenshot is not needed: the Dashboard
+compares the three projects on their scorecards already.
+
 ## 6. Shared code stops assuming SitecoreAI
 
 The coupling map in [entities.md](entities.md). Each row becomes a pack hook; SitecoreAI keeps
