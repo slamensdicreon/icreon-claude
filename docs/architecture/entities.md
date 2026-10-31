@@ -68,25 +68,22 @@ fragments".
 
 ## Coupling map: where shared code still assumes SitecoreAI
 
-Each row is one change; none blocks the Optimizely playbook from loading, two block it from
-running (marked **run**).
+Updated 2026-10-31, after the decoupling pass (finish-partials plan, section 6).
 
-| Where                                                                                     | Assumption                                                                                              | Change                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/connectors/src/github-app.ts` `STARTER`                                        | Every build repository is created from `Sitecore/xmcloud-starter-js`, app at `examples/basic-nextjs`   | **run** `pack.starter: { owner, repo, appPath }`; the build-repo creation reads the project's pack. Optimizely: an `icreon-launchworks/optimizely-nextjs-starter` template made from the SDK's `samples/nextjs-template` |
-| `tool-servers/sandbox/src/server.ts` `exec.build`                                        | Staged Sitecore scripts (`sitecore-tools:*`, `next:build`), `type-check` assumed to exist               | **run** `pack.buildRecipe` (scripts to run in order, which may be absent); the sandbox falls back to `build` when a script is missing                               |
-| `tool-servers/sandbox/src/server.ts` `exec.content-sdk-cli`, `READ_ONLY`, `fs.write` text | The Content SDK CLI and Sitecore's config files                                                         | Entity CLI op from the pack (`exec.optimizely-cli`: `config push [--dryRun] [--only]`, `config pull`); read-only list from the pack                                 |
-| `apps/worker/src/main.ts`                                                                 | Hand-wired Sitecore servers with `platform !== 'sitecoreai'` guards                                      | `pack.toolServers(deps)` returns the entity's servers; the worker concatenates shared + every pack's                                                                |
-| `packages/stack/src/review.ts` `CHECKS`                                                   | `serialization.replays`, `head.editing-scripts`, `rendering-host.set`, `component-map.registered` are Sitecore | Move them into `platforms/sitecoreai/checks.ts`; `CHECKS` keeps only platform-free ones                                                                             |
-| `packages/contracts/src/events.ts` `ProjectTarget`                                        | `collection` and `site` documented as Sitecore's                                                        | Keep the fields, document them as "what the sites share" and "this project's unit"; packs already fill them (Optimizely: instance host and application)            |
-| `apps/web` (Mission, Preview, Workbench, Settings, App, Dashboard)                         | "SitecoreAI" in copy, `-sitecoreai` repository suffix                                                   | Read the project's `platform.name` from the playbook summary; suffix from the entity id                                                                              |
-| `packages/contracts/src/snapshots.ts` `RuleScope.kind: 'platform'`                        | Naming only                                                                                             | Call it "entity" in the UI; the value can stay                                                                                                                      |
-| `apps/control-api/src/intake.ts` `playbooks()` and `apps/web/src/overlays/NewProject.tsx` | Flat playbook list                                                                                      | `GET /entities` (id, name, vendor, description, playbooks, connections) or group the summaries by `platform.id`; the wizard picks the entity, then the playbook      |
-| `packages/simulator`, `apps/control-api/src/demo-runner.ts`                               | The demo is a SitecoreAI project                                                                        | Fine as is; add an Optimizely demo scenario when the first pilot has run                                                                                            |
+| Where | Was | Now |
+| --- | --- | --- |
+| `connectors/src/github-app.ts` `STARTER` | Every build repository from Sitecore's starter | `createBuildRepo` takes the pack's `starter`; intake refuses a build repository for a pack without one (Optimizely until O3), and names it `<source>-<pack id>` |
+| `tool-servers/sandbox` `exec.build`, `READ_ONLY` | Staged Sitecore scripts; `sitecore.json` read-only for everyone | The pack's `buildRecipe` (generate scripts, build script, read-only files) through the workspace facts; SitecoreAI's recipe is the default and unchanged |
+| `tool-servers/sandbox` `exec.content-sdk-cli` | The Content SDK CLI | Unchanged: it is SitecoreAI's own server operation, granted only to SitecoreAI roles. Optimizely's CLI comes with O3 |
+| `apps/worker/src/main.ts` | `platform !== 'sitecoreai'` guards | The guards use the pack's id. Server construction stays in the worker: the servers don't depend on the packs and the packs shouldn't on the servers; a role whose platform has no server blocks as not connected |
+| `stack/src/review.ts` `CHECKS` | Platform checks mixed with shared ones | Platform checks live in the pack (`pack.checks`); `uncheckedValidators` lists every check a playbook names that nothing implements, logged at worker start and pinned in a test (SitecoreAI: 2, both Page builder; Optimizely: 20, O4 and O5) |
+| `contracts` `ProjectTarget`, `RuleScope` | Documented as Sitecore's | Documented as pack-defined |
+| `apps/web` copy | "SitecoreAI" in nine places, `-sitecoreai` suffix | `ProjectSummary.platform` (named by the pack in the API); the web reads it, with a neutral fallback |
+| `control-api` `playbooks()`, the New Project page | Flat playbook list | Grouped by entity (done earlier) |
+| `simulator`, `demo-runner.ts` | The demo is a SitecoreAI project | Unchanged on purpose: it is one example project, and it names its platform through its playbook |
 
-The pack gained one hook in this change: `buildEnv`, for a platform whose CLI needs more than
-the head does (Optimizely's `config push` signs in with the REST API key, which the head must
-never hold). The worker uses it for the sandbox and falls back to `headEnv`.
+The pack gained three hooks in all: `buildEnv` (a CLI that needs more than the head), `starter`
+and `buildRecipe`.
 
 ## An entity's definition
 

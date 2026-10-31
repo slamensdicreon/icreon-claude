@@ -85,6 +85,8 @@ export const ProjectSummary = z.object({
   id: z.string(),
   name: z.string(),
   client: z.string(),
+  /** The platform the project builds on, named by its pack; absent where no pack names it. */
+  platform: z.object({ id: z.string(), name: z.string() }).optional(),
   status: ProjectStatus,
   health: Health,
   /** Why health is not green, in words ("Blocker open: Media upload 403"). */
@@ -344,6 +346,7 @@ export const ProjectListItem = ProjectSummary.pick({
   initials: true,
   subtitle: true,
   demo: true,
+  platform: true,
 });
 export type ProjectListItem = z.infer<typeof ProjectListItem>;
 
@@ -463,7 +466,10 @@ export const PlaybookScorecard = z.object({
 });
 export type PlaybookScorecard = z.infer<typeof PlaybookScorecard>;
 
-/** Where a rule applies: one project, every project on a playbook, or every project on a platform. */
+/**
+ * Where a rule applies: one project, every project on a playbook, or every project on a platform
+ * (its pack id, as projects record it at intake).
+ */
 export const RuleScope = z.object({
   kind: z.enum(['project', 'playbook', 'platform']),
   id: z.string(),

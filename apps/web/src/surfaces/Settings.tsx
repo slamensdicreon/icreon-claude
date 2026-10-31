@@ -770,12 +770,13 @@ function CredentialForm({
 
 /**
  * Where the new site is built: a private repository in our GitHub organization, created from
- * Sitecore's starter, that moves to the client at handover. Created when the project starts; a
+ * the platform's starter, that moves to the client at handover. Created when the project starts; a
  * project started earlier, or one whose creation failed, creates it here.
  */
 function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; source: string }) {
   const { projectId, run } = useApp();
   const projectName = useMission().data?.project.name ?? 'site';
+  const platformId = useMission().data?.project.platform?.id ?? 'sitecoreai';
   // Named after the source repository, or after the project when the live site is the source.
   const suggested = `${
     /^[\w.-]+\/[\w.-]+$/.test(source)
@@ -785,7 +786,7 @@ function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; s
           .replace(/['’]/g, '')
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-+|-+$/g, '')
-  }-sitecoreai`;
+  }-${platformId}`;
   const [name, setName] = useState('');
   const valid = !name.trim() || /^[A-Za-z0-9._-]{1,100}$/.test(name.trim());
   return (

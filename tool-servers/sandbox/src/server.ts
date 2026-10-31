@@ -38,7 +38,26 @@ export interface WorkspaceFacts {
    * author. Without one, commits carry a placeholder address Vercel refuses to deploy.
    */
   author?: { name: string; email: string };
+  /**
+   * How the head builds, from the project's platform pack: scripts that generate files the
+   * type-check needs (run when the app has them), the build script, and paths agents may not
+   * write. Without one, SitecoreAI's starter recipe.
+   */
+  recipe?: BuildRecipe;
 }
+
+export interface BuildRecipe {
+  generate: string[];
+  build: string;
+  readOnly: string[];
+}
+
+/** The SitecoreAI starter's recipe: the default for projects whose facts name none. */
+export const SITECORE_RECIPE: BuildRecipe = {
+  generate: ['sitecore-tools:generate-map', 'sitecore-tools:build'],
+  build: 'next:build',
+  readOnly: ['sitecore.json', 'nuget.config'],
+};
 
 const PLACEHOLDER_AUTHOR = { name: 'Launchworks', email: 'agents@launchworks.invalid' };
 export const authorOf = (facts: WorkspaceFacts) => facts.author ?? PLACEHOLDER_AUTHOR;
@@ -65,7 +84,12 @@ export function safePath(p: string): string | null {
 }
 
 /** CI and dependency settings stay as the starter has them: they run with our credentials. */
-const READ_ONLY = /^(\.github\/|\.config\/|nuget\.config$|sitecore\.json$)/;
+const ALWAYS_READ_ONLY = ['.github/', '.config/'];
+/** A path agents may not write, given the platform's own read-only files. */
+export const readOnly = (path: string, recipe: BuildRecipe) =>
+  [...ALWAYS_READ_ONLY, ...recipe.readOnly].some((p) =>
+    p.endsWith('/') ? path.startsWith(p) : path === p,
+  );
 
 export const sandboxName = (projectId: string, taskId: string) =>
   `lw-${projectId}-${taskId}`
@@ -267,6 +291,7 @@ export class SandboxToolServer implements ToolServer {
     const redact = (s: string) =>
       [...secrets, ctx.token].reduce((out, v) => out.split(v).join('[redacted]'), s);
     const app = `${box.root}/${facts.appPath}`;
+    const recipe = facts.recipe ?? SITECORE_RECIPE;
     const run = async (
       cmd: string,
       a: string[],
@@ -341,13 +366,16 @@ export class SandboxToolServer implements ToolServer {
           (pkg ? (JSON.parse(pkg.toString('utf8')) as { scripts?: object }) : {}).scripts ?? {},
         ),
       );
-      const staged = ['sitecore-tools:generate-map', 'sitecore-tools:build', 'next:build'].every(
-        (x) => has.has(x),
-      );
+      // The recipe's staged build applies when the app has every script it names; an older
+      // starter with a plain `build` builds that way.
+      const staged =
+        recipe.generate.length > 0 && [...recipe.generate, recipe.build].every((x) => has.has(x));
       let generated: { exitCode: number; output: string } | null = null;
       if (staged) {
-        generated = await npm('sitecore-tools:generate-map', 5);
-        if (generated.exitCode === 0) generated = await npm('sitecore-tools:build', 10);
+        for (const script of recipe.generate) {
+          generated = await npm(script, 10);
+          if (generated.exitCode !== 0) break;
+        }
       }
       const types =
         !generated || generated.exitCode === 0
@@ -357,11 +385,14 @@ export class SandboxToolServer implements ToolServer {
       // working copy (before it had a layout, or while it was being edited) otherwise fails every
       // later build, for nothing the branch changed.
       if (types.exitCode === 0) await run('rm', ['-rf', `${app}/.next/cache/fetch-cache`]);
-      const built = types.exitCode === 0 ? await npm(staged ? 'next:build' : 'build', 20) : null;
+      const built =
+        types.exitCode === 0
+          ? await npm(staged || has.has(recipe.build) ? recipe.build : 'build', 20)
+          : null;
       const green = types.exitCode === 0 && built?.exitCode === 0;
       const why =
         generated && generated.exitCode
-          ? 'generating .sitecore failed'
+          ? `${recipe.generate.join(' then ')} failed`
           : types.exitCode
             ? 'type-check failed'
             : `build failed: ${firstFailure(built?.output ?? '')}`;
@@ -474,7 +505,7 @@ export class SandboxToolServer implements ToolServer {
         if (!a.success) return bad(a.error.issues[0]!.message);
         const refused = a.data.files.filter((f) => {
           const path = safePath(f.path);
-          return !path || READ_ONLY.test(path);
+          return !path || readOnly(path, recipe);
         });
         if (refused.length) return bad(`Not writable: ${refused.map((f) => f.path).join(', ')}.`);
         // A file git ignores is never committed: the work would live only in this machine.
@@ -709,7 +740,7 @@ export class SandboxToolServer implements ToolServer {
         await run('git', ['add', '-A']);
         const staged = await run('git', ['diff', '--cached', '--name-only']);
         const paths = staged.output.split('\n').filter(Boolean);
-        const blocked = paths.filter((p) => !safePath(p) || READ_ONLY.test(p));
+        const blocked = paths.filter((p) => !safePath(p) || readOnly(p, recipe));
         if (blocked.length) {
           await run('git', ['reset', '-q']);
           return bad(`Refused: ${blocked.join(', ')} can't be committed from here.`);

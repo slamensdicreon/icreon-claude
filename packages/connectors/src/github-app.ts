@@ -9,7 +9,15 @@ import type { VerifyResult } from './sitecore';
 export const NO_GIT_DEPLOYS_MESSAGE =
   'Deploy through Launchworks only: no automatic Vercel deployments on commits';
 
-export const STARTER = {
+/** A template repository a build repository is generated from, and where its app lives. */
+export interface Starter {
+  owner: string;
+  repo: string;
+  appPath: string;
+}
+
+/** SitecoreAI's starter; each platform pack names its own. */
+export const STARTER: Starter = {
   owner: 'Sitecore',
   repo: 'xmcloud-starter-js',
   appPath: 'examples/basic-nextjs',
@@ -295,7 +303,12 @@ export class GithubApp {
    * fills a generated repository in the background, so it counts as ready only once the starter's
    * app can be read back.
    */
-  async createBuildRepo(org: string, name: string, description: string): Promise<BuildRepo> {
+  async createBuildRepo(
+    org: string,
+    name: string,
+    description: string,
+    starter: Starter = STARTER,
+  ): Promise<BuildRepo> {
     const c = await this.config();
     if (!c) {
       throw new CommandError(
@@ -349,7 +362,7 @@ export class GithubApp {
     if (repo.status === 404) {
       const gen = await this.call(
         'POST',
-        `/repos/${STARTER.owner}/${STARTER.repo}/generate`,
+        `/repos/${starter.owner}/${starter.repo}/generate`,
         token,
         {
           owner: org,
@@ -364,7 +377,7 @@ export class GithubApp {
         throw new CommandError(
           503,
           'github_error',
-          `GitHub answered ${gen.status} creating ${full} from ${STARTER.owner}/${STARTER.repo}${message ? `: ${message}` : ''}.`,
+          `GitHub answered ${gen.status} creating ${full} from ${starter.owner}/${starter.repo}${message ? `: ${message}` : ''}.`,
         );
       }
       repo = gen;
@@ -385,7 +398,7 @@ export class GithubApp {
       );
     }
     // Executed is not verified: wait until the starter's app is really there.
-    const probe = `/repos/${full}/contents/${STARTER.appPath}/package.json`;
+    const probe = `/repos/${full}/contents/${starter.appPath}/package.json`;
     for (let attempt = 0; ; attempt++) {
       const r = await this.call('GET', probe, token);
       if (r.status === 200) break;
@@ -393,7 +406,7 @@ export class GithubApp {
         throw new CommandError(
           409,
           'not_a_starter',
-          `${full} already exists and isn't built from ${STARTER.owner}/${STARTER.repo} (no ${STARTER.appPath}). Choose another name.`,
+          `${full} already exists and isn't built from ${starter.owner}/${starter.repo} (no ${starter.appPath}). Choose another name.`,
         );
       }
       if (attempt >= 14) {
@@ -441,15 +454,15 @@ export class GithubApp {
       repo: full,
       branch: info.default_branch ?? 'main',
       installationId: i.id,
-      appPath: STARTER.appPath,
+      appPath: starter.appPath,
     });
     return {
       repo: full,
       branch: info.default_branch ?? 'main',
       installationId: i.id,
       url: info.html_url,
-      template: `${STARTER.owner}/${STARTER.repo}`,
-      appPath: STARTER.appPath,
+      template: `${starter.owner}/${starter.repo}`,
+      appPath: starter.appPath,
     };
   }
 

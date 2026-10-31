@@ -270,7 +270,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return projections
       .all()
       .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
-      .map(projectListItem);
+      .map((s) => ({ ...projectListItem(s), platform: deps.intake?.platformOf(s) }));
   });
 
   const now = deps.now ?? Date.now;
@@ -820,9 +820,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get<P>('/projects/:id/mission-control', async (req, reply) => {
     const s = project(req.params.id);
-    return s
-      ? missionControl(s)
-      : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+    if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+    const mc = missionControl(s);
+    return { ...mc, project: { ...mc.project, platform: deps.intake?.platformOf(s) } };
   });
 
   app.get<P>('/projects/:id/team', async (req, reply) => {

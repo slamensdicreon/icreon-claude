@@ -278,7 +278,7 @@ export function Mission() {
           <div className="shot">
             {preview?.target
               ? `${preview.target.label}. ${preview.pages.filter((x) => x.migrated).length} of ${preview.pages.length} built.`
-              : 'The SitecoreAI build appears here once the first preview deploys.'}
+              : `The ${p.platform?.name ?? 'new'} build appears here once the first preview deploys.`}
           </div>
         </section>
       </div>
@@ -306,7 +306,7 @@ function ReadyToStart() {
       </div>
       <p style={{ marginTop: 0 }}>
         Intake is recorded and its credentials are verified and sealed. Nothing has run yet: no
-        agent has touched the repository or the SitecoreAI environment.
+        agent has touched the repository or the {mc.project.platform?.name ?? 'CMS'} environment.
       </p>
       {i && (
         <div className="kv" style={{ marginBottom: 12 }}>

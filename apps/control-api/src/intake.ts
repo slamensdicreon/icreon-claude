@@ -153,6 +153,18 @@ export class IntakeService {
     ];
   }
 
+  /**
+   * The platform a project builds on, by name: its intake's pack, or for a project without
+   * intake (the demo) its playbook's.
+   */
+  platformOf(s: ProjectState): { id: string; name: string } | undefined {
+    const id =
+      s.intake?.platform ??
+      (s.playbook ? this.deps.catalog.get(s.playbook.id)?.playbook.manifest.platform : undefined);
+    const pack = id ? this.deps.platforms.get(id) : undefined;
+    return pack ? { id: pack.id, name: pack.name } : undefined;
+  }
+
   /** The platform pack a project runs on, from its intake. */
   private packOf(s: ProjectState): PlatformPack | undefined {
     return s.intake ? this.deps.platforms.get(s.intake.platform) : undefined;
@@ -438,13 +450,22 @@ export class IntakeService {
         'No build organization is configured. Set GITHUB_BUILD_ORG and set up the GitHub App.',
       );
     }
+    const pack = this.deps.platforms.get(s.intake.platform);
+    if (!pack?.starter) {
+      throw new CommandError(
+        409,
+        'no_starter',
+        `${pack?.name ?? s.intake.platform} has no starter repository yet, so Launchworks can't create a build repository for it. Add the platform's starter template first.`,
+      );
+    }
     const source = s.intake.repo ?? s.sourceUrl ?? s.name;
     const repoName =
-      name ?? `${s.intake.repo ? s.intake.repo.split('/')[1] : slug(s.name)}-sitecoreai`;
+      name ?? `${s.intake.repo ? s.intake.repo.split('/')[1] : slug(s.name)}-${pack.id}`;
     const buildRepo = await github.createBuildRepo(
       buildOrg,
       repoName,
-      `${s.name}: SitecoreAI site built by Launchworks from ${source}.`,
+      `${s.name}: ${pack.name} site built by Launchworks from ${source}.`,
+      pack.starter,
     );
     await this.deps.store.append(s.projectId, [
       {

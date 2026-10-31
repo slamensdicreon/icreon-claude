@@ -68,6 +68,16 @@ export interface PlatformPack {
     | undefined;
   /** Platform knowledge documents roles can list (`knowledge/<id>.md`). */
   knowledgeDir: string;
+  /**
+   * The template repository a project's build repository is generated from, when the platform
+   * has a head; absent until one exists (a project that needs a build repository is refused).
+   */
+  starter?: { owner: string; repo: string; appPath: string };
+  /**
+   * How the sandbox builds the head: npm scripts that generate files the type-check needs (run
+   * only when the app has them), the build script, and paths agents may not write.
+   */
+  buildRecipe?: { generate: string[]; build: string; readOnly: string[] };
   /** Acceptance checks only the platform knows how to run, by validator id. */
   checks?: Record<string, PlatformCheck>;
   /**
@@ -288,6 +298,7 @@ export function validateTarget(spec: IntakeSpec, raw: TargetValues): TargetValue
 export { list, text } from './values';
 export {
   ownedPaths,
+  SITECOREAI,
   sitecoreBindings,
   sitecoreTarget,
   type SitecoreTarget,

@@ -25,9 +25,9 @@ import {
 import type { NewEvent } from '@lw/contracts';
 import { createWorker, taskQueueFor } from '@lw/orchestrator';
 import { loadCatalog } from '@lw/playbook-sdk';
-import { createPlatforms, ownedPaths, sitecoreTarget, text } from '@lw/platforms';
+import { createPlatforms, ownedPaths, SITECOREAI, sitecoreTarget, text } from '@lw/platforms';
 import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw/tool-sandbox';
-import { composeStack, type Stack } from '@lw/stack';
+import { composeStack, type Stack, uncheckedValidators } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
 import { ResearchToolServer } from '@lw/tool-research';
@@ -149,6 +149,9 @@ if (env.AGENTS === 'claude') {
   }
   if (vault) {
     servers.push(
+      // Platform tool servers are built here, not by their packs: the servers don't depend on the
+      // packs, and the packs shouldn't on the servers. Each refuses a project on another platform
+      // (its facts are null), and a role whose platform has no server blocks as not connected.
       new SitecoreAuthoringToolServer({
         blobs,
         // edge.routes reads routes with the project's Context ID; the agent never sees it.
@@ -161,7 +164,7 @@ if (env.AGENTS === 'claude') {
         },
         facts: async (id) => {
           const s = await project(id);
-          if (s?.intake?.platform !== 'sitecoreai') return null;
+          if (s?.intake?.platform !== SITECOREAI) return null;
           const host = s.sourceUrl ? new URL(s.sourceUrl).hostname : null;
           const t = sitecoreTarget(s.intake);
           return {
@@ -188,7 +191,7 @@ if (env.AGENTS === 'claude' && vault && credentials) {
     new SitecoreDeployToolServer({
       facts: async (id) => {
         const s = await project(id);
-        if (s?.intake?.platform !== 'sitecoreai') return null;
+        if (s?.intake?.platform !== SITECOREAI) return null;
         return { cmHost: sitecoreTarget(s.intake).cmHost, headHosts: headHosts(s) };
       },
     }),
@@ -323,6 +326,7 @@ if (
           branch: s.buildRepo.branch,
           appPath: s.buildRepo.appPath,
           author: await botAuthor(),
+          recipe: s.intake ? platforms.get(s.intake.platform)?.buildRecipe : undefined,
         }
       : null;
   };
@@ -357,7 +361,7 @@ if (
       facts: async (id) => {
         const w = await workspace(id);
         const s = await project(id);
-        if (!w || s?.intake?.platform !== 'sitecoreai') return null;
+        if (!w || s?.intake?.platform !== SITECOREAI) return null;
         return {
           ...w,
           cmHost: sitecoreTarget(s.intake).cmHost,
@@ -403,6 +407,14 @@ for (const { playbook, dir } of catalog.values()) {
     },
   });
   console.log(`Live agents (${playbook.manifest.id}): ${stack.liveRoles.join(', ') || 'none'}`);
+  const unchecked = uncheckedValidators(
+    playbook,
+    platforms.get(playbook.manifest.platform)?.checks ?? {},
+  );
+  if (unchecked.length)
+    console.log(
+      `Checks ${playbook.manifest.id} names that nothing implements (they stay pending): ${unchecked.join(', ')}`,
+    );
   stacks.push({ id: playbook.manifest.id, stack });
 }
 if (env.AGENTS === 'claude') {

@@ -256,7 +256,10 @@ export function Strip() {
           <span className="top-sep" />
           <div className="top-item proj">
             <b>{p.name}</b>
-            <span>{p.target?.site ?? p.source.repo ?? ''} on SitecoreAI</span>
+            <span>
+              {p.target?.site ?? p.source.repo ?? ''}
+              {p.platform ? ` on ${p.platform.name}` : ''}
+            </span>
           </div>
           <span className="top-sep" />
         </>

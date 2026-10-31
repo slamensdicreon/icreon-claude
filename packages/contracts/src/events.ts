@@ -238,8 +238,13 @@ export const ProjectSource = z.object({
 });
 export type ProjectSource = z.infer<typeof ProjectSource>;
 
+/**
+ * How a project names its target, as its platform pack describes it (`pack.describe`). The pack
+ * decides what the two names mean: a SitecoreAI site collection and site, an Optimizely
+ * application and its type prefix.
+ */
 export const ProjectTarget = z.object({
-  /** Sitecore site collection and site. */
+  /** The platform's container for the site (SitecoreAI: site collection). */
   collection: z.string().nullable(),
   site: z.string().nullable(),
   /** Hosting project for the head ("Vercel, ansell-website"). */
@@ -249,7 +254,8 @@ export type ProjectTarget = z.infer<typeof ProjectTarget>;
 
 /**
  * The repository the new site is built in: in our GitHub organization while we build, moved to the
- * client's at handover. Created from Sitecore's starter; agents work on `launchworks/*` branches.
+ * client's at handover. Created from the platform pack's starter; agents work on `launchworks/*`
+ * branches.
  */
 export const BuildRepo = z.object({
   /** "owner/name" */

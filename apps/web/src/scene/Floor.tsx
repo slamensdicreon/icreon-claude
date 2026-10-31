@@ -146,12 +146,8 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
   const loadToken = useRef(0);
   const [, setUiTick] = useState(0);
 
-  const cmsLabel = useMemo(() => {
-    const servers = new Set((items ?? []).map((i) => i.toolServer ?? ''));
-    if ([...servers].some((s) => s.startsWith('optimizely'))) return 'Optimizely';
-    if ([...servers].some((s) => s.startsWith('sitecore'))) return 'SitecoreAI';
-    return 'CMS';
-  }, [items]);
+  // The CMS station is named for the project's platform.
+  const cmsLabel = mc?.project.platform?.name ?? 'CMS';
 
   // Task lookups from the plan: who runs a task, who waits on it.
   const lookup = useMemo<TaskLookup>(() => {

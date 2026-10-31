@@ -256,7 +256,8 @@ function BlueprintViewer() {
         <div>
           <h2>Implementation Blueprint</h2>
           <p className="muted">
-            {intro} Each row maps code in {repo} to what a marketer edits in SitecoreAI.
+            {intro} Each row maps code in {repo} to what a marketer edits in{' '}
+            {mc?.project.platform?.name ?? 'the CMS'}.
           </p>
         </div>
       </div>

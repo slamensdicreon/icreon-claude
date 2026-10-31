@@ -264,6 +264,9 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
             }
           : undefined,
     knowledgeDir: fileURLToPath(new URL('./knowledge', import.meta.url)),
+    // No starter until the template repository exists (entities.md, O3): a project that needs a
+    // build repository is refused at intake rather than given Sitecore's.
+    buildRecipe: { generate: [], build: 'build', readOnly: [] },
     // Platform checks (structural.*, graph.published, …) land with the optimizely-cms and
     // optimizely-graph tool servers; until then review records them as pending, never as passed.
     headEnv: async (t, _which, deps) => headVars(t, deps.credential),

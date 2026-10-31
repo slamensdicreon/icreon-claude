@@ -1,6 +1,6 @@
 import type { PreviewPage, PreviewSnapshot } from '@lw/contracts';
 import { blobUrl } from '../lib/api';
-import { useApp, useProjectResource } from '../state';
+import { useApp, useProjectResource, usePlatformName } from '../state';
 
 const WIDTH = { desktop: '100%', tablet: '70%', phone: '46%' } as const;
 
@@ -53,7 +53,7 @@ function Pane({
       {shot ? (
         <img
           src={blobUrl(projectId!, shot)}
-          alt={`${page.name}, ${side === 'source' ? 'source' : 'SitecoreAI'} build, ${bp}`}
+          alt={`${page.name}, ${side === 'source' ? 'source' : 'new'} build, ${bp}`}
           style={{
             width: WIDTH[bp],
             display: 'block',
@@ -71,6 +71,7 @@ function Pane({
 export function Preview() {
   const { ui, setUi, toast } = useApp();
   const p = useProjectResource<PreviewSnapshot>('/preview').data;
+  const platform = usePlatformName('new site');
   if (!p) return <p className="quiet-line">Loading the preview…</p>;
   if (!p.pages.length)
     return (
@@ -103,7 +104,7 @@ export function Preview() {
           <h1>Site preview</h1>
           <p>
             The {p.source?.label ?? 'source'} on the left, the{' '}
-            {p.target?.label ?? 'SitecoreAI build'} on the right.
+            {p.target?.label ?? `${platform} build`} on the right.
             {sections ? ' The home page is the only route, so the list shows its sections.' : ''}
           </p>
         </div>
@@ -164,7 +165,7 @@ export function Preview() {
               built
             />
             <Pane
-              title={`Target: ${p.target?.label ?? 'SitecoreAI'}`}
+              title={`Target: ${p.target?.label ?? platform}`}
               page={pg}
               side="target"
               bp={bp}

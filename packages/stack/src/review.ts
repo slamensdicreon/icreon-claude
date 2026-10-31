@@ -463,6 +463,23 @@ export function settleVerdict<V extends ReviewVerdict>(
   return verdict;
 }
 
+/**
+ * The acceptance checks a playbook names that neither the shared checks nor its platform pack
+ * implement. They can never pass or fail, only stay pending, so a task judged on them is judged
+ * by its Lead alone: listed loudly at worker start rather than discovered on a task.
+ */
+export function uncheckedValidators(
+  playbook: Playbook,
+  platformChecks: Record<string, unknown> = {},
+  shared: Record<string, unknown> = CHECKS,
+): string[] {
+  const named = new Set<string>();
+  for (const t of playbook.plan.templates)
+    for (const a of t.acceptance ?? [])
+      if (a.startsWith('validator:')) named.add(a.slice('validator:'.length));
+  return [...named].filter((id) => !(id in shared) && !(id in platformChecks)).sort();
+}
+
 type RoleDef = Playbook['roles'][number];
 type FailedCheck = { id: string; status: CheckResult['status']; detail: string };
 

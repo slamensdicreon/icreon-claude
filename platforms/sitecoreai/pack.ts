@@ -11,6 +11,9 @@ import type { PlatformPack } from '../src/index';
 import { sitecoreChecks } from './checks';
 import { list, text, type TargetValues } from '../src/values';
 
+/** The SitecoreAI pack's id, as projects record it at intake. */
+export const SITECOREAI = 'sitecoreai';
+
 /**
  * SitecoreAI: a CM environment reached through its Authoring and Management API, the Deploy API
  * for the organization, Experience Edge for delivery, and a Next.js head on Vercel.
@@ -86,7 +89,7 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
     };
   };
   return {
-    id: 'sitecoreai',
+    id: SITECOREAI,
     name: 'SitecoreAI',
     about: {
       vendor: 'Sitecore',
@@ -252,6 +255,14 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
           ? { credentialId: 'sitecore-organization', token: clientToken }
           : undefined,
     knowledgeDir: fileURLToPath(new URL('./knowledge', import.meta.url)),
+    starter: { owner: 'Sitecore', repo: 'xmcloud-starter-js', appPath: 'examples/basic-nextjs' },
+    // The starter generates .sitecore/ (sites, import maps, metadata) during its build, and its
+    // type-check needs those files: generate first. Older starters have a plain `build` only.
+    buildRecipe: {
+      generate: ['sitecore-tools:generate-map', 'sitecore-tools:build'],
+      build: 'next:build',
+      readOnly: ['sitecore.json', 'nuget.config'],
+    },
     checks: sitecoreChecks(cfg),
     // The Content SDK head (examples/basic-nextjs). Our Vercel project is the editing host and
     // the stable preview, so both targets read draft content: the preview Context ID. The live

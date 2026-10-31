@@ -439,6 +439,11 @@ export function useRoster() {
   }, [team]);
 }
 
+/** The platform the project builds on, by name ("SitecoreAI"), or a neutral word when unknown. */
+export function usePlatformName(fallback = 'the CMS'): string {
+  return useMission().data?.project.platform?.name ?? fallback;
+}
+
 /** The project's time zone (New York until the snapshot loads). */
 export function useTz(): string {
   return useMission().data?.project.timezone ?? 'America/New_York';

@@ -723,7 +723,7 @@ function SaveConnection({
         <span className="eyebrow">Name</span>
         <input
           className="input"
-          placeholder="Brands tenant (SitecoreAI production)"
+          placeholder="Brands tenant (production)"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />

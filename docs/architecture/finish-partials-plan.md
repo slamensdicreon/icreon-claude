@@ -231,6 +231,16 @@ exactly today's behaviour, Optimizely gets an honest "not yet" instead of a Site
 | 6.5 | `ProjectSummary.platform { id, name }`, filled by the API from the pack; the nine "SitecoreAI" strings in the web app (status strip, Preview, Mission, Workbench, Dashboard placeholder, the floor's CMS label) read it. | `contracts/src/snapshots.ts`, `control-api`, `apps/web` | An Optimizely intake project shows "on Optimizely" everywhere |
 | 6.6 | Comments only: `ProjectTarget` fields and `RuleScope.kind` documented as pack-defined. | `contracts` | Review |
 
+### Result (2026-10-31)
+
+Done, with one change of approach for 6.3, recorded in the coupling map in
+[entities.md](entities.md): server construction stays in the worker (moving it into the packs
+would make them depend on the tool servers), and the worker's guards use the pack's id. Packs now
+carry `starter` and `buildRecipe`; check coverage is listed at worker start and pinned in a test;
+the web app names the project's platform from `ProjectSummary.platform`. Not covered by a test:
+intake refusing a build repository for a pack without a starter, which needs a full Optimizely
+intake to reach; the guard is three lines and typed.
+
 ## 7. Sandbox sync: verify and close
 
 Task 89 shipped in `e91c3d5` and `9ab2218` with tests: working copies fetch and fast-forward or

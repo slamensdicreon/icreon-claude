@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   moduleIncludes,
+  readOnly,
   safePath,
   SandboxToolServer,
+  SITECORE_RECIPE,
   SitecoreCliToolServer,
   within,
   type Box,
@@ -271,6 +273,37 @@ describe('working copies', () => {
     expect(r.summary).toBe(
       'Build green: type-check and build passed (nothing uncommitted, at abc1234)',
     );
+  });
+
+  it("builds with the project platform's recipe: its own generate steps and build script", async () => {
+    const scripts = { 'cms:types': 'x', 'type-check': 'x', 'app:build': 'x', build: 'x' };
+    const fake = fakeBox({ 'apps/site/package.json': JSON.stringify({ scripts }) }, (cmd, args) =>
+      cmd === 'git' && args[0] === 'rev-parse' ? { exitCode: 0, output: 'abc1234\n' } : null,
+    );
+    const s = new SandboxToolServer({
+      provider: fake.provider,
+      facts: async () => ({
+        repo: 'icreon-launchworks/acme',
+        branch: 'main',
+        appPath: 'apps/site',
+        recipe: { generate: ['cms:types'], build: 'app:build', readOnly: [] },
+      }),
+      buildEnv: async () => ({}),
+    });
+    await s.call('exec.build', {}, ctx);
+    expect(fake.runs.filter((x) => x.cmd === 'npm').map((x) => x.args[1])).toEqual([
+      'cms:types',
+      'type-check',
+      'app:build',
+    ]);
+  });
+
+  it('keeps CI settings read-only everywhere, and a platform file read-only only on its platform', () => {
+    const plain = { generate: [], build: 'build', readOnly: [] };
+    expect(readOnly('.github/workflows/ci.yml', plain)).toBe(true);
+    expect(readOnly('sitecore.json', SITECORE_RECIPE)).toBe(true);
+    expect(readOnly('sitecore.json', plain)).toBe(false);
+    expect(readOnly('src/sitecore.json.ts', SITECORE_RECIPE)).toBe(false);
   });
 
   it('refuses to write files git ignores, which would never be committed', async () => {
