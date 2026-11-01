@@ -2,9 +2,7 @@ import type {
   AgentState,
   EscalationCard,
   EscalationCardInput,
-  EscalationOption,
   EscalationStatus,
-  EscalationType,
   MessageSection,
   MetricKey,
   NewEvent,
@@ -222,7 +220,6 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     pausedRoles.has(t.role) ||
     pausedPhases.has(t.phase) ||
     pausedTasks.has(t.taskId);
-  const now = () => new Date(Date.now()).toISOString();
 
   // -------------------------------------------------------------------------------------------
   // Event builders

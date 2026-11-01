@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import type { RetroInput } from '@lw/agent-runtime';
-import { EventBody, type LwEvent } from '@lw/contracts';
+import type { LwEvent } from '@lw/contracts';
 import { applyEvent, createProjectState } from '@lw/domain';
 import { InMemoryEventStore, MemoryKnowledgeStore, type Projections } from '@lw/events';
 import type { PlannedTask } from '@lw/plan';

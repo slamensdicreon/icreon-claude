@@ -19,8 +19,6 @@ const TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
   rolled_back: ['ready'],
 };
 
-export const TERMINAL_TASK_STATES: ReadonlySet<TaskState> = new Set(['done', 'cancelled']);
-
 /** States in which a task is consuming effort right now. */
 export const ACTIVE_TASK_STATES: ReadonlySet<TaskState> = new Set(['running', 'validating']);
 

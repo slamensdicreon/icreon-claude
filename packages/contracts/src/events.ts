@@ -789,5 +789,3 @@ export type NewEvent = Omit<EventMeta, 'id' | 'seq' | 'ts' | 'projectId'> &
      */
     at?: string;
   };
-
-export type EventOf<T extends EventType> = EventMeta & Extract<EventBody, { type: T }>;

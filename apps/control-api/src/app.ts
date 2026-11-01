@@ -58,7 +58,6 @@ import {
   plan,
   projectListItem,
   cardGroups,
-  isLogEvent,
   portfolioItem,
   scorecard,
   LOCKED_CATEGORIES,

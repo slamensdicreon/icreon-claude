@@ -524,7 +524,7 @@ function RemixButton({ project }: { project: PortfolioItem }) {
  * Secrets are never shown: a hint, when they were last checked, and a way to replace one.
  */
 function Connections({ projects }: { projects: PortfolioItem[] }) {
-  const { openOverlay, newProject, toast } = useApp();
+  const { newProject, toast } = useApp();
   const [version, setVersion] = useState(0);
   const { data, error } = usePoll<ConnectionView[]>(`/connections?v=${version}`, 30_000);
   const playbooks = usePoll<PlaybookSummary[]>('/playbooks', 300_000).data;

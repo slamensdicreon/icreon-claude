@@ -3,8 +3,6 @@ import type {
   IntakeFieldSpec,
   PlaybookSummary,
   ProjectIntakeInput,
-  ProjectDraft,
-  RemixDraft,
   VerifyIntakeCredential,
   VerifyIntakeResult,
 } from '@lw/contracts';

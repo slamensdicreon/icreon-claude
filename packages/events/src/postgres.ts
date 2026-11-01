@@ -250,23 +250,10 @@ export class PostgresEventStore implements EventStore {
   }
 }
 
-/** Adapters for the two clients we use: node-postgres in services, PGlite in tests and local dev. */
+/** LISTEN through PGlite (tests and local dev); services listen on their own connection (open.ts). */
 export const listenWithPglite =
   (db: {
     listen(channel: string, cb: (payload: string) => void): Promise<() => Promise<void>>;
   }): Listen =>
   (channel, cb) =>
     db.listen(channel, cb);
-
-export const listenWithPg =
-  (client: {
-    query(text: string): Promise<unknown>;
-    on(event: 'notification', cb: (msg: { channel: string; payload?: string }) => void): unknown;
-  }): Listen =>
-  async (channel, cb) => {
-    client.on('notification', (msg) => {
-      if (msg.channel === channel && msg.payload) cb(msg.payload);
-    });
-    await client.query(`LISTEN ${channel}`);
-    return async () => void (await client.query(`UNLISTEN ${channel}`));
-  };

@@ -189,7 +189,6 @@ export class DemoProject {
   private ticks = 0;
   private stopped = false;
   private paused = false;
-  private readonly startedAt: number;
 
   constructor(
     private readonly store: EventStore,
@@ -203,7 +202,6 @@ export class DemoProject {
     this.speed = opts.speed ?? 1;
     this.clock = new DemoClock(def.timezone, def.present[0], def.present[1], this.now());
     this.state = createProjectState(this.projectId);
-    this.startedAt = this.now();
   }
 
   // -------------------------------------------------------------------------------------------

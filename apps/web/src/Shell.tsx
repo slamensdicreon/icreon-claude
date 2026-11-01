@@ -229,7 +229,7 @@ function CypherRail() {
 
 export function Strip() {
   const app = useApp();
-  const { layout, setLayout, go, openOverlay, setUi, toast } = app;
+  const { layout, setLayout, go, openOverlay, toast } = app;
   const mc = useMission().data;
   const now = useNow(15_000);
   const conn = useConn();

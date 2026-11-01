@@ -32,7 +32,6 @@ export function Palette() {
     theme,
     setTheme,
     run,
-    openOverlay,
   } = app;
   const mc = useMission().data;
   const { agents } = useRoster();

@@ -63,7 +63,3 @@ export function budgetTokens(
     Math.ceil((usage.cache_read_input_tokens ?? 0) / 10)
   );
 }
-
-export function knownModel(model: string): boolean {
-  return model in PRICES;
-}
