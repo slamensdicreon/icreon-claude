@@ -1,4 +1,4 @@
-import type { VerifyConfig } from '@lw/connectors';
+import { mapLimit, type VerifyConfig } from '@lw/connectors';
 import type { CheckResult, PlatformCheck, PlatformCheckContext } from '../src/index';
 import { ownedPaths, sitecoreBindings, sitecoreTarget } from './pack';
 
@@ -52,8 +52,9 @@ async function findByName(
   let level = [root];
   for (let depth = 0; depth < 3 && level.length && (all || found.size < want.size); depth++) {
     const next: Child[] = [];
-    for (const path of level.slice(0, 100)) {
-      const it = await item(ctx, path, true);
+    // A level's folders are read a few at a time, then taken in tree order as before.
+    const read = await mapLimit(level.slice(0, 100), 4, (path) => item(ctx, path, true));
+    for (const it of read) {
       for (const c of it?.children?.nodes ?? []) {
         const key = c.name.toLowerCase();
         if (want.has(key)) {
@@ -105,7 +106,9 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     url.searchParams.set('sitecoreContextId', c.contextId);
     const missing: string[] = [];
     const rendered = new Map<string, unknown>();
-    for (const path of paths.slice(0, 60)) {
+    // A few routes at a time; the answers are taken in the paths' order.
+    const checked = paths.slice(0, 60);
+    const layouts = await mapLimit(checked, 6, async (path) => {
       const res = await cfg.fetch(url.href, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -115,12 +118,15 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         }),
         signal: AbortSignal.timeout(cfg.timeoutMs),
       });
-      const b = (await res.json().catch(() => ({}))) as {
+      return (await res.json().catch(() => ({}))) as {
         data?: { layout?: { item?: { rendered?: unknown } | null } | null };
       };
-      if (!b.data?.layout?.item) missing.push(path);
-      else rendered.set(path, b.data.layout.item.rendered);
-    }
+    });
+    checked.forEach((path, i) => {
+      const item = layouts[i]!.data?.layout?.item;
+      if (!item) missing.push(path);
+      else rendered.set(path, item.rendered);
+    });
     return { missing, why: '', rendered };
   }
 

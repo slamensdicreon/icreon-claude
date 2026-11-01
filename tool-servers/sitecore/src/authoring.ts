@@ -7,6 +7,7 @@ import type {
   ToolServer,
 } from '@lw/tool-gateway';
 import { z } from 'zod';
+import { mapLimit } from '@lw/connectors';
 import { rejected } from '@lw/tool-gateway';
 
 /** What the server knows about the project's SitecoreAI target, from intake. */
@@ -1137,7 +1138,9 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     url.searchParams.set('sitecoreContextId', contextId);
     const found: string[] = [];
     const missing: string[] = [];
-    for (const path of [...new Set(a.data.paths)]) {
+    // A few routes at a time; the answers are taken in the paths' order.
+    const paths = [...new Set(a.data.paths)];
+    const layouts = await mapLimit(paths, 6, async (path) => {
       const res = await this.fetch(url.href, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1148,11 +1151,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         }),
         signal: AbortSignal.timeout(20_000),
       });
-      const b = (await res.json().catch(() => ({}))) as {
+      return (await res.json().catch(() => ({}))) as {
         data?: { layout?: { item?: { name?: string } | null } | null };
       };
-      (b.data?.layout?.item ? found : missing).push(path);
-    }
+    });
+    paths.forEach((path, i) => (layouts[i]!.data?.layout?.item ? found : missing).push(path));
     return {
       code: 200,
       body: { endpoint: live ? 'live' : 'preview', found, missing },
