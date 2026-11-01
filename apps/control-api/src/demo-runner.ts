@@ -14,8 +14,8 @@ import { demoCommands, dispatch, type ProjectCommands } from './commands';
  * ORCHESTRATOR=simulator when the API runs on request-driven instances (DEMO_RUNNER=separate):
  * on Vercel, a Daemon with exactly one instance.
  *
- * Each start reseeds the demo projects, so the demo always opens on the prototype's story. A
- * project started from intake runs here too, until the runner restarts.
+ * Each start reseeds the demo projects, so the demo always opens on the prototype's story. Only
+ * they run here; a simulated project left from the old intake answers that it has stopped.
  *
  * Only one runner may play at a time. It holds a Postgres advisory lock for its whole life; a
  * second copy (a rollout overlapping the old instance) waits for the lock before it touches the

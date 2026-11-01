@@ -32,6 +32,7 @@ import { lessonsFor } from './knowledge';
 import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
+export { GuardedBrowser } from '@lw/tool-browser';
 import {
   LocalBlobStore,
   MemoryIdempotencyStore,
@@ -91,6 +92,11 @@ export interface StackOptions {
   credential?: (projectId: string, credentialId: string) => Promise<Record<string, string> | null>;
   /** Tests point the browser at a fixture site on 127.0.0.1. */
   allowPrivateNetworks?: boolean;
+  /**
+   * One Chromium for every stack in the process. Its owner closes it; without one, the stack
+   * launches and closes its own.
+   */
+  browser?: GuardedBrowser;
 }
 
 export interface Stack {
@@ -154,7 +160,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   const blobs = opts.blobs ?? new LocalBlobStore(join(opts.dataDir, 'blobs'));
   const library = new ArtifactLibrary(opts.store, blobs);
   // One Chromium behind one egress proxy for every browser-driven server.
-  const chromium = new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });
+  const chromium =
+    opts.browser ?? new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });
   const policy = (projectId: string): UrlPolicy => {
     const s = opts.projections.get(projectId);
     const url = s?.sourceUrl;
@@ -619,7 +626,15 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     roleName: (role) => roleOf(opts.playbook, role)?.name ?? role,
   });
 
-  return { activities, liveRoles: live, gateway, library, close: () => chromium.close() };
+  return {
+    activities,
+    liveRoles: live,
+    gateway,
+    library,
+    close: async () => {
+      if (!opts.browser) await chromium.close();
+    },
+  };
 }
 
 /**

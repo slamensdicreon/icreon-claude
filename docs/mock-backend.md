@@ -8,9 +8,9 @@ live updates, reconnects, escalations, gates, pauses and the completed state.
 
 ```bash
 pnpm install
-pnpm dev                       # http://127.0.0.1:4000, two simulated projects
+pnpm dev                       # http://127.0.0.1:4000, the demo project
 SIM_SPEED=5 pnpm dev           # 5x faster
-SIM_PROJECTS=1 pnpm dev        # one project only
+SIM_PROJECTS=2 pnpm dev        # plus two scripted engagements
 ```
 
 | Variable | Default | Meaning |
@@ -18,10 +18,9 @@ SIM_PROJECTS=1 pnpm dev        # one project only
 | `PORT` / `HOST` | `4000` / `127.0.0.1` | There is no sign-in yet, so it binds to localhost only |
 | `CORS_ORIGIN` | `*` | Set it to the prototype's origin to lock it down |
 | `SIM_SPEED` | `1` | At 1, one engagement takes about 10 minutes plus the time you take to answer |
-| `SIM_PROJECTS` | `2` | **Acme corporate site** waits for you at every gate and Blocker. **Northwind marketing site** runs on autopilot at 3x speed, so the project switcher always shows two different states |
+| `SIM_PROJECTS` | `0` | Scripted engagements beside the demo project. The first, **Acme corporate site**, waits for you at every gate and Blocker; the second, **Northwind marketing site**, runs on autopilot at 3x speed, so the project switcher shows two different states |
 
-Start another project at any time with `POST /dev/simulations` and a body like
-`{"name": "Demo", "autopilot": false}`. All state is in memory, so restarting the server resets everything.
+All state is in memory, so restarting the server resets everything.
 
 ## Or run the real orchestrator
 
@@ -112,4 +111,4 @@ To exercise the other states:
 - **Paused:** `/pause` in the composer, or pause an agent or workstream from the Team inspector.
 - **Directive with stop window:** send any other message.
 - **Budget:** the demo budgets are small, so the burn bar moves.
-- **Empty states:** call `POST /dev/simulations` and look at the new project in its first seconds.
+- **Empty states:** start the server with `SIM_PROJECTS=1` and look at Acme in its first seconds.

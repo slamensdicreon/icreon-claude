@@ -1,10 +1,29 @@
 import { fileURLToPath } from 'node:url';
 import { Context } from '@temporalio/activity';
-import { NativeConnection, Worker } from '@temporalio/worker';
+import {
+  bundleWorkflowCode,
+  NativeConnection,
+  Worker,
+  type WorkflowBundleWithSourceMap,
+} from '@temporalio/worker';
 import type { Activities } from './activities';
 import { TASK_QUEUE } from './types';
 
 export const WORKFLOWS_PATH = fileURLToPath(new URL('./workflows/index.ts', import.meta.url));
+
+let bundled: Promise<WorkflowBundleWithSourceMap> | null = null;
+
+/**
+ * The workflow code, bundled once per process: every project's worker runs the same workflows,
+ * and bundling them is the slow part of starting a worker.
+ */
+export function workflowBundle(): Promise<WorkflowBundleWithSourceMap> {
+  bundled ??= bundleWorkflowCode({ workflowsPath: WORKFLOWS_PATH }).catch((err: unknown) => {
+    bundled = null;
+    throw err;
+  });
+  return bundled;
+}
 
 /** Often enough for any heartbeat timeout the workflows set (agent sessions: five minutes). */
 const HEARTBEAT_EVERY_MS = 30_000;
@@ -41,7 +60,7 @@ export async function createWorker(opts: {
     connection: opts.connection,
     namespace: opts.namespace ?? 'default',
     taskQueue: opts.taskQueue ?? TASK_QUEUE,
-    workflowsPath: WORKFLOWS_PATH,
+    workflowBundle: await workflowBundle(),
     activities: withHeartbeats(opts.activities),
   });
 }

@@ -33,6 +33,7 @@ import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw
 import {
   byVersion,
   composeStack,
+  GuardedBrowser,
   retrospectAtPhaseExit,
   seedPlatformKnowledge,
   type Stack,
@@ -126,6 +127,11 @@ const project = async (projectId: string) => {
   await projections.catchUp(projectId);
   return projections.get(projectId);
 };
+/** A project's credential, opened from the vault; null when it has none or there is no vault. */
+const projectCredential = async (id: string, credentialId: string) => {
+  const ref = (await project(id))?.credentials[credentialId]?.reference;
+  return ref && vault ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
+};
 const credentials = vault
   ? new VaultCredentials({
       project,
@@ -165,13 +171,8 @@ if (env.AGENTS === 'claude') {
       new SitecoreAuthoringToolServer({
         blobs,
         // edge.routes reads routes with the project's Context ID; the agent never sees it.
-        edgeContextId: async (id, live) => {
-          const ref = (await project(id))?.credentials[live ? 'edge-live' : 'edge-preview']
-            ?.reference;
-          if (!ref) return null;
-          const c = JSON.parse(await vault.open(ref)) as { contextId?: string };
-          return c.contextId ?? null;
-        },
+        edgeContextId: async (id, live) =>
+          (await projectCredential(id, live ? 'edge-live' : 'edge-preview'))?.contextId ?? null,
         facts: async (id) => {
           const s = await project(id);
           if (s?.intake?.platform !== SITECOREAI) return null;
@@ -231,10 +232,7 @@ if (env.AGENTS === 'claude' && vault && credentials) {
           if (!s?.intake || !pack?.headEnv)
             return { vars: [], missing: ['this platform has no head'] };
           return pack.headEnv(s.intake.target, which, {
-            credential: async (credentialId) => {
-              const ref = s.credentials[credentialId]?.reference;
-              return ref ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
-            },
+            credential: (credentialId) => projectCredential(id, credentialId),
             // Says why when it can't: "missing" alone left the team guessing.
             editingSecret: async () => {
               try {
@@ -340,10 +338,6 @@ if (
         }
       : null;
   };
-  const credential = async (id: string, credentialId: string) => {
-    const ref = (await project(id))?.credentials[credentialId]?.reference;
-    return ref ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
-  };
   servers.push(
     new SandboxToolServer({
       provider,
@@ -356,10 +350,10 @@ if (
         // A platform whose CLI needs more than the head (a management API key) says so in
         // buildEnv; the rest build with exactly what the head reads.
         const { vars } = pack?.buildEnv
-          ? await pack.buildEnv(s.intake.target, { credential: (c) => credential(id, c) })
+          ? await pack.buildEnv(s.intake.target, { credential: (c) => projectCredential(id, c) })
           : pack?.headEnv
             ? await pack.headEnv(s.intake.target, 'preview', {
-                credential: (c) => credential(id, c),
+                credential: (c) => projectCredential(id, c),
                 editingSecret: async () => ({ problem: 'builds never read the editing secret' }),
               })
             : { vars: [] };
@@ -379,7 +373,7 @@ if (
         };
       },
       client: async (id) => {
-        const c = await credential(id, 'sitecore-environment');
+        const c = await projectCredential(id, 'sitecore-environment');
         return c?.clientId && c.clientSecret
           ? { clientId: c.clientId, clientSecret: c.clientSecret }
           : null;
@@ -403,6 +397,11 @@ const seeded = await seedPlatformKnowledge(
   return 0;
 });
 if (seeded) console.log(`Knowledge: ${seeded} lesson(s) seeded from the platforms' pitfalls`);
+
+// Shared by every stack: one HTTP client for the model, one rule store, one Chromium.
+const model = env.AGENTS === 'claude' ? anthropicModelClient() : null;
+const rules = opened.sql ? new PostgresRuleStore(opened.sql) : undefined;
+const browser = new GuardedBrowser();
 
 // One stack per playbook version kept: its roles, prompts, grants and platform pack. A project
 // runs on the version it was created on; new projects start on the current one.
@@ -445,20 +444,18 @@ async function compose(playbook: Playbook, dir: string): Promise<Stack> {
     platform: platforms.get(playbook.manifest.platform)!,
     dataDir: env.DATA_DIR,
     blobs,
-    model: env.AGENTS === 'claude' ? anthropicModelClient() : null,
+    model,
     directives: env.AGENTS === 'claude' ? (input) => readDirective(input) : null,
     review: env.AGENTS === 'claude' ? (input) => reviewTask(input) : null,
     attribute: env.AGENTS === 'claude' ? (input) => attributeFailures(input) : null,
     triage: env.AGENTS === 'claude' ? (input) => triageQuestion(input) : null,
-    rules: opened.sql ? new PostgresRuleStore(opened.sql) : undefined,
+    rules,
     knowledge,
+    browser,
     screens: env.AGENTS === 'claude' ? (input) => compareScreens(input) : null,
     servers,
     credentials,
-    credential: async (id, credentialId) => {
-      const ref = (await project(id))?.credentials[credentialId]?.reference;
-      return ref && vault ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
-    },
+    credential: projectCredential,
   });
 }
 // When a live project's phase ends, Cypher's retrospective proposes what the team should learn;
@@ -536,4 +533,5 @@ process.on('SIGTERM', stop);
 
 await Promise.all(workers.map((w) => w.run()));
 for (const { stack } of stacks) await stack.close();
+await browser.close();
 await opened.close();

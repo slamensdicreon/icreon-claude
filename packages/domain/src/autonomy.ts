@@ -4,10 +4,8 @@ import {
   type AutonomyLevel,
   type SettingsSnapshot,
 } from '@lw/contracts';
+import { LOCKED_CATEGORIES } from './categories';
 import type { ProjectState } from './projector';
-
-/** Always the Director's: releases, gates and budget, and what is in scope. */
-export const LOCKED_CATEGORIES: readonly DecisionCategory[] = ['release', 'scope'];
 
 /**
  * Where a playbook says nothing. The categories a Lead can settle start in shadow, so its answers

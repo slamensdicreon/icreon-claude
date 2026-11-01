@@ -1,5 +1,8 @@
 import type { DecisionCategory, EscalationType } from '@lw/contracts';
 
+/** Always the Director's: releases, gates and budget, and what is in scope. */
+export const LOCKED_CATEGORIES: readonly DecisionCategory[] = ['release', 'scope'];
+
 /** What a card says, enough to tell what it asks about. */
 export interface CardText {
   type: EscalationType;

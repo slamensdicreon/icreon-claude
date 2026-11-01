@@ -11,8 +11,8 @@ import type {
   NewEvent,
   SettingKey,
   StatusCard,
-  TaskState,
 } from '@lw/contracts';
+import { TaskState } from '@lw/contracts';
 import {
   applyEvent,
   canTransition,
@@ -74,19 +74,7 @@ const EXTRA_TOOLS: Record<string, string> = {
   'decision-log': 'Decision Log',
 };
 
-const ALL_TASK_STATES: TaskState[] = [
-  'planned',
-  'ready',
-  'running',
-  'validating',
-  'done',
-  'rejected',
-  'blocked',
-  'paused',
-  'cancelled',
-  'rolled_back',
-  'waiting',
-];
+const ALL_TASK_STATES: readonly TaskState[] = TaskState.options;
 
 /** Shortest legal route through the task state machine. */
 function route(from: TaskState, to: TaskState): TaskState[] {
@@ -113,7 +101,7 @@ function route(from: TaskState, to: TaskState): TaskState[] {
   return [to];
 }
 
-export const parseMs = (s = '–'): number => {
+const parseMs = (s = '–'): number => {
   const t = s.replace(/\s+/g, '');
   const m = /^(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/.exec(t);
   if (/^\d+(\.\d+)?ms$/.test(t)) return Math.round(parseFloat(t));
@@ -121,14 +109,14 @@ export const parseMs = (s = '–'): number => {
   return 0;
 };
 
-export const parseTokens = (s = '–'): number => {
+const parseTokens = (s = '–'): number => {
   const m = /^(\d+(?:\.\d+)?)([kM])?$/.exec(s.trim());
   if (!m) return 0;
   return Math.round(Number(m[1]) * (m[2] === 'M' ? 1e6 : m[2] === 'k' ? 1e3 : 1));
 };
 
 /** "wb:blueprint" → { artifact, blueprint }. */
-export function jumpTarget(j: Jump): LinkTarget {
+function jumpTarget(j: Jump): LinkTarget {
   const [a, b = ''] = j.split(':');
   switch (a) {
     case 'wb':
@@ -159,7 +147,7 @@ const kebab = (s: string) =>
     .slice(0, 3)
     .join('-');
 
-export const rowKey = (r: BlueprintRowDef) => r.key ?? kebab(r.target.split(/[,+:]/)[0]!);
+const rowKey = (r: BlueprintRowDef) => r.key ?? kebab(r.target.split(/[,+:]/)[0]!);
 
 interface LiveEscalation {
   def: DemoEscalation;

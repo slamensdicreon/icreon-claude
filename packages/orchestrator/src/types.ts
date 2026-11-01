@@ -85,6 +85,12 @@ export type Resolver =
       checkpointTaskId: string | null;
     };
 
+/** A Director gate: approved once, before a phase can start. */
+export interface GateState {
+  status: 'none' | 'pending' | 'approved';
+  escalationId: string | null;
+}
+
 /** An unanswered card carried into the next run. */
 export interface EscalationSnapshot {
   card: EscalationCard;
@@ -127,7 +133,7 @@ export interface ProjectSnapshot {
   taskEscalation: [string, string][];
   started: number[];
   done: number[];
-  gates: [string, { status: 'none' | 'pending' | 'approved'; escalationId: string | null }][];
+  gates: [string, GateState][];
   escalations: EscalationSnapshot[];
   agentStates: [string, AgentState][];
   pausedRoles: string[];

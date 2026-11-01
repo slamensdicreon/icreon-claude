@@ -9,7 +9,7 @@ import type {
   ScopeKind,
   TaskState,
 } from '@lw/contracts';
-import { categoryOf, LOCKED_CATEGORIES, metricUnit } from '@lw/domain';
+import { categoryOf, LOCKED_CATEGORIES, metricUnit } from '@lw/domain/workflow';
 import {
   compilePlan,
   diffBlueprints,
@@ -57,6 +57,8 @@ import {
 } from '../definitions';
 import type {
   AgentResult,
+  EscalationSnapshot,
+  GateState,
   ProjectInput,
   ProjectSnapshot,
   Resolver,
@@ -82,21 +84,10 @@ const CHIEF = { kind: 'chief_of_staff' as const, id: 'chief-of-staff' };
 const SYSTEM = { kind: 'system' as const, id: 'orchestrator' };
 const DIRECTOR = { kind: 'director' as const, id: 'director' };
 
-interface Escalation {
-  card: EscalationCard;
-  status: EscalationStatus;
-  deadlineAt: number | null;
-  windowMs: number | null;
-  deferredUntil: number | null;
+/** A raised card; `resolver` says what answering it does (see `applyResolution`). */
+interface Escalation extends EscalationSnapshot {
   /** A Director's choice inside its undo window. */
   pending: { optionId: string; notes: string | null; undone: boolean } | null;
-  /** What answering it does (see `applyResolution`). */
-  resolver: Resolver;
-}
-
-interface Gate {
-  status: 'none' | 'pending' | 'approved';
-  escalationId: string | null;
 }
 
 /**
@@ -174,7 +165,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const taskEscalation = new Map<string, string>();
   const started = new Set<number>();
   const done = new Set<number>();
-  const gates = new Map<string, Gate>();
+  const gates = new Map<string, GateState>();
   const escalations = new Map<string, Escalation>();
   const children = new Map<string, ChildWorkflowHandle<typeof taskWorkflow>>();
   const running = new Map<string, Set<string>>(); // role → task ids
