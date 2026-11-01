@@ -288,13 +288,15 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     library,
     platform: platformAccess,
   });
+  // Hosts the project's documents point media at, by the documents' versions.
+  const hostsSeen = new Map<string, { key: string; hosts: string[] }>();
   const STRUCTURE = ['site', 'templates', 'renderings'] as const;
   const servers: ToolServer[] = [
     new BrowserToolServer({
       blobs,
       policy,
       browser: chromium,
-      assetHosts: (projectId) => assetHosts(opts.projections, library, projectId),
+      assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
     }),
     new ValidatorsToolServer({
       blobs,
@@ -581,7 +583,10 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       running.set(key, req.task);
       selfChecks.delete(key);
       try {
-        return await agents.runAgent(req);
+        const done = await agents.runAgent(req);
+        // This attempt won't run again: its replayable results only hold memory now.
+        await gateway.forget(req.projectId, req.task.taskId, req.attempt);
+        return done;
       } finally {
         running.delete(key);
         selfChecks.delete(key);
@@ -621,11 +626,21 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
  * Hosts the project's own records (the Blueprint and the inventories) point media at, such as an
  * uploads CDN: a media download may come from them as well as from the source site.
  */
-async function assetHosts(projections: Projections, library: ArtifactLibrary, projectId: string) {
+async function assetHosts(
+  projections: Projections,
+  library: ArtifactLibrary,
+  projectId: string,
+  seen: Map<string, { key: string; hosts: string[] }>,
+) {
   await projections.catchUp(projectId);
   const docs = Object.values(projections.get(projectId)?.artifacts ?? {}).filter((a) =>
     ['blueprint', 'inventory'].includes(a.kind),
   );
+  // The same documents at the same versions name the same hosts: read them again only when one
+  // changes (every media download asks).
+  const key = docs.map((a) => `${a.artifactId}@${a.latest}`).join('|');
+  const known = seen.get(projectId);
+  if (known?.key === key) return [...known.hosts];
   const hosts = new Set<string>();
   for (const a of docs) {
     const d = await library.read(projectId, a.artifactId);
@@ -633,6 +648,7 @@ async function assetHosts(projections: Projections, library: ArtifactLibrary, pr
       [])
       hosts.add(m[1]!.toLowerCase());
   }
+  seen.set(projectId, { key, hosts: [...hosts] });
   return [...hosts];
 }
 

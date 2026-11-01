@@ -12,27 +12,30 @@ export function sliceScreenshot(
   const sliceHeight = opts.sliceHeight ?? 1400;
   const maxSlices = opts.maxSlices ?? 6;
   const src = PNG.sync.read(Buffer.from(png));
-  const w = Math.max(1, Math.floor(src.width / 2));
-  const h = Math.max(1, Math.floor(src.height / 2));
+  const { width: W, height: H, data: d } = src;
+  const w = Math.max(1, Math.floor(W / 2));
+  // Only the rows the slices keep: a long page's tail is left out anyway.
+  const h = Math.min(Math.max(1, Math.floor(H / 2)), sliceHeight * maxSlices);
   const half = new PNG({ width: w, height: h });
-  // A 2×2 box filter: each output pixel is the mean of the four it covers.
+  // A 2×2 box filter: each output pixel is the mean of the four it covers (the last row and
+  // column repeat at an odd edge). Offsets are worked out once per column and per row.
+  const col0 = new Int32Array(w);
+  const col1 = new Int32Array(w);
+  for (let x = 0; x < w; x++) {
+    col0[x] = Math.min(W - 1, x * 2) * 4;
+    col1[x] = Math.min(W - 1, x * 2 + 1) * 4;
+  }
   for (let y = 0; y < h; y++) {
+    const r0 = Math.min(H - 1, y * 2) * W * 4;
+    const r1 = Math.min(H - 1, y * 2 + 1) * W * 4;
     for (let x = 0; x < w; x++) {
+      const a = r0 + col0[x]!;
+      const b = r0 + col1[x]!;
+      const e = r1 + col0[x]!;
+      const f = r1 + col1[x]!;
       const o = (y * w + x) * 4;
-      for (let c = 0; c < 4; c++) {
-        let sum = 0;
-        for (const [dx, dy] of [
-          [0, 0],
-          [1, 0],
-          [0, 1],
-          [1, 1],
-        ] as const) {
-          const sx = Math.min(src.width - 1, x * 2 + dx);
-          const sy = Math.min(src.height - 1, y * 2 + dy);
-          sum += src.data[(sy * src.width + sx) * 4 + c]!;
-        }
-        half.data[o + c] = Math.round(sum / 4);
-      }
+      for (let c = 0; c < 4; c++)
+        half.data[o + c] = Math.round((d[a + c]! + d[b + c]! + d[e + c]! + d[f + c]!) / 4);
     }
   }
   const out: Uint8Array[] = [];

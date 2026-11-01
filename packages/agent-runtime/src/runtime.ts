@@ -102,25 +102,36 @@ export class AgentRuntime {
     if (!role)
       return { kind: 'failed', reason: `No role "${req.task.role}" in the playbook.`, spent: zero };
 
+    // What the brief and the prompt are made of: independent reads, made together.
+    const [context, unavailable, board, items, facts] = await Promise.all([
+      (deps.context ?? emptyContext).forTask(req.projectId, req.task),
+      deps.unavailable?.(req.projectId),
+      deps.board?.(req.projectId, req.task),
+      deps.items?.(req.projectId, req.task),
+      deps.facts?.(req.projectId, req.task).catch(() => null),
+    ]);
+    // Last: it records which lessons the brief carried, so only once the rest is in hand.
+    const lessons = (await deps.lessons?.(req.projectId, req.task).catch(() => null)) ?? null;
     const system = systemBlocks(
       rolePrompt(role, deps.prompt?.(role) ?? null, deps.playbook.manifest.charter),
-      await (deps.context ?? emptyContext).forTask(req.projectId, req.task),
+      context,
     );
     const version = promptVersion(system);
-    const { tools, route } = toolsFor(
-      role.role,
-      deps.gateway,
-      new Set((await deps.unavailable?.(req.projectId)) ?? []),
-    );
+    const { tools, route } = toolsFor(role.role, deps.gateway, new Set(unavailable ?? []));
     const model = role.model.id;
     const budget = role.budget?.tokens ?? Infinity;
     const spent: Spend = { tokens: 0, usd: 0 };
-    const board = (await deps.board?.(req.projectId, req.task)) ?? null;
-    const items = (await deps.items?.(req.projectId, req.task)) ?? null;
-    const facts = (await deps.facts?.(req.projectId, req.task).catch(() => null)) ?? null;
-    const lessons = (await deps.lessons?.(req.projectId, req.task).catch(() => null)) ?? null;
     const messages: BetaMessageParam[] = [
-      { role: 'user', content: taskBrief({ ...req, board, items, facts, lessons }) },
+      {
+        role: 'user',
+        content: taskBrief({
+          ...req,
+          board: board ?? null,
+          items: items ?? null,
+          facts: facts ?? null,
+          lessons,
+        }),
+      },
     ];
     let stepIndex = 0;
     let maxTokens = deps.maxTokensPerTurn ?? DEFAULT_MAX_TOKENS;

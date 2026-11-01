@@ -57,14 +57,16 @@ export function rolePrompt(role: RoleDef, promptFile: string | null, charter?: C
 }
 
 /**
- * System blocks in cache order: platform rules, role prompt, then project context, with the
- * cache breakpoint after the context. Everything per-task goes in the first user message, after
- * the breakpoint, so every task of a role in a project reuses one cached prefix.
+ * System blocks in cache order: platform rules, role prompt, then project context. Everything
+ * per-task goes in the first user message, after them, so every task of a role in a project
+ * reuses one cached prefix. A breakpoint after the role prompt as well as after the context: the
+ * context changes as the project does (a new document version, a new preview deployment), and
+ * then only it is written to the cache again, not the role's long prompt before it.
  */
 export function systemBlocks(rolePromptText: string, projectContext: string): BetaTextBlockParam[] {
   return [
     { type: 'text', text: PLATFORM_RULES },
-    { type: 'text', text: rolePromptText },
+    { type: 'text', text: rolePromptText, cache_control: { type: 'ephemeral' } },
     {
       type: 'text',
       text: `Project context:\n\n${projectContext}`,

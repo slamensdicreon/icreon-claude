@@ -660,6 +660,17 @@ export async function runChecks(
  * The checks the Lead's review will run on a task, for the agent doing it to run first (its
  * acceptance tool). Nothing is recorded; null when the task isn't known here.
  */
+/**
+ * A task's acceptance: its own, joined with its template's as the playbook has it now (checks a
+ * template gains later still apply to tasks compiled before).
+ */
+function acceptanceFor(
+  templates: Map<string, { acceptance: string[] }>,
+  task: { templateId: string; acceptance: string[] },
+): string[] {
+  return [...new Set([...task.acceptance, ...(templates.get(task.templateId)?.acceptance ?? [])])];
+}
+
 export function selfCheck(
   deps: CheckDeps & Pick<ReviewDeps, 'store' | 'projections' | 'playbook'>,
 ) {
@@ -677,12 +688,18 @@ export function selfCheck(
     await deps.projections.catchUp(projectId);
     const state = deps.projections.get(projectId);
     if (!state) return [];
-    const steps = (await deps.store.read(projectId)).filter(
-      (e): e is StepEvent => e.type === 'step.recorded' && e.data.taskId === task.taskId,
+    const acceptance = acceptanceFor(templates, task);
+    // Only the shared checks read the task's steps; a task judged by the platform's checks alone
+    // (every page) doesn't need the project's whole log read for them.
+    const shared = deps.checks ?? CHECKS;
+    const readsSteps = acceptance.some(
+      (a) => a.startsWith('validator:') && a.slice('validator:'.length) in shared,
     );
-    const acceptance = [
-      ...new Set([...task.acceptance, ...(templates.get(task.templateId)?.acceptance ?? [])]),
-    ];
+    const steps = readsSteps
+      ? (await deps.store.read(projectId)).filter(
+          (e): e is StepEvent => e.type === 'step.recorded' && e.data.taskId === task.taskId,
+        )
+      : [];
     return runChecks(deps, { projectId, state, steps, task, acceptance });
   };
 }
@@ -692,9 +709,8 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
   // A project's plan is compiled when it starts. Checks the playbook adds to a task template later
   // still apply to that project's tasks: a task is judged on the union.
   const templates = new Map(deps.playbook.plan.templates.map((t) => [t.id, t]));
-  const acceptanceOf = (task: { templateId: string; acceptance: string[] }) => [
-    ...new Set([...task.acceptance, ...(templates.get(task.templateId)?.acceptance ?? [])]),
-  ];
+  const acceptanceOf = (task: { templateId: string; acceptance: string[] }) =>
+    acceptanceFor(templates, task);
   // Marked from the tool's definition, so the Lead judges what a call did, not what it's called.
   const effect = (e: StepEvent) => {
     const kind = deps.effect?.(e.data.toolServer, e.data.operation);

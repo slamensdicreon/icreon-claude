@@ -71,6 +71,15 @@ export class ToolGateway {
     );
   }
 
+  /**
+   * Drops the replayable results of one attempt of a task. A finished session's attempt never
+   * runs again (the next run is a new attempt), so its results only hold memory; an attempt that
+   * failed keeps them, for the retry that replays it.
+   */
+  async forget(projectId: string, taskId: string, attempt: number): Promise<void> {
+    await this.deps.idempotency.forget?.(`${projectId}:${taskId}:${attempt}:`);
+  }
+
   operation(server: string, op: string): OperationSpec | undefined {
     return this.servers.get(server)?.catalog[op];
   }

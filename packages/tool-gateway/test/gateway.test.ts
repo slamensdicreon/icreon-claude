@@ -548,3 +548,18 @@ describe('rate limiting', () => {
     expect(Date.now() - t1).toBeLessThan(20);
   });
 });
+
+describe('idempotency', () => {
+  it('forgets one attempt of one task, and keeps the rest for their retries', async () => {
+    const idem = new MemoryIdempotencyStore();
+    const r = { code: 200, body: {} };
+    await idem.put('p1:t1:1:0:aa', r);
+    await idem.put('p1:t1:1:1:bb', r);
+    await idem.put('p1:t1:2:0:aa', r);
+    await idem.put('p1:t10:1:0:aa', r);
+    await idem.forget('p1:t1:1:');
+    expect(idem.size).toBe(2);
+    expect(await idem.get('p1:t1:2:0:aa')).toBe(r);
+    expect(await idem.get('p1:t10:1:0:aa')).toBe(r);
+  });
+});

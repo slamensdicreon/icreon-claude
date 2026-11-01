@@ -4,6 +4,8 @@ import type { ToolResult } from './types';
 export interface IdempotencyStore {
   get(key: string): Promise<ToolResult | undefined>;
   put(key: string, result: ToolResult): Promise<void>;
+  /** Drops the results whose keys start with `prefix` (an attempt that can't run again). */
+  forget?(prefix: string): Promise<void>;
 }
 
 export class MemoryIdempotencyStore implements IdempotencyStore {
@@ -13,6 +15,13 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   }
   async put(key: string, result: ToolResult) {
     this.results.set(key, result);
+  }
+  async forget(prefix: string) {
+    for (const key of this.results.keys()) if (key.startsWith(prefix)) this.results.delete(key);
+  }
+  /** How many results are kept (tests). */
+  get size() {
+    return this.results.size;
   }
 }
 
