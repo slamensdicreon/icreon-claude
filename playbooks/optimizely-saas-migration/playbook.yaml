@@ -8,7 +8,7 @@
 # SitecoreAI team (registrar, layout engineer, provisioner, experience enabler) fold into the
 # engineers who write and integrate that code and into the Experience Builder who composes pages.
 id: optimizely-saas-migration
-version: 0.4.0
+version: 0.4.1
 name: Build an Optimizely CMS (SaaS) website
 description: >-
   Rebuilds a client's live site as an Optimizely CMS (SaaS) application with a Next.js head on

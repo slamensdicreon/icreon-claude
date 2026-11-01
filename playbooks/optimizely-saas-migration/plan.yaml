@@ -149,7 +149,7 @@ templates:
     title: Define {name} page type
     dependsOn: [design-system]
     acceptance: [validator:build.green, validator:types.defined]
-  - id: integrate-type-{key}
+  - id: push-type-{key}
     phase: 5
     role: head-integrator
     forEach: templates
@@ -168,7 +168,7 @@ templates:
     role: content-migrator
     forEach: templates
     title: Create {name} blueprint
-    dependsOn: ['integrate-type-{key}', site-shell]
+    dependsOn: ['push-type-{key}', site-shell]
     acceptance: [validator:structural.templates]
   - id: validate-templates
     phase: 5
