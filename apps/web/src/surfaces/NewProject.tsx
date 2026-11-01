@@ -6,9 +6,9 @@ import type {
   VerifyIntakeCredential,
   VerifyIntakeResult,
 } from '@lw/contracts';
-import { briefApplies, SOURCE_REPO } from '@lw/contracts';
+import { briefApplies, SOURCE_REPO } from '@lw/contracts/labels';
 import { useEffect, useState } from 'react';
-import { ApiProblem, get, post } from '../lib/api';
+import { get, messageOf, post } from '../lib/api';
 import { Icon } from '../lib/icons';
 import { catalogGroups, readiness, type CatalogGroup } from '../lib/showcase';
 import { useApp, type NewProjectIntent } from '../state';
@@ -99,11 +99,7 @@ export function NewProject() {
           setPlaybookId(list[0]!.id);
         }
       })
-      .catch((err: unknown) =>
-        setLoadError(
-          err instanceof ApiProblem ? err.message : 'The playbooks could not be loaded.',
-        ),
-      );
+      .catch((err: unknown) => setLoadError(messageOf(err, 'The playbooks could not be loaded.')));
   }, []);
 
   const pb = playbooks?.find((p) => p.id === playbookId) ?? null;
@@ -195,7 +191,7 @@ export function NewProject() {
         [key]: {
           state: 'done',
           ok: false,
-          detail: err instanceof ApiProblem ? err.message : 'The check could not run.',
+          detail: messageOf(err, 'The check could not run.'),
           sites: [],
           expiresAt: null,
         },
@@ -277,7 +273,7 @@ export function NewProject() {
       toast(`${f.name.trim()} is set up. Its credentials are verified and sealed.`);
       switchProject(r.projectId);
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : 'The project could not be created.');
+      setError(messageOf(err, 'The project could not be created.'));
       setBusy(false);
     }
   };

@@ -8,14 +8,14 @@ import type {
   RemixDraft,
 } from '@lw/contracts';
 import { useEffect, useState } from 'react';
-import { ApiProblem, get, post, put } from '../lib/api';
-import { age, usd } from '../lib/fmt';
+import { get, messageOf, post, put } from '../lib/api';
+import { ago, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { CypherHome } from './CypherHome';
 import { Knowledge } from './Knowledge';
 import { Rules } from './Rules';
 import { PlaybookComparison } from './Scorecard';
-import { useApp } from '../state';
+import { useApp, useNow } from '../state';
 import { catalogGroups, readiness } from '../lib/showcase';
 
 type Tab = 'projects' | 'connections' | 'playbooks' | 'rules' | 'knowledge' | 'diagnostics';
@@ -31,14 +31,6 @@ const STATUS: Record<PortfolioItem['status'], string> = {
   archived: 'Archived',
 };
 const DONE = new Set(['completed', 'cancelled', 'archived']);
-
-/** "just now", "12 min ago", "3 h ago", "4 days ago": a glance, not a timestamp. */
-function since(t: string): string {
-  const h = (Date.now() - Date.parse(t)) / 3_600_000;
-  if (h < 2) return age(t);
-  if (h < 48) return `${Math.round(h)} h ago`;
-  return `${Math.round(h / 24)} days ago`;
-}
 
 /** Poll a JSON resource while the Dashboard is open. */
 function usePoll<T>(path: string | null, everyMs: number) {
@@ -177,6 +169,8 @@ function Projects({ items, error }: { items: PortfolioItem[] | null; error: stri
 }
 
 function ProjectCard({ p, open }: { p: PortfolioItem; open: () => void }) {
+  // Keeps the relative times ("12 min ago") current.
+  useNow(15_000);
   const done = DONE.has(p.status);
   const pct = p.budgets.usd ? Math.round((p.spent.usd / p.budgets.usd) * 100) : 0;
   return (
@@ -227,7 +221,7 @@ function ProjectCard({ p, open }: { p: PortfolioItem; open: () => void }) {
           </div>
           <div>
             <dt>Last activity</dt>
-            <dd>{p.lastActivityAt ? since(p.lastActivityAt) : 'None yet'}</dd>
+            <dd>{p.lastActivityAt ? ago(p.lastActivityAt) : 'None yet'}</dd>
           </div>
         </dl>
         {(p.waitingCount > 0 || p.capabilityGaps > 0 || (p.healthReason && !done)) && (
@@ -508,7 +502,7 @@ function RemixButton({ project }: { project: PortfolioItem }) {
             },
           });
         } catch (err) {
-          toast(err instanceof ApiProblem ? err.message : 'The remix could not be prepared.');
+          toast(messageOf(err, 'The remix could not be prepared.'));
         } finally {
           setBusy(false);
         }
@@ -560,7 +554,7 @@ function Connections({ projects }: { projects: PortfolioItem[] }) {
                     );
                     newProject({ remix: { draft, connectionName: c.name } });
                   } catch (err) {
-                    toast(err instanceof ApiProblem ? err.message : 'Could not start a project.');
+                    toast(messageOf(err, 'Could not start a project.'));
                   }
                 }}
               >
@@ -615,6 +609,8 @@ function ConnectionCredential({
   spec: IntakeCredentialSpec | undefined;
   onDone: () => void;
 }) {
+  // Keeps the relative times ("12 min ago") current.
+  useNow(15_000);
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -626,7 +622,7 @@ function ConnectionCredential({
       <b>{x.system}</b>
       <span className="muted">
         {x.hint ? `…${x.hint}` : 'Stored'}
-        {x.checkedAt ? ` · checked ${since(x.checkedAt)}` : ''}
+        {x.checkedAt ? ` · checked ${ago(x.checkedAt)}` : ''}
         {x.detail ? ` · ${x.detail}` : ''}{' '}
         {spec && (
           <button className="link-btn" onClick={() => setOpen((o) => !o)}>
@@ -649,7 +645,7 @@ function ConnectionCredential({
               setValues({});
               onDone();
             } catch (err) {
-              setProblem(err instanceof ApiProblem ? err.message : 'It could not be replaced.');
+              setProblem(messageOf(err, 'It could not be replaced.'));
             } finally {
               setBusy(false);
             }
@@ -706,7 +702,7 @@ function SaveConnection({
           setFrom('');
           onSaved();
         } catch (err) {
-          toast(err instanceof ApiProblem ? err.message : 'The connection could not be saved.');
+          toast(messageOf(err, 'The connection could not be saved.'));
         } finally {
           setBusy(false);
         }

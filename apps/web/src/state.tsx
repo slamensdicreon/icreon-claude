@@ -17,7 +17,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ApiProblem, get } from './lib/api';
+import { get, messageOf } from './lib/api';
 import { live, useResource } from './lib/live';
 
 export type Surface =
@@ -240,10 +240,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () =>
       get<ProjectListItem[]>('/projects')
         .then((list) => {
-          setProjects(list);
+          // The list is polled: keep the same one when nothing changed, so nothing renders again.
+          setProjects((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list));
           // No project in the address means the Dashboard; a project that's gone does too.
           setProjectId((cur) => (cur && list.some((p) => p.id === cur) ? cur : null));
-          setBoot({ projectsLoaded: true, error: null });
+          setBoot((b) =>
+            b.projectsLoaded && !b.error ? b : { projectsLoaded: true, error: null },
+          );
         })
         .catch((err: unknown) => {
           // Only the first load reports: a refresh that fails later shouldn't bring the overlay back.
@@ -252,10 +255,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ? b
               : {
                   projectsLoaded: false,
-                  error:
-                    err instanceof ApiProblem
-                      ? err.message
-                      : 'The Control API could not be reached.',
+                  error: messageOf(err, 'The Control API could not be reached.'),
                 },
           );
         }),
@@ -402,11 +402,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (done) toast(done);
         return true;
       } catch (err) {
-        toast(
-          err instanceof ApiProblem
-            ? err.message
-            : 'The Control API could not be reached. Check your connection.',
-        );
+        toast(messageOf(err, 'The Control API could not be reached. Check your connection.'));
         return false;
       }
     },
@@ -451,10 +447,11 @@ export function useTz(): string {
   return useMission().data?.project.timezone ?? 'America/New_York';
 }
 
-/** Re-renders every `ms` (clocks, ages, countdowns). */
-export function useNow(ms = 1000): number {
+/** Re-renders every `ms` (clocks, ages, countdowns); `null` stops the clock. */
+export function useNow(ms: number | null = 1000): number {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
+    if (ms === null) return;
     const t = window.setInterval(() => setNow(Date.now()), ms);
     return () => window.clearInterval(t);
   }, [ms]);

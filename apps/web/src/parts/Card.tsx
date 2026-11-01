@@ -17,8 +17,7 @@ export const TYPE_LABEL: Record<string, string> = {
   gate: 'Review',
 };
 
-export const keyOf = (x: EscalationView, i: number) =>
-  x.options[i]?.key ?? String.fromCharCode(65 + i);
+const keyOf = (x: EscalationView, i: number) => x.options[i]?.key ?? String.fromCharCode(65 + i);
 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 

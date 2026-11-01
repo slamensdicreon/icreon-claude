@@ -1,6 +1,6 @@
 import type { RuleDraftView, RuleView } from '@lw/contracts';
 import { useEffect, useState } from 'react';
-import { ApiProblem, postFor } from '../lib/api';
+import { messageOf, postFor } from '../lib/api';
 import { useApp } from '../state';
 import { Scrim } from './Dialogs';
 
@@ -27,9 +27,7 @@ export function MakeRule({ projectId, escalationId }: { projectId: string; escal
         // The playbook when there is one: the next site on it is asked the same questions.
         setScope(Math.min(1, d.scopes.length - 1));
       })
-      .catch((e: unknown) =>
-        setError(e instanceof ApiProblem ? e.message : 'The rule could not be drafted.'),
-      );
+      .catch((e: unknown) => setError(messageOf(e, 'The rule could not be drafted.')));
   }, [projectId, escalationId]);
 
   const save = async () => {
@@ -49,7 +47,7 @@ export function MakeRule({ projectId, escalationId }: { projectId: string; escal
       toast(`Rule ${rule.ref} saved. Leads apply it from the next card like this one.`);
       closeOverlay();
     } catch (e) {
-      setError(e instanceof ApiProblem ? e.message : 'The rule could not be saved.');
+      setError(messageOf(e, 'The rule could not be saved.'));
       setBusy(false);
     }
   };

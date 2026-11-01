@@ -372,7 +372,8 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
 
 function Directive({ m }: { m: ConversationItem }) {
   const { projectId, run } = useApp();
-  const now = useNow(250);
+  // The countdown and its bar only show until the directive settles.
+  const now = useNow(m.settled ? null : 250);
   const end = m.proceedsAt ? Date.parse(m.proceedsAt) : now;
   const total = m.proceedsAt ? Math.max(1, end - Date.parse(m.ts)) : 1;
   const left = Math.max(0, Math.ceil((end - now) / 1000));

@@ -13,6 +13,8 @@ export type ConnState =
 interface Entry {
   /** Replaced (never mutated) when it changes, so React can compare by identity. */
   snap: { data: unknown; error: Error | null };
+  /** The data as last fetched, serialized: a refetch that brings nothing new keeps `snap`. */
+  json: string | null;
   version: number;
   loading: Promise<void> | null;
 }
@@ -56,13 +58,18 @@ class LiveStore {
     const v = projectId ? this.version(projectId) : 0;
     let e = this.entries.get(path);
     if (!e) {
-      e = { snap: EMPTY, version: -1, loading: null };
+      e = { snap: EMPTY, json: null, version: -1, loading: null };
       this.entries.set(path, e);
     }
     if (e.version !== v && !e.loading) {
       const entry = e;
       entry.loading = get<T>(path)
         .then((data) => {
+          // Most refetches after an event change nothing this resource shows: keep the same
+          // snapshot so the page doesn't render again.
+          const json = JSON.stringify(data);
+          if (json === entry.json && !entry.snap.error) return;
+          entry.json = json;
           entry.snap = { data, error: null };
         })
         .catch((err: Error) => {

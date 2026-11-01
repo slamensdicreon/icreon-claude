@@ -73,16 +73,7 @@ export const BriefQuestion = z.object({
 });
 export type BriefQuestion = z.infer<typeof BriefQuestion>;
 
-/** The feature a project has when it was given a source repository at intake. */
-export const SOURCE_REPO = 'source-repo';
-
-/** Whether a brief question is asked of a project with these features. */
-export function briefApplies(
-  q: Pick<BriefQuestion, 'when' | 'unless'>,
-  features: readonly string[],
-): boolean {
-  return (!q.when || features.includes(q.when)) && (!q.unless || !features.includes(q.unless));
-}
+export { briefApplies, SOURCE_REPO } from './labels';
 
 export const IntakeSpec = z.object({
   source: z.object({

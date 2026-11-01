@@ -43,59 +43,6 @@
 }
 
 /* New Project wizard: the prototype's dialog, wider, with a step rail and grouped fields. */
-.dialog.wiz {
-  width: 680px;
-  max-height: 92vh;
-  display: flex;
-  flex-direction: column;
-}
-.wiz-steps {
-  list-style: none;
-  margin: 4px 0 16px;
-  padding: 0;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 12.5px;
-  color: var(--web-fg-2);
-}
-.wiz-steps li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px 4px 4px;
-  border: 1px solid var(--web-border);
-  border-radius: 999px;
-}
-.wiz-steps li span {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--web-surface-2);
-  font-size: 11.5px;
-}
-.wiz-steps li[aria-current='step'] {
-  border-color: var(--web-accent);
-  color: var(--web-accent-text);
-}
-.wiz-steps li[aria-current='step'] span {
-  background: var(--web-accent);
-  color: var(--web-fg-on-accent);
-}
-.wiz-steps li.done span {
-  background: var(--web-fg);
-  color: var(--web-bg);
-}
-.wiz-body {
-  overflow: auto;
-  min-height: 0;
-  padding-right: 4px;
-}
-.wiz-body > p {
-  margin: 0 0 14px;
-}
 .wiz-field {
   display: flex;
   flex-direction: column;
@@ -152,31 +99,6 @@
 .wiz-wrap > .wiz-field {
   flex: 1 1 180px;
 }
-.wiz-playbooks {
-  display: grid;
-  gap: 10px;
-}
-.wiz-playbook {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: left;
-  padding: 12px 14px;
-  border: 1px solid var(--web-border);
-  border-radius: var(--web-radius-2);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.wiz-playbook:hover {
-  border-color: var(--web-border-strong);
-}
-.wiz-playbook.on {
-  border-color: var(--web-accent);
-  box-shadow: 0 0 0 1px var(--web-accent);
-}
-.wiz-playbook ul,
 .panel.playbook .outcomes {
   margin: 6px 0 0;
   padding-left: 18px;
@@ -2081,10 +2003,6 @@
 .dash-entity-head p {
   margin: 4px 0 0;
   max-width: 70ch;
-}
-.wiz-count {
-  font-size: 12.5px;
-  color: var(--web-fg-3);
 }
 
 /* New Project: its own page. A step rail, the step's form, and a summary that fills in as you go. */

@@ -5,7 +5,7 @@ import type {
   ProjectSummary,
   SettingsSnapshot,
 } from '@lw/contracts';
-import { briefApplies, SOURCE_REPO } from '@lw/contracts';
+import { briefApplies, SOURCE_REPO } from '@lw/contracts/labels';
 import { Fragment, useEffect, useState } from 'react';
 import { get, post, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';

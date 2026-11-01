@@ -727,7 +727,19 @@ function roundRect(
   ctx.closePath();
 }
 
+/** A colour's `rgba(r, g, b, ` prefix, parsed once per colour (the scene draws every frame). */
+const rgbaPrefix = new Map<string, string | null>();
+
 function alpha(hex: string, a: number): string {
+  let prefix = rgbaPrefix.get(hex);
+  if (prefix === undefined) {
+    prefix = rgbaOf(hex);
+    rgbaPrefix.set(hex, prefix);
+  }
+  return prefix === null ? hex : `${prefix}${a})`;
+}
+
+function rgbaOf(hex: string): string | null {
   // Accepts #rgb/#rrggbb and rgb()/rgba(); anything else is returned as is.
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex);
   if (m) {
@@ -739,7 +751,7 @@ function alpha(hex: string, a: number): string {
             .join('')
         : m[1]!;
     const n = parseInt(h, 16);
-    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, `;
   }
   const rgb = /^rgba?\(([^)]+)\)$/.exec(hex);
   if (rgb) {
@@ -747,9 +759,9 @@ function alpha(hex: string, a: number): string {
       .split(',')
       .slice(0, 3)
       .map((s) => s.trim());
-    return `rgba(${parts.join(', ')}, ${a})`;
+    return `rgba(${parts.join(', ')}, `;
   }
-  return hex;
+  return null;
 }
 
 function draw(

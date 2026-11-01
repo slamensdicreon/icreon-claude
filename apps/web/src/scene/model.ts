@@ -23,7 +23,7 @@ export const WORKSTREAM_LABEL: Record<Workstream, string> = {
 };
 
 /** Which station a tool server's calls go to; internal servers (artifacts, blackboard…) go nowhere. */
-export const STATION_OF: Record<string, string> = {
+const STATION_OF: Record<string, string> = {
   'sitecore-authoring': 'cms',
   'sitecore-cli': 'cms',
   'sitecore-deploy': 'cms',
@@ -38,7 +38,7 @@ export const STATION_OF: Record<string, string> = {
   validators: 'validators',
 };
 
-export const STATION_LABEL: Record<string, string> = {
+const STATION_LABEL: Record<string, string> = {
   cms: 'CMS',
   github: 'GitHub',
   hosting: 'Vercel',
@@ -89,7 +89,7 @@ export interface FigureSpec {
   inactive: boolean;
 }
 
-export function initialsOf(a: Pick<AgentView, 'persona' | 'name' | 'tier'>): string {
+function initialsOf(a: Pick<AgentView, 'persona' | 'name' | 'tier'>): string {
   if (a.tier === 'chief_of_staff') return 'C';
   const words = (a.persona ?? a.name).split(/[\s'-]+/).filter(Boolean);
   const two =

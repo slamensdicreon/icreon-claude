@@ -1,11 +1,16 @@
 import type { AgentView } from '@lw/contracts';
 
 const fmtCache = new Map<string, Intl.DateTimeFormat>();
-function fmt(tz: string, opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = tz + JSON.stringify(opts);
+/** A date formatter for a zone, made once: building one costs far more than using it. */
+export function fmt(
+  tz: string,
+  opts: Intl.DateTimeFormatOptions,
+  locale = 'en-US',
+): Intl.DateTimeFormat {
+  const key = `${locale}|${tz}|${JSON.stringify(opts)}`;
   let f = fmtCache.get(key);
   if (!f) {
-    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, ...opts });
+    f = new Intl.DateTimeFormat(locale, { timeZone: tz, ...opts });
     fmtCache.set(key, f);
   }
   return f;
@@ -46,6 +51,14 @@ export function zoneLabel(tz: string): string {
   if (tz === 'America/Los_Angeles') return 'PT';
   const p = fmt(tz, { timeZoneName: 'short' }).formatToParts(new Date());
   return p.find((x) => x.type === 'timeZoneName')?.value ?? tz;
+}
+
+/** "just now", "12 min ago", "3 h ago", "4 days ago": a glance, not a timestamp. */
+export function ago(t: string): string {
+  const h = (Date.now() - Date.parse(t)) / 3_600_000;
+  if (h < 2) return age(t);
+  if (h < 48) return `${Math.round(h)} h ago`;
+  return `${Math.round(h / 24)} days ago`;
 }
 
 /** "just now", "12 min ago", "1 h 5 min ago". */
@@ -90,8 +103,7 @@ export function initials(a: Pick<AgentView, 'persona' | 'name' | 'tier'>): strin
   return (w[0]![0]! + (w.length > 1 ? w[w.length - 1]![0]! : '')).toUpperCase();
 }
 
-export const firstName = (a: Pick<AgentView, 'persona' | 'name'>) =>
-  (a.persona ?? a.name).split(' ')[0]!;
+const firstName = (a: Pick<AgentView, 'persona' | 'name'>) => (a.persona ?? a.name).split(' ')[0]!;
 
 /** Role names in prose ("the Solution Architect") as people, with the role on hover. */
 export interface Mention {
@@ -100,15 +112,34 @@ export interface Mention {
   title?: string;
 }
 
+/** The roles a roster can mention and the pattern that finds them, built once per roster. */
+const mentionsOf = new WeakMap<AgentView[], { roles: AgentView[]; rx: RegExp } | null>();
+
+function mentions(agents: AgentView[]) {
+  let found = mentionsOf.get(agents);
+  if (found === undefined) {
+    const roles = agents
+      .filter((a) => a.tier !== 'chief_of_staff' && a.persona)
+      .sort((x, y) => y.name.length - x.name.length);
+    found = roles.length
+      ? {
+          roles,
+          rx: new RegExp(
+            `\\b([Tt]he )?(${roles.map((a) => a.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`,
+            'g',
+          ),
+        }
+      : null;
+    mentionsOf.set(agents, found);
+  }
+  return found;
+}
+
 export function whoize(text: string, agents: AgentView[]): Mention[] {
-  const roles = agents
-    .filter((a) => a.tier !== 'chief_of_staff' && a.persona)
-    .sort((x, y) => y.name.length - x.name.length);
-  if (!roles.length) return [{ text }];
-  const rx = new RegExp(
-    `\\b([Tt]he )?(${roles.map((a) => a.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`,
-    'g',
-  );
+  const found = mentions(agents);
+  if (!found) return [{ text }];
+  // matchAll works on a copy of the pattern, so the shared one keeps no state between calls.
+  const { roles, rx } = found;
   const out: Mention[] = [];
   let last = 0;
   for (const m of text.matchAll(rx)) {

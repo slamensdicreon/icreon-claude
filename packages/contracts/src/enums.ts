@@ -76,18 +76,7 @@ export type DecisionCategory = z.infer<typeof DecisionCategory>;
 export const AutonomyLevel = z.enum(['agents', 'lead', 'shadow', 'ask']);
 export type AutonomyLevel = z.infer<typeof AutonomyLevel>;
 
-export const DECISION_CATEGORY_LABEL: Record<DecisionCategory, string> = {
-  media: 'Media sources',
-  tool: 'Tool problems',
-  retry: 'Retries after rejection',
-  ownership: 'Ownership and missing work',
-  naming: 'Naming and structure',
-  content: 'Content within the Blueprint',
-  access: 'Access and permissions',
-  scope: 'Scope',
-  release: 'Releases, gates and budget',
-  other: 'Other',
-};
+export { DECISION_CATEGORY_LABEL } from './labels';
 
 export const EscalationStatus = z.enum(['open', 'deferred', 'expired', 'resolved', 'superseded']);
 export type EscalationStatus = z.infer<typeof EscalationStatus>;

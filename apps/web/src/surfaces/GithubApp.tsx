@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiProblem, get, post } from '../lib/api';
+import { get, messageOf, post } from '../lib/api';
 import { useApp } from '../state';
 
 interface Status {
@@ -65,9 +65,7 @@ export function GithubAppPanel() {
           setStatus(s);
           setProblem(null);
         })
-        .catch((err) =>
-          setProblem(err instanceof ApiProblem ? err.message : 'Could not load the GitHub App.'),
-        ),
+        .catch((err) => setProblem(messageOf(err, 'Could not load the GitHub App.'))),
     [],
   );
   useEffect(() => void load(), [load]);
@@ -82,7 +80,7 @@ export function GithubAppPanel() {
       submitToGithub(r.action, r.manifest);
     } catch (err) {
       setBusy(false);
-      toast(err instanceof ApiProblem ? err.message : 'Could not start the GitHub App setup.');
+      toast(messageOf(err, 'Could not start the GitHub App setup.'));
     }
   };
 

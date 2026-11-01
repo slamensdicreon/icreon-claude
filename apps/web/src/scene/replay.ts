@@ -24,7 +24,7 @@ export interface TimeWindow {
 }
 
 /** Midnight today in the project's time zone. */
-export function startOfDay(now: number, tz: string): number {
+function startOfDay(now: number, tz: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     hour: 'numeric',

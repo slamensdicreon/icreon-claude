@@ -6,9 +6,9 @@ import type {
   PortfolioItem,
 } from '@lw/contracts';
 import { useEffect, useState } from 'react';
-import { ApiProblem, get, post, postFor, put } from '../lib/api';
+import { get, messageOf, post, postFor, put } from '../lib/api';
 import { age } from '../lib/fmt';
-import { useApp } from '../state';
+import { useApp, useNow } from '../state';
 
 const KIND_LABEL: Record<KnowledgeEntry['kind'], string> = {
   lesson: 'Lesson',
@@ -45,7 +45,7 @@ function scopeLabel(e: KnowledgeEntry, projects: { id: string; name: string }[])
  * One knowledge entry: what to know, where it applies, what it stands on and how it has done;
  * approve, edit, reject or retire it.
  */
-export function KnowledgeCard({
+function KnowledgeCard({
   e,
   effect,
   projects,
@@ -56,6 +56,8 @@ export function KnowledgeCard({
   projects: { id: string; name: string }[];
   onChange: () => void;
 }) {
+  // Keeps the relative times ("12 min ago") current.
+  useNow(15_000);
   const { toast } = useApp();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(e.title);
@@ -67,7 +69,7 @@ export function KnowledgeCard({
       toast(done);
       onChange();
     } catch (err) {
-      toast(err instanceof ApiProblem ? err.message : 'That did not work. Try again.');
+      toast(messageOf(err, 'That did not work. Try again.'));
     }
   };
   const flagged = effect?.flagged ?? false;
@@ -228,9 +230,7 @@ export function Knowledge({ projects }: { projects: PortfolioItem[] }) {
   const load = () =>
     get<KnowledgeList>('/knowledge')
       .then((r) => (setData(r), setError(null)))
-      .catch((e: unknown) =>
-        setError(e instanceof ApiProblem ? e.message : 'Knowledge could not be loaded.'),
-      );
+      .catch((e: unknown) => setError(messageOf(e, 'Knowledge could not be loaded.')));
   useEffect(() => {
     void load();
   }, []);
@@ -252,7 +252,7 @@ export function Knowledge({ projects }: { projects: PortfolioItem[] }) {
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (e) {
-      toast(e instanceof ApiProblem ? e.message : 'The export did not work.');
+      toast(messageOf(e, 'The export did not work.'));
     }
   };
   return (
@@ -368,7 +368,7 @@ function NewLesson({ onDone }: { onDone: () => void }) {
       toast('Saved: briefs it fits carry it now.');
       onDone();
     } catch (e) {
-      toast(e instanceof ApiProblem ? e.message : 'It was not saved.');
+      toast(messageOf(e, 'It was not saved.'));
     }
   };
   return (
@@ -426,9 +426,7 @@ export function LessonsLearned({ projectId }: { projectId: string }) {
   const load = () =>
     get<LessonsSnapshot>(`/projects/${projectId}/lessons`)
       .then((r) => (setData(r), setError(null)))
-      .catch((e: unknown) =>
-        setError(e instanceof ApiProblem ? e.message : 'Lessons could not be loaded.'),
-      );
+      .catch((e: unknown) => setError(messageOf(e, 'Lessons could not be loaded.')));
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -447,9 +445,7 @@ export function LessonsLearned({ projectId }: { projectId: string }) {
         );
         void load();
       })
-      .catch((e: unknown) =>
-        toast(e instanceof ApiProblem ? e.message : 'The retrospective did not run.'),
-      )
+      .catch((e: unknown) => toast(messageOf(e, 'The retrospective did not run.')))
       .finally(() => setRunning(null));
   };
   return (

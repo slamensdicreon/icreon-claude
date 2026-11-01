@@ -14,6 +14,10 @@ export class ApiProblem extends Error {
   }
 }
 
+/** What to tell the Director about a failure: the API's own words, or the fallback. */
+export const messageOf = (err: unknown, fallback: string): string =>
+  err instanceof ApiProblem ? err.message : fallback;
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(API + path, {
     method,

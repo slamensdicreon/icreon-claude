@@ -1,13 +1,9 @@
-import {
-  DECISION_CATEGORY_LABEL,
-  type PortfolioItem,
-  type RuleHistoryItem,
-  type RuleView,
-} from '@lw/contracts';
+import type { PortfolioItem, RuleHistoryItem, RuleView } from '@lw/contracts';
+import { DECISION_CATEGORY_LABEL } from '@lw/contracts/labels';
 import { useEffect, useState } from 'react';
-import { ApiProblem, get, post, postFor, put } from '../lib/api';
+import { get, messageOf, post, postFor, put } from '../lib/api';
 import { age } from '../lib/fmt';
-import { useApp } from '../state';
+import { useApp, useNow } from '../state';
 
 const STATUS_ORDER: RuleView['status'][] = ['proposed', 'active', 'retired'];
 const STATUS_LABEL: Record<RuleView['status'], string> = {
@@ -34,9 +30,7 @@ export function Rules({ projects }: { projects: PortfolioItem[] }) {
   const load = () =>
     get<RuleView[]>('/rules')
       .then((r) => (setRules(r), setError(null)))
-      .catch((e: unknown) =>
-        setError(e instanceof ApiProblem ? e.message : 'Rules could not be loaded.'),
-      );
+      .catch((e: unknown) => setError(messageOf(e, 'Rules could not be loaded.')));
   useEffect(() => {
     void load();
   }, []);
@@ -83,6 +77,8 @@ export function Rules({ projects }: { projects: PortfolioItem[] }) {
 }
 
 function RuleCard({ r, scope, onChange }: { r: RuleView; scope: string; onChange: () => void }) {
+  // Keeps the relative times ("12 min ago") current.
+  useNow(15_000);
   const { toast } = useApp();
   const [editing, setEditing] = useState(false);
   const [when, setWhen] = useState(r.when);
@@ -94,7 +90,7 @@ function RuleCard({ r, scope, onChange }: { r: RuleView; scope: string; onChange
       toast(done);
       onChange();
     } catch (e) {
-      toast(e instanceof ApiProblem ? e.message : 'That did not work. Try again.');
+      toast(messageOf(e, 'That did not work. Try again.'));
     }
   };
   return (
@@ -260,9 +256,7 @@ function Harvest({ projects, onDone }: { projects: PortfolioItem[]; onDone: () =
                 );
                 onDone();
               })
-              .catch((e: unknown) =>
-                toast(e instanceof ApiProblem ? e.message : 'Rules could not be proposed.'),
-              )
+              .catch((e: unknown) => toast(messageOf(e, 'Rules could not be proposed.')))
               .finally(() => setBusy(false));
           }}
         >

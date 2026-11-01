@@ -1,14 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { get } from './lib/api';
-import { clock, elapsed, usd, zoneLabel } from './lib/fmt';
+import { get, messageOf } from './lib/api';
+import { ago, clock, elapsed, usd, zoneLabel } from './lib/fmt';
 import { Icon, Lockup, LOCKUP_SVG } from './lib/icons';
 import { useConn } from './lib/live';
 import { DemoMenu, MoreSheet, ProjectMenu } from './overlays/Menus';
 import { Palette } from './overlays/Palette';
 import { useApp, useMission, useNow, useProjectResource, type Surface } from './state';
-import { ApiProblem } from './lib/api';
 import { cypher, useCypher } from './lib/cypher';
-import { when } from './surfaces/CypherHome';
 import type { SinceSummary } from '@lw/contracts';
 
 const HEALTH_DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
@@ -162,6 +160,8 @@ export function Sidebar() {
  * opens it in the Cypher panel; the new chat is what the page opens on.
  */
 function CypherRail() {
+  // Keeps the relative times ("12 min ago") current.
+  useNow(15_000);
   const { toast } = useApp();
   const s = useCypher();
   useEffect(() => {
@@ -171,14 +171,14 @@ function CypherRail() {
   if (s.loaded && !s.available) return null;
   const open = (id: string) =>
     cypher.open(id).catch((err: unknown) => {
-      toast(err instanceof ApiProblem ? err.message : 'That conversation could not be opened.');
+      toast(messageOf(err, 'That conversation could not be opened.'));
     });
   const remove = (id: string, title: string) =>
     cypher
       .remove(id)
       .then(() => toast(`Deleted “${title}”`))
       .catch((err: unknown) => {
-        toast(err instanceof ApiProblem ? err.message : 'The conversation could not be deleted.');
+        toast(messageOf(err, 'The conversation could not be deleted.'));
       });
   return (
     <div className="side-convos">
@@ -207,7 +207,7 @@ function CypherRail() {
                   <Icon name="time" />
                   <span className="lbl">
                     <span className="cv-title">{title}</span>
-                    <span className="cv-sum">{c.summary ?? when(c.updatedAt)}</span>
+                    <span className="cv-sum">{c.summary ?? ago(c.updatedAt)}</span>
                   </span>
                 </button>
                 <button

@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from 'react';
 import { post } from '../lib/api';
-import { clock, localDate, shortDay } from '../lib/fmt';
+import { clock, fmt, localDate, shortDay } from '../lib/fmt';
 import { TextForm } from '../overlays/Dialogs';
 import { AgentCell, Chip } from '../parts/bits';
 import { useApp, useNow, useProjectResource, useRoster } from '../state';
@@ -21,12 +21,9 @@ const LANES: [string, string][] = [
 ];
 
 const hourOf = (t: string | number, tz: string) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hour: 'numeric',
-    minute: 'numeric',
-    hourCycle: 'h23',
-  }).formatToParts(new Date(t));
+  const parts = fmt(tz, { hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(
+    new Date(t),
+  );
   const h = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
   const m = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
   return h + m / 60;
@@ -401,7 +398,7 @@ function useAxis(s: ScheduleSnapshot) {
   const index = new Map(s.days.map((d, i) => [d.date, i]));
   const n = s.days.length || 1;
   return (t: string | number) => {
-    const date = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(t));
+    const date = fmt(tz, {}, 'en-CA').format(new Date(t));
     let i = index.get(date);
     if (i === undefined) i = date < (s.days[0]?.date ?? '') ? 0 : n - 1;
     const h = Math.max(8, Math.min(18, hourOf(t, tz)));

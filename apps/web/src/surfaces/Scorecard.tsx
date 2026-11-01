@@ -1,9 +1,5 @@
-import {
-  DECISION_CATEGORY_LABEL,
-  type PlaybookScorecard,
-  type Scorecard as ScorecardData,
-  type ScorecardTotals,
-} from '@lw/contracts';
+import type { PlaybookScorecard, Scorecard as ScorecardData, ScorecardTotals } from '@lw/contracts';
+import { DECISION_CATEGORY_LABEL } from '@lw/contracts/labels';
 import { usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { useProjectResource } from '../state';
@@ -36,7 +32,7 @@ function Tile({
 }
 
 /** The headline numbers, as tiles: the same four on Mission Control and here. */
-export function ScoreTiles({ t }: { t: ScorecardTotals }) {
+function ScoreTiles({ t }: { t: ScorecardTotals }) {
   return (
     <div className="statgrid">
       <Tile

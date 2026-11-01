@@ -47,12 +47,12 @@ export function useBootState(): BootState {
         ? 'project'
         : 'done';
 
-  const shownAt = useRef(Date.now());
-  const now = useNow(1000);
-  const waited = (now - shownAt.current) / 1000;
-
   // Stay at least a moment (no flash), fade out, then leave for good.
   const [stage, setStage] = useState<'showing' | 'leaving' | 'gone'>('showing');
+  const shownAt = useRef(Date.now());
+  // Once the overlay has gone, nothing here needs the time: stop re-rendering every second.
+  const now = useNow(stage === 'gone' ? null : 1000);
+  const waited = (now - shownAt.current) / 1000;
   useEffect(() => {
     if (stage !== 'showing' || phase !== 'done') return;
     const t = window.setTimeout(

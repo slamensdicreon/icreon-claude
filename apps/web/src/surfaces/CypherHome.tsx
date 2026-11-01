@@ -1,9 +1,9 @@
 import type { CypherMessage, CypherProposal } from '@lw/contracts';
 import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ApiProblem } from '../lib/api';
+import { ApiProblem, messageOf } from '../lib/api';
 import { cypher, useCypher } from '../lib/cypher';
-import { age } from '../lib/fmt';
-import { useApp } from '../state';
+import { age, ago } from '../lib/fmt';
+import { useApp, useNow } from '../state';
 
 const STARTERS = [
   'What needs me today?',
@@ -103,6 +103,8 @@ function Proposal({ p }: { p: CypherProposal }) {
 }
 
 function Message({ m }: { m: CypherMessage }) {
+  // Keeps the relative times ("12 min ago") current.
+  useNow(15_000);
   const { switchProject } = useApp();
   if (m.role === 'director')
     return (
@@ -142,14 +144,6 @@ function Message({ m }: { m: CypherMessage }) {
       )}
     </div>
   );
-}
-
-/** "just now", "12 min ago", "3 h ago", "4 days ago": when a conversation was last touched. */
-export function when(t: string): string {
-  const h = (Date.now() - Date.parse(t)) / 3_600_000;
-  if (h < 2) return age(t);
-  if (h < 48) return `${Math.round(h)} h ago`;
-  return `${Math.round(h / 24)} days ago`;
 }
 
 /**
@@ -204,6 +198,8 @@ export function CypherHome() {
 }
 
 function CypherPanel() {
+  // Keeps the relative times ("12 min ago") current.
+  useNow(15_000);
   const { toast } = useApp();
   const s = useCypher();
   const [text, setText] = useState('');
@@ -233,7 +229,7 @@ function CypherPanel() {
         cypher.fresh();
         void cypher.load();
       }
-      toast(err instanceof ApiProblem ? err.message : 'Cypher could not answer. Try again.');
+      toast(messageOf(err, 'Cypher could not answer. Try again.'));
     } finally {
       setPending(null);
     }
@@ -257,7 +253,7 @@ function CypherPanel() {
         </span>
         <div>
           <h2>{active?.title ?? 'Cypher'}</h2>
-          <p>{active ? `Chief of Staff · ${when(active.updatedAt)}` : 'Chief of Staff'}</p>
+          <p>{active ? `Chief of Staff · ${ago(active.updatedAt)}` : 'Chief of Staff'}</p>
         </div>
         <div className="cy-actions">
           {(s.activeId || inChat) && (
