@@ -1,12 +1,7 @@
 import { FactDraft, type FactView } from '@lw/contracts';
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
-
-const bad = (message: string): ToolResult => ({
-  code: 422,
-  body: { error: message },
-  summary: message,
-});
+import { rejected } from '@lw/tool-gateway';
 
 const ReadArgs = z.object({
   kind: z.string().optional(),
@@ -77,7 +72,7 @@ export class FactsToolServer implements ToolServer {
   async call(op: string, args: Record<string, unknown>, ctx: ToolCallContext): Promise<ToolResult> {
     if (op === 'read') {
       const a = ReadArgs.safeParse(args);
-      if (!a.success) return bad('kind, key and search are strings; limit is a number');
+      if (!a.success) return rejected('kind, key and search are strings; limit is a number');
       const { kind, key, search } = a.data;
       const words = search ? norm(search).split(' ') : [];
       const all = (await this.deps.facts(ctx.projectId))
@@ -115,7 +110,7 @@ export class FactsToolServer implements ToolServer {
     if (op === 'publish') {
       const f = FactDraft.safeParse(args);
       if (!f.success)
-        return bad(f.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+        return rejected(f.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
       await this.deps.publish(ctx.projectId, f.data, ctx);
       return {
         code: 200,
@@ -123,7 +118,7 @@ export class FactsToolServer implements ToolServer {
         summary: `Published ${f.data.kind} ${f.data.key}`,
       };
     }
-    return bad(`Unknown operation ${op}`);
+    return rejected(`Unknown operation ${op}`);
   }
 }
 
@@ -163,7 +158,7 @@ export class AcceptanceToolServer implements ToolServer {
     _args: Record<string, unknown>,
     ctx: ToolCallContext,
   ): Promise<ToolResult> {
-    if (op !== 'check') return bad(`Unknown operation ${op}`);
+    if (op !== 'check') return rejected(`Unknown operation ${op}`);
     const rows = await this.check(ctx.projectId, ctx.taskId);
     if (!rows) return { code: 404, body: { error: 'This task is not running here.' } };
     if (!rows.length)

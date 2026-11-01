@@ -3,8 +3,8 @@ import { CommandError } from '@lw/domain';
 import type { IntegrationStore, SecretVault } from '@lw/events';
 import type { BuildRepo } from '@lw/contracts';
 import type { VerifyResult } from './sitecore';
+import { readBody } from './http';
 
-/** Sitecore's starter, and the Next.js app inside it that becomes the site. */
 /** The one commit Launchworks adds to a fresh starter: see ensureNoGitDeploys. */
 export const NO_GIT_DEPLOYS_MESSAGE =
   'Deploy through Launchworks only: no automatic Vercel deployments on commits';
@@ -573,13 +573,6 @@ export class GithubApp {
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(15_000),
     });
-    const text = await res.text();
-    let parsed: unknown = text;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      /* not JSON */
-    }
-    return { status: res.status, body: parsed };
+    return { status: res.status, body: await readBody(res) };
   }
 }

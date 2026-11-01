@@ -1,5 +1,6 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
+import { AGENT_BRANCH, INTEGRATION_BRANCH, rejected } from '@lw/tool-gateway';
 
 /** The project's repository, from intake. Agents never choose which repository they reach. */
 export interface RepoFacts {
@@ -23,8 +24,6 @@ export interface GithubServerOptions {
 
 /** Agents only ever push to their own branches; the client's branches are read-only. */
 export const AGENT_BRANCH_PREFIX = 'launchworks/';
-/** Where accepted work comes together; the editing host runs it, and a release promotes it. */
-const INTEGRATION_BRANCH = 'launchworks/integration';
 const MAX_FILE_BYTES = 200_000;
 const MAX_TREE_ENTRIES = 4_000;
 /**
@@ -63,9 +62,7 @@ const PromoteArgs = z.object({
   commit: z.string().regex(/^[0-9a-fA-F]{7,40}$/, 'a commit SHA, 7 to 40 hex characters'),
 });
 const CommitArgs = z.object({
-  branch: z
-    .string()
-    .regex(/^launchworks\/[A-Za-z0-9._/-]{1,100}$/, `must start with ${AGENT_BRANCH_PREFIX}`),
+  branch: z.string().regex(AGENT_BRANCH, `must start with ${AGENT_BRANCH_PREFIX}`),
   message: z.string().min(1).max(2000),
   files: z
     .array(
@@ -77,12 +74,6 @@ const CommitArgs = z.object({
     )
     .min(1)
     .max(100),
-});
-
-const bad = (message: string): ToolResult => ({
-  code: 422,
-  body: { error: message },
-  summary: message,
 });
 
 /**
@@ -216,14 +207,17 @@ export class GithubToolServer implements ToolServer {
     a: z.ZodSafeParseResult<z.infer<typeof TreeArgs>>,
     gh: Gh,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
-    const info = await gh('GET', '');
+    if (!a.success) return rejected(a.error.issues[0]!.message);
+    const ref = a.data.ref ?? facts.branch;
+    // Three independent reads, together; their failures are reported in the same order as before.
+    const [info, t, c] = await Promise.all([
+      gh('GET', ''),
+      gh('GET', `/git/trees/${encodeURIComponent(ref)}?recursive=1`),
+      gh('GET', `/commits/${encodeURIComponent(ref)}`),
+    ]);
     if (info.status !== 200) return fail(info, `reading ${facts.repo}`);
     const repo = info.body as { default_branch: string; size: number; private: boolean };
-    const ref = a.data.ref ?? facts.branch;
-    const t = await gh('GET', `/git/trees/${encodeURIComponent(ref)}?recursive=1`);
     if (t.status !== 200) return fail(t, `listing ${ref}`);
-    const c = await gh('GET', `/commits/${encodeURIComponent(ref)}`);
     const commit = c.status === 200 ? (c.body as { sha: string }).sha : null;
     const body = t.body as {
       truncated: boolean;
@@ -265,7 +259,7 @@ export class GithubToolServer implements ToolServer {
     a: z.ZodSafeParseResult<z.infer<typeof ReadArgs>>,
     gh: Gh,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const ref = a.data.ref ?? facts.branch;
     const files = await Promise.all(
       a.data.paths.map(async (path) => {
@@ -310,7 +304,7 @@ export class GithubToolServer implements ToolServer {
     a: z.ZodSafeParseResult<z.infer<typeof SearchArgs>>,
     token: string,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const q = encodeURIComponent(`${a.data.query} repo:${facts.repo}`);
     const r = await this.request('GET', `/search/code?q=${q}&per_page=50`, token, undefined, {
       accept: 'application/vnd.github.text-match+json',
@@ -338,7 +332,7 @@ export class GithubToolServer implements ToolServer {
     a: z.ZodSafeParseResult<z.infer<typeof PromoteArgs>>,
     gh: Gh,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const integration = await gh('GET', `/git/ref/heads/${INTEGRATION_BRANCH}`);
     if (integration.status !== 200) return fail(integration, `reading ${INTEGRATION_BRANCH}`);
     const sha = (integration.body as { object: { sha: string } }).object.sha;
@@ -385,7 +379,7 @@ export class GithubToolServer implements ToolServer {
     a: z.ZodSafeParseResult<z.infer<typeof CommitArgs>>,
     gh: Gh,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const { branch, message, files } = a.data;
     // Where the branch is now, or where it starts from.
     let head = await gh('GET', `/git/ref/heads/${encodeURIComponent(branch)}`);

@@ -1,6 +1,7 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
 import { authorOf, basic, sandboxName, type BoxProvider, type WorkspaceFacts } from './server';
+import { AGENT_BRANCH, rejected } from '@lw/tool-gateway';
 
 /**
  * The Sitecore CLI, for serialization only: pull the project's own items from its environment
@@ -23,7 +24,6 @@ export interface CliServerOptions {
   client(projectId: string): Promise<{ clientId: string; clientSecret: string } | null>;
 }
 
-const AGENT_BRANCH = /^launchworks\/[A-Za-z0-9._/-]{1,100}$/;
 const DOTNET = '/tmp/dotnet';
 const MAX_OUTPUT = 6_000;
 
@@ -88,10 +88,11 @@ export class SitecoreCliToolServer implements ToolServer {
 
   async call(op: string, args: Record<string, unknown>, ctx: ToolCallContext): Promise<ToolResult> {
     const facts = await this.opts.facts(ctx.projectId);
-    if (!facts) return bad('This project has no build repository or SitecoreAI target yet.', 409);
+    if (!facts)
+      return rejected('This project has no build repository or SitecoreAI target yet.', 409);
     const client = await this.opts.client(ctx.projectId);
     if (!client)
-      return bad('The SitecoreAI environment client is not stored for this project.', 409);
+      return rejected('The SitecoreAI environment client is not stored for this project.', 409);
     const a =
       op === 'ser.pull'
         ? PullArgs.safeParse(args)
@@ -99,7 +100,7 @@ export class SitecoreCliToolServer implements ToolServer {
           ? ValidateArgs.safeParse(args)
           : null;
     if (!a) return { code: 404, body: { error: `Unknown operation ${op}` } };
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const branch = (a.data as { branch?: string }).branch;
 
     const { box, created } = await this.opts.provider.open(
@@ -152,7 +153,7 @@ export class SitecoreCliToolServer implements ToolServer {
       '.config',
     ]);
     if (drift.output.trim())
-      return bad(
+      return rejected(
         `Refused: ${drift.output.trim().split('\n').join(', ')} differ from the default branch.`,
       );
 
@@ -167,8 +168,12 @@ export class SitecoreCliToolServer implements ToolServer {
     ]);
     const modules = found.output.split('\n').filter(Boolean);
     const outside: string[] = [];
-    for (const m of modules) {
-      const buf = await box.read(m);
+    // Read together; checked in order, and a failed read surfaces as the first one in order would.
+    const files = await Promise.allSettled(modules.map((m) => box.read(m)));
+    for (const [i, m] of modules.entries()) {
+      const read = files[i]!;
+      if (read.status === 'rejected') throw read.reason;
+      const buf = read.value;
       if (!buf) continue;
       try {
         for (const p of moduleIncludes(buf.toString('utf8')))
@@ -178,11 +183,11 @@ export class SitecoreCliToolServer implements ToolServer {
       }
     }
     if (outside.length)
-      return bad(
+      return rejected(
         `Refused: module includes outside the project's paths (${outside.slice(0, 5).join('; ')}). Owned: ${facts.ownedPaths.join('; ')}.`,
       );
     if (!modules.length && op === 'ser.pull')
-      return bad(
+      return rejected(
         'No serialization modules (authoring/**/*.module.json) to pull into. Add one for the project first.',
       );
 
@@ -310,7 +315,6 @@ const tail = (output: string) =>
     .join(' | ')
     .slice(-400) || 'no output';
 
-const bad = (error: string, code = 422): ToolResult => ({ code, body: { error }, summary: error });
 // The summary is what the agent and the Activity log read: it carries the CLI's last lines, where
 // it says what went wrong.
 const fail = (doing: string, r: { exitCode: number; output: string }): ToolResult => ({

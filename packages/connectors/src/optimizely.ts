@@ -1,4 +1,5 @@
 import type { VerifyResult } from './sitecore';
+import { timedCall as call } from './http';
 
 /**
  * Optimizely CMS (SaaS): one instance (`https://app-<id>.cms.optimizely.com`) reached through the
@@ -24,32 +25,6 @@ export const OPTIMIZELY_DEFAULTS: OptimizelyVerifyConfig = {
   fetch: (...a) => fetch(...a),
   timeoutMs: 15_000,
 };
-
-async function call(
-  cfg: OptimizelyVerifyConfig,
-  url: string,
-  init: RequestInit,
-): Promise<{ status: number; body: unknown } | { error: string }> {
-  try {
-    const res = await cfg.fetch(url, { ...init, signal: AbortSignal.timeout(cfg.timeoutMs) });
-    const text = await res.text();
-    let body: unknown = text;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      /* not JSON */
-    }
-    return { status: res.status, body };
-  } catch (err) {
-    const name = err instanceof Error ? err.name : '';
-    return {
-      error:
-        name === 'TimeoutError'
-          ? `${new URL(url).host} did not answer within ${cfg.timeoutMs / 1000} s.`
-          : `${new URL(url).host} could not be reached.`,
-    };
-  }
-}
 
 /** The instance URL as an origin this server may call, or the reason it can't. */
 export function optimizelyCmsUrl(cfg: OptimizelyVerifyConfig, value: string): URL | string {

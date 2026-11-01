@@ -17,6 +17,7 @@ import type {
   ScreenPair,
 } from '@lw/platforms';
 import type { ArtifactLibrary } from '@lw/tool-workspace';
+import { INTEGRATION_BRANCH } from '@lw/tool-gateway';
 
 /**
  * Acceptance on live projects: a task counts as done only after its automated checks and its
@@ -79,8 +80,6 @@ const last = (steps: StepEvent[], server: string, op: string) =>
   steps.filter((s) => s.data.toolServer === server && s.data.operation === op).at(-1);
 const after = (steps: StepEvent[], a: StepEvent) => steps.slice(steps.indexOf(a) + 1);
 /** Working-copy operations that change files. */
-/** The branch accepted components are integrated on: what the editing host runs. */
-const INTEGRATION_BRANCH = 'launchworks/integration';
 /** Components that are their own full-width band (hero, header, footer) and the app's plumbing. */
 const SECTION_EXEMPT =
   /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(HeroBanner|SiteHeader|SiteFooter|Header|Footer|Nav)[^/]*\.tsx$/i;
@@ -178,7 +177,7 @@ export const CHECKS: Record<string, Check> = {
     const head = (t.body as { commit?: string | null } | null)?.commit;
     if (t.code !== 200 || !head)
       return { status: 'pending', detail: 'The build repository head could not be read.' };
-    const i = await read('build-repo', 'tree.read', { ref: 'launchworks/integration' });
+    const i = await read('build-repo', 'tree.read', { ref: INTEGRATION_BRANCH });
     const reviewed = (i.body as { commit?: string | null } | null)?.commit;
     if (i.code !== 200 || !reviewed)
       return { status: 'pending', detail: 'The integration branch head could not be read.' };

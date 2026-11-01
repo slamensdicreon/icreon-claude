@@ -1,5 +1,6 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
+import { AGENT_BRANCH, INTEGRATION_BRANCH, rejected } from '@lw/tool-gateway';
 
 /**
  * The head on our Vercel team: one Vercel project per Launchworks project, linked to its build
@@ -52,12 +53,12 @@ export interface HostingServerOptions {
     projectId: string,
     target: 'preview' | 'production',
   ): Promise<{ vars: EnvVar[]; missing: string[] }>;
-  /** Records the Vercel project and each ready deployment on the project. */
   /**
    * Readies the build repository for hosting (turns off Vercel's automatic Git deployments);
    * says what it did, or throws.
    */
   prepare?(projectId: string): Promise<string>;
+  /** Records the Vercel project and each ready deployment on the project. */
   record(projectId: string, r: HostingRecord): Promise<void>;
   /** How long a reproduction listens to the runtime log, and after the page answers (tests). */
   logTiming?: { windowMs: number; graceMs: number };
@@ -65,9 +66,6 @@ export interface HostingServerOptions {
   api?: string;
 }
 
-const AGENT_BRANCH = /^launchworks\/[A-Za-z0-9._/-]{1,100}$/;
-/** The branch accepted components are integrated on; its preview is the editing host. */
-const INTEGRATION_BRANCH = 'launchworks/integration';
 /** The editing host's fixed address: Page builder's rendering host points here. */
 export const editingHost = (project: string) => `${project}-editing.vercel.app`;
 
@@ -193,25 +191,25 @@ export class HostingToolServer implements ToolServer {
         return this.read(ctx.projectId, facts);
       case 'env.set': {
         const a = EnvArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         return this.setEnv(ctx.projectId, facts, a.data.target);
       }
       case 'deploy.preview': {
         const a = PreviewArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
-        if (!a.data.ref) return bad('Give the agent branch to preview (launchworks/…).');
+        if (!a.success) return rejected(a.error.issues[0]!.message);
+        if (!a.data.ref) return rejected('Give the agent branch to preview (launchworks/…).');
         return this.deploy(facts, a.data.ref, 'preview');
       }
       case 'deploy.production':
         return this.deploy(facts, facts.branch, 'production');
       case 'deploy.status': {
         const a = StatusArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         return this.status(ctx.projectId, facts, a.data.deploymentId);
       }
       case 'logs.runtime': {
         const a = LogsArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         return this.runtimeLogs(facts, a.data);
       }
       default:
@@ -252,7 +250,7 @@ export class HostingToolServer implements ToolServer {
     const project = p.body as VercelProject;
     const linked = project.link ? `${project.link.org}/${project.link.repo}` : null;
     if (linked && linked.toLowerCase() !== facts.repo.toLowerCase()) {
-      return bad(
+      return rejected(
         `A Vercel project named ${facts.project} already exists, linked to ${linked}, not ${facts.repo}. Choose another hosting project name.`,
       );
     }
@@ -304,11 +302,10 @@ export class HostingToolServer implements ToolServer {
       return { code: 404, body: { error: `${facts.project} doesn't exist yet.` } };
     if (p.status !== 200) return fail(p, `reading ${facts.project}`);
     const v = p.body as VercelProject;
-    const env = await this.request('GET', `/v10/projects/${encodeURIComponent(v.id)}/env`);
-    const d = await this.request(
-      'GET',
-      `/v6/deployments?projectId=${encodeURIComponent(v.id)}&limit=5`,
-    );
+    const [env, d] = await Promise.all([
+      this.request('GET', `/v10/projects/${encodeURIComponent(v.id)}/env`),
+      this.request('GET', `/v6/deployments?projectId=${encodeURIComponent(v.id)}&limit=5`),
+    ]);
     const deployments =
       d.status === 200 ? ((d.body as { deployments: Deployment[] }).deployments ?? []) : [];
     // A production deployment that finished while no one was reading its status is still live:
@@ -384,7 +381,7 @@ export class HostingToolServer implements ToolServer {
       const failed =
         (r.body as { failed?: { error: { key?: string; message: string } }[] }).failed ?? [];
       if (failed.length) {
-        return bad(
+        return rejected(
           `Vercel refused ${failed.map((f) => `${f.error.key ?? '?'} (${f.error.message})`).join(', ')}.`,
         );
       }
@@ -433,7 +430,7 @@ export class HostingToolServer implements ToolServer {
     if (r.status !== 200) return fail(r, `reading ${deploymentId}`);
     const d = r.body as Deployment & { id: string; name?: string; alias?: string[] };
     if (d.name && d.name !== facts.project)
-      return bad(`${deploymentId} isn't a deployment of ${facts.project}.`);
+      return rejected(`${deploymentId} isn't a deployment of ${facts.project}.`);
     const state = d.readyState ?? d.state ?? 'UNKNOWN';
     const target = d.target === 'production' ? 'production' : 'preview';
     const url = d.url ? `https://${d.url}` : null;
@@ -505,8 +502,8 @@ export class HostingToolServer implements ToolServer {
       if (d.status !== 200) return fail(d, `reading ${a.deploymentId}`);
       const dep = d.body as Deployment & { id: string; name?: string };
       if (dep.name && dep.name !== facts.project)
-        return bad(`${a.deploymentId} isn't a deployment of ${facts.project}.`);
-      if (!dep.url) return bad(`${a.deploymentId} has no address yet.`);
+        return rejected(`${a.deploymentId} isn't a deployment of ${facts.project}.`);
+      if (!dep.url) return rejected(`${a.deploymentId} has no address yet.`);
       return { projectId: project.id, deploymentId: dep.id, host: dep.url };
     }
     if (a.target === 'editing') {
@@ -727,8 +724,6 @@ function productionUrl(p: VercelProject): string | null {
 
 const message = (r: { body: unknown }) =>
   (r.body as { error?: { message?: string } } | null)?.error?.message;
-
-const bad = (error: string): ToolResult => ({ code: 422, body: { error }, summary: error });
 
 function fail(r: { status: number; body: unknown }, doing: string, hint = ''): ToolResult {
   const m = message(r);

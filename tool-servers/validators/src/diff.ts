@@ -1,6 +1,9 @@
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 
+/** Opaque red, the colour of pixels only one image has. */
+const RED = Buffer.from([255, 0, 0, 255]);
+
 export interface PngDiff {
   /** Differing pixels over the larger image's area, to two decimals. */
   mismatchPercent: number;
@@ -35,7 +38,8 @@ export function diffPngs(a: Uint8Array, b: Uint8Array, threshold: number): PngDi
   const width = Math.max(base.width, cand.width);
   const height = Math.max(base.height, cand.height);
   const diff = new PNG({ width, height });
-  for (let i = 0; i < diff.data.length; i += 4) diff.data.set([255, 0, 0, 255], i);
+  // Red where the sizes differ: one fill of the RGBA pattern, not a write per pixel.
+  diff.data.fill(RED);
   PNG.bitblt(shared, diff, 0, 0, w, h, 0, 0);
   const mismatched = inShared + (width * height - w * h);
   return {

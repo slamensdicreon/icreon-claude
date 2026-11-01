@@ -1,3 +1,4 @@
+import { readBody } from './http';
 /**
  * The SitecoreAI Deploy API, with an organization automation client: finds an environment by its
  * CM host and reads its editing secret. Used by the organization credential's check and by the
@@ -45,14 +46,7 @@ export class DeployClient {
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(30_000),
     });
-    const text = await res.text();
-    let parsed: unknown = text;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      /* not JSON */
-    }
-    return { status: res.status, body: parsed };
+    return { status: res.status, body: await readBody(res) };
   }
 
   /**

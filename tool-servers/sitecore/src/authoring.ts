@@ -7,6 +7,7 @@ import type {
   ToolServer,
 } from '@lw/tool-gateway';
 import { z } from 'zod';
+import { rejected } from '@lw/tool-gateway';
 
 /** What the server knows about the project's SitecoreAI target, from intake. */
 export interface TenantFacts {
@@ -78,7 +79,7 @@ const HostArgs = z.object({
 /** Where SitecoreAI keeps rendering hosts; the environment's own is "Default". */
 const HOSTS = '/sitecore/system/Settings/Services/Rendering Hosts';
 /** An item ID as the API or a field gives it: 32 hex digits, with or without braces and hyphens. */
-const HEX_ID_LOOSE = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
+const HEX_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
 const UpdateArgs = z.object({
   path: Path,
   language: z.string().optional(),
@@ -97,7 +98,7 @@ const RenameArgs = z.object({
 });
 const DeleteArgs = z.object({
   path: Path,
-  itemId: z.string().regex(HEX_ID_LOOSE, 'an item ID').optional(),
+  itemId: z.string().regex(HEX_ID, 'an item ID').optional(),
 });
 const TemplateArgs = z.object({
   parentPath: Path,
@@ -189,11 +190,6 @@ const LanguageArgs = z.object({
   code: z.string().regex(/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/),
 });
 
-const bad = (message: string, code = 422): ToolResult => ({
-  code,
-  body: { error: message },
-  summary: message,
-});
 const gql = (s: string) => JSON.stringify(s);
 
 /**
@@ -593,7 +589,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async read(q: Gql, a: Parsed<typeof ReadArgs>, lang: Lang): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const named = a.data.fields?.map((f) => f.toLowerCase());
     type Read = { item: { fields: { nodes: { name: string; value: string }[] } } | null };
     // Children come a page at a time: ask for a page large enough for a module folder of dozens
@@ -632,7 +628,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async create(q: Gql, a: Parsed<typeof CreateArgs>, lang: Lang): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const path = `${a.data.parentPath.replace(/\/$/, '')}/${a.data.name}`;
     const language = lang(a.data.language);
     const fields = a.data.fields ?? [];
@@ -691,7 +687,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async update(q: Gql, a: Parsed<typeof UpdateArgs>, lang: Lang): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const language = lang(a.data.language);
     // A rendering's Parameters Template takes an item ID. Given a path, Sitecore stores the path,
     // and every page with that rendering then fails to build its layout data.
@@ -702,7 +698,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     const isIdList = (v: string) => !!v.trim() && v.split('|').every((p) => HEX_ID.test(p.trim()));
     const adds = a.data.fields.filter((f) => f.add);
     if (adds.some((f) => !isIdList(f.value)))
-      return bad('add: true takes item IDs, separated by |');
+      return rejected('add: true takes item IDs, separated by |');
     const lists = a.data.fields.filter((f) => isIdList(f.value));
     if (lists.length) {
       const now = await readBack(
@@ -727,7 +723,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           .filter((id) => !had.has(bare(id)));
         const missing = fresh.length ? await this.missingIds(q, fresh) : [];
         if (missing.length)
-          return bad(
+          return rejected(
             `${f.name}: no item has the ID ${missing.join(', ')}. Copy IDs from an item.read rather than typing them; nothing was written`,
           );
       }
@@ -777,7 +773,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async rename(q: Gql, a: Parsed<typeof RenameArgs>): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const itemId = await this.idOf(q, a.data.path);
     const target = `${a.data.path.slice(0, a.data.path.lastIndexOf('/'))}/${a.data.name}`;
     await q.run<{ renameItem: { item: { itemId: string } } }>(
@@ -785,10 +781,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     );
     // Executed is not verified: the same item answers at the new path.
     const back = await readBack(q, target, 'en');
-    const same =
-      back &&
-      back.itemId.replace(/[{}-]/g, '').toLowerCase() ===
-        itemId.replace(/[{}-]/g, '').toLowerCase();
+    const same = back && bare(back.itemId) === bare(itemId);
     return same
       ? {
           code: 200,
@@ -803,7 +796,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async remove(q: Gql, a: Parsed<typeof DeleteArgs>): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const { path } = a.data;
     type Found = { item: { itemId: string; path: string; children: { nodes: unknown[] } } | null };
     const find = (where: string) =>
@@ -820,9 +813,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       };
     // The path is what the role's scope was checked against: the ID must be the item there.
     if (d.item.path.toLowerCase().replace(/\/+$/, '') !== path.toLowerCase().replace(/\/+$/, ''))
-      return bad(`Item ${a.data.itemId} is at ${d.item.path}, not ${path}; nothing was deleted`);
+      return rejected(
+        `Item ${a.data.itemId} is at ${d.item.path}, not ${path}; nothing was deleted`,
+      );
     if (d.item.children.nodes.length)
-      return bad(`${path} has child items; delete those first, or keep it. Nothing was deleted`);
+      return rejected(
+        `${path} has child items; delete those first, or keep it. Nothing was deleted`,
+      );
     await q.run<{ deleteItem: { successful: boolean } }>(
       `mutation { deleteItem(input: { database: "master", itemId: ${gql(d.item.itemId)}, permanently: false }) { successful } }`,
     );
@@ -846,15 +843,15 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     a: Parsed<typeof PageDesignsArgs>,
     facts: TenantFacts,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const root = a.data.pageDesignsPath.replace(/\/$/, '');
     const outside = a.data.mappings.find((m) => !m.pageDesignPath.startsWith(`${root}/`));
-    if (outside) return bad(`${outside.pageDesignPath} is not a page design under ${root}`);
+    if (outside) return rejected(`${outside.pageDesignPath} is not a page design under ${root}`);
     const pairs: { templateId: string; pageDesignId: string }[] = [];
     for (const m of a.data.mappings) {
       pairs.push({
-        templateId: braced(await this.idOf(q, m.templatePath)),
-        pageDesignId: braced(await this.idOf(q, m.pageDesignPath)),
+        templateId: sitecoreId(await this.idOf(q, m.templatePath)),
+        pageDesignId: sitecoreId(await this.idOf(q, m.pageDesignPath)),
       });
     }
     await q.run<{ configurePageDesigns: boolean }>(
@@ -882,7 +879,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async template(q: Gql, a: Parsed<typeof TemplateArgs>): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const parent = await this.idOf(q, a.data.parentPath);
     const sections = a.data.sections
       .map(
@@ -906,7 +903,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     a: Parsed<typeof RenderingArgs>,
     lang: Lang,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const fields = [{ name: 'componentName', value: a.data.componentName }];
     if (a.data.datasourceTemplatePath)
       fields.push({ name: 'Datasource Template', value: a.data.datasourceTemplatePath });
@@ -930,7 +927,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async layout(q: Gql, a: Parsed<typeof LayoutArgs>, lang: Lang): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     // Paths and IDs alike must name an item that exists: a layout pointing at nothing renders nothing.
     const resolve = async (v: string) =>
       sitecoreId(HEX_ID.test(v) ? await this.idExists(q, v) : await this.idOf(q, v));
@@ -958,7 +955,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       );
       const missing = inner.filter((attrs) => !/(?:^|\s)(?:s:)?id="/i.test(attrs));
       if (!inner.length || missing.length)
-        return bad(
+        return rejected(
           `${missing.length || 'No'} rendering${missing.length === 1 ? '' : 's'} in renderingsXml ${inner.length ? 'lack a rendering ID (id="{…}")' : 'found under a <d> device'}. Give renderings instead and the tool writes the XML.`,
         );
     }
@@ -992,7 +989,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     ctx: ToolCallContext,
     lang: Lang,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const { projectId, token } = ctx;
     let bytes: Uint8Array;
     let type: string;
@@ -1001,12 +998,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     if (a.data.ref) {
       // A file the browser downloaded for this project; its host was checked there.
       if (!a.data.ref.startsWith(`blob://${projectId}/assets/`))
-        return bad(`${a.data.ref} isn't a file downloaded for this project.`);
-      if (!this.opts.blobs) return bad('Stored files are not available here; give sourceUrl.', 501);
+        return rejected(`${a.data.ref} isn't a file downloaded for this project.`);
+      if (!this.opts.blobs)
+        return rejected('Stored files are not available here; give sourceUrl.', 501);
       try {
         bytes = await this.opts.blobs.get(a.data.ref);
       } catch {
-        return bad(
+        return rejected(
           `No stored file at ${a.data.ref}; download it again with browser.fetch.asset.`,
           404,
         );
@@ -1018,7 +1016,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     } else {
       const source = new URL(a.data.sourceUrl!);
       if (!facts.sourceHosts.includes(source.hostname)) {
-        return bad(
+        return rejected(
           `${source.hostname} is not the project's source site. Download it with browser.fetch.asset and upload its ref instead.`,
         );
       }
@@ -1033,7 +1031,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       name = decodeURIComponent(source.pathname.split('/').pop() || 'file');
       from = source.href;
     }
-    if (bytes.length > MAX_MEDIA_BYTES) return bad(`${from} is larger than 25 MB.`);
+    if (bytes.length > MAX_MEDIA_BYTES) return rejected(`${from} is larger than 25 MB.`);
     const relative = a.data.itemPath.slice(MEDIA_ROOT.length);
     const d = await q.run<{ uploadMedia: { presignedUploadUrl: string } }>(
       `mutation { uploadMedia(input: { itemPath: ${gql(relative)} }) { presignedUploadUrl } }`,
@@ -1083,7 +1081,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     a: Parsed<typeof PublishArgs>,
     facts: TenantFacts,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const ids = await Promise.all(a.data.paths.map((p) => this.idOf(q, p)));
     const languages = a.data.languages ?? (facts.languages.length ? facts.languages : ['en']);
     const d = await q.run<{ publishItem: { operationId: string } }>(
@@ -1108,7 +1106,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async publishStatus(q: Gql, a: Parsed<typeof PublishStatusArgs>): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const s = await q.run<{
       publishingStatus: { state: string; isDone: boolean; isFailed: boolean } | null;
     }>(
@@ -1128,7 +1126,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     a: Parsed<typeof EdgeRoutesArgs>,
     facts: TenantFacts,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const live = a.data.live ?? true;
     const contextId = await this.opts.edgeContextId?.(projectId, live);
     if (!contextId) {
@@ -1163,7 +1161,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async site(q: Gql, a: Parsed<typeof SiteArgs>, facts: TenantFacts): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const collection = a.data.collection ?? facts.siteCollection;
     const site = a.data.site ?? facts.site;
     const d = await q.run<{ sites: { name: string; rootPath: string }[] }>(
@@ -1187,7 +1185,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   }
 
   private async language(q: Gql, a: Parsed<typeof LanguageArgs>): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const path = `/sitecore/system/Languages/${a.data.code}`;
     const existing = await q.run<{ item: { itemId: string } | null }>(
       `query { item(where: { database: "master", path: ${gql(path)} }) { itemId } }`,
@@ -1298,12 +1296,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     facts: TenantFacts,
     lang: Lang,
   ): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const origin = new URL(a.data.url).origin;
     const hosts = await this.hosts(q);
     // Copy the environment's own host: its template and field names, with this head's URLs.
     const model = hosts.find((h) => h.name.toLowerCase() === 'default') ?? hosts[0];
-    if (!model) return bad(`No rendering host under ${HOSTS} to copy.`, 404);
+    if (!model) return rejected(`No rendering host under ${HOSTS} to copy.`, 404);
     const url = (name: string) =>
       /endpoint/i.test(name)
         ? `${origin}/api/editing/render`
@@ -1317,14 +1315,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       return v ? [{ name: f.name, value: v }] : [];
     });
     if (!fields.length)
-      return bad(
+      return rejected(
         `${model.path} has no URL fields to set (fields: ${model.fields.nodes.map((f) => f.name).join(', ')}).`,
       );
     // The site's setting first: when it can't be set, nothing is created.
     const g = await this.grouping(q, facts);
-    if (!g.item) return bad(`No Site Grouping item under ${g.root}.`, 404);
+    if (!g.item) return rejected(`No Site Grouping item under ${g.root}.`, 404);
     if (!g.field)
-      return bad(
+      return rejected(
         `${g.item.path} has no rendering host field (fields: ${g.item.fields.nodes.map((f) => f.name).join(', ')}).`,
       );
     const name = facts.site;
@@ -1375,7 +1373,6 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     return ids.filter((_, i) => !d[`i${i}`]);
   }
 
-  /** An item's ID by path, or a 404 the agent can act on. */
   /** The item's ID when an item has it, else 404. */
   private async idExists(q: Gql, id: string): Promise<string> {
     const d = await q.run<{ item: { itemId: string } | null }>(
@@ -1385,6 +1382,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     return d.item.itemId;
   }
 
+  /** An item's ID by path, or a 404 the agent can act on. */
   private async idOf(q: Gql, path: string): Promise<string> {
     const d = await q.run<{ item: { itemId: string } | null }>(
       `query { item(where: { database: "master", path: ${gql(path)} }) { itemId } }`,
@@ -1397,10 +1395,6 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 type Lang = (l?: string) => string;
 
 const bare = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
-const braced = (id: string) => {
-  const h = bare(id).toUpperCase();
-  return `{${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}}`;
-};
 
 /**
  * TemplatesMapping as template → page design (bare IDs). Sitecore stores it URL-encoded twice over:
@@ -1431,28 +1425,33 @@ async function readBack(
   names: string[] = [],
 ): Promise<{ itemId: string; path: string; fields: Map<string, string> } | null> {
   const where = `where: { database: "master", path: ${gql(path)}, language: ${gql(language)} }`;
+  // No fields asked for: the item's ID and path are all the caller reads.
+  if (!names.length) {
+    const d = await q.run<{ item: { itemId: string; path: string } | null }>(
+      `query { item(${where}) { itemId path } }`,
+    );
+    return d.item ? { itemId: d.item.itemId, path: d.item.path, fields: new Map() } : null;
+  }
   let found: { itemId: string; path: string; fields: Map<string, string> } | null = null;
-  if (names.length) {
-    try {
-      const d = await q.run<{
-        item: ({ itemId: string; path: string } & Record<string, { value: string } | null>) | null;
-      }>(
-        `query { item(${where}) {
-          itemId path ${names.map((n, i) => `f${i}: field(name: ${gql(n)}) { value }`).join(' ')}
-        } }`,
-      );
-      if (!d.item) return null;
-      const fields = new Map<string, string>();
-      names.forEach((n, i) => {
-        const f = d.item![`f${i}`] as { value: string } | null | undefined;
-        if (f) fields.set(n.toLowerCase(), f.value);
-      });
-      found = { itemId: d.item.itemId, path: d.item.path, fields };
-      if (names.every((n) => fields.has(n.toLowerCase()))) return found;
-    } catch (err) {
-      // An API without single-field reads: fall back to the field list.
-      if (!(err instanceof GqlError)) throw err;
-    }
+  try {
+    const d = await q.run<{
+      item: ({ itemId: string; path: string } & Record<string, { value: string } | null>) | null;
+    }>(
+      `query { item(${where}) {
+        itemId path ${names.map((n, i) => `f${i}: field(name: ${gql(n)}) { value }`).join(' ')}
+      } }`,
+    );
+    if (!d.item) return null;
+    const fields = new Map<string, string>();
+    names.forEach((n, i) => {
+      const f = d.item![`f${i}`] as { value: string } | null | undefined;
+      if (f) fields.set(n.toLowerCase(), f.value);
+    });
+    found = { itemId: d.item.itemId, path: d.item.path, fields };
+    if (names.every((n) => fields.has(n.toLowerCase()))) return found;
+  } catch (err) {
+    // An API without single-field reads: fall back to the field list.
+    if (!(err instanceof GqlError)) throw err;
   }
   // The whole field list, asking for a page large enough for every standard field, or the
   // API's default page where it doesn't take a size.
@@ -1538,8 +1537,6 @@ type Parsed<S extends z.ZodType> = z.ZodSafeParseResult<z.infer<S>>;
 
 const fieldsOf = (fields: { name: string; value: string }[]) =>
   `[${fields.map((f) => `{ name: ${gql(f.name)}, value: ${gql(stored(f.value))} }`).join(', ')}]`;
-
-const HEX_ID = /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i;
 
 /** A |-separated list of IDs with more added at the end; IDs already in it aren't repeated. */
 function addIds(list: string, more: string): string {

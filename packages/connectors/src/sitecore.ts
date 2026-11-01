@@ -9,7 +9,8 @@
  * - Experience Edge: a site query with the Context ID, as the Content SDK sends it.
  */
 
-import { DeployClient } from './sitecore-deploy';
+import { DEPLOY_API, DeployClient } from './sitecore-deploy';
+import { timedCall as call } from './http';
 
 export interface VerifyResult {
   ok: boolean;
@@ -38,36 +39,10 @@ export const SITECORE_DEFAULTS: VerifyConfig = {
   audience: 'https://api.sitecorecloud.io',
   edgeUrl: 'https://edge-platform.sitecorecloud.io',
   cmHostSuffixes: ['.sitecorecloud.io'],
-  deployUrl: 'https://xmclouddeploy-api.sitecorecloud.io',
+  deployUrl: DEPLOY_API,
   fetch: (...a) => fetch(...a),
   timeoutMs: 15_000,
 };
-
-async function call(
-  cfg: VerifyConfig,
-  url: string,
-  init: RequestInit,
-): Promise<{ status: number; body: unknown } | { error: string }> {
-  try {
-    const res = await cfg.fetch(url, { ...init, signal: AbortSignal.timeout(cfg.timeoutMs) });
-    const text = await res.text();
-    let body: unknown = text;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      /* not JSON */
-    }
-    return { status: res.status, body };
-  } catch (err) {
-    const name = err instanceof Error ? err.name : '';
-    return {
-      error:
-        name === 'TimeoutError'
-          ? `${new URL(url).host} did not answer within ${cfg.timeoutMs / 1000} s.`
-          : `${new URL(url).host} could not be reached.`,
-    };
-  }
-}
 
 /** A client-credentials token for an automation client (organization or environment). */
 export async function sitecoreToken(

@@ -1,8 +1,9 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
 import { DeployClient, problem } from '@lw/connectors';
+import { rejected } from '@lw/tool-gateway';
 
-export { DEPLOY_API, DeployClient } from '@lw/connectors';
+export { DeployClient } from '@lw/connectors';
 
 /**
  * The SitecoreAI Deploy API, with the organization automation client: finds the project's
@@ -104,10 +105,10 @@ export class SitecoreDeployToolServer implements ToolServer {
       }
       case 'editing-host.register': {
         const a = RegisterArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         const base = new URL(a.data.url);
         if (!facts.headHosts.includes(base.host)) {
-          return bad(
+          return rejected(
             `${base.host} isn't a host this project's head is deployed on (${facts.headHosts.join(', ') || 'none yet'}). Deploy it with the hosting tools first.`,
           );
         }
@@ -134,11 +135,6 @@ export class SitecoreDeployToolServer implements ToolServer {
   }
 }
 
-const bad = (message: string): ToolResult => ({
-  code: 422,
-  body: { error: message },
-  summary: message,
-});
 const fail = (r: { status: number; body: unknown }, doing: string): ToolResult => {
   const error = problem(r, doing);
   return { code: r.status, body: { error }, summary: error };

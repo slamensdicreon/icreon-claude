@@ -10,7 +10,7 @@ import {
 import type { PlatformPack } from '../src/index';
 import { sitecoreFacts } from './facts';
 import { sitecoreChecks } from './checks';
-import { list, text, type TargetValues } from '../src/values';
+import { hostOf, list, text, type TargetValues } from '../src/values';
 
 /** The SitecoreAI pack's id, as projects record it at intake. */
 export const SITECOREAI = 'sitecoreai';
@@ -24,14 +24,6 @@ const CLIENT_FIELDS = [
   { key: 'clientId', label: 'Client ID', secret: false },
   { key: 'clientSecret', label: 'Client secret', secret: true },
 ];
-
-export function hostOf(cmHost: string): string {
-  try {
-    return new URL(/^https?:\/\//.test(cmHost) ? cmHost : `https://${cmHost}`).host;
-  } catch {
-    return cmHost;
-  }
-}
 
 /** SitecoreAI's target values, typed. */
 export interface SitecoreTarget {

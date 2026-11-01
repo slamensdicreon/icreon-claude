@@ -9,21 +9,13 @@ import {
   type OptimizelyVerifyConfig,
 } from '@lw/connectors';
 import type { PlatformPack } from '../src/index';
-import { list, text, type TargetValues } from '../src/values';
+import { hostOf, list, text, type TargetValues } from '../src/values';
 
 /**
  * Optimizely CMS (SaaS): one instance reached through the CMS REST API v1 (content types,
  * display templates, content, applications), Optimizely Graph for delivery and preview, Visual
  * Builder for marketers, and a Next.js head on the SDK (`@optimizely/cms-sdk`) hosted on Vercel.
  */
-
-export function hostOf(cmsUrl: string): string {
-  try {
-    return new URL(/^https?:\/\//.test(cmsUrl) ? cmsUrl : `https://${cmsUrl}`).host;
-  } catch {
-    return cmsUrl;
-  }
-}
 
 /** Optimizely's target values, typed. */
 export interface OptimizelyTarget {

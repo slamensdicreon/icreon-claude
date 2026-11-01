@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
+import { rejected } from '@lw/tool-gateway';
 
 export interface ResearchServerOptions {
   client?: Anthropic;
@@ -16,11 +17,6 @@ const SearchArgs = z.object({
 const FetchArgs = z.object({ url: z.url({ protocol: /^https?$/ }) });
 
 const MAX_FETCH_CHARS = 60_000;
-const bad = (message: string): ToolResult => ({
-  code: 422,
-  body: { error: message },
-  summary: message,
-});
 
 /**
  * Current facts from the web, for Platform Notes: Anthropic's server-side web search and web fetch
@@ -81,7 +77,7 @@ export class ResearchToolServer implements ToolServer {
   }
 
   private async search(a: z.ZodSafeParseResult<z.infer<typeof SearchArgs>>): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const message = await this.run(
       [
         {
@@ -128,7 +124,7 @@ export class ResearchToolServer implements ToolServer {
   }
 
   private async fetchPage(a: z.ZodSafeParseResult<z.infer<typeof FetchArgs>>): Promise<ToolResult> {
-    if (!a.success) return bad(a.error.issues[0]!.message);
+    if (!a.success) return rejected(a.error.issues[0]!.message);
     const message = await this.run(
       [{ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 1 }],
       `Fetch ${a.data.url} with the web_fetch tool. Do not summarise it; just confirm it was fetched.`,

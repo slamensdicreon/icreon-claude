@@ -1,5 +1,6 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
+import { AGENT_BRANCH, INTEGRATION_BRANCH, rejected } from '@lw/tool-gateway';
 
 /**
  * A working copy of the build repository for one task, in an isolated machine: agents read and
@@ -69,7 +70,6 @@ export interface SandboxServerOptions {
   buildEnv(projectId: string): Promise<Record<string, string>>;
 }
 
-const AGENT_BRANCH = /^launchworks\/[A-Za-z0-9._/-]{1,100}$/;
 const MAX_OUTPUT = 8_000;
 const MAX_FILE = 300_000;
 
@@ -129,8 +129,6 @@ const CliArgs = z.object({
     .regex(/^[A-Z][A-Za-z0-9]{1,60}$/, 'PascalCase')
     .optional(),
 });
-/** Where accepted components come together; the editing host deploys it. */
-export const INTEGRATION_BRANCH = 'launchworks/integration';
 /**
  * The Director's own fixes, made outside any task. Every integration merges it when it exists,
  * a rebuild included, so hand fixes never drop out; agents don't commit to it.
@@ -279,15 +277,18 @@ export class SandboxToolServer implements ToolServer {
   async call(op: string, args: Record<string, unknown>, ctx: ToolCallContext): Promise<ToolResult> {
     const facts = await this.opts.facts(ctx.projectId);
     if (!facts) {
-      return bad('This project has no build repository yet. Create it in Settings first.', 409);
+      return rejected(
+        'This project has no build repository yet. Create it in Settings first.',
+        409,
+      );
     }
     const { box, created } = await this.opts.provider.open(sandboxName(ctx.projectId, ctx.taskId), {
       repoUrl: `https://github.com/${facts.repo}.git`,
       token: ctx.token,
     });
-    const secrets = Object.values(await this.opts.buildEnv(ctx.projectId)).filter(
-      (v) => v.length >= 6,
-    );
+    // Resolved once per call: the build runs with the values its output is redacted for.
+    const buildEnv = await this.opts.buildEnv(ctx.projectId);
+    const secrets = Object.values(buildEnv).filter((v) => v.length >= 6);
     const redact = (s: string) =>
       [...secrets, ctx.token].reduce((out, v) => out.split(v).join('[redacted]'), s);
     const app = `${box.root}/${facts.appPath}`;
@@ -304,9 +305,12 @@ export class SandboxToolServer implements ToolServer {
       // The clone's credentials don't stay in the machine.
       await run('git', ['remote', 'set-url', 'origin', `https://github.com/${facts.repo}.git`]);
     }
-    // Set on every call, so a working copy made before the author was known commits as it now.
-    await run('git', ['config', 'user.name', authorOf(facts).name]);
-    await run('git', ['config', 'user.email', authorOf(facts).email]);
+    // Set before every operation that can commit, so a working copy made before the author was
+    // known commits as it now. Reads and builds make no commits and skip it.
+    const setIdentity = async () => {
+      await run('git', ['config', 'user.name', authorOf(facts).name]);
+      await run('git', ['config', 'user.email', authorOf(facts).email]);
+    };
     const auth = ['-c', `http.extraHeader=${basic(ctx.token)}`];
 
     const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -355,7 +359,7 @@ export class SandboxToolServer implements ToolServer {
 
     /** The starter's build: generate .sitecore, type-check, then build. */
     const build = async () => {
-      const env = { ...(await this.opts.buildEnv(ctx.projectId)), CI: '1' };
+      const env = { ...buildEnv, CI: '1' };
       const npm = (script: string, minutes: number) =>
         run('npm', ['run', script], { cwd: app, env, timeoutMs: minutes * 60_000 });
       // The starter generates .sitecore/ (sites, import maps, metadata) during its build, and
@@ -401,8 +405,9 @@ export class SandboxToolServer implements ToolServer {
 
     switch (op) {
       case 'workspace.open': {
+        await setIdentity();
         const a = OpenArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         const current = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'])).output.trim();
         const ref = a.data.ref ?? (AGENT_BRANCH.test(current) ? current : undefined);
         const fetched = ref ? await run('git', [...auth, 'fetch', 'origin', ref]) : null;
@@ -452,9 +457,9 @@ export class SandboxToolServer implements ToolServer {
       }
       case 'fs.list': {
         const a = ListArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         const under = a.data.path ? safePath(a.data.path) : '.';
-        if (!under) return bad(`${a.data.path} is outside the repository.`);
+        if (!under) return rejected(`${a.data.path} is outside the repository.`);
         const r = await run('find', [
           under,
           '-type',
@@ -482,7 +487,7 @@ export class SandboxToolServer implements ToolServer {
       }
       case 'fs.read': {
         const a = ReadArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         const files = await Promise.all(
           a.data.paths.map(async (p) => {
             const path = safePath(p);
@@ -502,12 +507,13 @@ export class SandboxToolServer implements ToolServer {
       }
       case 'fs.write': {
         const a = WriteArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         const refused = a.data.files.filter((f) => {
           const path = safePath(f.path);
           return !path || readOnly(path, recipe);
         });
-        if (refused.length) return bad(`Not writable: ${refused.map((f) => f.path).join(', ')}.`);
+        if (refused.length)
+          return rejected(`Not writable: ${refused.map((f) => f.path).join(', ')}.`);
         // A file git ignores is never committed: the work would live only in this machine.
         const ignored = (
           await run('git', ['check-ignore', '--', ...a.data.files.map((f) => safePath(f.path)!)])
@@ -516,7 +522,7 @@ export class SandboxToolServer implements ToolServer {
           .map((l) => l.trim())
           .filter(Boolean);
         if (ignored.length)
-          return bad(
+          return rejected(
             `Not written: git ignores ${ignored.join(', ')}, so it would never be committed. Files under .sitecore/ (other than the component maps) are generated by the build; change the source they come from instead.`,
           );
         const writes = a.data.files.filter((f) => f.content !== null);
@@ -533,14 +539,15 @@ export class SandboxToolServer implements ToolServer {
         };
       }
       case 'git.integrate': {
+        await setIdentity();
         const a = IntegrateArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         const wanted = [...new Set(a.data.branches)];
         // The working copy is a shallow clone: a merge needs the shared history.
         await run('git', [...auth, 'fetch', '-q', '--unshallow', 'origin']);
         const base = await run('git', [...auth, 'fetch', 'origin', facts.branch]);
         if (base.exitCode !== 0)
-          return bad(`Couldn't fetch ${facts.branch}: ${lastError(base.output)}`, 502);
+          return rejected(`Couldn't fetch ${facts.branch}: ${lastError(base.output)}`, 502);
         const branches: string[] = [];
         const missing: string[] = [];
         for (const b of wanted) {
@@ -553,7 +560,7 @@ export class SandboxToolServer implements ToolServer {
           (got.exitCode === 0 ? branches : missing).push(b);
         }
         if (!branches.length)
-          return bad(`None of these branches exist: ${missing.join(', ')}`, 404);
+          return rejected(`None of these branches exist: ${missing.join(', ')}`, 404);
         if (!branches.includes(DIRECTOR_BRANCH)) {
           const got = await run('git', [
             ...auth,
@@ -578,7 +585,7 @@ export class SandboxToolServer implements ToolServer {
             has.exitCode === 0 && !a.data.fresh ? 'FETCH_HEAD' : `origin/${facts.branch}`;
           const start = await run('git', ['checkout', '-q', '-B', INTEGRATION_BRANCH, from]);
           if (start.exitCode !== 0)
-            return bad(`Couldn't start from ${from}: ${lastError(start.output)}`);
+            return rejected(`Couldn't start from ${from}: ${lastError(start.output)}`);
           regenerated.clear();
           for (const branch of branches) {
             const merge = await run('git', [
@@ -614,7 +621,7 @@ export class SandboxToolServer implements ToolServer {
             await run('git', ['add', '--', ...conflicted]);
             const done = await run('git', ['commit', '-q', '--no-edit']);
             if (done.exitCode !== 0)
-              return bad(`Couldn't finish merging ${branch}: ${lastError(done.output)}`, 500);
+              return rejected(`Couldn't finish merging ${branch}: ${lastError(done.output)}`, 500);
             for (const f of conflicted) regenerated.add(f);
           }
           const { result: installed } = await install();
@@ -627,7 +634,7 @@ export class SandboxToolServer implements ToolServer {
               timeoutMs: 15 * 60_000,
             });
             if (again.exitCode !== 0)
-              return bad(`Dependencies failed to install: ${lastError(again.output)}`, 500);
+              return rejected(`Dependencies failed to install: ${lastError(again.output)}`, 500);
           }
           const { green, types, built, why } = await build();
           if (!green) {
@@ -716,15 +723,16 @@ export class SandboxToolServer implements ToolServer {
       }
       case 'exec.content-sdk-cli': {
         const a = CliArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
-        if (a.data.command === 'scaffold' && !a.data.name) return bad('scaffold needs a name.');
+        if (!a.success) return rejected(a.error.issues[0]!.message);
+        if (a.data.command === 'scaffold' && !a.data.name)
+          return rejected('scaffold needs a name.');
         const cliArgs =
           a.data.command === 'generate-map'
             ? ['project', 'component', 'generate-map']
             : ['project', 'component', 'scaffold', a.data.name!];
         const r = await run('npx', ['--no-install', 'sitecore-tools', ...cliArgs], {
           cwd: app,
-          env: await this.opts.buildEnv(ctx.projectId),
+          env: buildEnv,
           timeoutMs: 5 * 60_000,
         });
         return {
@@ -734,8 +742,9 @@ export class SandboxToolServer implements ToolServer {
         };
       }
       case 'git.commit': {
+        await setIdentity();
         const a = CommitArgs.safeParse(args);
-        if (!a.success) return bad(a.error.issues[0]!.message);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
         const { branch } = a.data;
         await run('git', ['add', '-A']);
         const staged = await run('git', ['diff', '--cached', '--name-only']);
@@ -743,7 +752,7 @@ export class SandboxToolServer implements ToolServer {
         const blocked = paths.filter((p) => !safePath(p) || readOnly(p, recipe));
         if (blocked.length) {
           await run('git', ['reset', '-q']);
-          return bad(`Refused: ${blocked.join(', ')} can't be committed from here.`);
+          return rejected(`Refused: ${blocked.join(', ')} can't be committed from here.`);
         }
         if (paths.length) {
           const c = await run('git', ['commit', '-q', '-m', a.data.message]);
@@ -752,9 +761,9 @@ export class SandboxToolServer implements ToolServer {
         } else {
           // Nothing new, but a push that failed earlier leaves its commit here: push that.
           const fetched = await run('git', [...auth, 'fetch', 'origin', branch]);
-          if (fetched.exitCode !== 0) return bad('Nothing to commit.');
+          if (fetched.exitCode !== 0) return rejected('Nothing to commit.');
           if (!(await count('FETCH_HEAD..HEAD'))) {
-            if (await count('HEAD..FETCH_HEAD')) return bad('Nothing to commit.');
+            if (await count('HEAD..FETCH_HEAD')) return rejected('Nothing to commit.');
             // The branch already holds exactly this working copy: say so, with the commit.
             const sha = (await run('git', ['rev-parse', 'HEAD'])).output.trim();
             return {
@@ -836,5 +845,3 @@ const lastError = (output: string) =>
 
 export const basic = (token: string) =>
   `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
-
-const bad = (error: string, code = 422): ToolResult => ({ code, body: { error }, summary: error });

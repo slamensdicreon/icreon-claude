@@ -3,6 +3,7 @@ import { Blueprint } from '@lw/plan';
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
 import type { ArtifactLibrary } from './library';
+import { rejected } from '@lw/tool-gateway';
 
 const Kind = z.enum(['blueprint', 'platform_notes', 'inventory', 'report', 'handover_pack']);
 
@@ -17,12 +18,6 @@ const WriteArgs = z.object({
 const ReadArgs = z.object({
   artifactId: z.string(),
   version: z.number().int().positive().optional(),
-});
-
-const bad = (message: string): ToolResult => ({
-  code: 422,
-  body: { error: message },
-  summary: message,
 });
 
 /** Agents' working documents: inventories, Platform Notes, reports, the handover pack. */
@@ -75,12 +70,12 @@ export class ArtifactsToolServer implements ToolServer {
     if (op === 'write') {
       const a = WriteArgs.safeParse(args);
       if (!a.success)
-        return bad(a.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+        return rejected(a.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
       if (a.data.format === 'json') {
         try {
           JSON.parse(a.data.content);
         } catch {
-          return bad('content is not valid JSON');
+          return rejected('content is not valid JSON');
         }
       }
       const v = await this.library.write(ctx.projectId, { ...a.data, producer: ctx.role });
@@ -92,7 +87,7 @@ export class ArtifactsToolServer implements ToolServer {
     }
     if (op === 'read') {
       const a = ReadArgs.safeParse(args);
-      if (!a.success) return bad('artifactId is required');
+      if (!a.success) return rejected('artifactId is required');
       const r = await this.library.read(ctx.projectId, a.data.artifactId, a.data.version);
       if (!r) return { code: 404, body: { error: `No stored content for ${a.data.artifactId}` } };
       return {
@@ -101,7 +96,7 @@ export class ArtifactsToolServer implements ToolServer {
         summary: `Read ${r.meta.title} v${r.meta.version}`,
       };
     }
-    return bad(`Unknown operation ${op}`);
+    return rejected(`Unknown operation ${op}`);
   }
 }
 
@@ -151,7 +146,7 @@ export class BlackboardToolServer implements ToolServer {
     if (op === 'write.blueprint') {
       const parsed = Blueprint.safeParse(args.blueprint);
       if (!parsed.success) {
-        return bad(
+        return rejected(
           `Blueprint is invalid: ${parsed.error.issues
             .slice(0, 5)
             .map((i) => `${i.path.join('.')}: ${i.message}`)
@@ -168,7 +163,7 @@ export class BlackboardToolServer implements ToolServer {
       });
       return { code: 200, body: { version: v.version }, summary: `Blueprint v${v.version}` };
     }
-    return bad(`Unknown operation ${op}`);
+    return rejected(`Unknown operation ${op}`);
   }
 }
 
@@ -197,7 +192,7 @@ export class DecisionLogToolServer implements ToolServer {
     _args: Record<string, unknown>,
     ctx: ToolCallContext,
   ): Promise<ToolResult> {
-    if (op !== 'read') return bad(`Unknown operation ${op}`);
+    if (op !== 'read') return rejected(`Unknown operation ${op}`);
     const decisions = this.decisions(ctx.projectId).map(
       ({ ts, question, answer, rationale, decidedBy }) => ({
         ts,
