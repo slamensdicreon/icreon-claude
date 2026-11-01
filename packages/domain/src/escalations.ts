@@ -1,4 +1,4 @@
-import type { EscalationStatus, EscalationType } from '@lw/contracts';
+import type { EscalationStatus, EscalationType, EscalationView } from '@lw/contracts';
 
 /**
  * Queue order from the Control Center: Blocker, Access, Decision, Review (gates), Budget, Risk.
@@ -28,4 +28,11 @@ export function compareEscalations(a: Rankable, b: Rankable): number {
   const rank = TYPE_RANK[a.type] - TYPE_RANK[b.type];
   if (rank !== 0) return rank;
   return b.raisedAt.localeCompare(a.raisedAt);
+}
+
+/** The option a settled card went with: its answer, or its default when it expired. */
+export function chosenOptionId(
+  x: Pick<EscalationView, 'status' | 'defaultOptionId' | 'resolution'>,
+): string | null | undefined {
+  return x.status === 'expired' ? x.defaultOptionId : x.resolution?.optionId;
 }

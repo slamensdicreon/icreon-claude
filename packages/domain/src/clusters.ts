@@ -3,6 +3,11 @@ import type { EscalationView, TaskView } from '@lw/contracts';
 /** Card types a batch of sibling tasks can raise for one cause. Gates, budget and risk stand alone. */
 const GROUPABLE = new Set(['access', 'blocker', 'decision']);
 
+/** A task's own names (title, ID, items), which differ between cards with the same cause. */
+export function taskNames(task: TaskView | undefined): string[] {
+  return task ? [task.title, task.taskId, ...task.itemKeys] : [];
+}
+
 /**
  * A card's text without its particulars: the task's and item's names, URLs and paths, IDs,
  * numbers and quoted text. Two cards with the same problem on different items read the same.
@@ -26,7 +31,7 @@ export function problemOf(text: string, names: string[]): string {
 /** Same type, same task template, same options and the same problem: one cause. */
 export function clusterKey(x: EscalationView, task: TaskView | undefined): string | null {
   if (x.status !== 'open' || x.gate || !GROUPABLE.has(x.type) || !task?.group) return null;
-  const names = [task.title, task.taskId, ...task.itemKeys];
+  const names = taskNames(task);
   return [
     x.type,
     task.group,

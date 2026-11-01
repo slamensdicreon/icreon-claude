@@ -62,8 +62,10 @@ import {
   scorecard,
   LOCKED_CATEGORIES,
   cardCategory,
+  chosenOptionId,
   problemOf,
   preview,
+  taskNames,
   scheduleSnapshot,
   settingsView,
   sinceSummary,
@@ -224,13 +226,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!o) throw new CommandError(404, 'unknown_project', `No project "${id}".`);
     return o;
   };
+  /** The log position a project reached, once its read model has caught up to it. */
+  const settled = async (projectId: string): Promise<CommandResult> => {
+    const seq = await store.head(projectId);
+    await projections.waitFor(projectId, seq);
+    return { accepted: true, seq };
+  };
   /** Runs a command, then answers with the log position it reached, so the UI can reconcile. */
   const command = async (projectId: string, fn: (o: ProjectCommands) => Promise<unknown>) => {
     await fn(orchestrator(projectId));
-    const seq = await store.head(projectId);
-    await projections.waitFor(projectId, seq);
-    const r: CommandResult = { accepted: true, seq };
-    return r;
+    return settled(projectId);
+  };
+  /** Project intake, or null after answering that this mode has none. */
+  const intake = (reply: FastifyReply) => {
+    if (!deps.intake) {
+      fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+      return null;
+    }
+    return deps.intake;
   };
 
   app.get('/health', async () => ({ ok: true }));
@@ -412,10 +425,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (status === 'intake') return { status: 'ok', detail: 'Not started' };
     const o = deps.commands(projectId);
     if (!o?.diagnose) return { status: 'unknown', detail: 'Not available in this mode' };
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const d = (await Promise.race([
         o.diagnose(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), 8000)),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('timed out')), 8000);
+        }),
       ])) as { status?: string; historyLength?: number; recent?: { type: string }[] };
       if (d.status && d.status !== 'RUNNING')
         return { status: 'ended', detail: `Workflow ${d.status.toLowerCase()}` };
@@ -428,6 +444,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return { status: 'ok', detail: `Running (${d.historyLength ?? '?'} history events)` };
     } catch (err) {
       return { status: 'unknown', detail: `Could not be read: ${(err as Error).message}` };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -439,24 +457,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.post('/connections', async (req, reply) => {
-    if (!deps.intake)
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+    const service = intake(reply);
+    if (!service) return;
     const { name, fromProject } = CreateConnection.parse(req.body);
     await projections.catchUp(fromProject);
     const s = project(fromProject);
     if (!s) return fail(reply, 404, 'unknown_project', `No project "${fromProject}".`);
-    const id = await deps.intake.createConnection(s, name);
+    const id = await service.createConnection(s, name);
     return reply.status(201).send({ connectionId: id });
   });
 
   app.put<{ Params: { id: string; credentialId: string } }>(
     '/connections/:id/credentials/:credentialId',
     async (req, reply) => {
-      if (!deps.intake)
-        return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
+      const service = intake(reply);
+      if (!service) return;
       const { secret } = RotateConnectionCredential.parse(req.body);
       await projections.catchUpAll();
-      await deps.intake.rotateConnectionCredential(
+      await service.rotateConnectionCredential(
         req.params.id,
         req.params.credentialId,
         secret,
@@ -467,12 +485,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   );
 
   app.get<P>('/projects/:id/remix', async (req, reply) => {
-    if (!deps.intake)
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    await projections.catchUp(req.params.id);
+    const service = intake(reply);
+    if (!service) return;
     const s = project(req.params.id);
     if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
-    return deps.intake.remixDraft(s);
+    return service.remixDraft(s);
   });
 
   /** Tells rules how they did: the Director agreed with the answer they gave, or overrode it. */
@@ -522,7 +539,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           'unknown_escalation',
           `No escalation "${req.params.escalationId}".`,
         );
-      const chosen = x.status === 'expired' ? x.defaultOptionId : x.resolution?.optionId;
+      const chosen = chosenOptionId(x);
       const answer = x.options.find((o) => o.id === chosen)?.label;
       if (!answer || x.gate)
         return fail(
@@ -542,15 +559,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           `${DECISION_CATEGORY_LABEL[category]} always come to you: a rule can't settle them.`,
         );
       const t = x.sourceTaskId ? s.tasks[x.sourceTaskId] : undefined;
-      const names = (y: typeof x) => {
-        const tk = y.sourceTaskId ? s.tasks[y.sourceTaskId] : undefined;
-        return tk ? [tk.title, tk.taskId, ...tk.itemKeys] : [];
-      };
+      const names = (y: typeof x) =>
+        taskNames(y.sourceTaskId ? s.tasks[y.sourceTaskId] : undefined);
       const problem = problemOf(x.title, names(x));
       // The same cause, answered the same way: evidence the rule holds.
       const similar = Object.values(s.escalations).filter((y) => {
         if (y.escalationId === x.escalationId || cardCategory(y) !== category) return false;
-        const yChosen = y.status === 'expired' ? y.defaultOptionId : y.resolution?.optionId;
+        const yChosen = chosenOptionId(y);
         const yAnswer = y.options.find((o) => o.id === yChosen)?.label;
         return yAnswer === answer && problemOf(y.title, names(y)) === problem;
       });
@@ -608,10 +623,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const store = rules(reply);
     if (!store) return;
     const s = known(req.params.id);
-    const names = (y: EscalationViewT) => {
-      const tk = y.sourceTaskId ? s.tasks[y.sourceTaskId] : undefined;
-      return tk ? [tk.title, tk.taskId, ...tk.itemKeys] : [];
-    };
+    const names = (y: EscalationViewT) =>
+      taskNames(y.sourceTaskId ? s.tasks[y.sourceTaskId] : undefined);
     const groups = new Map<
       string,
       { cards: EscalationViewT[]; answer: string; category: DecisionCategory }
@@ -620,7 +633,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (y.gate) continue;
       const category = cardCategory(y);
       if (LOCKED_CATEGORIES.includes(category)) continue;
-      const chosen = y.status === 'expired' ? y.defaultOptionId : y.resolution?.optionId;
+      const chosen = chosenOptionId(y);
       const answer = y.options.find((o) => o.id === chosen)?.label;
       if (!answer) continue;
       const key = [category, problemOf(y.title, names(y)), answer].join('\n');
@@ -896,16 +909,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             await projections.catchUp(id);
             const s = project(id);
             if (!s) return null;
-            return projectHistory(s, await deps.store.read(id), search, {
-              lessons: deps.knowledge
-                ? (await deps.knowledge.list({ projectId: id })).map((e) => ({
-                    ref: e.ref,
-                    status: e.status,
-                    title: e.title,
-                  }))
-                : [],
-              now: now(),
-            });
+            return projectHistory(
+              s,
+              (before, limit) => deps.store.read(id, { before, limit, order: 'desc' }),
+              search,
+              {
+                lessons: deps.knowledge
+                  ? (await deps.knowledge.list({ projectId: id })).map((e) => ({
+                      ref: e.ref,
+                      status: e.status,
+                      title: e.title,
+                    }))
+                  : [],
+                now: now(),
+              },
+            );
           },
           rules: deps.rules,
           knowledge: deps.knowledge,
@@ -936,34 +954,30 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // The playbooks a new project can run: what each team delivers and what its intake collects.
   app.get('/playbooks', async (_req, reply) => {
-    if (!deps.intake) {
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    }
-    return deps.intake.playbooks();
+    const service = intake(reply);
+    if (!service) return;
+    return service.playbooks();
   });
 
   app.post('/intake/verify', async (req, reply) => {
-    if (!deps.intake) {
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    }
-    return deps.intake.verify(VerifyIntakeCredential.parse(req.body));
+    const service = intake(reply);
+    if (!service) return;
+    return service.verify(VerifyIntakeCredential.parse(req.body));
   });
 
   app.post('/projects', async (req, reply) => {
-    if (!deps.intake) {
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    }
-    const projectId = await deps.intake.create(ProjectIntake.parse(req.body));
+    const service = intake(reply);
+    if (!service) return;
+    const projectId = await service.create(ProjectIntake.parse(req.body));
     await projections.catchUp(projectId);
-    return reply.status(201).send({ projectId, canStart: deps.intake.canStart });
+    return reply.status(201).send({ projectId, canStart: service.canStart });
   });
 
   app.post<P>('/projects/:id/start', async (req, reply) => {
     const s = known(req.params.id);
-    if (!deps.intake) {
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    }
-    await deps.intake.start(s);
+    const service = intake(reply);
+    if (!service) return;
+    await service.start(s);
     const seq = await store.head(s.projectId);
     const r: CommandResult = { accepted: true, seq };
     return r;
@@ -980,7 +994,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // How the project's work went: cards by category and who settled them, reviews, waits.
   app.get<P>('/projects/:id/scorecard', async (req, reply) => {
-    await projections.catchUp(req.params.id);
     const s = project(req.params.id);
     return s
       ? scorecard(s, now())
@@ -1124,7 +1137,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
-  const clock = deps.now ?? Date.now;
   const known = (id: string): ProjectState => {
     const s = project(id);
     if (!s) throw new CommandError(404, 'unknown_project', `No project "${id}".`);
@@ -1132,7 +1144,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
 
   app.get<P>('/projects/:id/schedule', async (req) =>
-    scheduleSnapshot(known(req.params.id), clock()),
+    scheduleSnapshot(known(req.params.id), now()),
   );
 
   app.get<P>('/projects/:id/preview', async (req) => preview(known(req.params.id)));
@@ -1184,7 +1196,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .min(0)
       .parse(req.query.seq ?? s.seq);
     const events = await store.read(s.projectId, { after: Math.max(0, from - 2000) });
-    return sinceSummary(s, events, from, clock());
+    return sinceSummary(s, events, from, now());
   });
 
   /** Screenshots and images a project's documents refer to (`blob://<project>/<key>`). */
@@ -1475,21 +1487,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           data: { key, value: levels },
         },
       ]);
-      const seq = await store.head(s.projectId);
-      await projections.waitFor(s.projectId, seq);
-      const r: CommandResult = { accepted: true, seq };
-      return r;
+      return settled(s.projectId);
     }
     return command(req.params.id, (o) => supported(o, 'changeSetting')(key, value));
   });
 
   app.post<P>('/projects/:id/reset', async (req, reply) => {
     const s = known(req.params.id);
-    if (!deps.intake) {
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    }
+    const service = intake(reply);
+    if (!service) return;
     const { confirmation, newBuildRepo } = ResetProject.parse(req.body);
-    await deps.intake.reset(s, confirmation, newBuildRepo);
+    await service.reset(s, confirmation, newBuildRepo);
     const seq = await store.head(s.projectId);
     await projections.catchUp(s.projectId);
     const r: CommandResult = { accepted: true, seq };
@@ -1500,26 +1508,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // automatically, or after fixing the GitHub App's access to the organization.
   app.post<P>('/projects/:id/build-repo', async (req, reply) => {
     const s = known(req.params.id);
-    if (!deps.intake) {
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    }
-    await deps.intake.createBuildRepo(s, CreateBuildRepo.parse(req.body ?? {}).name);
-    const seq = await store.head(s.projectId);
-    await projections.waitFor(s.projectId, seq);
-    const r: CommandResult = { accepted: true, seq };
-    return r;
+    const service = intake(reply);
+    if (!service) return;
+    await service.createBuildRepo(s, CreateBuildRepo.parse(req.body ?? {}).name);
+    return settled(s.projectId);
   });
 
   app.put<P>('/projects/:id/brief', async (req, reply) => {
     const s = known(req.params.id);
-    if (!deps.intake) {
-      return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-    }
-    await deps.intake.setBrief(s, ChangeBrief.parse(req.body).answers);
-    const seq = await store.head(s.projectId);
-    await projections.waitFor(s.projectId, seq);
-    const r: CommandResult = { accepted: true, seq };
-    return r;
+    const service = intake(reply);
+    if (!service) return;
+    await service.setBrief(s, ChangeBrief.parse(req.body).answers);
+    return settled(s.projectId);
   });
 
   // One intake value, changed before Start.
@@ -1527,14 +1527,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     '/projects/:id/target/:key',
     async (req, reply) => {
       const s = known(req.params.id);
-      if (!deps.intake) {
-        return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-      }
-      await deps.intake.setTargetValue(s, req.params.key, ChangeTargetValue.parse(req.body).value);
-      const seq = await store.head(s.projectId);
-      await projections.waitFor(s.projectId, seq);
-      const r: CommandResult = { accepted: true, seq };
-      return r;
+      const service = intake(reply);
+      if (!service) return;
+      await service.setTargetValue(s, req.params.key, ChangeTargetValue.parse(req.body).value);
+      return settled(s.projectId);
     },
   );
 
@@ -1555,28 +1551,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         data: { sourceUrl: url },
       },
     ]);
-    const seq = await store.head(s.projectId);
-    await projections.waitFor(s.projectId, seq);
-    const r: CommandResult = { accepted: true, seq };
-    return r;
+    return settled(s.projectId);
   });
 
   app.put<{ Params: { id: string; credentialId: string } }>(
     '/projects/:id/credentials/:credentialId',
     async (req, reply) => {
       const s = known(req.params.id);
-      if (!deps.intake) {
-        return fail(reply, 501, 'intake_unavailable', 'Project intake is not wired in this mode.');
-      }
-      await deps.intake.setCredential(
-        s,
-        req.params.credentialId,
-        SetCredential.parse(req.body).secret,
-      );
-      const seq = await store.head(s.projectId);
-      await projections.waitFor(s.projectId, seq);
-      const r: CommandResult = { accepted: true, seq };
-      return r;
+      const service = intake(reply);
+      if (!service) return;
+      await service.setCredential(s, req.params.credentialId, SetCredential.parse(req.body).secret);
+      return settled(s.projectId);
     },
   );
 
@@ -1587,10 +1572,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       // A live project's credentials are in the vault: the API checks them itself.
       if (s.mode === 'live' && deps.intake) {
         await deps.intake.reverify(s, req.params.credentialId);
-        const seq = await store.head(s.projectId);
-        await projections.waitFor(s.projectId, seq);
-        const r: CommandResult = { accepted: true, seq };
-        return r;
+        return settled(s.projectId);
       }
       return command(req.params.id, (o) =>
         supported(o, 'verifyCredential')(req.params.credentialId),

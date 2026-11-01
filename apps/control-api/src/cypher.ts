@@ -68,7 +68,7 @@ export interface CypherDeps {
    * One project's history: its Decision Log, Activity rows matching a search, its scorecard and
    * what its retrospectives proposed. Null for an unknown project.
    */
-  history?(projectId: string, search: string | null): Promise<unknown | null>;
+  history?(projectId: string, search: string | null): Promise<{ name: string } | null>;
   /** Where Cypher files rules it proposes (they wait for the Director's approval). */
   rules?: RuleStore;
   /** Where Cypher reads the team's knowledge and files lessons it proposes. */
@@ -423,6 +423,8 @@ export class PortfolioCypher {
         tools,
         messages,
         output_config: { effort: 'medium' },
+        // The system prompt and tools are the same on every step and every turn: cache them.
+        cache_control: { type: 'ephemeral' },
       });
       const said = response.content
         .filter((b): b is Extract<BetaContentBlock, { type: 'text' }> => b.type === 'text')
@@ -482,8 +484,7 @@ export class PortfolioCypher {
         const id = String(input.projectId ?? '');
         const found = this.deps.history ? await this.deps.history(id, str(input.search)) : null;
         if (!found) throw new Error(`No project "${id}". Use list_projects for ids.`);
-        const p = (await this.deps.portfolio()).find((x) => x.id === id);
-        if (p) projects.set(p.id, p.name);
+        projects.set(id, found.name);
         return found;
       }
       case 'search_knowledge': {

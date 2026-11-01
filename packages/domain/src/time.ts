@@ -40,7 +40,25 @@ function formatter(tz: string): Intl.DateTimeFormat {
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/**
+ * Wall-clock parts by zone and instant. Working-time maths asks for the same few instants many
+ * times over (a forecast steps through each task's hours), and formatting them is the slow part.
+ */
+const partsCache = new Map<string, Map<number, LocalParts>>();
+const PARTS_KEPT = 10_000;
+
 export function localParts(t: number, tz: string): LocalParts {
+  let byTime = partsCache.get(tz);
+  if (!byTime) partsCache.set(tz, (byTime = new Map()));
+  const hit = byTime.get(t);
+  if (hit) return { ...hit };
+  const parts = localPartsOf(t, tz);
+  if (byTime.size >= PARTS_KEPT) byTime.clear();
+  byTime.set(t, parts);
+  return { ...parts };
+}
+
+function localPartsOf(t: number, tz: string): LocalParts {
   const parts = Object.fromEntries(
     formatter(tz)
       .formatToParts(new Date(t))

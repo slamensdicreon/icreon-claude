@@ -1,5 +1,6 @@
 import type { LwEvent } from '@lw/contracts';
 import type { ProjectState } from './projector';
+import { chosenOptionId } from './escalations';
 
 /** One thing that went wrong or cost time in a phase, as the retrospective sees it. */
 export interface RetroItem {
@@ -56,7 +57,7 @@ export function retroEvidence(
 
   for (const x of Object.values(s.escalations)) {
     if (x.gate || !x.sourceTaskId || !ids.has(x.sourceTaskId)) continue;
-    const chosen = x.status === 'expired' ? x.defaultOptionId : x.resolution?.optionId;
+    const chosen = chosenOptionId(x);
     const answer = x.options.find((o) => o.id === chosen)?.label;
     items.push({
       ref: `card:${x.escalationId}`,

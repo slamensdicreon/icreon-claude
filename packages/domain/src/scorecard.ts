@@ -8,7 +8,8 @@ import type {
 } from '@lw/contracts';
 import { DecisionCategory as Categories } from '@lw/contracts';
 import { categoryOf } from './categories';
-import { problemOf } from './clusters';
+import { problemOf, taskNames } from './clusters';
+import { chosenOptionId } from './escalations';
 import type { ProjectState } from './projector';
 
 const pct = (n: number, of: number) => (of ? Math.round((n / of) * 1000) / 10 : 0);
@@ -68,7 +69,7 @@ export function scorecard(s: ProjectState, now: number = Date.now()): Scorecard 
     if (by) {
       row.settled[by]++;
       const rec = x.options.find((o) => o.recommended);
-      const chosen = x.status === 'expired' ? x.defaultOptionId : x.resolution?.optionId;
+      const chosen = chosenOptionId(x);
       if (rec && chosen) {
         row.withRecommendation++;
         if (chosen === rec.id) row.recommendedTaken++;
@@ -81,7 +82,7 @@ export function scorecard(s: ProjectState, now: number = Date.now()): Scorecard 
     }
     if (x.gate) continue;
     const task = x.sourceTaskId ? s.tasks[x.sourceTaskId] : undefined;
-    const names = task ? [task.title, task.taskId, ...task.itemKeys] : [];
+    const names = taskNames(task);
     const key = [x.type, task?.group ?? task?.taskId ?? '', problemOf(x.title, names)].join('\n');
     const c = causes.get(key) ?? { category, title: x.title, count: 0 };
     c.count++;

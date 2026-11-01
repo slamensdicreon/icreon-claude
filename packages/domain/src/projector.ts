@@ -679,11 +679,9 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       break;
   }
 
-  if (isLogEvent(e)) {
-    const item = toActivity(s, e);
-    if (!(item.toolServer && NOT_LATEST_SERVERS.has(item.toolServer)))
-      s.latest = [item, ...s.latest].slice(0, 4);
-  }
+  // Model turns and sandbox steps never show in Latest: skip describing them (most of a log).
+  if (isLogEvent(e) && !(e.type === 'step.recorded' && NOT_LATEST_SERVERS.has(e.data.toolServer)))
+    s.latest = [toActivity(s, e), ...s.latest].slice(0, 4);
 }
 
 /** A fact's identity: its kind and key, the key compared without case or extra spaces. */
@@ -816,7 +814,11 @@ export function projectSummary(s: ProjectState): ProjectSummary {
 }
 
 export function projectListItem(s: ProjectState): ProjectListItem {
-  const p = projectSummary(s);
+  return listItemOf(projectSummary(s));
+}
+
+/** A project's list entry from its summary. */
+function listItemOf(p: ProjectSummary): ProjectListItem {
   return {
     id: p.id,
     name: p.name,
@@ -837,7 +839,7 @@ export function portfolioItem(s: ProjectState): PortfolioItem {
   const summary = projectSummary(s);
   const phases = Object.values(s.phases);
   return {
-    ...projectListItem(s),
+    ...listItemOf(summary),
     healthReason: summary.healthReason,
     playbook: s.playbook,
     phases: { total: phases.length, done: phases.filter((p) => p.status === 'done').length },
@@ -977,11 +979,12 @@ const KIND_ORDER = [
 ];
 
 export function workbench(s: ProjectState): WorkbenchSnapshot {
-  const order = Object.keys(s.artifacts);
+  // By kind, then in the order the documents first appeared.
+  const order = new Map(Object.keys(s.artifacts).map((id, i) => [id, i]));
   const artifacts = Object.values(s.artifacts).sort(
     (a, b) =>
       KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) ||
-      order.indexOf(a.artifactId) - order.indexOf(b.artifactId),
+      order.get(a.artifactId)! - order.get(b.artifactId)!,
   );
   return { seq: s.seq, artifacts };
 }
