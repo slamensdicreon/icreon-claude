@@ -9,10 +9,10 @@ import { Palette } from './overlays/Palette';
 import { Boot, useBootState } from './parts/Boot';
 import { useCardActions } from './parts/Card';
 import { MobileNav, Sidebar, Strip, Toasts, useAwayLine } from './Shell';
-import { AppProvider, useApp, useMission, type Surface } from './state';
+import { AppProvider, isManagePage, useApp, useMission, type Surface } from './state';
 import { Activity } from './surfaces/Activity';
 import { GithubAppPanel } from './surfaces/GithubApp';
-import { Dashboard } from './surfaces/Dashboard';
+import { Dashboard, Manage } from './surfaces/Dashboard';
 import { Inbox } from './surfaces/Inbox';
 import { Mission } from './surfaces/Mission';
 import { Plan } from './surfaces/Plan';
@@ -102,6 +102,8 @@ function Frame() {
               <Body key={projectId} />
             ) : view === 'new' ? (
               <NewProject key={newProjectIntent.key} />
+            ) : isManagePage(view) ? (
+              <Manage key={view} page={view} />
             ) : projects.length ? (
               <Dashboard />
             ) : (

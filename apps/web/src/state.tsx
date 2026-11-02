@@ -113,19 +113,41 @@ export interface NewProjectIntent {
   origin?: { conversationId: string | null; reason: string; notCovered: string[] };
 }
 
+/** Pages above any one project, opened from the header's menu. */
+export type ManagePage =
+  'settings' | 'connections' | 'playbooks' | 'rules' | 'knowledge' | 'diagnostics';
+
+/** The header menu's pages: each one's title and what it is for. */
+export const MANAGE: [ManagePage, string, string][] = [
+  ['settings', 'Global settings', 'The GitHub App every project commits through'],
+  ['connections', 'Connections', 'Tenants shared by the sites on them'],
+  ['playbooks', 'Playbooks', 'What a new project can run'],
+  ['rules', 'Rules', 'How the Leads answer cards you have answered before'],
+  ['knowledge', 'Knowledge', 'What the team has learned across projects'],
+  ['diagnostics', 'Diagnostics', 'The services and each project’s orchestrator'],
+];
+
+const MANAGE_PAGES = new Set<string>(MANAGE.map(([page]) => page));
+export const isManagePage = (v: string): v is ManagePage => MANAGE_PAGES.has(v);
+
+/** What is open when no project is: the Dashboard, the New Project page, or a menu page. */
+export type View = 'dashboard' | 'new' | ManagePage;
+
 interface AppValue {
   me: { name: string; login: string | null };
   projects: ProjectListItem[];
   projectId: string | null;
-  /** Above any project: the Dashboard, or the New Project page. */
-  view: 'dashboard' | 'new';
+  /** Above any project: the Dashboard, the New Project page, or a page from the header menu. */
+  view: View;
   /** The New Project page is being opened for the n-th time: a fresh form each time. */
   newProjectIntent: NewProjectIntent & { key: number };
   /** Opens the New Project page (its own page, not a dialog). */
   newProject: (intent?: NewProjectIntent) => void;
   switchProject: (id: string) => void;
-  /** The Dashboard: every project, the playbook catalog and diagnostics, above any one project. */
+  /** The Dashboard: every project and where it stands, above any one project. */
   home: () => void;
+  /** A page from the header menu (Global settings, Connections, Playbooks, Rules...). */
+  manage: (page: ManagePage) => void;
   surface: Surface;
   go: (s: Surface, patch?: Partial<ProjectUi>) => void;
   ui: ProjectUi;
@@ -179,13 +201,14 @@ const store = {
   },
 };
 
-function parsePath(): { projectId: string | null; surface: Surface; view: 'dashboard' | 'new' } {
+function parsePath(): { projectId: string | null; surface: Surface; view: View } {
   const m = /^\/p\/([^/]+)(?:\/([a-z]+))?/.exec(location.pathname);
   const surface = (m?.[2] && SURFACES.includes(m[2] as Surface) ? m[2] : 'mission') as Surface;
+  const page = /^\/manage\/([a-z]+)\/?$/.exec(location.pathname)?.[1];
   return {
     projectId: m?.[1] ? decodeURIComponent(m[1]) : null,
     surface,
-    view: location.pathname === '/new' ? 'new' : 'dashboard',
+    view: location.pathname === '/new' ? 'new' : page && isManagePage(page) ? page : 'dashboard',
   };
 }
 
@@ -193,7 +216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const initial = parsePath();
   const [projectId, setProjectId] = useState<string | null>(initial.projectId);
   const [surface, setSurface] = useState<Surface>(initial.surface);
-  const [view, setView] = useState<'dashboard' | 'new'>(initial.view);
+  const [view, setView] = useState<View>(initial.view);
   const [newProjectIntent, setNewProjectIntent] = useState<NewProjectIntent & { key: number }>({
     key: 0,
   });
@@ -273,7 +296,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ? `/p/${encodeURIComponent(projectId)}/${surface}`
       : view === 'new'
         ? '/new'
-        : '/';
+        : view === 'dashboard'
+          ? '/'
+          : `/manage/${view}`;
     if (location.pathname !== path) history.pushState(null, '', path);
   }, [projectId, surface, view]);
   useEffect(() => {
@@ -321,7 +346,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const q = new URLSearchParams(location.search);
     const outcome = q.get('github');
     if (!outcome) return;
-    setSurface('settings');
+    // In a project, its Settings; otherwise Global settings, where the app also lives.
+    if (parsePath().projectId) setSurface('settings');
+    else setView('settings');
     toast(
       outcome === 'connected'
         ? 'The GitHub App is set up. Send clients its install link from Settings.'
@@ -347,6 +374,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setInspector(null);
       setProjectId(null);
       setView('dashboard');
+      setLayoutState((l) => ({ ...l, dockOpen: false }));
+    },
+    manage: (page) => {
+      setInspector(null);
+      setOverlay(null);
+      setProjectId(null);
+      setView(page);
       setLayoutState((l) => ({ ...l, dockOpen: false }));
     },
     view,

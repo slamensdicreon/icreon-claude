@@ -114,7 +114,7 @@
   --font: var(--font-sans);
 
   /* app metrics */
-  --side: 232px;
+  --side: 280px;
   --dock: 400px;
   --top: 64px;
 }

@@ -617,7 +617,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   /**
    * Harvest: a project's answered cards grouped by cause and answer, each group seen at least
    * twice drafted into a proposed rule with its cards as evidence. Nothing applies until the
-   * Director approves it (Dashboard → Rules). Groups already behind a rule are skipped.
+   * Director approves it (Rules, in the menu). Groups already behind a rule are skipped.
    */
   app.post<P>('/projects/:id/rules/harvest', async (req, reply) => {
     const store = rules(reply);

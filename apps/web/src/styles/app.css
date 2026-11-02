@@ -1006,34 +1006,7 @@
   overflow-wrap: anywhere;
 }
 
-/* Dashboard: every project, the playbook catalog and diagnostics. */
-.dash-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--web-border);
-  margin-bottom: 16px;
-  overflow-x: auto;
-}
-.dash-tabs button {
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 10px 14px;
-  font: inherit;
-  font-weight: 600;
-  color: var(--web-fg-2);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.dash-tabs button.on {
-  color: var(--web-fg);
-  border-bottom-color: var(--web-accent);
-}
-.dash-tabs small {
-  margin-left: 6px;
-  font-weight: 500;
-  color: var(--web-accent-text);
-}
+/* Dashboard: every project and where it stands. */
 .dash-filters {
   display: flex;
   flex-wrap: wrap;
@@ -1649,7 +1622,7 @@
   align-items: center;
 }
 
-/* Dashboard → Rules */
+/* Rules (from the header menu) */
 .rules h3 {
   margin: 18px 0 8px;
   font-size: 15px;
@@ -1913,7 +1886,7 @@
 .nav.cv-item {
   height: auto;
   align-items: flex-start;
-  padding: 7px 28px 7px 12px;
+  padding: 7px 8px 7px 12px;
   white-space: normal;
 }
 .nav.cv-item .ic {
@@ -1945,6 +1918,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* The delete button sits at the end of this line, so the title can use the whole row. */
+  padding-right: 18px;
 }
 .nav.cv-item[aria-current='page'] .cv-sum {
   color: var(--web-accent-text);
@@ -1952,7 +1927,7 @@
 }
 .cv-del {
   position: absolute;
-  top: 7px;
+  bottom: 4px;
   right: 6px;
   display: grid;
   place-items: center;
@@ -2540,4 +2515,35 @@
   padding-left: 18px;
   font-size: 13px;
   color: var(--web-fg-2);
+}
+
+/* The header's menu, top right: pages above any one project. */
+.scrim.manage-scrim {
+  place-items: start end;
+  padding: calc(var(--top) - 4px) 12px 0 0;
+}
+.manage-scrim .pmenu {
+  min-width: 300px;
+}
+.manage-page {
+  max-width: 1200px;
+}
+
+/* The project header, where the Cypher panel leaves it under 900px: the phase bar and the
+   shortcut hint give way, and the phase name truncates last, so the buttons on the right always
+   show. */
+@container canvas (max-width: 900px) {
+  .top .phase-bar,
+  .top .searchbtn .kbd {
+    display: none;
+  }
+}
+.top-item.phase {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.top-item.phase > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

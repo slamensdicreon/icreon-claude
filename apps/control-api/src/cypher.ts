@@ -542,7 +542,7 @@ export class PortfolioCypher {
         });
         if (!e) throw new Error('That lesson was not saved.');
         filed.push({ kind: 'lesson', ref: e.ref, title: e.title });
-        return { proposed: e.ref, note: 'Waiting for the Director under Dashboard → Knowledge.' };
+        return { proposed: e.ref, note: 'Waiting for the Director under Knowledge in the menu.' };
       }
       case 'propose_rule': {
         if (!this.deps.rules) throw new Error('Rules are not stored on this server.');
@@ -564,7 +564,7 @@ export class PortfolioCypher {
           status: 'proposed',
         });
         filed.push({ kind: 'rule', ref: r.ref, title: `When ${r.when}` });
-        return { proposed: r.ref, note: 'Waiting for the Director under Dashboard → Rules.' };
+        return { proposed: r.ref, note: 'Waiting for the Director under Rules in the menu.' };
       }
       case 'list_projects': {
         const items = (await this.deps.portfolio()).filter((p) => !p.demo);

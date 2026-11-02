@@ -1,7 +1,7 @@
 import { post } from '../lib/api';
 import { Icon } from '../lib/icons';
 import { live } from '../lib/live';
-import { useApp, useProjectResource, type Surface } from '../state';
+import { MANAGE, useApp, useProjectResource, type Surface } from '../state';
 import { Scrim } from './Dialogs';
 
 const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
@@ -23,7 +23,7 @@ export function ProjectMenu() {
           </span>
           <span className="pm-t">
             <b>Dashboard</b>
-            <small>All projects, playbooks and diagnostics</small>
+            <small>Every project and where it stands</small>
           </span>
         </button>
         <h3>Projects</h3>
@@ -58,6 +58,33 @@ export function ProjectMenu() {
           </button>
         ))}
         <button onClick={() => newProject()}>+ New project</button>
+      </div>
+    </Scrim>
+  );
+}
+
+/** The header's menu, top right: the pages above any one project. */
+export function ManageMenu() {
+  const { view, projectId, manage, closeOverlay } = useApp();
+  return (
+    <Scrim className="manage-scrim">
+      <div className="menu pmenu" role="menu" aria-label="Menu">
+        {MANAGE.map(([page, label, about]) => (
+          <button
+            key={page}
+            role="menuitem"
+            className={`pm-row ${!projectId && view === page ? 'on' : ''}`}
+            onClick={() => {
+              closeOverlay();
+              manage(page);
+            }}
+          >
+            <span className="pm-t">
+              <b>{label}</b>
+              <small>{about}</small>
+            </span>
+          </button>
+        ))}
       </div>
     </Scrim>
   );

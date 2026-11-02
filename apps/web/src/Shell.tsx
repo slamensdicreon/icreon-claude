@@ -3,9 +3,16 @@ import { get, messageOf } from './lib/api';
 import { ago, clock, elapsed, usd, zoneLabel } from './lib/fmt';
 import { Icon, Lockup, LOCKUP_SVG } from './lib/icons';
 import { useConn } from './lib/live';
-import { DemoMenu, MoreSheet, ProjectMenu } from './overlays/Menus';
+import { DemoMenu, ManageMenu, MoreSheet, ProjectMenu } from './overlays/Menus';
 import { Palette } from './overlays/Palette';
-import { useApp, useMission, useNow, useProjectResource, type Surface } from './state';
+import {
+  isManagePage,
+  useApp,
+  useMission,
+  useNow,
+  useProjectResource,
+  type Surface,
+} from './state';
 import { cypher, useCypher } from './lib/cypher';
 import type { SinceSummary } from '@lw/contracts';
 
@@ -37,6 +44,7 @@ export function Sidebar() {
     theme,
     setTheme,
     openOverlay,
+    view,
   } = app;
   const p = projects.find((x) => x.id === projectId);
   const waiting = p?.waitingCount ?? 0;
@@ -70,7 +78,7 @@ export function Sidebar() {
       <div className="side-nav">
         <button
           className="nav sl"
-          aria-current={!projectId ? 'page' : undefined}
+          aria-current={!projectId && !isManagePage(view) ? 'page' : undefined}
           title="Dashboard"
           onClick={home}
         >
@@ -233,7 +241,14 @@ export function Strip() {
   const mc = useMission().data;
   const now = useNow(15_000);
   const conn = useConn();
-  if (!mc) return <header className="top" />;
+  if (!mc)
+    return (
+      <header className="top">
+        <div className="top-right">
+          <MenuButton />
+        </div>
+      </header>
+    );
   const p = mc.project;
   const tz = p.timezone;
   const pct = p.spent.usd / p.budgets.usd;
@@ -264,7 +279,11 @@ export function Strip() {
           <span className="top-sep" />
         </>
       )}
-      <button className="top-item" title="Open the plan at this phase" onClick={() => go('plan')}>
+      <button
+        className="top-item phase"
+        title="Open the plan at this phase"
+        onClick={() => go('plan')}
+      >
         <span>
           {phase
             ? `Phase ${phase.number}: ${phase.name}`
@@ -361,8 +380,25 @@ export function Strip() {
         >
           <Icon name="chat" />
         </button>
+        <MenuButton />
       </div>
     </header>
+  );
+}
+
+/** The header's menu: the pages above any one project (Global settings, Connections, ...). */
+function MenuButton() {
+  const { openOverlay } = useApp();
+  return (
+    <button
+      className="iconbtn sl hide-present"
+      title="Menu"
+      aria-label="Menu"
+      aria-haspopup="menu"
+      onClick={() => openOverlay(<ManageMenu />)}
+    >
+      <Icon name="menu" />
+    </button>
   );
 }
 

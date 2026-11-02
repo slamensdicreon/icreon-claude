@@ -127,8 +127,8 @@ function Message({ m }: { m: CypherMessage }) {
         <ul className="cy-filed">
           {m.filed.map((f) => (
             <li key={f.ref}>
-              Proposed <span className="mono">{f.ref}</span> {f.title}: waiting for you under
-              Dashboard → {f.kind === 'rule' ? 'Rules' : 'Knowledge'}.
+              Proposed <span className="mono">{f.ref}</span> {f.title}: waiting for you under Menu →{' '}
+              {f.kind === 'rule' ? 'Rules' : 'Knowledge'}.
             </li>
           ))}
         </ul>

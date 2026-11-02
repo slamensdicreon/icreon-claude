@@ -12,13 +12,13 @@ import { get, messageOf, post, put } from '../lib/api';
 import { ago, usd } from '../lib/fmt';
 import { Icon } from '../lib/icons';
 import { CypherHome } from './CypherHome';
+import { GithubAppPanel } from './GithubApp';
 import { Knowledge } from './Knowledge';
 import { Rules } from './Rules';
 import { PlaybookComparison } from './Scorecard';
-import { useApp, useNow } from '../state';
+import { MANAGE, useApp, useNow, type ManagePage } from '../state';
 import { catalogGroups, readiness } from '../lib/showcase';
 
-type Tab = 'projects' | 'connections' | 'playbooks' | 'rules' | 'knowledge' | 'diagnostics';
 type Filter = 'active' | 'needs' | 'completed' | 'all';
 
 const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
@@ -54,59 +54,58 @@ function usePoll<T>(path: string | null, everyMs: number) {
 }
 
 /**
- * The home screen, above any one project: every project and where it stands, the playbooks a new
- * project can run, and the health of the services and orchestrators behind them.
+ * The home screen, above any one project: every project and where it stands, with Cypher beside
+ * them. Settings, connections, playbooks, rules, knowledge and diagnostics open from the header's
+ * menu (`Manage`).
  */
 export function Dashboard() {
   const { newProject } = useApp();
-  const [tab, setTab] = useState<Tab>('projects');
   const portfolio = usePoll<PortfolioItem[]>('/portfolio', 10_000);
-  const needs = (portfolio.data ?? []).filter((p) => p.waitingCount > 0).length;
   return (
     <div className="dash-split">
       <div className="dash-main">
         <div className="page-head">
           <div>
             <h1>Dashboard</h1>
-            <p>Every project, the playbooks you can run, and how the system is doing.</p>
+            <p>Every project and where it stands.</p>
           </div>
           <button className="btn primary" onClick={() => newProject()}>
             New project
           </button>
         </div>
-        <div className="dash-tabs" role="tablist">
-          {(
-            [
-              ['projects', 'Projects', needs ? `${needs} need you` : null],
-              ['connections', 'Connections', null],
-              ['playbooks', 'Playbooks', null],
-              ['rules', 'Rules', null],
-              ['knowledge', 'Knowledge', null],
-              ['diagnostics', 'Diagnostics', null],
-            ] as [Tab, string, string | null][]
-          ).map(([key, label, note]) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={tab === key}
-              className={tab === key ? 'on' : ''}
-              onClick={() => setTab(key)}
-            >
-              {label}
-              {note && <small>{note}</small>}
-            </button>
-          ))}
-        </div>
-        {tab === 'projects' && <Projects items={portfolio.data} error={portfolio.error} />}
-        {tab === 'connections' && <Connections projects={portfolio.data ?? []} />}
-        {tab === 'playbooks' && <Playbooks projects={portfolio.data ?? []} />}
-        {tab === 'rules' && <Rules projects={portfolio.data ?? []} />}
-        {tab === 'knowledge' && <Knowledge projects={portfolio.data ?? []} />}
-        {tab === 'diagnostics' && <Diagnostics />}
+        <Projects items={portfolio.data} error={portfolio.error} />
       </div>
       <aside className="dash-cypher" aria-label="Cypher">
         <CypherHome />
       </aside>
+    </div>
+  );
+}
+
+/** A page from the header menu, above any one project, full width. */
+export function Manage({ page }: { page: ManagePage }) {
+  const [, title, about] = MANAGE.find(([p]) => p === page)!;
+  // Only the pages that name projects need the portfolio.
+  const needsProjects = page !== 'settings' && page !== 'diagnostics';
+  const projects = usePoll<PortfolioItem[]>(needsProjects ? '/portfolio' : null, 10_000).data;
+  return (
+    <div className="manage-page">
+      <div className="page-head">
+        <div>
+          <h1>{title}</h1>
+          <p>{about}.</p>
+        </div>
+      </div>
+      {page === 'settings' && (
+        <div className="settings">
+          <GithubAppPanel />
+        </div>
+      )}
+      {page === 'connections' && <Connections projects={projects ?? []} />}
+      {page === 'playbooks' && <Playbooks projects={projects ?? []} />}
+      {page === 'rules' && <Rules projects={projects ?? []} />}
+      {page === 'knowledge' && <Knowledge projects={projects ?? []} />}
+      {page === 'diagnostics' && <Diagnostics />}
     </div>
   );
 }
