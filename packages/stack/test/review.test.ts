@@ -460,6 +460,30 @@ describe('head.sections', () => {
     expect(r.detail).not.toContain('CounterNumber');
   });
 
+  it("judges a port on its own component, noting another component's problem without failing", async () => {
+    const r = await run(
+      {
+        'promo/PromoCard.tsx':
+          "import { Section } from 'components/ui/Section';\n<Section tone={params.tone}>",
+        'hero-banner/HeroVideoBanner.tsx': '<section>',
+        'RichText.tsx': '<div>',
+      },
+      'port-promo',
+    );
+    expect(r.status).toBe('pass');
+    expect(r.detail).toContain("The task's component renders inside Section");
+    expect(r.detail).toContain("not this task's to fix");
+    expect(r.detail).toContain("RichText.tsx doesn't render inside ui/Section");
+    // Its own component failing still fails it.
+    const own = await run(
+      { 'promo/PromoCard.tsx': '<div>', 'RichText.tsx': '<div>' },
+      'port-promo',
+    );
+    expect(own.status).toBe('fail');
+    expect(own.detail).toContain("promo/PromoCard.tsx doesn't render inside ui/Section");
+    expect(own.detail).not.toContain('RichText');
+  });
+
   it('judges a port on its own branch', async () => {
     const refs: string[] = [];
     const r = await run(

@@ -448,6 +448,37 @@ describe('SitecoreAI checks', () => {
     expect(res.detail).toContain('/ answered 404');
   });
 
+  it("requests only the routes whose page exists in SitecoreAI, so an unbuilt page's 500 isn't a header failure", async () => {
+    const page =
+      '<header><div id="header"><nav>Home</nav></div></header><footer><div id="footer"><nav>links</nav></div></footer>';
+    const requested: string[] = [];
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async (url: string | URL | Request) => {
+          requested.push(new URL(String(url)).pathname);
+          return String(url).endsWith('.app/') || String(url).endsWith('/about')
+            ? new Response(page, { status: 200 })
+            : new Response('', { status: 500 });
+        }) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const bp = {
+      collections: {
+        pages: ['about', 'quality'].map((k) => ({ key: k, name: k, attrs: { path: `/${k}` } })),
+      },
+    };
+    const site = `/sitecore/content/${target.siteCollection}/${target.site}`;
+    const res = await checks['head.header-footer']!({
+      ...ctx(tenant({ [`${site}/Home/about`]: {} }).read, bp),
+      target: { ...target, hostingProject: 'lambert-cable' },
+    });
+    expect(res.status).toBe('pass');
+    expect(res.detail).toContain('render on 2 pages');
+    expect(res.detail).toContain('/quality not created yet');
+    expect(requested).toEqual(['/', '/about']);
+  });
+
   it('compares each rendered page with its source: text, headings, items, placeholders, header', async () => {
     const rsc = (fields: unknown) =>
       `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ componentName: 'CardGrid', fields }))}])</script>`;

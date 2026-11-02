@@ -573,7 +573,9 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
             : undefined,
           prompt: (role) => prompts[role.role] ?? null,
           // The source repository's tools, on a project built from its live site alone.
+          // Caught up first: a read model that is behind shows no intake, and GitHub stayed on offer.
           unavailable: async (projectId) => {
+            await opts.projections.catchUp(projectId);
             const intake = opts.projections.get(projectId)?.intake;
             return intake && !intake.repo ? ['github'] : [];
           },

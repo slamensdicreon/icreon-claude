@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Careers</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      // Built in the browser, after a pause like a data request: nothing is in the served HTML.
+      setTimeout(() => {
+        document.getElementById('app').innerHTML = `
+          <h1>Build a career that powers communities</h1>
+          <p>Our crews build and maintain the networks that keep homes, schools and hospitals
+          connected. We train every new technician, promote from within, and pay for the
+          certifications that move careers forward across every region we serve.</p>
+          <img src="/media/team.png" alt="A field crew at work" />`;
+      }, 700);
+    </script>
+  </body>
+</html>

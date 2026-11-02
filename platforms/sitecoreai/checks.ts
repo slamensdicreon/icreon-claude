@@ -361,11 +361,17 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const host = `https://${project}-editing.vercel.app`;
       const problems: string[] = [];
       // Home first: it renders once the head runs. Other pages are created in content migration;
-      // until then they answer 404 and are skipped, not failed.
+      // until a page's item exists in SitecoreAI it is skipped, not requested: a route with no
+      // page behind it can answer 404 or 500, and neither says anything about the header.
       const kept = inScope(ctx, 'pages').length ? pagePaths(ctx) : [];
       const paths = ['/', ...kept.filter((p) => p !== '/')].slice(0, 5);
+      const home = `${sitecoreBindings(ctx.target).sitePath}/Home`;
       const notYet: string[] = [];
       for (const path of paths) {
+        if (path !== '/' && !(await item(ctx, `${home}${path}`).catch(() => null))) {
+          notYet.push(path);
+          continue;
+        }
         let html = '';
         try {
           const res = await cfg.fetch(`${host}${path}`, {

@@ -180,7 +180,9 @@ export class GithubToolServer implements ToolServer {
   async call(op: string, args: Record<string, unknown>, ctx: ToolCallContext): Promise<ToolResult> {
     const facts = await this.opts.facts(ctx.projectId);
     if (!facts) {
-      const error = this.opts.missing ?? 'This project has no source repository.';
+      const error =
+        this.opts.missing ??
+        'This project has no source repository: the live site is the source. Read it with the browser tools instead; GitHub has nothing to give this project.';
       return { code: 409, body: { error }, summary: error };
     }
     if (!(op in this.catalog)) return { code: 404, body: { error: `Unknown operation ${op}` } };

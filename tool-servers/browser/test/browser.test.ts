@@ -278,6 +278,16 @@ describe('snapshot, screenshot, fetch.asset', () => {
     expect((plain.body as { from?: string }).from).toBeUndefined();
   }, 30_000);
 
+  it('waits for a page built in the browser before reading it', async () => {
+    const r = await browser.call('snapshot', { url: `${origin}/client-rendered` }, ctx);
+    const page = r.body as { content: { tag: string; text: string }[]; images?: { src: string }[] };
+    expect(page.content.find((c) => c.tag === 'h1')?.text).toBe(
+      'Build a career that powers communities',
+    );
+    expect(page.content.find((c) => c.tag === 'p')?.text).toContain('promote from within');
+    expect(JSON.stringify(r.body)).toContain('/media/team.png');
+  }, 30_000);
+
   it('screenshots at three breakpoints and stores the images', async () => {
     const r = await browser.call('screenshot', { url: `${origin}/services` }, ctx);
     const shots = (

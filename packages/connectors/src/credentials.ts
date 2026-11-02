@@ -56,7 +56,9 @@ export class VaultCredentials implements CredentialProvider {
   private async github(projectId: string): Promise<string> {
     const s = await this.deps.project(projectId);
     const repo = s?.intake?.repo;
-    if (!repo) throw new CredentialError('This project has no source repository.');
+    // Nothing to authorise: the GitHub tools answer that there is no repository, and that is not
+    // an access problem for the Director to fix.
+    if (!repo) return 'no-external-credential';
     if (!this.deps.github) throw new CredentialError('The Launchworks GitHub App is not set up.');
     const m = /^github-app:installation\/(\d+)$/.exec(s.credentials.github?.reference ?? '');
     if (!m) {

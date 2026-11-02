@@ -68,6 +68,21 @@ describe('media.upload', () => {
     ]);
   });
 
+  it('takes the media library path in any casing, as Sitecore does', async () => {
+    const { s, uploads } = setup();
+    const r = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/Media Library/Project/Brands/ansco/Benefits/hsa',
+        ref: 'blob://p1/assets/abc123.png',
+        fileName: 'hsa.png',
+      },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    expect(uploads).toHaveLength(1);
+  });
+
   it('uploads a file whose media type has no Alt field, without alt text', async () => {
     const { s, uploads } = setup();
     const r = await s.call(

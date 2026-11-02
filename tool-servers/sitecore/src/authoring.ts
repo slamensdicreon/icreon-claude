@@ -154,7 +154,11 @@ const DEFAULT_DEVICE = '{FE5D7FDF-89C0-4D99-9AA3-B5FBD009C9F3}';
 const HEADLESS_LAYOUT = '{96E5F4BA-A2CF-4A4C-A4E7-64DA88226362}';
 const MediaArgs = z
   .object({
-    itemPath: z.string().startsWith(MEDIA_ROOT).max(500),
+    // Sitecore paths ignore case: "/sitecore/Media Library/…" is the same folder.
+    itemPath: z
+      .string()
+      .max(500)
+      .refine((p) => p.toLowerCase().startsWith(MEDIA_ROOT), `must start with ${MEDIA_ROOT}`),
     sourceUrl: z.url({ protocol: /^https$/ }).optional(),
     /** A file browser.fetch.asset stored (its `ref`), so it isn't downloaded twice. */
     ref: z.string().startsWith('blob://').max(500).optional(),
@@ -846,7 +850,9 @@ export class SitecoreAuthoringToolServer implements ToolServer {
   ): Promise<ToolResult> {
     if (!a.success) return rejected(a.error.issues[0]!.message);
     const root = a.data.pageDesignsPath.replace(/\/$/, '');
-    const outside = a.data.mappings.find((m) => !m.pageDesignPath.startsWith(`${root}/`));
+    // Sitecore paths ignore case: a folder created as "brands" is the "Brands" the site names.
+    const under = `${root.toLowerCase()}/`;
+    const outside = a.data.mappings.find((m) => !m.pageDesignPath.toLowerCase().startsWith(under));
     if (outside) return rejected(`${outside.pageDesignPath} is not a page design under ${root}`);
     const pairs: { templateId: string; pageDesignId: string }[] = [];
     for (const m of a.data.mappings) {

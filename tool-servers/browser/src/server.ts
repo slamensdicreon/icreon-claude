@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/tool-gateway';
-import type { BrowserContext } from 'playwright-core';
+import type { BrowserContext, Page } from 'playwright-core';
 import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
 import { extractContent, extractPage, type PageExtract } from './extract';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
@@ -13,6 +13,8 @@ export interface BrowserServerOptions {
   /** Shared with other browser-driven servers; one is launched if not given. */
   browser?: GuardedBrowser;
   navigationTimeoutMs?: number;
+  /** How long a page built in the browser may take to render before it is read (default 6 s). */
+  settleMs?: number;
   /**
    * Hosts a project's own records point media at (a CDN, an uploads host): downloads may come
    * from them as well as from the source site.
@@ -119,6 +121,32 @@ const CATALOG: OperationCatalog = {
 };
 
 /** Tool server for everything that needs a real browser against the source site. */
+/** Words and images on a page as it stands, the measure of whether it has rendered yet. */
+const PAGE_SIZE = `(() => {
+  const words = (document.body ? document.body.innerText : '').split(/\\s+/).filter(Boolean).length;
+  return words + 10 * document.images.length;
+})()`;
+
+/**
+ * A page built in the browser (client-side rendering) is nearly empty when its HTML has loaded:
+ * its copy and images arrive once its scripts and their requests run. For such a page, wait for
+ * the network to go quiet and the page to stop growing, up to `maxMs`. A page that arrived with
+ * its content (server-rendered) is read at once.
+ */
+async function settle(page: Page, maxMs: number): Promise<void> {
+  let size = (await page.evaluate(PAGE_SIZE)) as number;
+  if (size >= 80 || maxMs <= 0) return;
+  const deadline = Date.now() + maxMs;
+  await page.waitForLoadState('networkidle', { timeout: maxMs }).catch(() => {});
+  let steady = 0;
+  while (steady < 2 && Date.now() < deadline) {
+    await page.waitForTimeout(300);
+    const next = (await page.evaluate(PAGE_SIZE)) as number;
+    steady = next === size ? steady + 1 : 0;
+    size = next;
+  }
+}
+
 export class BrowserToolServer implements ToolServer {
   readonly name = 'browser';
   readonly catalog = CATALOG;
@@ -252,6 +280,7 @@ export class BrowserToolServer implements ToolServer {
       await page.close();
       return { status, page: null as never, contentType };
     }
+    await settle(page, this.opts.settleMs ?? 6_000);
     const extract = (await page.evaluate(`(${extractPage.toString()})()`)) as PageExtract;
     // The full text only where it's asked for (a snapshot): a crawl keeps the short form.
     let text = full

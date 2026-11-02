@@ -107,6 +107,37 @@ function isRendering(file: string, all: string[]): boolean {
 }
 
 /**
+ * The component files a port or integration task owns (paths under the components folder), from
+ * the Blueprint: its folder named after the item key, or its rendering's file. Null when the task
+ * isn't one component's, or its files can't be told apart: then every component counts.
+ */
+async function ownedFiles(
+  ctx: CheckContext,
+  taskId: string | undefined,
+): Promise<((file: string) => boolean) | null> {
+  const key = /^(?:port|integrate)-(.+)$/.exec(taskId ?? '')?.[1];
+  if (!key || key === 'head') return null;
+  const bp = (await readJson(ctx, 'blueprint').catch(() => null)) as {
+    collections?: Record<string, Item[]>;
+  } | null;
+  const component = bp?.collections?.components?.find((c) => c.key === key);
+  const rendering = String(component?.attrs?.rendering ?? component?.name ?? '').toLowerCase();
+  const owns = (file: string) => {
+    const lower = file.toLowerCase();
+    const base = lower
+      .split('/')
+      .pop()!
+      .replace(/\.tsx$/, '');
+    return (
+      lower.split('/')[0] === key ||
+      base === key.replace(/-/g, '') ||
+      (rendering !== '' && base === rendering)
+    );
+  };
+  return owns;
+}
+
+/**
  * The checks that exist, by validator id; the platform pack adds its own. Everything else a plan
  * names is pending.
  */
@@ -379,7 +410,8 @@ export const CHECKS: Record<string, Check> = {
   // Every content component sits in the design system's Section: the source's container width,
   // section padding and band (tone), set per placement by a rendering parameter. Without it, every
   // section renders full width with no background and the page looks nothing like the source.
-  'head.sections': async ({ state, read, taskId }) => {
+  'head.sections': async (ctx) => {
+    const { state, read, taskId } = ctx;
     const app = (state.buildRepo?.appPath ?? '').replace(/^\/|\/$/g, '');
     const dir = `${app ? `${app}/` : ''}src/components`;
     // A port is judged on its own branch; an integration on what the editing host runs.
@@ -397,7 +429,15 @@ export const CHECKS: Record<string, Check> = {
       .filter((f) => isRendering(f, all) && !SECTION_EXEMPT.test(f))
       .map((f) => `${dir}/${f}`);
     if (!files.length) return { status: 'pending', detail: `No components under ${dir}.` };
+    // A component's port or integration is judged on its own component: another component's
+    // file on the branch is that component's task to fix, and failed five unrelated ports once.
+    const named = await ownedFiles(ctx, taskId);
+    const rel = (f: string) => f.slice(dir.length + 1);
+    // When none of the files is the task's (its component's file has another name), judge them all.
+    const owns = named && files.some((f) => named(rel(f))) ? named : null;
+    const own = (f: string) => !owns || owns(rel(f));
     const problems: string[] = [];
+    const others: string[] = [];
     for (let i = 0; i < files.length; i += 20) {
       const r = await read('build-repo', 'repo.read', {
         paths: files.slice(i, i + 20),
@@ -407,16 +447,20 @@ export const CHECKS: Record<string, Check> = {
         []) {
         if (f.content === undefined) continue;
         const name = f.path.slice(dir.length + 1);
+        const into = own(f.path) ? problems : others;
         if (!/from ['"][^'"]*ui\/Section['"]/.test(f.content))
-          problems.push(`${name} doesn't render inside ui/Section`);
+          into.push(`${name} doesn't render inside ui/Section`);
         else if (!/tone/.test(f.content))
-          problems.push(`${name} doesn't pass a tone from its rendering parameters to Section`);
+          into.push(`${name} doesn't pass a tone from its rendering parameters to Section`);
       }
     }
+    const note = others.length
+      ? `; not this task's to fix: ${others.slice(0, 5).join('; ')}${others.length > 5 ? `; and ${others.length - 5} more` : ''}`
+      : '';
     return problems.length
       ? failed(problems.slice(0, 10), Math.max(0, problems.length - 10))
       : pass(
-          `${files.length} components render inside Section with a tone (${ref || 'default branch'}).`,
+          `${owns ? "The task's component renders" : `${files.length} components render`} inside Section with a tone (${ref || 'default branch'})${note}.`,
         );
   },
 
