@@ -101,16 +101,16 @@ describe('setUpHosting', () => {
     expect(r.steps.map((s) => [s.step, s.ok])).toEqual([
       ['Vercel project', true],
       ['Environment variables', true],
-      ['Editing host build', true],
       ['Production build', true],
+      ['Editing host build', true],
       // SitecoreAI: the site's rendering host is pointed at the editing address; here the
       // environment client is refused, and the step says so instead of throwing.
       ['Page builder rendering host', false],
     ]);
     expect(r.steps[4]!.summary).toContain('the environment client was refused');
     expect(r.steps.filter((s) => s.deploymentId).map((s) => s.deploymentId)).toEqual([
-      'dpl_int',
       'dpl_prod',
+      'dpl_int',
     ]);
 
     // Protection off, as on every playbook run.
@@ -135,11 +135,12 @@ describe('setUpHosting', () => {
     const answer = JSON.stringify(r);
     expect(answer).not.toContain('ctx-preview-secret');
     expect(answer).not.toContain('editing-secret-value');
-    // The integration branch is the editing host; production builds the default branch.
+    // Production first (a new project's first deployment becomes production, whatever its
+    // branch); then the integration branch, the editing host, as a preview.
     const deploys = vercel.calls.filter((c) => c.path === '/v13/deployments');
     expect(deploys.map((d) => (d.body as { gitSource: { ref: string } }).gitSource.ref)).toEqual([
-      'launchworks/integration',
       'main',
+      'launchworks/integration',
     ]);
   });
 

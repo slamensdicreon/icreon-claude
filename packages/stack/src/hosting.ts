@@ -145,8 +145,8 @@ const summaryOf = (r: ToolResult) =>
 /**
  * The Director's hosting setup, the steps the Deployment Engineer and Head Integrator take on a
  * playbook run: the Vercel project (protection off), the head's environment from the vault, the
- * integration branch deployed as the editing host, the build repository's default branch to
- * production, and, on SitecoreAI, the site's rendering host pointed at the editing address.
+ * build repository's default branch to production, the integration branch deployed as the
+ * editing host, and, on SitecoreAI, the site's rendering host pointed at the editing address.
  * Stops at the first step that fails; deployments are followed with hostingStatus.
  */
 export async function setUpHosting(
@@ -173,13 +173,15 @@ export async function setUpHosting(
     });
     return res.code < 300;
   };
+  // Production goes first: Vercel makes a new project's first deployment its production one,
+  // whatever its branch, and the editing host must be a preview.
   const ok =
     (await run('Vercel project', () => hosting.call('project.create', {}, ctx))) &&
     (await run('Environment variables', () => hosting.call('env.set', { target: 'both' }, ctx))) &&
+    (await run('Production build', () => hosting.call('deploy.production', {}, ctx))) &&
     (await run('Editing host build', () =>
       hosting.call('deploy.preview', { ref: INTEGRATION_BRANCH }, ctx),
-    )) &&
-    (await run('Production build', () => hosting.call('deploy.production', {}, ctx)));
+    ));
   const editing = facts ? `https://${editingHost(facts.project)}` : null;
   const s = await w.project(projectId);
   if (ok && editing && s?.intake?.platform === SITECOREAI) {
