@@ -1,7 +1,7 @@
 ## Reference: known SitecoreAI pitfalls
 
-Observed on earlier SitecoreAI builds (the BLDR / New Brand site, and Ansco Associates on a shared
-tenant). They are observations, not platform guarantees: if your evidence says otherwise, trust the
+Observed on earlier SitecoreAI builds (the BLDR / New Brand site, Ansco Associates on a shared
+tenant, and the TASB member portal). They are observations, not platform guarantees: if your evidence says otherwise, trust the
 evidence and say so in your result.
 
 Working rules:
@@ -87,3 +87,11 @@ into a shared collection; change items outside the project's own paths.
 | Page tasks fail their checks round after round for a band colour, a layout or spacing | The failure is in a component's code, which the content migrator can't change; each retry costs a full attempt | Don't retry the page for it. The review now sends the component's failure to its port and integration and the page waits for that rework; say in the summary which section looks wrong and why it isn't yours |
 | A component's integration merges the old branch after the component was fixed | The port and its integration were both sent back and the integration ran first | Sent-back tasks now run in plan order. If you redo a component by hand, integrate it only after the port's commit is green |
 | A page check fails although the component fix it needed has just landed | The page was checked against the editing host before the integration deployed | Check again; don't send the component back a second time. The workflow now treats a check made before the fix landed as stale |
+| Components placed inside a container (dashboard columns) don't render, with no error | The container's inner placeholders aren't declared, so the layout service leaves them out | Create a Placeholder Settings item per key (`dashboard-main-{*}`) with its allowed renderings, set the container rendering's `Placeholders` field to them and its `OtherProperties` to `IsRenderingsWithDynamicPlaceholders=true`; give the container `DynamicPlaceholderId` and place its children in `/headless-main/<key>-1` |
+| A server container shows "missing React implementation" for components inside it | The client `Placeholder` looks components up in the client component map, where server components aren't | In a server component, render nested placeholders with `AppPlaceholder` and the server map (`import componentMap from '.sitecore/component-map'`), passing `rendering` and `page` |
+| Every page, even `/sign-in`, answers 500 after the layout reads a cookie | `src/Layout.tsx` is also imported by the client `global-error` page, which can't use `next/headers` | Read cookies in the route's `page.tsx` and pass what the layout needs as props |
+| `item.create` refuses a name the Blueprint gave | Item names can't contain `&` and other reserved characters | Write "and" in the item name; keep the real wording in the display name and fields |
+| A component crashes on a page whose datasource has no link set | An unset General Link field arrives as `undefined`, not an empty field | Pass `field ?? { value: {} }` to `Link`, and show the link only when it has an `href` (or in Page builder) |
+| Page builder variants or edits vanish after a script or agent re-ran a page | `layout.compose` replaces the whole layout and clears the page's layout edits, personalization variants included | Compose a page once. Once someone has edited it in Page builder, change it there or by single item updates, never by composing again |
+| A request for embedded personalization variants has no API to call | Page variants and audiences are made in Page builder; there is no Authoring API for them | Prepare the variant datasources and a plan (audience rule, page, component, datasource), and give the Director the Page builder steps |
+| A new Vercel project's first preview deployment takes the production address | Vercel makes a project's first deployment its production one, whatever the branch | Deploy production first; the hosting setup and the deployment steps do |

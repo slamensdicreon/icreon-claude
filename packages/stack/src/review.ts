@@ -274,6 +274,60 @@ export const CHECKS: Record<string, Check> = {
         );
   },
 
+  // A portal's people (customer portal playbook, Gate 1): each persona a demo account with a role,
+  // an audience personalization can match, navigation to real pages and a presentation path.
+  'blueprint.personas': async (ctx) => {
+    const bp = (await readJson(ctx, 'blueprint')) as {
+      collections?: Record<string, Item[]>;
+    } | null;
+    if (!bp?.collections) return failed(['No Blueprint has been written']);
+    const inScope = (c: string) => (bp.collections![c] ?? []).filter((i) => i.status !== 'drop');
+    const personas = inScope('personas');
+    if (!personas.length) return failed(['no personas']);
+    const pages = new Set(inScope('pages').map((p) => p.key));
+    const components = new Set(inScope('components').map((c) => c.key));
+    const list = (v: unknown) => (Array.isArray(v) ? (v as unknown[]) : []);
+    const problems: string[] = [];
+    const audiences = new Map<string, string>();
+    const emails = new Map<string, string>();
+    for (const p of personas) {
+      const a = p.attrs ?? {};
+      const audience = typeof a.audience === 'string' ? a.audience : '';
+      if (!/^[a-z][a-z0-9-]*$/.test(audience)) problems.push(`${p.key} has no kebab-case audience`);
+      else if (audiences.has(audience))
+        problems.push(`${p.key} shares audience ${audience} with ${audiences.get(audience)}`);
+      else audiences.set(audience, p.key);
+      const email = typeof a.email === 'string' ? a.email.trim().toLowerCase() : '';
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) problems.push(`${p.key} has no demo email`);
+      else if (emails.has(email)) problems.push(`${p.key} reuses ${emails.get(email)}'s email`);
+      else emails.set(email, p.key);
+      if (!a.role) problems.push(`${p.key} has no role`);
+      const nav = list(a.navigation).map(String);
+      if (!nav.length) problems.push(`${p.key} has no navigation`);
+      for (const k of nav)
+        if (!pages.has(k)) problems.push(`${p.key}'s navigation names unknown page ${k}`);
+      const path = list(a.presentationPath);
+      if (!path.length) problems.push(`${p.key} has no presentation path`);
+      for (const step of path) {
+        const page = (step as { page?: unknown } | null)?.page;
+        if (typeof page === 'string' && !pages.has(page))
+          problems.push(`${p.key}'s presentation path visits unknown page ${page}`);
+      }
+      for (const v of list(a.variants)) {
+        const { page, component } = (v ?? {}) as { page?: unknown; component?: unknown };
+        if (typeof page !== 'string' || !pages.has(page))
+          problems.push(`${p.key} has a variant on unknown page ${String(page)}`);
+        if (typeof component !== 'string' || !components.has(component))
+          problems.push(`${p.key} has a variant of unknown component ${String(component)}`);
+      }
+    }
+    return problems.length
+      ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))
+      : pass(
+          `${personas.length} personas, each with a demo account, a role, an audience, navigation and a presentation path.`,
+        );
+  },
+
   // The accepted branches were integrated, and that build went live at the editing host's address.
   'editing-host.deployed': async ({ steps }) => {
     const merged = last(steps, 'sandbox', 'git.integrate');

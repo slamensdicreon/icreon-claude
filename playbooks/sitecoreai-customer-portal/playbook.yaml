@@ -1,0 +1,261 @@
+# Playbook manifest: what the team delivers, what intake collects, phases and gates. Roles live in
+# roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
+# SitecoreAI platform pack in platforms/sitecoreai. Learned building the TASB member portal demo.
+id: sitecoreai-customer-portal
+version: 0.1.0
+name: Build a SitecoreAI customer portal
+description: >-
+  Rebuilds a client or customer portal prototype as a Content SDK portal on SitecoreAI: a
+  sign-in that looks real and signs into demo personas, navigation by role, pages and words that
+  marketers own in Page builder, content personalized by role, and working journeys on simulated,
+  resettable data, ready to present.
+platform: sitecoreai
+charter:
+  mission: >-
+    Turn the client's portal prototype into a SitecoreAI portal a presenter can walk persona by
+    persona, where the pages, words and role-based content are SitecoreAI's and the journeys work
+    end to end on demo data.
+  outcomes:
+    - id: presentation-path
+      title: Every persona's presentation path works on the live site
+      measure: >-
+        For each persona in the Blueprint: sign in, the role's navigation and dashboard, each
+        journey on the path (forms submit, lists update, drawers open), sign out; then Reset demo
+        returns every persona to the starting state.
+    - id: cms-owned
+      title: SitecoreAI owns the pages, words and images
+      measure: >-
+        Every portal page is a SitecoreAI page composed of registered renderings; every heading,
+        label, help text, link and image a component shows comes from a field and edits inline in
+        Page builder; no copy is hard-coded in components.
+    - id: role-aware
+      title: Each role sees its own portal
+      measure: >-
+        Navigation and permitted journeys follow the persona's role in code; content that differs
+        by role is SitecoreAI personalization (page variants per audience), shown live for every
+        persona when the brief asks for it.
+    - id: prototype-fidelity
+      title: It looks and behaves like the approved prototype
+      measure: Each screen's layout, tokens, imagery and interactions match the prototype at desktop and mobile widths.
+    - id: quality
+      title: Accessible and robust
+      measure: >-
+        The brief's accessibility target on every journey (keyboard, focus, labels, contrast);
+        empty states and loading states never show another persona's data.
+    - id: presentable
+      title: Ready to present and hand over
+      measure: >-
+        The presenter's script per persona, the reset procedure, the Page builder moments to show,
+        the component catalog and the known gaps are delivered, and the Director has walked the
+        path on production.
+intake:
+  source:
+    repo: optional
+    url: optional
+    intro: >-
+      The portal prototype: its repository, a running copy of it, or both. Agents read the code
+      when there is a repository; without one they rebuild each screen from the running prototype.
+      The portal is built in a repository of its own.
+  steps:
+    - title: SitecoreAI
+      intro: The SitecoreAI environment the portal is built in.
+      fields: [cmHost, siteCollection, site, languages]
+      credentials:
+        - { id: sitecore-environment, required: true }
+        - { id: sitecore-organization }
+    - title: Edge and hosting
+      intro: >-
+        Experience Edge Context IDs for the new head, and the Vercel project it deploys to. The
+        Context IDs are optional now and can be added later in Settings.
+      fields: [hostingProject]
+      credentials:
+        - { id: edge-preview }
+        - { id: edge-live }
+        - { id: editing-secret }
+  brief:
+    - key: personas
+      label: Who signs in, and what does each role do?
+      kind: text
+      required: true
+      placeholder: 'Business manager: claims, coverage and the review queue. Finance contact: billing and wage reporting.'
+      hint: One line per persona. Each becomes a demo account with its own navigation and content.
+    - key: presentationPath
+      label: What does the presenter walk through?
+      kind: text
+      required: true
+      placeholder: Sign in as the manager, report a claim, route an incident; sign out, sign in as finance, pay an invoice.
+    - key: personalization
+      label: Does content change by role through SitecoreAI personalization?
+      kind: yesno
+      required: true
+      feature: personalization
+      hint: >-
+        Yes builds variant content per role and a Page builder checklist for the variants. Embedded
+        personalization needs the environment's Personalize to be available.
+    - key: data
+      label: Where does the portal's data come from?
+      kind: choice
+      required: true
+      options:
+        - Simulated demo data, resettable
+        - Real services (name them in notes)
+      hint: Simulated data lives on a demo server the presenter can reset. Real services are open decisions at Gate 1.
+    - key: signIn
+      label: How do people sign in?
+      kind: choice
+      required: true
+      options:
+        - A sign-in screen that signs into demo personas
+        - The client's identity provider (name it in notes)
+    - key: adminExperience
+      label: What should the presentation show in SitecoreAI?
+      kind: text
+      placeholder: Page builder editing the dashboard, and the variants each role sees
+    - key: accessibility
+      label: Accessibility target
+      kind: choice
+      options: [WCAG 2.2 AA, WCAG 2.1 AA, Other (see notes)]
+      required: true
+    - key: codeExtraction
+      label: May agents read and reuse the prototype's code?
+      kind: choice
+      options: [Yes, Structure only (no copy or assets from code), No]
+      required: true
+      when: source-repo
+defaults:
+  concurrency: 6
+  # Lead-decidable categories start in shadow, as on the migration playbook: the Lead answers for
+  # the record and the card still reaches the Director until the scorecard shows they agree.
+  autonomy:
+    media: shadow
+    tool: shadow
+    retry: shadow
+    ownership: shadow
+    naming: shadow
+    content: shadow
+    access: ask
+    scope: ask
+    release: ask
+    other: ask
+  budgets:
+    tokens: 40000000
+    usd: 1000
+    hours: 30
+  escalationDeadlines:
+    blocker: 4h
+    decision: 2h
+    access: 4h
+    budget: 1h
+    risk: 24h
+    gate: 24h
+  escalationPolicy:
+    blocker:
+      { default: false, behaviour: Pauses that path. No default, notifies: 'Immediately, Slack' }
+    access: { default: true, behaviour: Proceeds with the default, notifies: 'Immediately, Slack' }
+    decision:
+      { default: true, behaviour: Proceeds with the default, notifies: 'Digest, unless under 2 h' }
+    gate: { default: false, behaviour: Waits for you. No default, notifies: 'Immediately, Slack' }
+    budget:
+      { default: false, behaviour: Pauses dispatch. No default, notifies: 'Immediately, email' }
+    risk: { default: true, behaviour: Proceeds; logged, notifies: Digest }
+  stats:
+    - {
+        metric: components_registered,
+        label: Renderings,
+        icon: application,
+        note: Registered in SitecoreAI,
+      }
+    - { metric: pages_migrated, label: Pages, icon: document, note: Composed in SitecoreAI }
+    - { metric: media_uploaded, label: Media, icon: image, note: Uploaded with alt text }
+    - { metric: qa_pass, label: QA pass, icon: task--complete, note: Of renderings registered }
+  toolLabels:
+    browser: Browser
+    validators: Validators
+    artifacts: Workbench
+    blackboard: Blackboard
+    decision-log: Decision Log
+    model: Model
+    plan: Planner
+    sitecore-authoring: Authoring API
+    sitecore-cli: Sitecore CLI
+    sitecore-deploy: Deploy API
+    github: GitHub
+    build-repo: Build repo
+    sandbox: Sandbox
+    hosting: Vercel
+    research: Docs
+phases:
+  - number: 0
+    name: Intake and access verification
+    shortName: Intake
+    exitCriteria: >-
+      Every credential verified against its endpoint; tenant facts recorded; the paths the project
+      owns are fixed, and other sites sharing the collection are left alone.
+  - number: 1
+    name: Prototype discovery
+    shortName: Discovery
+    exitCriteria: >-
+      Every screen of the prototype inventoried with its route, copy, components and the personas
+      who see it; every persona with its role, navigation and journeys; every interaction and the
+      data it reads or changes; the design system and media listed; risks noted.
+  - number: 2
+    name: Blueprint
+    shortName: Blueprint
+    gate: director
+    gateLabel: 'Gate 1: Director approves the Blueprint'
+    exitCriteria: >-
+      Every screen mapped to a page and every block to a rendering with its model contract; each
+      persona specified (demo account, role, audience, navigation, presentation path, variant
+      content); what SitecoreAI owns and what the demo server owns decided per component; open
+      decisions listed (real services, identity provider).
+  - number: 3
+    name: Foundation
+    shortName: Foundation
+    exitCriteria: >-
+      The site and the project's folders exist; the design system is extracted; the portal shell
+      builds green (sign-in into demo personas, signed sessions, navigation by role, the demo data
+      service with reset, the persona's audience passed to personalization); the head is hosted
+      and an empty page renders on the editing host.
+  - number: 4
+    name: Component build and registration
+    shortName: Components
+    optionalGates:
+      - pilot-slice-review
+    exitCriteria: >-
+      Pilot slice proven first: its components ported, registered, integrated into the editing
+      host, placed on a page and edited in Page builder. Then every Blueprint component ported,
+      registered (with dynamic placeholders where it holds others) and enabled in Page builder.
+  - number: 5
+    name: Pages and media
+    shortName: Pages
+    exitCriteria: >-
+      Every Blueprint page exists in SitecoreAI with its datasources filled from the prototype's
+      copy and its layout composed; every image uploaded with alt text; each page renders on the
+      editing host for the default persona.
+  - number: 6
+    name: Personalization by role
+    shortName: Roles
+    exitCriteria: >-
+      When the brief asks for it: each persona's variant content exists, and the Director has set
+      up the audiences and page variants in Page builder from the personalization plan; each
+      persona sees its own variant on the editing host.
+  - number: 7
+    name: Presentation path
+    shortName: Path
+    exitCriteria: >-
+      The Director has walked every persona's presentation path on the editing host, start to
+      finish, with no error; Reset demo returns the starting state.
+  - number: 8
+    name: Release
+    shortName: Release
+    exitCriteria: >-
+      The reviewed commit runs on production and the editing host; the presentation path passes
+      on production, and the demo is reset afterwards.
+  - number: 9
+    name: Presentation readiness and handover
+    shortName: Handover
+    gate: director
+    gateLabel: 'Gate 2: Director accepts'
+    exitCriteria: >-
+      Presenter script, reset procedure, Page builder moments, component catalog, decision
+      register and known gaps delivered; the Director has accepted the portal on production.

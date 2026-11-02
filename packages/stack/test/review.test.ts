@@ -586,3 +586,75 @@ describe('routing failed checks to the components that own them', () => {
     expect(routed).toBeNull();
   });
 });
+
+describe('blueprint.personas', () => {
+  const ctx = (blueprint: unknown) =>
+    ({
+      projectId: 'p1',
+      library: {
+        read: async (_p: string, id: string) =>
+          id === 'blueprint' ? { content: JSON.stringify(blueprint) } : null,
+      },
+    }) as never;
+  const persona = (key: string, attrs: Record<string, unknown> = {}) => ({
+    key,
+    name: key,
+    attrs: {
+      email: `${key}@district.example`,
+      role: 'Business manager',
+      audience: key,
+      navigation: ['overview'],
+      presentationPath: [{ page: 'overview', step: 'Sign in' }],
+      variants: [],
+      ...attrs,
+    },
+  });
+  const blueprint = (personas: unknown[]) => ({
+    version: 1,
+    collections: {
+      components: [{ key: 'promo', name: 'Promo' }],
+      pages: [{ key: 'overview', name: 'Overview', attrs: { path: '/' } }],
+      personas,
+    },
+  });
+
+  it('passes personas with accounts, audiences, navigation and paths that name real pages', async () => {
+    const r = await CHECKS['blueprint.personas']!(
+      ctx(
+        blueprint([
+          persona('business-manager'),
+          persona('finance-contact', {
+            variants: [{ page: 'overview', component: 'promo', content: 'Statement ready' }],
+          }),
+        ]),
+      ),
+    );
+    expect(r.status).toBe('pass');
+  });
+
+  it("names what a persona lacks, and pages or components that don't exist", async () => {
+    const r = await CHECKS['blueprint.personas']!(
+      ctx(
+        blueprint([
+          persona('manager', { audience: 'Managers', navigation: ['overview', 'claims'] }),
+          persona('finance', {
+            email: 'manager@district.example',
+            presentationPath: [],
+            variants: [{ page: 'billing', component: 'hero' }],
+          }),
+        ]),
+      ),
+    );
+    expect(r.status).toBe('fail');
+    expect(r.detail).toMatch(/manager has no kebab-case audience/);
+    expect(r.detail).toMatch(/navigation names unknown page claims/);
+    expect(r.detail).toMatch(/finance reuses manager's email/);
+    expect(r.detail).toMatch(/finance has no presentation path/);
+    expect(r.detail).toMatch(/variant on unknown page billing/);
+  });
+
+  it('fails a Blueprint with no personas', async () => {
+    const r = await CHECKS['blueprint.personas']!(ctx(blueprint([])));
+    expect(r).toMatchObject({ status: 'fail', detail: 'no personas.' });
+  });
+});

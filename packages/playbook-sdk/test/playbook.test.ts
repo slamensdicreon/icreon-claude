@@ -179,3 +179,43 @@ describe('role prompts', () => {
     expect(await loadRolePrompts(tmpdir() + '/does-not-exist', pb)).toEqual({});
   });
 });
+
+describe('sitecoreai-customer-portal playbook', () => {
+  const PORTAL = fileURLToPath(
+    new URL('../../../playbooks/sitecoreai-customer-portal', import.meta.url),
+  );
+
+  it('loads and passes bundle validation, with the Blueprint and acceptance gates', async () => {
+    const pb = await loadPlaybook(PORTAL);
+    expect(pb.manifest.platform).toBe('sitecoreai');
+    expect(pb.manifest.phases).toHaveLength(10);
+    expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
+      2, 9,
+    ]);
+    // The presentation is walked by a person, persona by persona, before release.
+    const walk = pb.plan.templates.find((t) => t.id === 'walk-{key}');
+    expect(walk).toMatchObject({ forEach: 'personas', manual: expect.any(String) });
+    expect(pb.plan.templates.find((t) => t.id === 'draft-blueprint')?.acceptance).toContain(
+      'validator:blueprint.personas',
+    );
+  });
+
+  it('grants every tool a role prompt tells the agent to use', async () => {
+    const pb = await loadPlaybook(PORTAL);
+    const servers = new Set(pb.roles.flatMap((r) => Object.keys(r.tools)));
+    const missing: string[] = [];
+    for (const role of pb.roles) {
+      let prompt: string;
+      try {
+        prompt = await readFile(join(PORTAL, 'prompts', `${role.role}.md`), 'utf8');
+      } catch {
+        continue;
+      }
+      for (const [, server, op] of prompt.matchAll(/`([a-z][a-z-]*)\.([a-z][a-z.-]*[a-z])`/g)) {
+        if (servers.has(server!) && !role.tools[server!]?.ops.includes(op!))
+          missing.push(`${role.role}: ${server}.${op}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+});

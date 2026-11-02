@@ -1,0 +1,78 @@
+role: content-migrator
+name: Page Composer
+persona: 'Leila Hassan'
+description: "Creates each portal page in SitecoreAI from its prototype screen: datasources filled with the prototype's copy, components placed in order."
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create each page under Home, its datasources from the renderings' templates filled word for
+  word from the prototype's copy, and its layout composed with layout.compose, including the
+  components inside dynamic placeholders. Never invent copy.
+produces:
+  - migrated pages and data items
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+      - layout.compose
+      # A page's own photos, from the source page (sourceUrl), when no media task uploaded them.
+      - media.upload
+    scope:
+      paths:
+        - '{sitePath}/Home/**'
+        - '{sitePath}/Data/**'
+        - /sitecore/media library/Project/{project}/**
+      # Template and rendering IDs to compose with: read only.
+      readPaths:
+        - /sitecore/templates/**
+        - /sitecore/layout/**
+        - '{sitePath}/**'
+  browser:
+    ops:
+      # The source page's copy and structure, so content is migrated, never invented.
+      - snapshot
+      # Images set by CSS (a hero's or section's background) aren't in a snapshot: computed styles give their URL.
+      - page.styles
+  # The source repository, where a site built from code keeps its copy (content files).
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+  # Reproduce a page on the head and read what the server logged (a 500 names what threw).
+  hosting:
+    ops:
+      - logs.runtime
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:structural.layouts
+  - validator:head.pages-render
+  - validator:parity.page
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases: [5]

@@ -152,6 +152,12 @@ export class HostingToolServer implements ToolServer {
       // Log lines quote page content and whatever the app printed.
       untrusted: true,
     },
+    'storage.blob': {
+      description:
+        "Create or reuse the project's private Vercel Blob store and connect it to the Vercel project (production and preview), so Vercel sets the head's BLOB_READ_WRITE_TOKEN. For a head that keeps state on the server, such as a portal's demo data. A store already connected to the project is kept. The token is never shown; redeploy for the head to read it.",
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      mutates: true,
+    },
     'deploy.status': {
       description:
         "A deployment's state (QUEUED, BUILDING, READY, ERROR, CANCELED), URL and error. A ready deployment is recorded on the project.",
@@ -202,6 +208,8 @@ export class HostingToolServer implements ToolServer {
       }
       case 'deploy.production':
         return this.deploy(facts, facts.branch, 'production');
+      case 'storage.blob':
+        return this.blobStore(facts);
       case 'deploy.status': {
         const a = StatusArgs.safeParse(args);
         if (!a.success) return rejected(a.error.issues[0]!.message);
@@ -391,6 +399,46 @@ export class HostingToolServer implements ToolServer {
       code: 200,
       body: { set, missing: [...missing] },
       summary: `Set ${set.length} variable${set.length === 1 ? '' : 's'} on ${facts.project}: ${[...new Set(set.map((s) => s.key))].join(', ')}${missing.size ? `. Not set yet: ${[...missing].join('; ')}` : ''}`,
+    };
+  }
+
+  /** The project's private Blob store: one already connected to it, or `<project>-data`. */
+  private async blobStore(facts: HostingFacts): Promise<ToolResult> {
+    const p = await this.request('GET', `/v9/projects/${encodeURIComponent(facts.project)}`);
+    if (p.status !== 200) return fail(p, `reading ${facts.project}`);
+    const project = p.body as VercelProject;
+    const list = await this.request('GET', '/v1/storage/stores');
+    if (list.status !== 200) return fail(list, "listing the team's storage");
+    const blobs = ((list.body as { stores?: BlobStore[] }).stores ?? []).filter(
+      (s) => s.type === 'blob',
+    );
+    const linked = (s: BlobStore) => s.projectsMetadata?.some((m) => m.projectId === project.id);
+    const name = `${facts.project}-data`;
+    let store = blobs.find(linked) ?? blobs.find((s) => s.name === name);
+    const created = !store;
+    if (!store) {
+      const c = await this.request('POST', '/v1/storage/stores/blob', { name, access: 'private' });
+      if (c.status !== 200 && c.status !== 201) return fail(c, `creating ${name}`);
+      store = (c.body as { store?: BlobStore }).store ?? (c.body as BlobStore);
+    }
+    if (store.access && store.access !== 'private') {
+      return rejected(
+        `${store.name} is a ${store.access} Blob store: the head's data must not be public. Connect a private store instead.`,
+      );
+    }
+    const wasLinked = Boolean(linked(store));
+    if (!wasLinked) {
+      const c = await this.request(
+        'POST',
+        `/v1/storage/stores/${encodeURIComponent(store.id)}/connections`,
+        { projectId: project.id, environments: ['production', 'preview'], type: 'integration' },
+      );
+      if (c.status >= 300) return fail(c, `connecting ${store.name} to ${facts.project}`);
+    }
+    return {
+      code: 200,
+      body: { store: store.name, id: store.id, created, connected: true, access: 'private' },
+      summary: `${created ? 'Created' : 'Kept'} private Blob store ${store.name}, ${wasLinked ? 'already connected' : 'connected'} to ${facts.project}: Vercel sets BLOB_READ_WRITE_TOKEN; redeploy for the head to read it`,
     };
   }
 
@@ -661,6 +709,14 @@ export class HostingToolServer implements ToolServer {
       return { status: res.status, body: text as unknown };
     }
   }
+}
+
+interface BlobStore {
+  id: string;
+  name: string;
+  type: string;
+  access?: string;
+  projectsMetadata?: { projectId: string }[];
 }
 
 interface VercelProject {

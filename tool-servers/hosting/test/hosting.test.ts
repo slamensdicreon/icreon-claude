@@ -352,3 +352,71 @@ describe('logs.runtime', () => {
     );
   }, 30_000);
 });
+
+describe('storage.blob', () => {
+  /** Vercel's storage API with the acme-site project and whatever stores the test starts with. */
+  function fakeStorage(stores: Record<string, unknown>[]) {
+    const calls: { method: string; path: string; body: unknown }[] = [];
+    const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status });
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      calls.push({ method, path: url.pathname, body });
+      const p = url.pathname;
+      if (p === '/v9/projects/acme-site') return json(200, { id: 'prj_1', name: 'acme-site' });
+      if (p === '/v1/storage/stores' && method === 'GET') return json(200, { stores });
+      if (p === '/v1/storage/stores/blob' && method === 'POST') {
+        const store = { id: 'store_new', type: 'blob', name: body.name, access: body.access };
+        stores.push(store);
+        return json(201, { store });
+      }
+      if (/^\/v1\/storage\/stores\/[^/]+\/connections$/.test(p) && method === 'POST')
+        return json(201, {});
+      return json(404, { error: { message: `no ${method} ${p}` } });
+    }) as typeof globalThis.fetch;
+    return { fetch, calls };
+  }
+
+  it('creates a private store for the project and connects it, without showing its token', async () => {
+    const v = fakeStorage([]);
+    const r = await server(v.fetch).call('storage.blob', {}, ctx);
+    expect(r).toMatchObject({
+      code: 200,
+      body: { store: 'acme-site-data', created: true, connected: true, access: 'private' },
+    });
+    expect(v.calls.find((c) => c.path === '/v1/storage/stores/blob')?.body).toEqual({
+      name: 'acme-site-data',
+      access: 'private',
+    });
+    expect(v.calls.find((c) => c.path.endsWith('/connections'))?.body).toMatchObject({
+      projectId: 'prj_1',
+      environments: ['production', 'preview'],
+    });
+    expect(JSON.stringify(r)).not.toMatch(/vercel_blob_rw/i);
+  });
+
+  it('keeps a store already connected to the project, and creates nothing', async () => {
+    const v = fakeStorage([
+      {
+        id: 'store_old',
+        type: 'blob',
+        name: 'set-up-by-hand',
+        access: 'private',
+        projectsMetadata: [{ projectId: 'prj_1' }],
+      },
+    ]);
+    const r = await server(v.fetch).call('storage.blob', {}, ctx);
+    expect(r).toMatchObject({ code: 200, body: { store: 'set-up-by-hand', created: false } });
+    expect(v.calls.filter((c) => c.method === 'POST')).toEqual([]);
+  });
+
+  it('refuses a public store, which would expose the head data', async () => {
+    const v = fakeStorage([
+      { id: 'store_pub', type: 'blob', name: 'acme-site-data', access: 'public' },
+    ]);
+    const r = await server(v.fetch).call('storage.blob', {}, ctx);
+    expect(r.code).toBeGreaterThanOrEqual(400);
+    expect(v.calls.some((c) => c.path.endsWith('/connections'))).toBe(false);
+  });
+});
