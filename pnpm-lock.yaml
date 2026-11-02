@@ -376,6 +376,12 @@ importers:
       '@lw/tool-gateway':
         specifier: workspace:*
         version: link:../tool-gateway
+      '@lw/tool-hosting':
+        specifier: workspace:*
+        version: link:../../tool-servers/hosting
+      '@lw/tool-sitecore':
+        specifier: workspace:*
+        version: link:../../tool-servers/sitecore
       '@lw/tool-validators':
         specifier: workspace:*
         version: link:../../tool-servers/validators

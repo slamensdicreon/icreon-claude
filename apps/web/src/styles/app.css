@@ -2547,3 +2547,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Settings → Hosting: one line per setup step. */
+.hosting-steps {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}

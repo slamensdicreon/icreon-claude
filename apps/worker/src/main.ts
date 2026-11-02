@@ -25,29 +25,25 @@ import {
   PostgresVault,
   Projections,
 } from '@lw/events';
-import type { NewEvent } from '@lw/contracts';
 import { createWorker, taskQueueFor } from '@lw/orchestrator';
 import { loadCatalog, versionOf, type Playbook } from '@lw/playbook-sdk';
-import { createPlatforms, ownedPaths, SITECOREAI, sitecoreTarget, text } from '@lw/platforms';
+import { createPlatforms, ownedPaths, SITECOREAI, sitecoreTarget } from '@lw/platforms';
 import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw/tool-sandbox';
 import {
   byVersion,
   composeStack,
   GuardedBrowser,
+  hostingToolServer,
   retrospectAtPhaseExit,
   seedPlatformKnowledge,
+  sitecoreFacts,
   type Stack,
   uncheckedValidators,
 } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
 import { ResearchToolServer } from '@lw/tool-research';
-import { HostingToolServer } from '@lw/tool-hosting';
-import {
-  DeployClient,
-  SitecoreAuthoringToolServer,
-  SitecoreDeployToolServer,
-} from '@lw/tool-sitecore';
+import { SitecoreAuthoringToolServer, SitecoreDeployToolServer } from '@lw/tool-sitecore';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 
@@ -173,21 +169,7 @@ if (env.AGENTS === 'claude') {
         // edge.routes reads routes with the project's Context ID; the agent never sees it.
         edgeContextId: async (id, live) =>
           (await projectCredential(id, live ? 'edge-live' : 'edge-preview'))?.contextId ?? null,
-        facts: async (id) => {
-          const s = await project(id);
-          if (s?.intake?.platform !== SITECOREAI) return null;
-          const host = s.sourceUrl ? new URL(s.sourceUrl).hostname : null;
-          const t = sitecoreTarget(s.intake);
-          return {
-            cmHost: t.cmHost,
-            siteCollection: t.siteCollection,
-            site: t.site,
-            languages: t.languages,
-            sourceHosts: host
-              ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`]
-              : [],
-          };
-        },
+        facts: async (id) => sitecoreFacts(await project(id)),
       }),
     );
   }
@@ -209,86 +191,15 @@ if (env.AGENTS === 'claude' && vault && credentials) {
   );
   if (env.VERCEL_PREVIEWS_TOKEN && env.VERCEL_PREVIEWS_TEAM_ID) {
     servers.push(
-      new HostingToolServer({
+      hostingToolServer({
         token: env.VERCEL_PREVIEWS_TOKEN,
         teamId: env.VERCEL_PREVIEWS_TEAM_ID,
-        facts: async (id) => {
-          const s = await project(id);
-          const name = s?.intake ? text(s.intake.target, 'hostingProject') : '';
-          return s?.buildRepo && name
-            ? {
-                project: name,
-                repo: s.buildRepo.repo,
-                branch: s.buildRepo.branch,
-                rootDirectory: s.buildRepo.appPath,
-              }
-            : null;
-        },
-        // What the head needs, from the platform pack: values come from the vault and the
-        // platform's APIs, never from the agent.
-        env: async (id, which) => {
-          const s = await project(id);
-          const pack = s?.intake ? platforms.get(s.intake.platform) : undefined;
-          if (!s?.intake || !pack?.headEnv)
-            return { vars: [], missing: ['this platform has no head'] };
-          return pack.headEnv(s.intake.target, which, {
-            credential: (credentialId) => projectCredential(id, credentialId),
-            // Says why when it can't: "missing" alone left the team guessing.
-            editingSecret: async () => {
-              try {
-                const deploy = new DeployClient(await credentials.tokenFor(id, 'sitecore-deploy'));
-                const e = await deploy.environmentFor(sitecoreTarget(s.intake!).cmHost);
-                return 'error' in e ? { problem: e.error } : await deploy.editingSecret(e.id);
-              } catch (err) {
-                return {
-                  problem: `the organization client couldn't be used: ${err instanceof Error ? err.message : String(err)}`,
-                };
-              }
-            },
-          });
-        },
-        // Agents' commits aren't Vercel team members: Vercel's own Git deployments of them are
-        // refused and notify the team. Deployments go through these tools instead.
-        prepare: async (id) => {
-          const s = await project(id);
-          if (!s?.buildRepo || !github) return 'no build repository to configure';
-          const done = await github.ensureNoGitDeploys(s.buildRepo);
-          return done === 'added'
-            ? `turned off automatic Git deployments (${s.buildRepo.appPath}/vercel.json on ${s.buildRepo.branch})`
-            : 'automatic Git deployments already off';
-        },
-        record: async (id, r) => {
-          const s = await project(id);
-          const name = s?.intake ? text(s.intake.target, 'hostingProject') : '';
-          const actor = { kind: 'system', id: 'hosting' } as const;
-          const subject = { kind: 'project', id } as const;
-          const events: NewEvent[] = [];
-          if (!s?.hosting || (r.url && r.url !== s.hosting.url)) {
-            events.push({
-              type: 'project.updated',
-              actor,
-              subject,
-              severity: r.url ? 'notable' : 'routine',
-              data: { hosting: { provider: 'vercel', project: name, url: r.url } },
-            });
-          }
-          // Once per deployment, however often its status is read.
-          if (r.deployment && s?.preview.target?.deployment !== r.deployment.id) {
-            events.push({
-              type: 'preview.deployed',
-              actor,
-              subject,
-              severity: 'notable',
-              data: {
-                side: 'target',
-                label: `Vercel, ${r.deployment.target === 'production' ? 'production' : r.deployment.ref}`,
-                url: r.deployment.url,
-                deployment: r.deployment.id,
-              },
-            });
-          }
-          if (events.length) await opened.store.append(id, events);
-        },
+        project,
+        platforms,
+        credential: projectCredential,
+        tokenFor: (id, server) => credentials.tokenFor(id, server),
+        github,
+        append: (id, events) => opened.store.append(id, events).then(() => undefined),
       }),
     );
   }

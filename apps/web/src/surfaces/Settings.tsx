@@ -7,7 +7,7 @@ import type {
 } from '@lw/contracts';
 import { briefApplies, SOURCE_REPO } from '@lw/contracts/labels';
 import { Fragment, useEffect, useState } from 'react';
-import { get, post, put } from '../lib/api';
+import { get, post, postFor, put } from '../lib/api';
 import { stamp, usd } from '../lib/fmt';
 import { TypedConfirm } from '../overlays/Dialogs';
 import { GithubAppPanel } from './GithubApp';
@@ -107,6 +107,16 @@ export function Settings() {
         )}
         {!p.demo && p.intake && (
           <BuildRepoPanel repo={p.buildRepo} source={p.intake.repo ?? p.sourceUrl ?? p.name} />
+        )}
+        {!p.demo && p.intake && p.buildRepo && (
+          <HostingPanel
+            hosting={p.hosting}
+            name={
+              typeof p.intake.target.hostingProject === 'string'
+                ? p.intake.target.hostingProject
+                : ''
+            }
+          />
         )}
         {!p.demo && p.intake && p.playbook && (
           <IntakePanel
@@ -845,6 +855,131 @@ function BuildRepoPanel({ repo, source }: { repo: ProjectSummary['buildRepo']; s
           </p>
         </>
       )}
+    </section>
+  );
+}
+
+interface HostingStep {
+  step: string;
+  ok: boolean;
+  summary: string;
+  deploymentId?: string;
+}
+interface HostingDeployment {
+  deploymentId: string;
+  state: string;
+  url: string | null;
+  editingHost: string | null;
+  error: string | null;
+}
+const FINISHED = new Set(['READY', 'ERROR', 'CANCELED']);
+
+/**
+ * The head on our Vercel team, set up the way a playbook's deployment steps do it: the Vercel
+ * project (protection off), its environment from the vault, the integration branch as the editing
+ * host, the default branch to production and, on SitecoreAI, the site's rendering host. For a head
+ * built outside a playbook run, or to rebuild the host; no secret passes through the Director.
+ */
+function HostingPanel({ hosting, name }: { hosting: ProjectSummary['hosting']; name: string }) {
+  const { projectId, run } = useApp();
+  const [steps, setSteps] = useState<HostingStep[] | null>(null);
+  const [deploys, setDeploys] = useState<Record<string, HostingDeployment>>({});
+  const [busy, setBusy] = useState(false);
+  // Follow the two deployments to the end: reading a ready integration build makes it the
+  // editing host. Gives up after about seven minutes.
+  useEffect(() => {
+    const ids = (steps ?? []).flatMap((s) => (s.deploymentId ? [s.deploymentId] : []));
+    if (!ids.length) return;
+    let stopped = false;
+    let tries = 0;
+    let timer = 0;
+    const tick = async () => {
+      const read = await Promise.all(
+        ids.map((id) =>
+          get<HostingDeployment>(`/projects/${projectId}/hosting/deployments/${id}`).catch(
+            () => null,
+          ),
+        ),
+      );
+      if (stopped) return;
+      setDeploys((d) => ({
+        ...d,
+        ...Object.fromEntries(read.flatMap((r) => (r ? [[r.deploymentId, r]] : []))),
+      }));
+      if (++tries < 80 && read.some((r) => !r || !FINISHED.has(r.state)))
+        timer = window.setTimeout(() => void tick(), 5000);
+    };
+    timer = window.setTimeout(() => void tick(), 2000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [steps, projectId]);
+
+  const setUp = () => {
+    setBusy(true);
+    setDeploys({});
+    void run(async () => {
+      const r = await postFor<{ steps: HostingStep[] }>(`/projects/${projectId}/hosting/setup`, {});
+      setSteps(r.steps);
+    }).finally(() => setBusy(false));
+  };
+  const editing = name ? `https://${name}-editing.vercel.app` : null;
+  return (
+    <section className="panel hosting">
+      <h2>Hosting</h2>
+      <p className="muted">
+        The new site on our Vercel team
+        {name ? (
+          <>
+            {' '}
+            as <span className="mono">{name}</span>
+          </>
+        ) : null}
+        : production builds the build repository’s default branch, and Page builder renders through
+        the editing host, the launchworks/integration build. Its environment comes from this
+        project’s credentials.
+      </p>
+      {(hosting?.url || editing) && (
+        <p>
+          {hosting?.url && (
+            <>
+              <a href={hosting.url} target="_blank" rel="noopener noreferrer">
+                {hosting.url.replace(/^https:\/\//, '')}
+              </a>{' '}
+              <span className="muted">· production</span>
+              <br />
+            </>
+          )}
+          {editing && (
+            <>
+              <span className="mono">{editing.replace(/^https:\/\//, '')}</span>{' '}
+              <span className="muted">· editing host</span>
+            </>
+          )}
+        </p>
+      )}
+      {steps && (
+        <ul className="hosting-steps">
+          {steps.map((s) => {
+            const d = s.deploymentId ? deploys[s.deploymentId] : undefined;
+            const failed = !s.ok || d?.state === 'ERROR' || d?.state === 'CANCELED';
+            return (
+              <li key={s.step}>
+                <span className={failed ? 'cred-miss' : 'cred-ok'}>{s.step}</span>{' '}
+                <span className="muted">
+                  {d
+                    ? `${d.state.toLowerCase()}${d.editingHost ? `, live at ${d.editingHost}` : d.state === 'READY' && d.url ? `, ${d.url}` : ''}${d.error ? `: ${d.error}` : ''}`
+                    : s.summary}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <button className="btn sm primary" type="button" disabled={busy} onClick={setUp}>
+        {busy ? 'Setting up…' : hosting ? 'Set up hosting again' : 'Set up hosting'}
+      </button>
     </section>
   );
 }

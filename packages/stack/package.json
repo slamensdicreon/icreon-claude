@@ -22,6 +22,8 @@
     "@lw/playbook-sdk": "workspace:*",
     "@lw/tool-browser": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
+    "@lw/tool-hosting": "workspace:*",
+    "@lw/tool-sitecore": "workspace:*",
     "@lw/tool-validators": "workspace:*",
     "@lw/tool-workspace": "workspace:*",
     "pngjs": "7.0.0"

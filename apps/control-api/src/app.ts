@@ -140,6 +140,18 @@ export interface AppDeps {
         phase: number,
       ) => Promise<{ phase: number; summary: string; proposed: KnowledgeEntry[] }>)
     | null;
+  /**
+   * The head's hosting, set up from the Director's side the way a playbook's deployment steps do
+   * it (Vercel project, environment from the vault, editing host, production, rendering host).
+   * Absent where the server has no Vercel token or credential vault.
+   */
+  hosting?: {
+    setup(projectId: string): Promise<unknown>;
+    status(
+      projectId: string,
+      deploymentId: string,
+    ): Promise<{ code: number; body: unknown; summary?: string }>;
+  };
   /** Cypher on the Dashboard: the model (null where none is configured) and where it keeps the conversation. */
   cypher?: { model: ModelClient | null; store: IntegrationStore };
 }
@@ -1503,6 +1515,37 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const r: CommandResult = { accepted: true, seq };
     return r;
   });
+
+  // The head's hosting without a playbook run (a demo built by hand, or a host to rebuild): the
+  // same tools and vault the agents use, so no secret passes through the Director.
+  const hostable = (id: string) => {
+    const s = known(id);
+    if (s.mode !== 'live') {
+      throw new CommandError(409, 'demo_project', 'A demo project has no hosting to set up.');
+    }
+    if (!deps.hosting) {
+      throw new CommandError(
+        503,
+        'hosting_unconfigured',
+        'Hosting needs the Vercel token and the credential vault on this server.',
+      );
+    }
+    return { s, hosting: deps.hosting };
+  };
+  app.post<P>('/projects/:id/hosting/setup', async (req) => {
+    const { s, hosting } = hostable(req.params.id);
+    await projections.catchUp(s.projectId);
+    return hosting.setup(s.projectId);
+  });
+  // A deployment's state; reading a ready integration build makes it the editing host.
+  app.get<{ Params: { id: string; deploymentId: string } }>(
+    '/projects/:id/hosting/deployments/:deploymentId',
+    async (req, reply) => {
+      const { s, hosting } = hostable(req.params.id);
+      const r = await hosting.status(s.projectId, req.params.deploymentId);
+      return reply.code(r.code).send({ ...(r.body as object), summary: r.summary ?? null });
+    },
+  );
 
   // The repository the new site is built in, for a project started before it was created
   // automatically, or after fixing the GitHub App's access to the organization.

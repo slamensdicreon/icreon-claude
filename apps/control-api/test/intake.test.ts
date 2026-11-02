@@ -70,7 +70,13 @@ afterEach(async () => {
   app = null;
 });
 
-async function start(opts: { orchestrator?: boolean; github?: unknown } = {}) {
+async function start(
+  opts: {
+    orchestrator?: boolean;
+    github?: unknown;
+    hosting?: Parameters<typeof buildApp>[0]['hosting'];
+  } = {},
+) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
@@ -92,6 +98,7 @@ async function start(opts: { orchestrator?: boolean; github?: unknown } = {}) {
       blobs,
       ...(opts.github ? { github: opts.github as never, buildOrg: 'icreon-launchworks' } : {}),
     }),
+    hosting: opts.hosting,
   });
   return { app, store, started, stopped, blobs };
 }
@@ -577,5 +584,42 @@ describe('New Project wizard', () => {
     });
     const missing = await post(`/projects/${projectId}/credentials/sitecore-organization/verify`);
     expect(missing.statusCode).toBe(404);
+  });
+});
+
+describe('Hosting setup', () => {
+  it('runs the hosting setup for a live project and reads its deployments', async () => {
+    const calls: string[] = [];
+    await start({
+      hosting: {
+        setup: async (id) => {
+          calls.push(`setup ${id}`);
+          return { steps: [{ step: 'Vercel project', ok: true, summary: 'Checked' }] };
+        },
+        status: async (id, deploymentId) => {
+          calls.push(`status ${id} ${deploymentId}`);
+          return { code: 200, body: { deploymentId, state: 'READY' }, summary: 'live' };
+        },
+      },
+    });
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+
+    const setup = await post(`/projects/${projectId}/hosting/setup`);
+    expect(setup.statusCode).toBe(200);
+    expect(setup.json()).toEqual({
+      steps: [{ step: 'Vercel project', ok: true, summary: 'Checked' }],
+    });
+    const status = await app!.inject(`/projects/${projectId}/hosting/deployments/dpl_1`);
+    expect(status.json()).toEqual({ deploymentId: 'dpl_1', state: 'READY', summary: 'live' });
+    expect(calls).toEqual([`setup ${projectId}`, `status ${projectId} dpl_1`]);
+    expect((await post('/projects/prj-nope/hosting/setup')).statusCode).toBe(404);
+  });
+
+  it('says so where the server has no Vercel token or vault', async () => {
+    await start();
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    const r = await post(`/projects/${projectId}/hosting/setup`);
+    expect(r.statusCode).toBe(503);
+    expect(r.json()).toMatchObject({ error: { code: 'hosting_unconfigured' } });
   });
 });

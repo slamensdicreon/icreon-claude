@@ -28,13 +28,20 @@ import {
 import { loadCatalog, versionOf } from '@lw/playbook-sdk';
 import { createPlatforms } from '@lw/platforms';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
-import { composeStack, runRetrospective, seedPlatformKnowledge } from '@lw/stack';
+import {
+  composeStack,
+  hostingStatus,
+  runRetrospective,
+  seedPlatformKnowledge,
+  setUpHosting,
+  type HostingWiring,
+} from '@lw/stack';
 import { openBlobStore } from '@lw/tool-gateway';
 import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 import { buildApp, type WorkerHeartbeat } from './app';
-import { GithubApp } from '@lw/connectors';
+import { GithubApp, VaultCredentials } from '@lw/connectors';
 import { IntakeService, type StartInput } from './intake';
 import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
 import { policyRows } from './policy';
@@ -111,6 +118,9 @@ const env = z
     GITHUB_APP_ORG: z.string().optional(),
     /** Our GitHub organization, where projects' build repositories are created. */
     GITHUB_BUILD_ORG: z.string().optional(),
+    /** Our Vercel team and a token for it, where projects' heads are hosted (hosting setup). */
+    VERCEL_PREVIEWS_TOKEN: z.string().optional(),
+    VERCEL_PREVIEWS_TEAM_ID: z.string().optional(),
     /** Set by Vercel: the production domain and this deployment's own hosts. */
     VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
     VERCEL_URL: z.string().optional(),
@@ -426,6 +436,38 @@ const github = integrations
     })
   : undefined;
 
+/** The head's hosting from the Director's side: the agents' wiring, with the vault's secrets. */
+function hostingWiring(): HostingWiring | null {
+  if (!env.VERCEL_PREVIEWS_TOKEN || !env.VERCEL_PREVIEWS_TEAM_ID || !env.CREDENTIALS_KEY)
+    return null;
+  const project = async (id: string) => {
+    await projections.catchUp(id);
+    return projections.get(id);
+  };
+  const credentials = new VaultCredentials({
+    project,
+    vault,
+    github,
+    toolCredential: (platform, server) => platforms.get(platform)?.toolCredential(server),
+  });
+  return {
+    token: env.VERCEL_PREVIEWS_TOKEN,
+    teamId: env.VERCEL_PREVIEWS_TEAM_ID,
+    project,
+    platforms,
+    credential: async (id, credentialId) => {
+      const ref = (await project(id))?.credentials[credentialId]?.reference;
+      return ref ? (JSON.parse(await vault.open(ref)) as Record<string, string>) : null;
+    },
+    tokenFor: (id, server) => credentials.tokenFor(id, server),
+    github,
+    append: async (id, events) => {
+      await store.append(id, events);
+    },
+  };
+}
+const hosting = hostingWiring();
+
 const app = await buildApp({
   store,
   projections,
@@ -443,6 +485,12 @@ const app = await buildApp({
     connections: integrations ?? undefined,
   }),
   github,
+  hosting: hosting
+    ? {
+        setup: (projectId) => setUpHosting(hosting, projectId),
+        status: (projectId, deploymentId) => hostingStatus(hosting, projectId, deploymentId),
+      }
+    : undefined,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
   policyDefaults: (projectId) => policyRows(pinnedPlaybook(projectId)),
   autonomyDefaults: (projectId) => pinnedPlaybook(projectId).manifest.defaults.autonomy,
