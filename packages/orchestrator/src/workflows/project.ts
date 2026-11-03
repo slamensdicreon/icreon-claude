@@ -903,7 +903,21 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const backKey = (x: { taskId: string }) =>
         patched('send-back-per-requester') ? `${t.taskId}>${x.taskId}` : x.taskId;
       const overSent = backNow.filter((x) => (sentBack[backKey(x)] ?? 0) >= MAX_SEND_BACKS);
-      const count = (waits[t.taskId] = (waits[t.taskId] ?? 0) + 1);
+      // Only a wait with nothing under way to end it counts toward the limit. Waiting on a fix
+      // that is queued or running, or sending finished work back to be redone, is progress: the
+      // task checks again once that work lands, and send-backs have their own limit.
+      const inFlight =
+        patched('wait-limit-in-flight') &&
+        (backNow.length > 0 ||
+          named.some((id) => {
+            const d = task(id)!;
+            return (
+              !SETTLED_STATES.has(stateOf(id)) && !(d.phase > t.phase && !started.has(d.phase))
+            );
+          }));
+      const count = inFlight
+        ? (waits[t.taskId] ?? 0)
+        : (waits[t.taskId] = (waits[t.taskId] ?? 0) + 1);
       const asked = [...w.taskIds, ...(w.sendBack ?? []).map((x) => x.taskId)];
       const problem =
         !named.length && !handOn.length

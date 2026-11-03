@@ -147,6 +147,43 @@ it("counts send-backs per asker: one task's asks don't spend another's allowance
   expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
 }, 120_000);
 
+it('counts only waits with nothing under way: a page that keeps sending fixes back raises no card', async () => {
+  const runs: Record<string, number> = {};
+  const runner = {
+    async run(req: RunRequest) {
+      const n = (runs[req.task.taskId] = (runs[req.task.taskId] ?? 0) + 1);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      // Tabs checks four times; each time a fix it needs is still owed, so it sends Hero or
+      // Header back (twice each, within its allowance) and waits for that round to land.
+      const target = ['port-hero', 'port-header', 'port-hero', 'port-header'][n - 1];
+      if (req.task.taskId === 'port-tabs' && target)
+        return {
+          kind: 'waiting' as const,
+          summary: `Check ${n}: ${target} still needs a fix.`,
+          waitingOn: {
+            taskIds: [],
+            sendBack: [{ taskId: target, fixes: `Fix ${n}.` }],
+            what: `the ${target} fix`,
+          },
+          spent,
+        };
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  const s = p.state()!;
+  // Four waits, past the limit of three, but each waited on work under way: no card.
+  expect(
+    Object.values(s.escalations).filter((x) => x.title.endsWith('what it needs is missing')),
+  ).toEqual([]);
+  expect(runs['port-tabs']).toBe(5);
+  expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
+}, 120_000);
+
 it("renews a task's waits when its card is answered, so it asks again only after three more", async () => {
   const runs: Record<string, number> = {};
   const runner = {
