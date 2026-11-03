@@ -2406,6 +2406,13 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     if (!budgetHold) {
       // Concurrency counts agent sessions; a batch of pages is one session.
       const inFlight = () => new Set(children.values()).size;
+      // A hold gives way when the task it waits behind is itself waiting on the held task:
+      // otherwise neither can run, and only releasing every wait would end it.
+      const holdYields = patched('hold-yields-to-wait');
+      const holding = (t: PlannedTask, d: string) =>
+        stateOf(d) !== 'done' &&
+        stateOf(d) !== 'cancelled' &&
+        !(holdYields && waitingOn.get(d)?.ids.includes(t.taskId));
       const eligible = plan.tasks.filter((t) => {
         const st = stateOf(t.taskId);
         return (
@@ -2415,9 +2422,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           !children.has(t.taskId) &&
           !held(t) &&
           t.dependsOn.every((d) => stateOf(d) === 'done' || stateOf(d) === 'cancelled') &&
-          !(holdUntil.get(t.taskId) ?? []).some(
-            (d) => stateOf(d) !== 'done' && stateOf(d) !== 'cancelled',
-          ) &&
+          !(holdUntil.get(t.taskId) ?? []).some((d) => holding(t, d)) &&
           !(behindCanary(t) && patched('canary-dispatch'))
         );
       });

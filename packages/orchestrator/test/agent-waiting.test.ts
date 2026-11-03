@@ -243,6 +243,56 @@ it('never parks a task on a later phase: it finishes its part and leaves the res
   expect(Object.values(p.state()!.escalations).some((x) => x.title.includes('Header'))).toBe(false);
 }, 120_000);
 
+it('lets a held send-back run when the task it waits behind waits on it', async () => {
+  const seen: RunRequest[] = [];
+  const runs: Record<string, number> = {};
+  let first: string | null = null;
+  const pair = ['port-hero', 'port-header'];
+  const runner = {
+    async run(req: RunRequest) {
+      seen.push(req);
+      const id = req.task.taskId;
+      const n = (runs[id] = (runs[id] ?? 0) + 1);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      // Tabs sends Hero and Header back together: the later one in the plan is held until the
+      // earlier one is redone. The earlier one, redone, then needs a change in the later one.
+      if (id === 'port-tabs' && n === 1)
+        return {
+          kind: 'waiting' as const,
+          summary: 'Hero and Header both need a fix.',
+          waitingOn: {
+            taskIds: [],
+            sendBack: pair.map((taskId) => ({ taskId, fixes: `Fix ${taskId}.` })),
+            what: 'the Hero and Header fixes',
+          },
+          spent,
+        };
+      if (pair.includes(id) && n === 2 && !first) {
+        first = id;
+        const other = pair.find((x) => x !== id)!;
+        return {
+          kind: 'waiting' as const,
+          summary: `Needs ${other} first.`,
+          waitingOn: { taskIds: [other], what: `the ${other} fix` },
+          spent,
+        };
+      }
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  // The held task ran, so the first one's wait ended the normal way, not by a release.
+  const last = seen.filter((r) => r.task.taskId === first).at(-1)!;
+  expect(runs[first!]).toBe(3);
+  expect(last.instructions).toContain('What you waited for');
+  expect(last.instructions).not.toContain('Nothing is working on what you waited for');
+  expect(plan(p.state()!).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
+}, 120_000);
+
 it('releases waits nothing can end: nobody working and no card open', async () => {
   const seen: RunRequest[] = [];
   const runner = {
