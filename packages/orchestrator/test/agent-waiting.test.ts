@@ -147,6 +147,38 @@ it("counts send-backs per asker: one task's asks don't spend another's allowance
   expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
 }, 120_000);
 
+it("renews a task's waits when its card is answered, so it asks again only after three more", async () => {
+  const runs: Record<string, number> = {};
+  const runner = {
+    async run(req: RunRequest) {
+      const n = (runs[req.task.taskId] = (runs[req.task.taskId] ?? 0) + 1);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      // Tabs waits on Hero five times in a row, then finishes.
+      if (req.task.taskId === 'port-tabs' && n <= 5)
+        return {
+          kind: 'waiting' as const,
+          summary: 'Waits on Hero.',
+          waitingOn: { taskIds: ['port-hero'], what: 'the Hero component' },
+          spent,
+        };
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, (x) =>
+    x.title.startsWith('Port Tabs') ? { optionId: 'opt-1' } : null,
+  );
+  await p.handle.result();
+  await bot.stop();
+
+  const s = p.state()!;
+  // The fourth wait passes the limit and asks; the answer renews the waits, so the fifth doesn't.
+  const cards = Object.values(s.escalations).filter((x) => x.title.startsWith('Port Tabs'));
+  expect(cards).toHaveLength(1);
+  expect(runs['port-tabs']).toBe(6);
+  expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
+}, 120_000);
+
 it('never parks a task on a later phase: it finishes its part and leaves the rest', async () => {
   const seen: RunRequest[] = [];
   const runner = {

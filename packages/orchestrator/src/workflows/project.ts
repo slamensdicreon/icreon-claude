@@ -650,6 +650,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     switch (r.kind) {
       case 'agent-decision': {
         taskEscalation.delete(r.taskId);
+        // An answer renews the task's waits: without it, a task past its limit of waits would
+        // come back with another card at its very next wait, however the answer told it to go on.
+        if (patched('answer-renews-waits')) delete waits[r.taskId];
         const chosen = r.options.find((o) => o.id === optionId)!.label;
         instructions[r.taskId] =
           `Decision on "${r.question}": ${chosen}.${notes ? ` ${notes}` : ''}`;
