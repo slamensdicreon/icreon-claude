@@ -3,9 +3,9 @@ import { DeployClient, SitecoreDeployToolServer } from '../src';
 
 const ctx = { projectId: 'p', token: 'org-jwt', role: 'deployment-engineer', taskId: 't' };
 
-function fakeDeploy() {
+function fakeDeploy(initial: Record<string, unknown>[] = []) {
   const puts: unknown[] = [];
-  let hosts: Record<string, unknown>[] = [];
+  let hosts: Record<string, unknown>[] = initial;
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status });
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer org-jwt');
@@ -47,6 +47,7 @@ const server = (fetch: typeof globalThis.fetch) =>
     facts: async () => ({
       cmHost: 'xmc-acme.sitecorecloud.io',
       headHosts: ['acme-site.vercel.app'],
+      site: 'acme',
     }),
     fetch,
   });
@@ -92,6 +93,32 @@ describe('SitecoreDeployToolServer', () => {
     ]);
     const back = await s.call('editing-host.read', {}, ctx);
     expect(back.body).toMatchObject({ hosts: [{ applicationName: 'basic-nextjs' }] });
+  });
+
+  it("refuses the site's own name and a host that serves another head (shared environments)", async () => {
+    const own = fakeDeploy();
+    const named = await server(own.fetch).call(
+      'editing-host.register',
+      { url: 'https://acme-site.vercel.app', applicationName: 'Acme' },
+      ctx,
+    );
+    expect(named.code).toBe(422);
+    expect(named.summary).toContain("site's own rendering host");
+    const shared = fakeDeploy([
+      {
+        id: 'h0',
+        applicationName: 'basic-nextjs',
+        renderingEngineApplicationUrl: 'https://other-site.vercel.app',
+      },
+    ]);
+    const r = await server(shared.fetch).call(
+      'editing-host.register',
+      { url: 'https://acme-site.vercel.app', applicationName: 'basic-nextjs' },
+      ctx,
+    );
+    expect(r.code).toBe(422);
+    expect(r.summary).toContain('serves other-site.vercel.app, another head');
+    expect(shared.puts).toEqual([]);
   });
 
   it('finds the CM environment when only its editing host carries the CM host', async () => {

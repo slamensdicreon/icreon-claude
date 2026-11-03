@@ -1362,21 +1362,33 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       return rejected(
         `${g.item.path} has no rendering host field (fields: ${g.item.fields.nodes.map((f) => f.name).join(', ')}).`,
       );
-    const name = facts.site;
+    // A host item that won't take the write belongs to someone else: a SitecoreAI Deploy editing
+    // host of the same name is managed by Deploy, which keeps its URLs. The site then gets a host
+    // item of its own beside it, and the Deploy one is left as it is.
+    const hostFor = async (name: string) => {
+      const existing = hosts.find((h) => h.name.toLowerCase() === name.toLowerCase());
+      const result = existing
+        ? await this.update(q, UpdateArgs.safeParse({ path: existing.path, fields }), lang)
+        : await this.create(
+            q,
+            CreateArgs.safeParse({
+              parentPath: HOSTS,
+              name,
+              templateId: model.template.templateId,
+              fields,
+            }),
+            lang,
+          );
+      return { name, existing, result };
+    };
+    let chosen = await hostFor(facts.site);
+    let tookOver: string | null = null;
+    if (chosen.existing && chosen.result.code === 409) {
+      tookOver = chosen.existing.path;
+      chosen = await hostFor(`${facts.site}-editing`);
+    }
+    const { name, existing, result: host } = chosen;
     const path = `${HOSTS}/${name}`;
-    const existing = hosts.find((h) => h.name.toLowerCase() === name.toLowerCase());
-    const host = existing
-      ? await this.update(q, UpdateArgs.safeParse({ path: existing.path, fields }), lang)
-      : await this.create(
-          q,
-          CreateArgs.safeParse({
-            parentPath: HOSTS,
-            name,
-            templateId: model.template.templateId,
-            fields,
-          }),
-          lang,
-        );
     if (host.code !== 200) return host;
 
     // The setting holds a host's name, or its ID: write it the way it is stored.
@@ -1392,13 +1404,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       code: 200,
       body: {
         renderingHost: path,
+        ...(tookOver ? { managedElsewhere: tookOver } : {}),
         url: origin,
         fields,
         siteGrouping: g.item.path,
         setting: g.field.name,
         value,
       },
-      summary: `${facts.site} now renders through ${origin} in Page builder: rendering host ${path} (${fields.map((f) => f.name).join(', ')}), and ${g.item.path} "${g.field.name}" set to ${value}; both read back`,
+      summary: `${facts.site} now renders through ${origin} in Page builder: rendering host ${path} (${fields.map((f) => f.name).join(', ')}), and ${g.item.path} "${g.field.name}" set to ${value}; both read back${tookOver ? `. ${tookOver} keeps other URLs whatever is written to it (a SitecoreAI Deploy editing host manages it), so the site has its own host item, ${name}` : ''}`,
     };
   }
 

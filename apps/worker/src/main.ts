@@ -185,7 +185,8 @@ if (env.AGENTS === 'claude' && vault && credentials) {
       facts: async (id) => {
         const s = await project(id);
         if (s?.intake?.platform !== SITECOREAI) return null;
-        return { cmHost: sitecoreTarget(s.intake).cmHost, headHosts: headHosts(s) };
+        const target = sitecoreTarget(s.intake);
+        return { cmHost: target.cmHost, headHosts: headHosts(s), site: target.site };
       },
     }),
   );

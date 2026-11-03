@@ -15,6 +15,8 @@ export interface DeployFacts {
   cmHost: string;
   /** Hosts the head is deployed on (from the hosting server): the only ones that may be registered. */
   headHosts: string[];
+  /** The project's site: its own rendering host carries its name, so no Deploy host may take it. */
+  site?: string;
 }
 
 export interface DeployServerOptions {
@@ -112,6 +114,32 @@ export class SitecoreDeployToolServer implements ToolServer {
             `${base.host} isn't a host this project's head is deployed on (${facts.headHosts.join(', ') || 'none yet'}). Deploy it with the hosting tools first.`,
           );
         }
+        // Deploy's editing hosts belong to the whole environment, and Deploy keeps the rendering
+        // host item of the same name to its own URLs. The site's own name is its per-site host
+        // (rendering-host.set), and a host serving another head serves other sites.
+        if (facts.site && a.data.applicationName.toLowerCase() === facts.site.toLowerCase())
+          return rejected(
+            `"${a.data.applicationName}" is the site's own rendering host, which rendering-host.set manages: registered with Deploy, Deploy would keep that item to the URL given here and the site couldn't be pointed at another. Page builder renders the site through that host, so it needs no Deploy editing host.`,
+          );
+        const listed = await client.request('GET', envPath);
+        const current =
+          listed.status === 200
+            ? (
+                listed.body as {
+                  applicationName?: string;
+                  renderingEngineApplicationUrl?: string;
+                }[]
+              ).find(
+                (h) => h.applicationName?.toLowerCase() === a.data.applicationName.toLowerCase(),
+              )
+            : undefined;
+        const serving = current?.renderingEngineApplicationUrl
+          ? new URL(current.renderingEngineApplicationUrl).host
+          : null;
+        if (serving && !facts.headHosts.includes(serving))
+          return rejected(
+            `Editing host "${a.data.applicationName}" serves ${serving}, another head. It belongs to the whole environment, so every site rendering through it would switch to this project's head. Leave it as it is: the site renders through its own rendering host (rendering-host.set).`,
+          );
         const origin = base.origin;
         const r = await client.request('PUT', envPath, {
           cmEnvironmentId: env.id,

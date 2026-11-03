@@ -19,7 +19,7 @@ const URLS = {
 };
 
 /** A tenant with the environment's Default host, Ansco's Site Grouping item and another site's. */
-function tenant(setting: string, field = 'RenderingHost') {
+function tenant(setting: string, field = 'RenderingHost', managed: string[] = []) {
   type Item = { id: string; template: string; fields: Record<string, string> };
   const items = new Map<string, Item>([
     [HOSTS, { id: 'hosts-id', template: 'folder', fields: {} }],
@@ -62,7 +62,8 @@ function tenant(setting: string, field = 'RenderingHost') {
     }
     if (/updateItem\(/.test(query)) {
       const path = /path: "([^"]+)"/.exec(query)![1]!;
-      Object.assign(items.get(path)!.fields, fieldsOf(query));
+      // A host SitecoreAI Deploy manages: the write is accepted and changes nothing.
+      if (!managed.includes(path)) Object.assign(items.get(path)!.fields, fieldsOf(query));
       return ok({ updateItem: { item: { itemId: items.get(path)!.id, name: 'n' } } });
     }
     const path = /path: "([^"]+)"/.exec(query)![1]!;
@@ -123,6 +124,35 @@ describe('rendering hosts', () => {
     expect(
       t.items.get(`${HOSTS}/ansco`)!.fields['Server side rendering engine application URL'],
     ).toBe('https://ansco-2.vercel.app');
+  });
+
+  it('gives the site a host item of its own when Deploy manages the one named after it', async () => {
+    const t = tenant('', 'RenderingHost', [`${HOSTS}/ansco`]);
+    t.items.set(`${HOSTS}/ansco`, {
+      id: 'deploy-host',
+      template: 'host-tpl',
+      fields: {
+        'Server side rendering engine endpoint URL': 'https://ansco.vercel.app/api/editing/render',
+        'Server side rendering engine application URL': 'https://ansco.vercel.app',
+        'Server side rendering engine configuration URL':
+          'https://ansco.vercel.app/api/editing/config',
+      },
+    });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: t.fetch });
+    const r = await s.call('rendering-host.set', { url: 'https://ansco-editing.vercel.app' }, ctx);
+    expect(r.code).toBe(200);
+    expect(r.body).toMatchObject({
+      renderingHost: `${HOSTS}/ansco-editing`,
+      managedElsewhere: `${HOSTS}/ansco`,
+    });
+    expect(
+      t.items.get(`${HOSTS}/ansco-editing`)!.fields['Server side rendering engine application URL'],
+    ).toBe('https://ansco-editing.vercel.app');
+    expect(t.items.get(`${GROUPING}/ansco`)!.fields.RenderingHost).toBe('ansco-editing');
+    // The Deploy host keeps its own URLs.
+    expect(
+      t.items.get(`${HOSTS}/ansco`)!.fields['Server side rendering engine application URL'],
+    ).toBe('https://ansco.vercel.app');
   });
 
   it('writes the setting as an ID when that is how it is stored', async () => {
