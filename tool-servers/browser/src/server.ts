@@ -20,6 +20,78 @@ export interface BrowserServerOptions {
    * from them as well as from the source site.
    */
   assetHosts?: (projectId: string) => Promise<string[]>;
+  /** Most characters a crawl result may take (default 400,000, about 100K tokens). */
+  crawlBudget?: number;
+}
+
+/**
+ * A crawl's pages, small enough for an agent's context whatever the site's size. Links are used
+ * to find pages, not returned; images on most pages (the logo, the footer's icons) are listed
+ * once; each block keeps a short excerpt. Past the budget, detail goes in steps: block text,
+ * then blocks, then all but the main headings. `browser.snapshot` reads any page in full.
+ */
+export function compactCrawl(
+  pages: (PageExtract & { url: string; status: number })[],
+  budget: number,
+) {
+  const imageCount = new Map<string, { src: string; alt: string | null; pages: number }>();
+  for (const p of pages)
+    for (const img of new Map(p.images.map((i) => [i.src, i])).values()) {
+      const c = imageCount.get(img.src) ?? { ...img, pages: 0 };
+      c.pages++;
+      imageCount.set(img.src, c);
+    }
+  const shared = [...imageCount.values()].filter(
+    (c) => pages.length > 1 && c.pages >= pages.length / 2,
+  );
+  const isShared = new Set(shared.map((c) => c.src));
+  const levels = [
+    { blocks: 25, blockText: 200, headings: 30, images: 30 },
+    { blocks: 25, blockText: 0, headings: 20, images: 20 },
+    { blocks: 0, blockText: 0, headings: 12, images: 10 },
+    { blocks: 0, blockText: 0, headings: 4, images: 3 },
+  ];
+  const detail = [
+    'full',
+    'block text left out to fit; use browser.snapshot for a page in full',
+    'blocks left out to fit; use browser.snapshot for a page in full',
+    'only main headings and a few images kept to fit; use browser.snapshot for a page in full',
+  ];
+  let out: unknown[] = [];
+  let level = 0;
+  for (; level < levels.length; level++) {
+    const l = levels[level]!;
+    out = pages.map((p) => ({
+      url: p.url,
+      status: p.status,
+      title: p.title,
+      description: p.description,
+      lang: p.lang,
+      wordCount: p.wordCount,
+      headings: (l.headings < 12 ? p.headings.filter((h) => h.level <= 2) : p.headings).slice(
+        0,
+        l.headings,
+      ),
+      images: p.images.filter((i) => !isShared.has(i.src)).slice(0, l.images),
+      links: p.links.length,
+      ...(l.blocks
+        ? {
+            blocks: p.blocks.slice(0, l.blocks).map((b) => ({
+              tag: b.tag,
+              className: b.className,
+              heading: b.heading,
+              ...(l.blockText ? { text: b.text.slice(0, l.blockText) } : {}),
+            })),
+          }
+        : {}),
+    }));
+    if (JSON.stringify(out).length <= budget) break;
+  }
+  return {
+    pages: out,
+    sharedImages: shared.map(({ src, alt, pages: n }) => ({ src, alt, pages: n })),
+    detail: detail[Math.min(level, detail.length - 1)]!,
+  };
 }
 
 /** What a browser sends for an image, so sites that turn away bare clients serve the file. */
@@ -386,9 +458,10 @@ export class BrowserToolServer implements ToolServer {
       (c) => pages.length > 1 && c.pages >= pages.length / 2,
     );
     const truncated = queue.some((u) => !seen.has(u));
+    const compact = compactCrawl(pages, this.opts.crawlBudget ?? 400_000);
     return {
       code: 200,
-      body: { origin, pages, excluded, repeatedRegions, truncated },
+      body: { origin, ...compact, excluded, repeatedRegions, truncated },
       summary: `Crawled ${pages.length} pages from ${origin}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions`,
     };
   }

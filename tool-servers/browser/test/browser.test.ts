@@ -16,6 +16,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BrowserToolServer,
+  compactCrawl,
   EgressProxy,
   GuardedBrowser,
   isBlockedSubresource,
@@ -132,6 +133,53 @@ describe('crawl', () => {
       /^Crawled 7 pages from http:\/\/127\.0\.0\.1:\d+; 2 excluded; 3 repeated regions$/,
     );
   }, 60_000);
+
+  it('keeps its result small: links counted, images on most pages listed once', async () => {
+    const r = await browser.call('crawl', { url: `${origin}/` }, ctx);
+    const body = r.body as {
+      pages: { links: unknown; images: { src: string }[] }[];
+      sharedImages: { src: string; pages: number }[];
+      detail: string;
+    };
+    expect(body.pages.every((p) => typeof p.links === 'number')).toBe(true);
+    const shared = new Set(body.sharedImages.map((i) => i.src));
+    expect(body.pages.every((p) => p.images.every((i) => !shared.has(i.src)))).toBe(true);
+    expect(body.detail).toBe('full');
+  }, 60_000);
+
+  it('still lists every page when the site is too big for full detail', async () => {
+    const pages = Array.from({ length: 300 }, (_, i) => ({
+      url: `https://example.com/p${i}`,
+      status: 200,
+      title: `Page ${i}`,
+      description: null,
+      lang: 'en',
+      headings: [
+        { level: 1, text: `Page ${i}` },
+        ...Array.from({ length: 20 }, (_, j) => ({ level: 3, text: `Detail ${j} `.repeat(10) })),
+      ],
+      links: Array.from({ length: 150 }, (_, j) => `https://example.com/p${j}`),
+      images: [{ src: 'https://example.com/logo.svg', alt: 'Logo' }],
+      regions: { header: null, nav: null, footer: null },
+      blocks: Array.from({ length: 30 }, () => ({
+        tag: 'section',
+        className: 'band',
+        heading: 'A section',
+        text: 'Copy '.repeat(100),
+      })),
+      wordCount: 900,
+    }));
+    const full = compactCrawl(pages, Infinity);
+    expect(full.detail).toBe('full');
+    expect(full.sharedImages).toEqual([
+      { src: 'https://example.com/logo.svg', alt: 'Logo', pages: 300 },
+    ]);
+    const small = compactCrawl(pages, 60_000);
+    expect(small.pages).toHaveLength(300);
+    expect(JSON.stringify(small.pages).length).toBeLessThanOrEqual(60_000);
+    expect(small.detail).toMatch(/use browser\.snapshot/);
+    expect(small.pages[7]).toMatchObject({ url: 'https://example.com/p7', title: 'Page 7' });
+  });
 
   it('stops at maxPages and says the inventory is incomplete', async () => {
     const r = await browser.call('crawl', { url: `${origin}/`, maxPages: 2 }, ctx);
