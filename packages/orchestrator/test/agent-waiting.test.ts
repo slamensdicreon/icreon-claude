@@ -101,6 +101,52 @@ it('sends finished work back to its owner with the fixes, and carries on when it
   expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
 }, 120_000);
 
+it("counts send-backs per asker: one task's asks don't spend another's allowance", async () => {
+  const runs: Record<string, number> = {};
+  const runner = {
+    async run(req: RunRequest) {
+      const n = (runs[req.task.taskId] = (runs[req.task.taskId] ?? 0) + 1);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      const back = (fixes: string) => ({
+        kind: 'waiting' as const,
+        summary: `Needs Hero changed: ${fixes}`,
+        waitingOn: {
+          taskIds: [],
+          sendBack: [{ taskId: 'port-hero', fixes }],
+          what: 'the Hero fix',
+        },
+        spent,
+      });
+      const wait = (taskId: string) => ({
+        kind: 'waiting' as const,
+        summary: `Waits on ${taskId}.`,
+        waitingOn: { taskIds: [taskId], what: taskId },
+        spent,
+      });
+      // Header waits for Hero, then sends it back twice (its full allowance) once it is done;
+      // Tabs waits for Header, then sends Hero back once of its own.
+      if (req.task.taskId === 'port-header' && n === 1) return wait('port-hero');
+      if (req.task.taskId === 'port-header' && (n === 2 || n === 3))
+        return back(`Header ask ${n}.`);
+      if (req.task.taskId === 'port-tabs' && n === 1) return wait('port-header');
+      if (req.task.taskId === 'port-tabs' && n === 2) return back('Tabs ask.');
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  const s = p.state()!;
+  // Three asks of one component from two tasks: within each asker's allowance, so no card.
+  expect(
+    Object.values(s.escalations).filter((x) => x.title.endsWith('what it needs is missing')),
+  ).toEqual([]);
+  expect(runs['port-hero']).toBeGreaterThanOrEqual(4);
+  expect(plan(s).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
+}, 120_000);
+
 it('never parks a task on a later phase: it finishes its part and leaves the rest', async () => {
   const seen: RunRequest[] = [];
   const runner = {

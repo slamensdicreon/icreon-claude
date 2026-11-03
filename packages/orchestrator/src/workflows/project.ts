@@ -895,7 +895,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         (id) => id !== t.taskId && task(id)?.kind === 'work',
       );
       const cycle = named.some((id) => waitingOn.get(id)?.ids.includes(t.taskId));
-      const overSent = backNow.filter((x) => (sentBack[x.taskId] ?? 0) >= MAX_SEND_BACKS);
+      // Each task that sends work back has its own allowance per task it sends to: a page's asks
+      // don't spend another page's, nor an integrator's (one component, many askers).
+      const backKey = (x: { taskId: string }) =>
+        patched('send-back-per-requester') ? `${t.taskId}>${x.taskId}` : x.taskId;
+      const overSent = backNow.filter((x) => (sentBack[backKey(x)] ?? 0) >= MAX_SEND_BACKS);
       const count = (waits[t.taskId] = (waits[t.taskId] ?? 0) + 1);
       const asked = [...w.taskIds, ...(w.sendBack ?? []).map((x) => x.taskId)];
       const problem =
@@ -953,7 +957,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         // Several pages failing on one component send it back once: a send-back counts toward
         // the limit only when the work is redone, not when it is already queued for it.
         if (stateOf(x.taskId) === 'done' || !patched('send-back-order'))
-          sentBack[x.taskId] = (sentBack[x.taskId] ?? 0) + 1;
+          sentBack[backKey(x)] = (sentBack[backKey(x)] ?? 0) + 1;
         if (w.review) redoing.add(x.taskId);
         const note = `Sent back by ${by}: ${x.fixes}`;
         if (stateOf(x.taskId) === 'done') {
