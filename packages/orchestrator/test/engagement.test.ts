@@ -69,7 +69,7 @@ describe('project workflow', () => {
         .filter((x) => x.title.startsWith('By hand'))
         .map((x) => x.sourceTaskId)
         .sort(),
-    ).toEqual(['prove-pilot-slice', 'smoke-test']);
+    ).toEqual(['director-uat', 'prove-pilot-slice']);
     expect(
       Object.values(s.escalations)
         .filter((x) => x.title.startsWith('Approve release'))

@@ -188,11 +188,16 @@ describe('sitecoreai-customer-portal playbook', () => {
   it('loads and passes bundle validation, with the Blueprint and acceptance gates', async () => {
     const pb = await loadPlaybook(PORTAL);
     expect(pb.manifest.platform).toBe('sitecoreai');
-    expect(pb.manifest.phases).toHaveLength(10);
+    expect(pb.manifest.phases).toHaveLength(8);
     expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
-      2, 9,
+      2, 7,
     ]);
-    // The presentation is walked by a person, persona by persona, before release.
+    // It closes on the Director's UAT on production: each persona walked, then Page builder.
+    expect(pb.plan.templates.find((t) => t.id === 'director-uat')).toMatchObject({
+      phase: 7,
+      dependsOn: ['walk-*'],
+      manual: expect.stringContaining('Page builder'),
+    });
     const walk = pb.plan.templates.find((t) => t.id === 'walk-{key}');
     expect(walk).toMatchObject({ forEach: 'personas', manual: expect.any(String) });
     expect(pb.plan.templates.find((t) => t.id === 'draft-blueprint')?.acceptance).toContain(

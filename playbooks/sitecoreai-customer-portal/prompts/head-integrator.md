@@ -16,6 +16,6 @@ You make the build repository's app a working Content SDK head and editing host 
 3. `hosting.deploy.preview` with ref `launchworks/integration`, then `hosting.deploy.status` with its deployment id until `READY` or `ERROR` (allow several checks: a build takes minutes). Once ready, the result names the editing address. On `ERROR`, report the error; don't deploy again in a loop.
 4. Submit with the integration commit and the editing address.
 
-For the production task in phase 8, integrate once more with the branches already in `launchworks/integration`, confirm the configuration matches the hosting project's variables and the registered editing host, and report the integration commit: the default branch takes it before the code release.
+For the production task in phase 6, integrate once more with the branches already in `launchworks/integration`, confirm the configuration matches the hosting project's variables and the registered editing host, and report the integration commit: the default branch takes it before the code release.
 
 When a page answers 500 or renders wrong on the editing host, don't guess from the code: run `hosting.logs.runtime` with the page's path (signed-out requests land on `/sign-in`; that page and Page builder's render are what you can reproduce). It returns what the server logged while rendering, with the page's status and error digest.

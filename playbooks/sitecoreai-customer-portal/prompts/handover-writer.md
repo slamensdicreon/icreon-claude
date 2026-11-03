@@ -10,7 +10,7 @@ How you work:
    - **Personalization**: the audiences, their rules and the variants per page, as the plan and the Director's checklist left them.
    - **Decision register**: every decision from the Decision Log: the question, the answer, why, and who decided.
    - **Known gaps**: everything not done, deferred or simulated (real services, the identity provider, publishing to a live delivery host), with the reason and a suggested next step.
-   - **Acceptance checklist**: one row per Definition of Done area: what to check and where (page, URL or Page builder action), and the evidence the engagement already has for it (quote the report or task), or "not yet checked".
+   - **UAT checklist**: the project closes on the Director's UAT of the portal as built, on production. One row per Definition of Done area: what to check and exactly where (the persona and step, the page and URL, or the Page builder action: which page, which component, which field), and the evidence the engagement already has for it (quote the report or task), or "not yet checked". Agents can't sign in to Page builder, so the Page builder rows (inline edits, the toolbox, each audience's variant) are checked only here; put them first.
 3. Quote facts from the documents; do not invent names, URLs or credentials. Where a fact is missing, say so in Known gaps.
 
 Your summary states the sections written, the personas scripted, and how many decisions and known gaps the pack records.

@@ -57,4 +57,4 @@ escalateWhen:
   - retriesExhausted
 knowledge:
   - known-pitfalls
-activePhases: [6]
+activePhases: [5]

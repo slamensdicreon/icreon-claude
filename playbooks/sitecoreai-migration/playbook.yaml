@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai.
 id: sitecoreai-migration
-version: 0.9.0
+version: 0.10.0
 name: Build a SitecoreAI website
 description: >-
   Rebuilds a client's site from its Next.js repository as a Content SDK site on SitecoreAI,
@@ -230,24 +230,26 @@ phases:
     name: Experience enablement
     shortName: Experience
     exitCriteria: >-
-      Components datasource-driven; redirects, SEO fields, sitemap, robots, 404/500, dictionary in place;
-      when the brief confirms Personalize is licensed, one page variant and one A/B/n test resolve on
-      the preview host.
+      Components datasource-driven; redirects, SEO fields, sitemap, robots, 404/500, dictionary in
+      place. The page variant and A/B/n test, when Personalize is licensed, are set up in the
+      Director's UAT (phase 9).
   - number: 8
     name: Deployment and publishing
     shortName: Deployment
     exitCriteria: >-
       Three releases, each verified on its own: the deployed commit is the reviewed commit on the
       registered editing and delivery hosts; serialization of the project's own items replays cleanly;
-      the publish job finished and every route resolves on Experience Edge. Smoke test green.
-  # Acceptance is the Director's, in the live systems (Page builder, the editing and delivery hosts),
-  # against the Definition of Done in the handover pack: agents don't re-check the finished site.
+      the publish job finished and every route resolves on Experience Edge.
+  # The project closes on the Director's UAT of the implementation, in the live systems (Page
+  # builder, the editing and delivery hosts), against the UAT checklist in the handover pack.
+  # Agents have no Pages sign-in: every Page builder check is in this UAT.
   - number: 9
-    name: Handover and acceptance
-    shortName: Acceptance
+    name: UAT and acceptance
+    shortName: UAT
     gate: director
-    gateLabel: 'Gate 2: Director accepts'
+    gateLabel: 'Gate 2: Director UAT and acceptance'
     exitCriteria: >-
-      Runbook, marketer component catalog, decision register, known-gaps register and the Director's
-      acceptance checklist delivered; the Director has accepted the site in the live systems; project
-      archived with full audit trail.
+      Runbook, marketer component catalog, decision register, known-gaps register and the UAT
+      checklist delivered; the Director has run the UAT in Page builder and on the live site, every
+      failure has gone back to its task and passed, and the Director accepts; project archived with
+      full audit trail.

@@ -33,7 +33,7 @@ Sizes are in working sessions. Each milestone ends with a deploy and a short rep
 | M4 | **Second site** (no-repo, remix of Ansco) | runs alongside | M3 | Real comparison against Ansco on the scorecard |
 | M5 | Project facts and self-check (A3) | 2 | M2 | No more "which ID?"; fewer rejections |
 | M6 | Knowledge store and retrospectives (A4) | 2½ | M3, M5 | Lessons that carry across projects |
-| M7 | Page builder automation (capability gap) | 2 + a decision | — | Agents prove editing in Pages themselves |
+| M7 | Page builder automation (capability gap) | **Not building** (decided 2026-11-03) | — | Page builder checks are the Director's UAT at the end of each project |
 | M8 | Cypher depth | 1 | M1, M6 | Cypher reads project history; handoff into a project |
 
 Total: about 12½ sessions. M5 and M7 can run in parallel with M3/M4 if wanted; M6 needs the rules
@@ -229,6 +229,18 @@ Built 2026-10-31. What landed, against the rows:
 
 ## M7 — Page builder automation (2 sessions, plus a decision)
 
+**Decided 2026-11-03: not building.** The Director won't give agents a Pages sign-in. Instead the
+playbooks close on the Director's UAT of the implementation (SitecoreAI migration 0.10.0, customer
+portal 0.2.0): the Page builder checks that ran mid-project (the smoke test, the personalization
+proof, the portal's role variants and walkthroughs) are one checklist at the end, on production,
+before Gate 2. The pilot slice proof in phase 4 stays by hand, early, so an editing problem is
+found before every component is built. Agents keep proving everything the APIs can show (renderings
+offered in Available Renderings, branches with starter content, editing scripts on the host, the
+published layout on Experience Edge, rendered parity). Optimizely's Visual Builder steps (O5) follow
+the same rule when that entity's tools are built.
+
+The plan as it stood:
+
 Four tasks per project need an agent working in SitecoreAI Pages as an editor (`prove-pilot-slice`,
 `smoke-test`, `editor-checklist`, `prove-personalization`). Today the Director does them by hand.
 
@@ -265,7 +277,7 @@ Built 2026-10-31:
 
 | Decision | Recommendation | Needed by |
 | --- | --- | --- |
-| How the Pages agent signs in (M7.0) | A dedicated service user, vaulted | M7 |
+| How the Pages agent signs in (M7.0) | **Decided 2026-11-03: no Pages sign-in; Page builder checks are the Director's UAT** | — |
 | How long shadow mode runs before the Lead decides for real (M2.8) | About 30 shadowed cards per category, then switch where agreement is 90% or more | M2.8 |
 | When the second site starts (M4) | After M3 deploys, as the build plan decided | M4 |
 | Where the Scorecard lives (M1.5) | Its own page in the project nav, plus the Dashboard comparison | M1.5 |

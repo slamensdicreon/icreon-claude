@@ -95,8 +95,4 @@ escalateWhen:
   - retriesExhausted
 knowledge:
   - known-pitfalls
-activePhases:
-  - 0
-  - 3
-  - 4
-  - 8
+activePhases: [0, 3, 4, 6]

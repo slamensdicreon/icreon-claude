@@ -171,68 +171,71 @@ templates:
     dependsOn: [compose-*]
     acceptance: [validator:structural.layouts]
 
-  # 6 — Personalization by role
+  # Variant content per role belongs with the pages: the agents make it; the variants themselves
+  # are made in Page builder by the Director, in the UAT.
   - id: variant-content
-    phase: 6
+    phase: 5
     role: experience-enabler
     when: personalization
     title: Create each role's variant content and the personalization plan
     dependsOn: [validate-pages]
     uses: [sitecore-authoring, blackboard, artifacts]
-  - id: personalize-by-role
-    phase: 6
-    role: editor-experience-qa
-    when: personalization
-    title: Set up audiences and page variants in Page builder
-    dependsOn: [variant-content]
-    manual: >-
-      Follow the personalization plan (the Workbench document `personalization-plan`): in Page
-      builder, create one audience per persona (Visitor, UTM campaign equals the persona's
-      audience), then on each page it lists, add a page variant for that audience and switch each
-      listed component to its variant datasource. Save, then sign in as each persona on the
-      editing host and check they see their own content. Mark it done listing the variants.
 
-  # 7 — Presentation path
-  - id: walk-{key}
-    phase: 7
-    role: editor-experience-qa
-    forEach: personas
-    title: Walk {name}'s presentation path
-    dependsOn: [validate-pages, personalize-by-role]
-    manual: >-
-      On the editing host: sign out, sign in as this persona from the demo accounts, and walk the
-      path the Blueprint gives for them, step by step: navigation shows only their pages, the
-      dashboard greets them with their content, every journey completes (forms submit, lists
-      update, drawers open), nothing shows another persona's data, then sign out. Use Reset demo
-      at the end. Mark it done naming any step that failed.
-
-  # 8 — Release
+  # 6 — Release
   - id: finalize-head
-    phase: 8
+    phase: 6
     role: head-integrator
     title: Finalize production configuration
-    dependsOn: [walk-*]
+    dependsOn: [validate-pages]
   - id: deploy-code
-    phase: 8
+    phase: 6
     role: deployment-engineer
     title: Deploy the reviewed commit to production and the editing host
     dependsOn: [finalize-head]
     release:
       rollback: Promote the previous production deployment again in Vercel (instant rollback).
     acceptance: [validator:deploy.commit-matches, validator:editing-host.responds]
-  - id: smoke-test
-    phase: 8
-    role: editor-experience-qa
-    title: Walk the presentation on production, then reset it
-    dependsOn: [deploy-code]
-    manual: >-
-      On production: Reset demo, then walk each persona's presentation path once more from the
-      sign-in screen, and open one page in Page builder to show an inline edit and a role's
-      variant. Reset demo again at the end so the presenter starts clean. Mark it done saying
-      what you checked.
 
-  # 9 — Presentation readiness and handover (the Director accepts on production)
+  # 7 — UAT and presentation readiness. The project closes on the Director's UAT of the portal
+  # as built, on production: Page builder is a person's tool (agents have no Pages sign-in,
+  # decided 2026-11-03), and the presentation path is walked by a person, persona by persona.
   - id: handover-pack
-    phase: 9
+    phase: 7
     role: handover-writer
-    title: Write the presenter script, reset procedure and handover pack
+    title: Write the presenter script, UAT checklist, reset procedure and handover pack
+  - id: personalize-by-role
+    phase: 7
+    role: editor-experience-qa
+    when: personalization
+    title: Set up audiences and page variants in Page builder
+    dependsOn: [handover-pack, variant-content]
+    manual: >-
+      Follow the personalization plan (the Workbench document `personalization-plan`): in Page
+      builder on production, create one audience per persona (Visitor, UTM campaign equals the
+      persona's audience), then on each page it lists, add a page variant for that audience and
+      switch each listed component to its variant datasource. Save. Mark it done listing the
+      variants.
+  - id: walk-{key}
+    phase: 7
+    role: editor-experience-qa
+    forEach: personas
+    title: Walk {name}'s presentation path on production
+    dependsOn: [handover-pack, personalize-by-role]
+    manual: >-
+      On production: sign out, sign in as this persona from the demo accounts, and walk the path
+      the presenter script gives for them, step by step: navigation shows only their pages, the
+      dashboard greets them with their own content (their page variant, when the portal has
+      them), every journey completes (forms submit, lists update, drawers open), nothing shows
+      another persona's data; then sign out. Mark it done naming any step that failed, and send
+      each failure back to its task.
+  - id: director-uat
+    phase: 7
+    role: editor-experience-qa
+    title: Director UAT in Page builder, then reset the demo
+    dependsOn: [walk-*]
+    manual: >-
+      Work through the UAT checklist in the handover pack. In Page builder on production: open the
+      dashboard and one other page, edit a field inline on each and undo it, add a component from
+      the toolbox with a new datasource and remove it, and preview each audience's variant. Then
+      Reset demo so the presenter starts clean. Mark it done naming anything that failed; send
+      each failure back to its task before you accept at Gate 2.

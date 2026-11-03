@@ -29,7 +29,7 @@ it('asks the Director to do a by-hand step with its checklist, runs no agent for
   await bot.stop();
   const s = p.state()!;
 
-  for (const id of ['prove-pilot-slice', 'smoke-test']) {
+  for (const id of ['prove-pilot-slice', 'director-uat']) {
     // No agent ran it: the Director did.
     expect(runs).not.toContain(id);
     expect(s.tasks[id]!.state).toBe('done');

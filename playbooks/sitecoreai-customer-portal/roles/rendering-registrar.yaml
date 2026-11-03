@@ -94,7 +94,4 @@ budget:
   wallclock: 30m
 knowledge:
   - known-pitfalls
-activePhases:
-  - 4
-  - 5
-  - 8
+activePhases: [4]

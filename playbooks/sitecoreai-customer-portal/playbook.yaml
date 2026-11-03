@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai. Learned building the TASB member portal demo.
 id: sitecoreai-customer-portal
-version: 0.1.0
+version: 0.2.0
 name: Build a SitecoreAI customer portal
 description: >-
   Rebuilds a client or customer portal prototype as a Content SDK portal on SitecoreAI: a
@@ -226,36 +226,28 @@ phases:
       host, placed on a page and edited in Page builder. Then every Blueprint component ported,
       registered (with dynamic placeholders where it holds others) and enabled in Page builder.
   - number: 5
-    name: Pages and media
+    name: Pages, media and role content
     shortName: Pages
     exitCriteria: >-
       Every Blueprint page exists in SitecoreAI with its datasources filled from the prototype's
       copy and its layout composed; every image uploaded with alt text; each page renders on the
-      editing host for the default persona.
+      editing host for the default persona; when the brief asks for it, each persona's variant
+      content and the personalization plan exist.
   - number: 6
-    name: Personalization by role
-    shortName: Roles
-    exitCriteria: >-
-      When the brief asks for it: each persona's variant content exists, and the Director has set
-      up the audiences and page variants in Page builder from the personalization plan; each
-      persona sees its own variant on the editing host.
-  - number: 7
-    name: Presentation path
-    shortName: Path
-    exitCriteria: >-
-      The Director has walked every persona's presentation path on the editing host, start to
-      finish, with no error; Reset demo returns the starting state.
-  - number: 8
     name: Release
     shortName: Release
     exitCriteria: >-
-      The reviewed commit runs on production and the editing host; the presentation path passes
-      on production, and the demo is reset afterwards.
-  - number: 9
-    name: Presentation readiness and handover
-    shortName: Handover
+      The reviewed commit runs on production and the editing host, with the demo data store
+      connected.
+  # The project closes on the Director's UAT of the portal as built, on production, against the
+  # UAT checklist and the presenter script in the handover pack.
+  - number: 7
+    name: UAT and presentation readiness
+    shortName: UAT
     gate: director
-    gateLabel: 'Gate 2: Director accepts'
+    gateLabel: 'Gate 2: Director UAT and acceptance'
     exitCriteria: >-
-      Presenter script, reset procedure, Page builder moments, component catalog, decision
-      register and known gaps delivered; the Director has accepted the portal on production.
+      Presenter script, UAT checklist, reset procedure, component catalog, decision register and
+      known gaps delivered; the Director has set up the role variants in Page builder, walked every
+      persona's presentation path on production, run the Page builder UAT, sent every failure back
+      until it passed, reset the demo, and accepts.

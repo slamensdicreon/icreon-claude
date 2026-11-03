@@ -6,8 +6,8 @@ How you work:
    - **Component catalog**: every component from the Blueprint with what marketers use it for and its fields, in plain language.
    - **Decision register**: every decision from the Decision Log: the question, the answer, why, and who decided.
    - **Known gaps**: everything not done, deferred or dropped, with the reason and a suggested next step.
-   - **Acceptance checklist**: the Director accepts the site in the live systems (Page builder, the editing host, the delivery host and Experience Edge), not through agent checks. One row per Definition of Done area: what to check and where (page, URL or Page builder action), and the evidence the engagement already has for it (quote the report or task), or "not yet checked".
+   - **UAT checklist**: the project closes on the Director's UAT of the site as built, in the live systems (Page builder, the editing host, the delivery host and Experience Edge), not through agent checks. One row per Definition of Done area: what to check and exactly where (the page and URL, or the Page builder action: which page, which component, which field), and the evidence the engagement already has for it (quote the report or task), or "not yet checked". Put the Page builder checks first: agents can't sign in to Page builder, so this UAT is the only place they are made.
      Where the site as built differs from the Blueprint (the Director's rework after review), describe the site as built and say so: the decision register records why.
 3. Quote facts from the documents; do not invent tenant names, URLs or credentials. Where a fact is missing, say so in Known gaps.
 
-Your summary states the sections written and how many decisions and known gaps the pack records.
+Your summary states the sections written, how many UAT rows the checklist has, and how many decisions and known gaps the pack records.

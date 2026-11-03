@@ -206,18 +206,6 @@ templates:
     title: Redirects, SEO, sitemap, robots, error pages and dictionary
     # Sitecore items only: it runs while Page builder (for the proof variant) isn't connected.
     uses: [sitecore-authoring, blackboard, artifacts]
-  - id: prove-personalization
-    phase: 7
-    # The Editor Experience QA owns Page builder work; the Experience Enabler keeps the items.
-    role: editor-experience-qa
-    when: personalization
-    title: Proof page variant and A/B/n test
-    dependsOn: [enable-experience]
-    manual: >-
-      In Page builder: on one page, create a personalized variant for an audience and an A/B/n
-      test on one component, publish, and check both show as configured. Mark it done saying what
-      you set up.
-
   # 8 — Deployment and publishing
   - id: finalize-head
     phase: 8
@@ -252,18 +240,31 @@ templates:
     role: perf-a11y-qa
     title: Lighthouse and axe on representative pages
     dependsOn: [publish-edge]
-  - id: smoke-test
-    phase: 8
-    role: editor-experience-qa
-    title: Smoke test Page builder on production
-    dependsOn: [deploy-code, serialize-items, publish-edge]
-    manual: >-
-      In Page builder on production: open three pages of different templates, edit a field inline
-      on each and undo it, add and remove a component, and check the pages render on the live
-      site. Mark it done saying what you checked.
-
-  # 9 — Handover and acceptance (the Director accepts in the live systems; no agent re-checks)
+  # 9 — UAT and acceptance. The project closes on the Director's UAT of the site as built, on
+  # production. Page builder is a person's tool here: agents have no Pages sign-in (decided
+  # 2026-11-03), so every Page builder check happens once, at the end, in this UAT.
   - id: handover-pack
     phase: 9
     role: handover-writer
-    title: Write runbook, component catalog and known-gaps register
+    title: Write runbook, component catalog, known gaps and the UAT checklist
+  - id: director-uat
+    phase: 9
+    role: editor-experience-qa
+    title: Director UAT in Page builder and on the live site
+    dependsOn: [handover-pack]
+    manual: >-
+      Work through the UAT checklist in the handover pack on production. In Page builder: open
+      three pages of different templates, edit a field inline on each and undo it, add a
+      component from the toolbox with a new datasource, then remove it, and save. On the live
+      site: the routes, navigation, media and forms the checklist lists. Mark it done naming
+      anything that failed, and send each failure back to its task before you accept at Gate 2.
+  - id: uat-personalization
+    phase: 9
+    role: editor-experience-qa
+    when: personalization
+    title: Set up and check a page variant and an A/B/n test
+    dependsOn: [handover-pack]
+    manual: >-
+      In Page builder on production: on one page, create a personalized variant for an audience
+      and an A/B/n test on one component, publish, and check both show as configured. Mark it done
+      saying what you set up.

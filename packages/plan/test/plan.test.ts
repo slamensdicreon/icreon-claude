@@ -195,11 +195,11 @@ describe('compilePlan', () => {
 
   it('includes a template with `when` only for projects with that feature', () => {
     const without = compilePlan(pb, blueprint());
-    expect(without.tasks.map((t) => t.taskId)).not.toContain('prove-personalization');
+    expect(without.tasks.map((t) => t.taskId)).not.toContain('uat-personalization');
     const withIt = compilePlan(pb, blueprint(), { features: ['personalization'] });
-    expect(withIt.tasks.find((t) => t.taskId === 'prove-personalization')).toMatchObject({
-      phase: 7,
-      dependsOn: ['enable-experience'],
+    expect(withIt.tasks.find((t) => t.taskId === 'uat-personalization')).toMatchObject({
+      phase: 9,
+      dependsOn: ['handover-pack'],
     });
   });
 
