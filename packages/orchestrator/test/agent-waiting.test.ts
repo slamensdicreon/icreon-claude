@@ -243,6 +243,43 @@ it('never parks a task on a later phase: it finishes its part and leaves the res
   expect(Object.values(p.state()!.escalations).some((x) => x.title.includes('Header'))).toBe(false);
 }, 120_000);
 
+it("runs a redone port's integration again, and the page waits for both", async () => {
+  const order: string[] = [];
+  const runs: Record<string, number> = {};
+  const runner = {
+    async run(req: RunRequest) {
+      const id = req.task.taskId;
+      const n = (runs[id] = (runs[id] ?? 0) + 1);
+      order.push(`${id}#${n}`);
+      const spent = { tokens: 1_000, usd: 0.01 };
+      // A page sends only the Hero port back; nothing names Hero's integration.
+      if (id === 'migrate-pages-page-1' && n === 1)
+        return {
+          kind: 'waiting' as const,
+          summary: 'The Hero needs a fix.',
+          waitingOn: {
+            taskIds: [],
+            sendBack: [{ taskId: 'port-hero', fixes: 'Fix the Hero overlay.' }],
+            what: 'the Hero fix',
+          },
+          spent,
+        };
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent };
+    },
+  };
+  const p = await launch(h, { runner });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+
+  // The integration ran again after the port was redone, and the page only after both.
+  expect(runs['integrate-hero']).toBe(2);
+  const at = (x: string) => order.indexOf(x);
+  expect(at('integrate-hero#2')).toBeGreaterThan(at('port-hero#2'));
+  expect(at('migrate-pages-page-1#2')).toBeGreaterThan(at('integrate-hero#2'));
+  expect(plan(p.state()!).tasks.every((t) => t.state === 'done' || t.kind !== 'work')).toBe(true);
+}, 120_000);
+
 it('lets a held send-back run when the task it waits behind waits on it', async () => {
   const seen: RunRequest[] = [];
   const runs: Record<string, number> = {};

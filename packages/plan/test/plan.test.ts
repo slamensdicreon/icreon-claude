@@ -197,6 +197,15 @@ describe('compilePlan', () => {
     expect(ids.indexOf('approve-prepare-hosting')).toBe(ids.indexOf('prepare-hosting') - 1);
   });
 
+  it("gives each component's integration its port to follow when the port is redone", () => {
+    const plan = compilePlan(pb, blueprint());
+    const byId = new Map(plan.tasks.map((t) => [t.taskId, t]));
+    expect(byId.get('integrate-hero')!.redoWith).toEqual(['port-hero']);
+    expect(byId.get('integrate-card-grid')!.redoWith).toEqual(['port-card-grid']);
+    // Only templates that declare it carry the field.
+    expect('redoWith' in byId.get('port-hero')!).toBe(false);
+  });
+
   it('includes a template with `when` only for projects with that feature', () => {
     const without = compilePlan(pb, blueprint());
     expect(without.tasks.map((t) => t.taskId)).not.toContain('uat-personalization');

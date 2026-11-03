@@ -110,6 +110,8 @@ templates:
     forEach: components
     title: Integrate {name} into the editing host
     dependsOn: ['register-{key}', integrate-head]
+    # A port redone after a page sent it back reaches the editing host only through this task.
+    redoWith: ['port-{key}']
     acceptance: [validator:editing-host.deployed, validator:head.editing-scripts]
   - id: switch-editing-host
     phase: 4

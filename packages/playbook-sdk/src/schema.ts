@@ -188,6 +188,12 @@ export const TaskTemplate = z.object({
    * when the Director marks it done.
    */
   manual: z.string().optional(),
+  /**
+   * Tasks whose redo this one follows (`{key}` is the item's key): when one of them finishes
+   * again after it was sent back, this one runs again after it. A component's integration
+   * follows its port, so a port's fix reaches the editing host the pages are checked on.
+   */
+  redoWith: z.array(z.string()).optional(),
   /** Name of a Blueprint collection. Without it the template yields exactly one task. */
   forEach: Kebab.optional(),
   /**

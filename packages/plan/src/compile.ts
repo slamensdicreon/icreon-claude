@@ -32,6 +32,8 @@ export interface PlannedTask {
   contract: TaskContract | null;
   /** A step the Director does by hand: the checklist its card shows (absent for agent work). */
   manual?: string;
+  /** Tasks whose redo this one follows: it runs again after any of them is redone. */
+  redoWith?: string[];
 }
 
 export interface Plan {
@@ -194,6 +196,16 @@ export function compilePlan(
       }
     }
     t.dependsOn = [...deps];
+    // Only when set, so plans of templates without it stay exactly as they were.
+    const redo = (source?.template.redoWith ?? [])
+      .map((pattern) => pattern.replaceAll('{key}', source?.key ?? ''))
+      .filter((id) => {
+        if (byId.has(id)) return true;
+        if (![...skipped].some((s) => id.startsWith(s)))
+          problems.push(`${t.taskId} is redone with unknown task ${id}`);
+        return false;
+      });
+    if (redo.length) t.redoWith = redo;
   }
 
   if (pilot && pilotKeys.size) {

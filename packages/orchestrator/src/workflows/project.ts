@@ -144,6 +144,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** Tasks redone after a review sent them back, until they finish again. */
   const redoing = new Set<string>();
   /**
+   * Followers of a redo (see `redoWith`), from their leader finishing until they finish again:
+   * what waited on the leader waits on them too, and none of it takes them as finished before.
+   */
+  const redoPending = new Set<string>();
+  /**
    * Whether merged Blueprint items get tasks of their own: decided once, when the Blueprint is
    * first adopted, and kept, so a replan never reshapes a plan its history was written against.
    */
@@ -837,6 +842,17 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       finishedCount += 1;
       if (redoing.delete(t.taskId)) redoneAt[t.taskId] = finishedCount;
     }
+    if (outcome.outcome === 'done' || outcome.outcome === 'cancelled') redoPending.delete(t.taskId);
+    // Work that follows this task's redo (a component's integration after its port) runs again
+    // after it: a fix that stops at the port's branch never reaches the editing host. Marked
+    // before the first await, so no wait on them ends in between.
+    const followers =
+      outcome.outcome === 'done' && patched('redo-with')
+        ? plan.tasks
+            .filter((f) => f.redoWith?.includes(t.taskId) && stateOf(f.taskId) === 'done')
+            .map((f) => f.taskId)
+        : [];
+    for (const id of followers) redoPending.add(id);
     children.delete(t.taskId);
     running.get(t.role)?.delete(t.taskId);
     states[t.taskId] = outcome.state;
@@ -875,6 +891,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         );
       events.push(agentRefresh(t.role));
       await send(...events);
+      if (followers.length) {
+        await rerun(
+          followers,
+          `${t.title} was redone after you last ran: bring its new work in again.`,
+          `Redone after ${t.title}`,
+        );
+        for (const id of followers) reruns.add(id);
+      }
     } else if (outcome.outcome === 'cancelled') {
       events.push(taskMove(t, 'cancelled', 'Removed from scope'), agentRefresh(t.role));
       await send(...events);
@@ -2226,6 +2250,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const [id, ids] of r.holdUntil ?? []) holdUntil.set(id, ids);
     for (const id of r.revalidate ?? []) revalidate.add(id);
     for (const id of r.redoing ?? []) redoing.add(id);
+    for (const id of r.redoPending ?? []) redoPending.add(id);
     skipMerged = r.skipMerged ?? false;
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
     for (const id of r.reruns) reruns.add(id);
@@ -2274,6 +2299,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       holdUntil: [...holdUntil],
       revalidate: [...revalidate],
       redoing: [...redoing],
+      redoPending: [...redoPending],
       skipMerged,
       taskEscalation: [...taskEscalation],
       started: [...started],
@@ -2372,9 +2398,21 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       }
     }
 
-    // Parked tasks whose prerequisites finished go back in the queue.
+    // Parked tasks whose prerequisites finished go back in the queue. A task waiting on work
+    // also waits on what follows its redo (the integration a redone port started again).
+    const redoWith = patched('redo-with');
+    const finished = (d: string) => SETTLED_STATES.has(stateOf(d)) && !redoPending.has(d);
     for (const [id, w] of [...waitingOn]) {
-      if (!w.ids.every((d) => SETTLED_STATES.has(stateOf(d)))) continue;
+      if (redoWith)
+        for (const f of plan.tasks)
+          if (
+            f.taskId !== id &&
+            !w.ids.includes(f.taskId) &&
+            redoPending.has(f.taskId) &&
+            f.redoWith?.some((d) => w.ids.includes(d))
+          )
+            w.ids.push(f.taskId);
+      if (!w.ids.every(redoWith ? finished : (d) => SETTLED_STATES.has(stateOf(d)))) continue;
       waitingOn.delete(id);
       const t = task(id);
       if (!t || stateOf(id) !== 'waiting') continue;

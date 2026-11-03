@@ -128,6 +128,8 @@ export interface ProjectSnapshot {
   revalidate?: string[];
   /** Tasks redone after a review sent them back, until they finish again (absent before). */
   redoing?: string[];
+  /** Followers re-run after their leader's redo, until they finish again (absent before). */
+  redoPending?: string[];
   /** Merged Blueprint items get no tasks of their own (absent, so false, before). */
   skipMerged?: boolean;
   taskEscalation: [string, string][];

@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai. Learned building the TASB member portal demo.
 id: sitecoreai-customer-portal
-version: 0.2.5
+version: 0.2.6
 name: Build a SitecoreAI customer portal
 description: >-
   Rebuilds a client or customer portal prototype as a Content SDK portal on SitecoreAI: a
