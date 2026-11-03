@@ -105,12 +105,13 @@ const CATALOG: OperationCatalog = {
   },
   'page.styles': {
     description:
-      "How a live page looks, in values a builder can use: computed styles (font, size, weight, colour, background, spacing, borders per side, radius, layout, clip-path, opacity) of up to 20 selectors at desktop width (a selector may end in ::before or ::after), plus the page's design tokens (most used fonts, text colours, backgrounds and font sizes; :root custom properties; media-query breakpoints) and its stylesheets.",
+      "How a live page looks, in values a builder can use: computed styles (font, size, weight, colour, background, spacing, borders per side, radius, layout, clip-path, opacity) of up to 20 selectors (a selector may end in ::before or ::after), plus the page's design tokens (most used fonts, text colours, backgrounds and font sizes; :root custom properties; media-query breakpoints) and its stylesheets. Measured at desktop width (1440) unless `width` says otherwise: give 768 or 390 to read the tablet or phone layout.",
     inputSchema: {
       type: 'object',
       properties: {
         url: { type: 'string' },
         selectors: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+        width: { type: 'integer', minimum: 320, maximum: 2560 },
       },
       required: ['url'],
       additionalProperties: false,
@@ -212,7 +213,7 @@ export class BrowserToolServer implements ToolServer {
     }
   }
 
-  /** Section outline, one section's markup, or styles: read from the page as rendered at desktop width. */
+  /** Section outline, one section's markup, or styles: read as rendered at desktop width, or styles at another `width`. */
   private async structure(
     policy: UrlPolicy,
     op: 'page.markup' | 'page.styles',
@@ -221,7 +222,12 @@ export class BrowserToolServer implements ToolServer {
     const url = await assertNavigable(String(args.url), policy);
     return this.withPage(policy, async (context) => {
       const page = await context.newPage();
-      await page.setViewportSize(BREAKPOINTS.desktop);
+      const width = Number(args.width);
+      await page.setViewportSize(
+        op === 'page.styles' && Number.isInteger(width) && width >= 320 && width <= 2560
+          ? { width, height: BREAKPOINTS.desktop.height }
+          : BREAKPOINTS.desktop,
+      );
       const response = await page.goto(url.toString(), {
         waitUntil: 'load',
         timeout: this.opts.navigationTimeoutMs ?? 30_000,
@@ -237,8 +243,8 @@ export class BrowserToolServer implements ToolServer {
           const styles = await run(readStyles, selectors, STYLE_PROPS);
           return {
             code: status,
-            body: { url: canonical(page.url()), ...styles },
-            summary: `Styles of ${canonical(page.url())}: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties`,
+            body: { url: canonical(page.url()), width: page.viewportSize()?.width, ...styles },
+            summary: `Styles of ${canonical(page.url())} at ${page.viewportSize()?.width}px wide: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties`,
           };
         }
         if (typeof args.selector !== 'string' || !args.selector) {

@@ -235,6 +235,18 @@ describe('page.markup, page.styles', () => {
     expect(body.tokens.customProperties).toEqual({ '--brand': '#e4002b', '--ink': '#1a1a1a' });
     expect(body.tokens.breakpoints).toEqual(['(max-width: 768px)']);
   }, 30_000);
+
+  it('reads styles at a narrower width when asked', async () => {
+    const r = await browser.call(
+      'page.styles',
+      { url: `${origin}/styled`, selectors: ['body'], width: 390 },
+      ctx,
+    );
+    expect(r.body).toMatchObject({ width: 390 });
+    expect(r.summary).toContain('at 390px wide');
+    const wide = await browser.call('page.styles', { url: `${origin}/styled` }, ctx);
+    expect(wide.body).toMatchObject({ width: 1440 });
+  }, 30_000);
 });
 
 describe('snapshot, screenshot, fetch.asset', () => {
