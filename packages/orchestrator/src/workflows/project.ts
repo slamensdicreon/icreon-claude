@@ -1218,9 +1218,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const t = task(taskId);
       if (!t || !predicate(t) || sent.has(handle)) continue;
       sent.add(handle);
-      void handle.signal(signal);
+      // A task can finish while the signal is on its way: Temporal then answers that the workflow
+      // wasn't found. Left unhandled, that rejection fails every workflow task from then on.
+      handle.signal(signal).catch(ignoreGone);
     }
   }
+
+  /** A signal to a task workflow that has already finished changes nothing: ignore it. */
+  function ignoreGone(): void {}
 
   /** The largest share of any budget used: tokens, dollars or hours since start. */
   function budgetRatio(hours = Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100) {
@@ -1476,7 +1481,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const s = stateOf(t.taskId);
       const esc = taskEscalation.get(t.taskId);
       if (esc) await supersede(esc, cause);
-      if (children.has(t.taskId)) void children.get(t.taskId)!.signal(cancelTask, t.taskId);
+      if (children.has(t.taskId))
+        children.get(t.taskId)!.signal(cancelTask, t.taskId).catch(ignoreGone);
       else if (s === 'done') {
         await acts.rollbackTask({ projectId, task: t });
         events.push(taskMove(t, 'rolled_back', 'Removed from scope'));
@@ -1893,7 +1899,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       waitingOn.delete(id);
       touched.add(t.role);
       // A running task stops at its next step boundary and reports itself cancelled.
-      if (children.has(id)) void children.get(id)!.signal(cancelTask, id);
+      if (children.has(id)) children.get(id)!.signal(cancelTask, id).catch(ignoreGone);
       else events.push(taskMove(t, 'cancelled', reason));
     }
     events.push(...[...touched].map((r) => agentRefresh(r)));
