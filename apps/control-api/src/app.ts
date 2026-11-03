@@ -208,6 +208,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
       );
     }
+    // Fastify's own client errors (an empty or malformed JSON body, a body too large, an
+    // unsupported content type) are the caller's to fix, not the server's.
+    const { statusCode: status, code } = err as { statusCode?: unknown; code?: unknown };
+    if (
+      typeof code === 'string' &&
+      code.startsWith('FST_') &&
+      typeof status === 'number' &&
+      status >= 400 &&
+      status < 500
+    ) {
+      const message = err instanceof Error ? err.message : 'Bad request.';
+      return fail(reply, status, 'bad_request', message);
+    }
     app.log.error(err);
     return fail(
       reply,

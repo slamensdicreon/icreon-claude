@@ -67,6 +67,21 @@ it('refuses a rule without both halves, an unknown rule, and runs without a stor
   expect((await call('POST', '/rules', { ...media, category: 'vibes' })).status).toBe(400);
   expect((await call('PUT', '/rules/nope', { then: 'x x x' })).status).toBe(404);
   expect((await call('POST', '/rules/nope/explode')).status).toBe(404);
+  // A JSON content type with no body is the caller's mistake: 400, never 500.
+  const empty = await app!.inject({
+    method: 'POST',
+    url: '/rules',
+    headers: { 'content-type': 'application/json' },
+  });
+  expect(empty.statusCode).toBe(400);
+  expect(empty.json().error.code).toBe('bad_request');
+  const broken = await app!.inject({
+    method: 'POST',
+    url: '/rules',
+    headers: { 'content-type': 'application/json' },
+    payload: '{"when":',
+  });
+  expect(broken.statusCode).toBe(400);
   await app!.close();
   await start(false);
   const r = await call('GET', '/rules');

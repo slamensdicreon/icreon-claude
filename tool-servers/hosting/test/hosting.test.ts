@@ -5,6 +5,7 @@ function fakeVercel(
   opts: { existing?: { repo: string }; production?: { alias: string; state: string } } = {},
 ) {
   let editingAt: string | undefined;
+  let slowReads = 0;
   const calls: { method: string; path: string; body: unknown }[] = [];
   let project: Record<string, unknown> | null = opts.existing
     ? {
@@ -78,6 +79,16 @@ function fakeVercel(
         createdAt: 2000,
         meta: { githubCommitRef: 'launchworks/integration' },
       });
+    if (p === '/v13/deployments/dpl_slow')
+      return json(200, {
+        id: 'dpl_slow',
+        name: 'acme-site',
+        url: 'acme-site-slow.vercel.app',
+        readyState: ++slowReads < 3 ? 'BUILDING' : 'READY',
+        meta: { githubCommitRef: 'launchworks/port-hero' },
+      });
+    if (p === '/v13/deployments/dpl_stuck')
+      return json(200, { id: 'dpl_stuck', name: 'acme-site', readyState: 'BUILDING' });
     if (p === '/v13/deployments/dpl_old')
       return json(200, { id: 'dpl_old', name: 'acme-site', readyState: 'READY', createdAt: 1000 });
     if (p === '/v13/deployments/dpl_new')
@@ -111,6 +122,7 @@ const ctx = {
 function server(fetch: typeof globalThis.fetch, records: HostingRecord[] = []) {
   return new HostingToolServer({
     logTiming: { windowMs: 2_000, graceMs: 50 },
+    waitTiming: { pollMs: 5, maxMs: 60 },
     token: 'vt',
     teamId: 'team_x',
     facts: async () => ({
@@ -223,6 +235,22 @@ describe('HostingToolServer', () => {
         ref: 'main',
       },
     });
+  });
+
+  it('waits for a deployment to settle when asked, and says when it is still building', async () => {
+    const v = fakeVercel({ existing: { repo: 'icreon-launchworks/acme-site-sitecoreai' } });
+    const s = server(v.fetch);
+    const once = await s.call('deploy.status', { deploymentId: 'dpl_slow' }, ctx);
+    expect(once.body).toMatchObject({ state: 'BUILDING' });
+    const settled = await s.call('deploy.status', { deploymentId: 'dpl_slow', wait: true }, ctx);
+    expect(settled.body).toMatchObject({
+      state: 'READY',
+      url: 'https://acme-site-slow.vercel.app',
+    });
+    expect(v.calls.filter((c) => c.path === '/v13/deployments/dpl_slow')).toHaveLength(3);
+    const stuck = await s.call('deploy.status', { deploymentId: 'dpl_stuck', wait: true }, ctx);
+    expect(stuck.body).toMatchObject({ state: 'BUILDING' });
+    expect(stuck.summary).toContain('call deploy.status with wait again');
   });
 
   it('records the production address when reading the project finds a ready production deployment', async () => {

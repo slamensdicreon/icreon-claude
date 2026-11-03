@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   moduleIncludes,
+  pullFailed,
   readOnly,
   safePath,
   SandboxToolServer,
@@ -688,6 +689,32 @@ describe('the Sitecore CLI', () => {
     const r = await failing.server.call('ser.pull', { branch: 'launchworks/ser' }, ctx);
     expect(r.code).toBe(500);
     expect(r.summary).toMatch(/failed pulling items \(exit 1\): .*could not be read: 401/);
+  });
+
+  it('names the item path and both IDs when two items share a path, and says when no item is named', () => {
+    const dup = pullFailed({
+      exitCode: 1,
+      output: [
+        'Pulling items…',
+        '[lambert-cable] Serializing /sitecore/templates/Project/Brands/lambert-cable',
+        '[ERROR] /sitecore/templates/Project/brands/lambert-cable/SnippetGrid Parameters/__Standard Values (eb713773-2b74-43d3-a681-84dd159b047d) attempted to be cached, but the cache already contained /sitecore/templates/Project/brands/lambert-cable/SnippetGrid Parameters/__Standard Values with different ID f5b1e1f8-a071-4b32-98d7-18b48e39151b. Non-unique paths cannot be serialized.',
+        'Done in 12s',
+      ].join('\n'),
+    });
+    expect(dup.body).toMatchObject({
+      duplicate: {
+        path: '/sitecore/templates/Project/brands/lambert-cable/SnippetGrid Parameters/__Standard Values',
+        ids: ['eb713773-2b74-43d3-a681-84dd159b047d', 'f5b1e1f8-a071-4b32-98d7-18b48e39151b'],
+      },
+    });
+    expect(dup.summary).toContain('two items share the path');
+    const bare = pullFailed({
+      exitCode: 1,
+      output:
+        'Pulling items…\nResponse status code does not indicate success: 500 (Internal Server Error).\nDone',
+    });
+    expect(bare.summary).toContain('status code does not indicate success: 500');
+    expect(bare.summary).toContain('The CLI named no item');
   });
 
   it('refuses changed CLI settings', async () => {

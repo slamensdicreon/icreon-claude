@@ -266,7 +266,7 @@ export class SitecoreCliToolServer implements ToolServer {
       const pull = await run(`${DOTNET}/dotnet`, ['sitecore', 'ser', 'pull', '-n', 'default'], {
         timeoutMs: 1_800_000,
       });
-      if (pull.exitCode !== 0) return fail('pulling items', pull);
+      if (pull.exitCode !== 0) return pullFailed(pull);
       // Only serialized items are committed from here.
       await run('git', ['add', '--', 'authoring']);
       const staged = (await run('git', ['diff', '--cached', '--name-only'])).output
@@ -314,6 +314,43 @@ const tail = (output: string) =>
     .slice(-3)
     .join(' | ')
     .slice(-400) || 'no output';
+
+const ID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+/** The CLI's words for two items at one path, which stops the whole pull. */
+const DUPLICATE = new RegExp(
+  `(/sitecore/[^\\n]*?) \\((${ID})\\) attempted to be cached, but the cache already contained .*? with different ID \\{?(${ID})`,
+  'i',
+);
+const ERROR_LINE =
+  /\b(error|exception|failed|failure|non-unique|unauthori[sz]ed|forbidden|denied|status code)\b/i;
+
+/**
+ * A failed pull, with what the CLI said wherever it said it: the lines that name an error, not
+ * only the last ones, and the item path and both IDs when two items share a path.
+ */
+export function pullFailed(r: { exitCode: number; output: string }): ToolResult {
+  const errors = r.output
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => ERROR_LINE.test(l))
+    .slice(-5);
+  const dup = DUPLICATE.exec(r.output);
+  const duplicate = dup ? { path: dup[1]!.trim(), ids: [dup[2]!, dup[3]!] } : null;
+  const named = /\/sitecore\//i.test(errors.join(' ')) || duplicate;
+  const said = errors.length ? errors.slice(-3).join(' | ').slice(-600) : tail(r.output);
+  return {
+    code: 500,
+    body: {
+      error: `The Sitecore CLI failed pulling items (exit ${r.exitCode}).`,
+      ...(duplicate ? { duplicate } : {}),
+      errors,
+      output: r.output,
+    },
+    summary: duplicate
+      ? `Sitecore CLI failed pulling items (exit ${r.exitCode}): two items share the path ${duplicate.path} (${duplicate.ids.join(', ')}), and non-unique paths can't be serialized. The task that created that item owns the fix; then pull again.`
+      : `Sitecore CLI failed pulling items (exit ${r.exitCode}): ${said}${named ? '' : ". The CLI named no item: check every module include is inside the project's paths, pull once more, and report this output if it repeats."}`,
+  };
+}
 
 // The summary is what the agent and the Activity log read: it carries the CLI's last lines, where
 // it says what went wrong.

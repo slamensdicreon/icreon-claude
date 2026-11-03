@@ -27,6 +27,29 @@ describe('publishing follow-up', () => {
     });
   });
 
+  it('waits for a publish to finish when asked, and says when it is still running', async () => {
+    let reads = 0;
+    const fetch = (async (_: unknown, init?: RequestInit) => {
+      const { query } = JSON.parse(String(init!.body)) as { query: string };
+      const done = query.includes('"op-1"') && ++reads >= 3;
+      return ok({
+        publishingStatus: { state: done ? 'COMPLETE' : 'RUNNING', isDone: done, isFailed: false },
+      });
+    }) as typeof globalThis.fetch;
+    const server = new SitecoreAuthoringToolServer({
+      facts: async () => facts,
+      fetch,
+      waitTiming: { pollMs: 5, maxMs: 60 },
+    });
+    expect(
+      await server.call('publish.status', { operationId: 'op-1', wait: true }, ctx),
+    ).toMatchObject({ code: 200, body: { isDone: true, state: 'COMPLETE' } });
+    expect(reads).toBe(3);
+    const stuck = await server.call('publish.status', { operationId: 'op-2', wait: true }, ctx);
+    expect(stuck.body).toMatchObject({ isDone: false, state: 'RUNNING' });
+    expect(stuck.summary).toContain('call publish.status with wait again');
+  });
+
   it('checks routes on Experience Edge with the Context ID it keeps to itself', async () => {
     const seen: string[] = [];
     const fetch = (async (input: string | URL | Request, init?: RequestInit) => {

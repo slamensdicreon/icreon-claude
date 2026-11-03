@@ -62,6 +62,8 @@ export interface HostingServerOptions {
   record(projectId: string, r: HostingRecord): Promise<void>;
   /** How long a reproduction listens to the runtime log, and after the page answers (tests). */
   logTiming?: { windowMs: number; graceMs: number };
+  /** How often deploy.status with wait checks again, and for how long at most (tests). */
+  waitTiming?: { pollMs: number; maxMs: number };
   fetch?: typeof fetch;
   api?: string;
 }
@@ -72,7 +74,14 @@ export const editingHost = (project: string) => `${project}-editing.vercel.app`;
 const PreviewArgs = z.object({
   ref: z.string().regex(AGENT_BRANCH, 'an agent branch, launchworks/…').optional(),
 });
-const StatusArgs = z.object({ deploymentId: z.string().regex(/^dpl_[A-Za-z0-9]+$/) });
+const StatusArgs = z.object({
+  deploymentId: z.string().regex(/^dpl_[A-Za-z0-9]+$/),
+  wait: z.boolean().default(false),
+});
+/** A deployment in one of these states won't change again. */
+const SETTLED = new Set(['READY', 'ERROR', 'CANCELED']);
+/** Below the gateway's 10-minute call limit, so a wait always answers. */
+const WAIT_MAX_MS = 8 * 60_000;
 const EnvArgs = z.object({ target: z.enum(['preview', 'production', 'both']).default('both') });
 const LogsArgs = z.object({
   path: z
@@ -118,7 +127,7 @@ export class HostingToolServer implements ToolServer {
       mutates: true,
     },
     'deploy.preview': {
-      description: `Deploy an agent branch (launchworks/…) of the build repository as a preview. Returns the deployment id; follow it with deploy.status until it is READY or ERROR. A ready preview of ${INTEGRATION_BRANCH} becomes the editing host, at the project's fixed address https://<project>-editing.vercel.app.`,
+      description: `Deploy an agent branch (launchworks/…) of the build repository as a preview. Returns the deployment id; follow it with deploy.status and wait:true, which answers once it is READY or ERROR. A ready preview of ${INTEGRATION_BRANCH} becomes the editing host, at the project's fixed address https://<project>-editing.vercel.app.`,
       inputSchema: {
         type: 'object',
         properties: { ref: { type: 'string' } },
@@ -129,7 +138,7 @@ export class HostingToolServer implements ToolServer {
     },
     'deploy.production': {
       description:
-        "Deploy the build repository's default branch to the Vercel project's production URL: the stable preview of the site and the editing host. Returns the deployment id; follow it with deploy.status.",
+        "Deploy the build repository's default branch to the Vercel project's production URL: the stable preview of the site and the editing host. Returns the deployment id; follow it with deploy.status and wait:true.",
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       mutates: true,
       releases: true,
@@ -160,10 +169,10 @@ export class HostingToolServer implements ToolServer {
     },
     'deploy.status': {
       description:
-        "A deployment's state (QUEUED, BUILDING, READY, ERROR, CANCELED), URL and error. A ready deployment is recorded on the project.",
+        "A deployment's state (QUEUED, BUILDING, READY, ERROR, CANCELED), URL and error. A ready deployment is recorded on the project. With wait:true it waits until the deployment is READY, ERROR or CANCELED (up to 8 minutes) and returns that, so one call replaces polling; if it is still building after that, call it again with wait.",
       inputSchema: {
         type: 'object',
-        properties: { deploymentId: { type: 'string' } },
+        properties: { deploymentId: { type: 'string' }, wait: { type: 'boolean' } },
         required: ['deploymentId'],
         additionalProperties: false,
       },
@@ -213,7 +222,7 @@ export class HostingToolServer implements ToolServer {
       case 'deploy.status': {
         const a = StatusArgs.safeParse(args);
         if (!a.success) return rejected(a.error.issues[0]!.message);
-        return this.status(ctx.projectId, facts, a.data.deploymentId);
+        return this.status(ctx.projectId, facts, a.data.deploymentId, a.data.wait);
       }
       case 'logs.runtime': {
         const a = LogsArgs.safeParse(args);
@@ -473,13 +482,24 @@ export class HostingToolServer implements ToolServer {
     projectId: string,
     facts: HostingFacts,
     deploymentId: string,
+    wait = false,
   ): Promise<ToolResult> {
-    const r = await this.request('GET', `/v13/deployments/${encodeURIComponent(deploymentId)}`);
-    if (r.status !== 200) return fail(r, `reading ${deploymentId}`);
-    const d = r.body as Deployment & { id: string; name?: string; alias?: string[] };
-    if (d.name && d.name !== facts.project)
-      return rejected(`${deploymentId} isn't a deployment of ${facts.project}.`);
+    const { pollMs, maxMs } = this.opts.waitTiming ?? { pollMs: 5_000, maxMs: WAIT_MAX_MS };
+    const deadline = Date.now() + maxMs;
+    type Read = Deployment & { id: string; name?: string; alias?: string[] };
+    let d: Read;
+    for (;;) {
+      const r = await this.request('GET', `/v13/deployments/${encodeURIComponent(deploymentId)}`);
+      if (r.status !== 200) return fail(r, `reading ${deploymentId}`);
+      d = r.body as Read;
+      if (d.name && d.name !== facts.project)
+        return rejected(`${deploymentId} isn't a deployment of ${facts.project}.`);
+      const now = d.readyState ?? d.state ?? '';
+      if (!wait || SETTLED.has(now) || Date.now() + pollMs > deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
     const state = d.readyState ?? d.state ?? 'UNKNOWN';
+    const stillGoing = wait && !SETTLED.has(state);
     const target = d.target === 'production' ? 'production' : 'preview';
     const url = d.url ? `https://${d.url}` : null;
     const ref = d.meta?.githubCommitRef ?? d.gitSource?.ref ?? '';
@@ -528,7 +548,7 @@ export class HostingToolServer implements ToolServer {
         editingHost: editing,
         error: d.errorMessage ?? null,
       },
-      summary: `${d.id}: ${state}${state === 'ERROR' && d.errorMessage ? `, ${d.errorMessage}` : ''}${editing ? `, live as the editing host at ${editing}` : superseded ? `; a newer integration build (${superseded}) is already the editing host` : stable ? `, ${stable}` : ''}`,
+      summary: `${d.id}: ${state}${state === 'ERROR' && d.errorMessage ? `, ${d.errorMessage}` : ''}${editing ? `, live as the editing host at ${editing}` : superseded ? `; a newer integration build (${superseded}) is already the editing host` : stable ? `, ${stable}` : ''}${stillGoing ? `; still ${state} after ${Math.round(maxMs / 60_000)} minutes: call deploy.status with wait again` : ''}`,
     };
   }
 

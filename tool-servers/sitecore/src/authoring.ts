@@ -35,6 +35,8 @@ export interface AuthoringServerOptions {
   edgeContextId?(projectId: string, live: boolean): Promise<string | null>;
   /** Experience Edge's base URL. */
   edgeUrl?: string;
+  /** How often publish.status with wait checks again, and for how long at most (tests). */
+  waitTiming?: { pollMs: number; maxMs: number };
 }
 
 const MEDIA_ROOT = '/sitecore/media library/';
@@ -166,7 +168,12 @@ const MediaArgs = z
     alt: z.string().max(500).optional(),
   })
   .refine((a) => Boolean(a.sourceUrl) !== Boolean(a.ref), 'give either ref or sourceUrl');
-const PublishStatusArgs = z.object({ operationId: z.string().min(1).max(300) });
+const PublishStatusArgs = z.object({
+  operationId: z.string().min(1).max(300),
+  wait: z.boolean().default(false),
+});
+/** Below the gateway's 10-minute call limit, so a wait always answers. */
+const WAIT_MAX_MS = 8 * 60_000;
 const EdgeRoutesArgs = z.object({
   paths: z.array(z.string().regex(/^\//, 'route paths start with /')).min(1).max(60),
   live: z.boolean().optional(),
@@ -430,7 +437,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     publish: {
       description:
-        'Publish items (and their subitems unless subItems:false) to Experience Edge in the given languages (default: the project languages). Returns the publishing operation id and its first status.',
+        'Publish items (and their subitems unless subItems:false) to Experience Edge in the given languages (default: the project languages). Returns the publishing operation id and its first status; follow it with publish.status and wait:true.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -447,10 +454,10 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'publish.status': {
       description:
-        "A publishing operation's state, from the operation id publish returned: state, isDone, isFailed. Call it until isDone (a publish takes from seconds to minutes). Changes nothing.",
+        "A publishing operation's state, from the operation id publish returned: state, isDone, isFailed. With wait:true it waits until the publish is done or failed (up to 8 minutes) and returns that, so one call replaces polling; if it is still running after that, call it again with wait. Changes nothing.",
       inputSchema: {
         type: 'object',
-        properties: { operationId: { type: 'string' } },
+        properties: { operationId: { type: 'string' }, wait: { type: 'boolean' } },
         required: ['operationId'],
         additionalProperties: false,
       },
@@ -1114,17 +1121,24 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
   private async publishStatus(q: Gql, a: Parsed<typeof PublishStatusArgs>): Promise<ToolResult> {
     if (!a.success) return rejected(a.error.issues[0]!.message);
-    const s = await q.run<{
-      publishingStatus: { state: string; isDone: boolean; isFailed: boolean } | null;
-    }>(
-      `query { publishingStatus(publishingOperationId: ${gql(a.data.operationId)}) { state isDone isFailed } }`,
-    );
-    const st = s.publishingStatus;
-    if (!st) return { code: 404, body: { error: 'No such publishing operation.' } };
+    const { pollMs, maxMs } = this.opts.waitTiming ?? { pollMs: 5_000, maxMs: WAIT_MAX_MS };
+    const deadline = Date.now() + maxMs;
+    type Status = { state: string; isDone: boolean; isFailed: boolean };
+    let st: Status | null;
+    for (;;) {
+      const s = await q.run<{ publishingStatus: Status | null }>(
+        `query { publishingStatus(publishingOperationId: ${gql(a.data.operationId)}) { state isDone isFailed } }`,
+      );
+      st = s.publishingStatus;
+      if (!st) return { code: 404, body: { error: 'No such publishing operation.' } };
+      if (!a.data.wait || st.isDone || st.isFailed || Date.now() + pollMs > deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+    const stillGoing = a.data.wait && !st.isDone && !st.isFailed;
     return {
       code: 200,
       body: { operationId: a.data.operationId, ...st },
-      summary: `Publishing ${st.isFailed ? 'failed' : st.isDone ? 'done' : 'in progress'} (${st.state})`,
+      summary: `Publishing ${st.isFailed ? 'failed' : st.isDone ? 'done' : 'in progress'} (${st.state})${stillGoing ? `; still running after ${Math.round(maxMs / 60_000)} minutes: call publish.status with wait again` : ''}`,
     };
   }
 
