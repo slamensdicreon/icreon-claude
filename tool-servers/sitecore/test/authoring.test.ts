@@ -411,6 +411,27 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(update).not.toContain('SnippetGrid Parameters');
   });
 
+  it('stores a media library path written to a field as an image, so the page shows it', async () => {
+    const hero = '/sitecore/content/Brands/ansco/Home/Data/Hero';
+    const photo = '/sitecore/media library/Project/Brands/ansco/Images/hero-bg';
+    const cm = fakeCm({ [hero]: 'h-id', [photo]: '9a1b2c3d4e5f60718293a4b5c6d7e8f9' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    const r = await s.call(
+      'item.update',
+      { path: hero, fields: [{ name: 'backgroundImage', value: photo }] },
+      ctx,
+    );
+    const update = cm.queries.find((q) => q.includes('updateItem'))!;
+    expect(update).toContain('mediaid=\\"{9A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9}\\"');
+    expect(update).not.toContain('hero-bg');
+    expect(r.summary).toContain('backgroundImage (image)');
+    const pdf = '/sitecore/media library/Project/Brands/ansco/Files/code-of-conduct';
+    const links = fakeCm({ [hero]: 'h-id', [pdf]: '0a1b2c3d4e5f60718293a4b5c6d7e8f9' });
+    const s2 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: links.fetch });
+    await s2.call('item.update', { path: hero, fields: [{ name: 'ctaLink', value: pdf }] }, ctx);
+    expect(links.queries.find((q) => q.includes('updateItem'))!).toContain('linktype=\\"media\\"');
+  });
+
   it('renames an item, keeping its ID, and reads it back under the new name', async () => {
     const tpl = '/sitecore/templates/Project/Brands/ansco/Pages/Ansco Page';
     const cm = fakeCm({ [tpl]: 'tpl-id' });

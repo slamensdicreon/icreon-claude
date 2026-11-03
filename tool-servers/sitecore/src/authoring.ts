@@ -40,6 +40,8 @@ export interface AuthoringServerOptions {
 }
 
 const MEDIA_ROOT = '/sitecore/media library/';
+/** A value that is only a media item's path: what an agent writes when it means that image. */
+const MEDIA_PATH = /^\/sitecore\/media library\/\S/i;
 const EDGE_URL = 'https://edge-platform.sitecorecloud.io';
 const JSON_RENDERING = '/sitecore/templates/Foundation/JavaScript Services/Json Rendering';
 const LANGUAGE_TEMPLATE = '/sitecore/templates/System/Language';
@@ -703,9 +705,21 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     const language = lang(a.data.language);
     // A rendering's Parameters Template takes an item ID. Given a path, Sitecore stores the path,
     // and every page with that rendering then fails to build its layout data.
+    // Image and General Link fields hold XML. Given a media library path, Sitecore stores the path,
+    // reads it back the same, and the layout service returns {}: the page shows nothing and no
+    // error says why.
+    const asImage: string[] = [];
     for (const f of a.data.fields) {
-      if (/^parameters template$/i.test(f.name) && f.value.trim().startsWith('/'))
-        f.value = sitecoreId(await this.idOf(q, f.value.trim()));
+      const v = f.value.trim();
+      if (/^parameters template$/i.test(f.name) && v.startsWith('/'))
+        f.value = sitecoreId(await this.idOf(q, v));
+      else if (MEDIA_PATH.test(v) && !/[<|\n]/.test(v)) {
+        // A link to a media item (a PDF behind a button) is a General Link; anything else, an image.
+        const id = sitecoreId(await this.idOf(q, v));
+        const link = /link|cta|url|href|button|document|download|file/i.test(f.name);
+        f.value = link ? `<link linktype="media" id="${id}" />` : `<image mediaid="${id}" />`;
+        asImage.push(`${f.name} (${link ? 'media link' : 'image'})`);
+      }
     }
     const isIdList = (v: string) => !!v.trim() && v.split('|').every((p) => HEX_ID.test(p.trim()));
     const adds = a.data.fields.filter((f) => f.add);
@@ -780,7 +794,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       },
       summary: mismatches.length
         ? `Updated ${a.data.path}, but ${mismatches.join(', ')} read back differently`
-        : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back`,
+        : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back${asImage.length ? `; ${asImage.join(', ')} given a media path, stored as Sitecore XML by the media item's ID` : ''}`,
     };
   }
 
