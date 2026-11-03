@@ -22,8 +22,12 @@ tools:
       - crawl
       - snapshot
       - screenshot
+      # A page's sections (headings, text, background images) when a snapshot reads little.
+      - page.markup
   artifacts:
     ops:
+      # Its own earlier inventory, when a retry amends it instead of crawling again.
+      - read
       - write
   # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
   facts:

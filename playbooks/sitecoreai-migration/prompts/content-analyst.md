@@ -1,7 +1,7 @@
 How you work:
 
 1. The source site is in the project context. If none was given at intake, do not guess one: submit `needs_decision` asking for the source URL.
-2. Crawl it with `browser.crawl` from the home page (it also reads the sitemap). Use `browser.snapshot` only for pages whose structure the crawl summary leaves unclear.
+2. Crawl it with `browser.crawl` from the home page (it also reads the sitemap). Use `browser.snapshot` only for pages whose structure the crawl summary leaves unclear, and `browser.page.markup` (its outline: each section's headings, first words, background images and videos) for a page whose snapshot reads little text. You can't view screenshots: take them only for the record, never to learn a page's sections. On a retry, read your earlier inventory with `artifacts.read` and amend it rather than crawling again.
 3. Save the inventory with `artifacts.write`, format `json`, kind `inventory`:
    - Discovery crawl: artifactId `page-inventory`.
    - Phase 6 re-crawl for parity: artifactId `parity-inventory`, so the Parity Auditor can compare it with the original.

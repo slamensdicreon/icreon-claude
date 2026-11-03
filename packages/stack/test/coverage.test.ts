@@ -21,8 +21,9 @@ describe('acceptance check coverage', () => {
 });
 
 // A change to either list is a decision, not an accident.
-// SitecoreAI: both need an agent in Page builder (M7, page-builder.drive).
-const EXPECTED_SITECORE = ['editor.component-enabled', 'editor.new-datasource'];
+// SitecoreAI: every check is implemented (the two Page builder checks read the renderings'
+// configuration since the pilot proof was automated; Page builder itself is checked at UAT).
+const EXPECTED_SITECORE: string[] = [];
 // Optimizely: the platform's checks (entities.md, O4) and its Visual Builder driver (O5).
 const EXPECTED_OPTIMIZELY = [
   'editor.element-enabled',

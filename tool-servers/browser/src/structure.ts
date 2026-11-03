@@ -16,6 +16,13 @@ export interface SectionOutline {
   text: string;
   /** Size of its markup in characters. */
   size: number;
+  /**
+   * Images set as CSS backgrounds in it (theme layers often hold the section's photo), absent
+   * when there are none: `page.styles` reads them only on selectors you already know.
+   */
+  backgrounds?: string[];
+  /** Its videos' sources and posters, absent when there are none. */
+  videos?: string[];
 }
 
 /**
@@ -63,6 +70,26 @@ export function outlineSections(): SectionOutline[] {
     ...Array.from(root.children).filter((c) => !skip.has(c.tagName)),
     ...(footer && !root.contains(footer) ? [footer] : []),
   ].filter(visible);
+  const media = (el: Element) => {
+    const backgrounds: string[] = [];
+    for (const n of [el, ...Array.from(el.querySelectorAll('*')).slice(0, 400)]) {
+      for (const m of getComputedStyle(n).backgroundImage.matchAll(/url\(["']?([^"')]+)["']?\)/g))
+        if (!m[1]!.startsWith('data:') && !backgrounds.includes(m[1]!)) backgrounds.push(m[1]!);
+      if (backgrounds.length >= 6) break;
+    }
+    const videos = Array.from(el.querySelectorAll('video'))
+      .flatMap((v) => [
+        v.currentSrc || v.getAttribute('src') ? v.currentSrc || v.src : '',
+        v.poster,
+        ...Array.from(v.querySelectorAll('source')).map((x) => (x as HTMLSourceElement).src),
+      ])
+      .filter((u, i, all) => u && all.indexOf(u) === i)
+      .slice(0, 4);
+    return {
+      ...(backgrounds.length ? { backgrounds } : {}),
+      ...(videos.length ? { videos } : {}),
+    };
+  };
   return els.map((el, index) => ({
     index,
     selector: selectorOf(el),
@@ -74,6 +101,7 @@ export function outlineSections(): SectionOutline[] {
       .slice(0, 4),
     text: (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 120),
     size: el.outerHTML.length,
+    ...media(el),
   }));
 }
 

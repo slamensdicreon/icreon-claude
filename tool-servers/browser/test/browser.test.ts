@@ -213,6 +213,14 @@ describe('page.markup, page.styles', () => {
       ['section', 'cards', 'What we do'],
       ['footer', null, null],
     ]);
+    // A section's background images and video sources, which page.styles can't find unasked.
+    const cards = (r.body as { sections: { backgrounds?: string[]; videos?: string[] }[] })
+      .sections[2]!;
+    expect(cards.backgrounds).toEqual([`${origin}/media/team.png`]);
+    expect(cards.videos).toEqual(
+      expect.arrayContaining([`${origin}/media/hero.png`, `${origin}/media/reel.mp4`]),
+    );
+    expect('backgrounds' in (r.body as { sections: object[] }).sections[0]!).toBe(false);
   }, 30_000);
 
   it('returns one section’s markup without scripts, handlers or tracking', async () => {
