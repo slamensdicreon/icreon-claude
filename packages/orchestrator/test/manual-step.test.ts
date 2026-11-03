@@ -29,7 +29,9 @@ it('asks the Director to do a by-hand step with its checklist, runs no agent for
   await bot.stop();
   const s = p.state()!;
 
-  for (const id of ['prove-pilot-slice', 'director-uat']) {
+  // The pilot is proven by automated checks, by an agent; only the UAT is by hand.
+  expect(runs).toContain('prove-pilot-slice');
+  for (const id of ['director-uat']) {
     // No agent ran it: the Director did.
     expect(runs).not.toContain(id);
     expect(s.tasks[id]!.state).toBe('done');

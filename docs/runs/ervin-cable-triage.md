@@ -13,6 +13,7 @@ change removes the card entirely?
 | 1 | 19:53 | How to point ervin-cable at its editing host? (switch-editing-host) | tool | opt-1: re-register the editing host at ervin-cable-editing | Director, opt-1 | Yes | Phase 3 registered the production URL as a Deploy editing host under the key `ervin-cable` (no `xmcloud.build.json`, so the agent used the site name). Deploy then manages the rendering host item of that name, so the Authoring API's update to it never sticks (409 read-back), and the editing alias can't be registered until a preview of `launchworks/integration` is recorded. Lambert and Star registered under the starter's key and never collided. | Fixed (below) |
 
 | 2 | 19:57 | Rendering host item won't take the editing URL (switch-editing-host) | tool | opt-1: engineering fixes rendering-host.set (capability gap) | Director (Claude), opt-1 | Yes | Same cause as card 1, one step on: re-registering the Deploy host `ervin-cable` at the editing address succeeded in Deploy, but the CM item Deploy manages still read the production URL, and the Authoring API can't change it. | Same fix |
+| 3 | 20:31 | By hand: Prove the pilot slice end to end (prove-pilot-slice) | manual | (none: a Director checklist step) | Waiting on the Director | n/a | Not a fault: the playbook keeps one Page builder check mid-build, by hand, because agents have no Pages sign-in. It is the only human stop between Blueprint and UAT, so it decides whether the build runs unattended. | Director: automate it. Marked done on the checks that exist; playbook changed (below) |
 
 ## Fixes
 
@@ -28,3 +29,16 @@ change removes the card entirely?
     Grouping points there; the Deploy item is left alone.
   - Autonomy: the Lead's shadow answers matched both times. This category ("tool") needed an
     engineering fix, not a decision; with the fix, the task completes without a card.
+- **Card 3: the pilot proof was a hand step, and its two Page builder checks had never existed.**
+  `editor.component-enabled` and `editor.new-datasource` answered "no automated check exists
+  for this yet", so until today only a person ever proved them.
+  - New SitecoreAI checks: `editor.component-enabled` (each rendering exists once, is offered in
+    Available Renderings, has the head's `componentName`, and a Datasource Template that exists
+    when the Blueprint gives it fields) and `editor.new-datasource` (a Datasource Location is set
+    and, when a path, exists, so Page builder can create content).
+  - Playbook (migration 0.10.3, portal 0.2.3): `prove-pilot-slice` is no longer by hand. The
+    Structural Validator runs those checks on the pilot components (the plan compiler now scopes
+    a pilot proof to the pilot items), and sends failures back to the registration task. Page
+    builder itself is checked once, in the Director's UAT. The only hand step left before UAT is
+    gone.
+

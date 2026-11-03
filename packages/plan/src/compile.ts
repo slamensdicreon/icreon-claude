@@ -208,6 +208,13 @@ export function compilePlan(
     const verify = tasks.filter((t) => pilot.verify.includes(t.templateId));
     for (const v of verify) v.dependsOn = [...new Set([...v.dependsOn, ...pilotTasks])];
     checkpoint.dependsOn = [...pilotTasks, ...verify.map((v) => v.taskId)];
+    // A proof of the slice (not a release such as pointing the site at its host) checks the pilot
+    // items, not the whole collection: the rest isn't built yet.
+    for (const v of verify)
+      if (!expanded.get(v.taskId)?.template.release && !v.itemKeys.length) {
+        v.collection = pilot.collection;
+        v.itemKeys = [...pilotKeys];
+      }
     for (const t of inPilotPhase) {
       const key = t.itemKeys[0]!;
       // Non-pilot work waits on the checkpoint. A task that already waits on another task for the

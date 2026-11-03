@@ -124,17 +124,15 @@ templates:
     acceptance: [validator:rendering-host.set]
   - id: prove-pilot-slice
     phase: 4
-    role: editor-experience-qa
-    title: Prove the pilot slice end to end (publish, Experience Edge, Page builder)
+    role: structural-validator
+    title: Prove the pilot slice is ready for Page builder
     dependsOn: [switch-editing-host]
-    # Until an agent can work in Page builder (M7), the Director does this by hand.
-    manual: >-
-      In Page builder on the site: open the home page, add each pilot component from the toolbox,
-      create a new datasource for it and edit a field inline, save, publish, and check the page on
-      Experience Edge shows the change. Mark it done saying what you checked.
+    # Proven by automated checks of the pilot components, not by hand (decided 2026-11-03): what
+    # Page builder needs to offer each one and create its content. The Director checks Page builder
+    # itself once, in the UAT.
     acceptance:
       [
-        validator:edge.published,
+        validator:structural.renderings,
         validator:editor.component-enabled,
         validator:editor.new-datasource,
       ]

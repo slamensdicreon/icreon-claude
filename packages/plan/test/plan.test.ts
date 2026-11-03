@@ -170,6 +170,10 @@ describe('compilePlan', () => {
     expect(byId.get('prove-pilot-slice')!.dependsOn.sort()).toEqual(
       ['switch-editing-host', ...pilotWork].sort(),
     );
+    // The proof checks the pilot components only: the rest aren't built yet.
+    expect(byId.get('prove-pilot-slice')).toMatchObject({ collection: 'components' });
+    expect([...byId.get('prove-pilot-slice')!.itemKeys].sort()).toEqual([...PILOT].sort());
+    expect(byId.get('switch-editing-host')!.itemKeys).toEqual([]);
     // The site moves to its own host once the pilot components are on it, after the Director approves.
     expect(byId.get('switch-editing-host')!.dependsOn).toEqual(['approve-switch-editing-host']);
     expect(byId.get('approve-switch-editing-host')!.dependsOn.sort()).toEqual(

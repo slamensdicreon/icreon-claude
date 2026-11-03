@@ -51,10 +51,9 @@ describe('project workflow', () => {
       .map((x) => x.type)
       .sort();
     // Both phase gates, the approval of each release (hosting, the site's editing host, code
-    // deploy, publish), and the two Page builder steps the Director does by hand.
+    // deploy, publish), and the one Page builder step the Director does by hand: the UAT.
     expect(types).toEqual([
       'access',
-      'decision',
       'decision',
       'decision',
       'gate',
@@ -69,7 +68,7 @@ describe('project workflow', () => {
         .filter((x) => x.title.startsWith('By hand'))
         .map((x) => x.sourceTaskId)
         .sort(),
-    ).toEqual(['director-uat', 'prove-pilot-slice']);
+    ).toEqual(['director-uat']);
     expect(
       Object.values(s.escalations)
         .filter((x) => x.title.startsWith('Approve release'))

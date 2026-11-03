@@ -91,6 +91,75 @@ export function renderingName(c: { name: string; attrs?: Record<string, unknown>
   return c.name;
 }
 
+type Component = NonNullable<PlatformCheckContext['blueprint']>['collections'][string][number];
+
+/** A component the Blueprint gives fields to: Page builder must be able to create its content. */
+const wantsDatasource = (c: Component) => {
+  const a = c.attrs ?? {};
+  const has = (v: unknown) =>
+    Array.isArray(v) ? v.length > 0 : v && typeof v === 'object' ? Object.keys(v).length > 0 : !!v;
+  const r =
+    a.rendering && typeof a.rendering === 'object' ? (a.rendering as Record<string, unknown>) : {};
+  return (
+    has(a.fields) ||
+    has(a.datasource) ||
+    has(a.datasourceTemplate) ||
+    has(r.datasourceTemplate) ||
+    has(r.fields)
+  );
+};
+
+/** An item's field values by lower-case name. */
+const fieldsOf = (it: Item) =>
+  new Map((it.fields?.nodes ?? []).map((f) => [f.name.toLowerCase(), f.value.trim()]));
+
+/**
+ * The components' renderings under the project's rendering folder, and what the site offers in
+ * Available Renderings: each rendering found once and offered, or the problem in words.
+ */
+async function renderingsOf(ctx: PlatformCheckContext, components: Component[]) {
+  const b = sitecoreBindings(ctx.target);
+  const root = `/sitecore/layout/Renderings/Project/${b.module}`;
+  const names = components.map(renderingName);
+  const all = new Map<string, Child[]>();
+  await findByName(ctx, root, names, all);
+  // The site's groups of renderings, and groups kept in folders one level down.
+  const groupsPath = `${b.sitePath}/Presentation/Available Renderings`;
+  const available = await item(ctx, groupsPath, true);
+  const offered = new Set<string>();
+  const groups: string[] = [];
+  const readGroup = async (path: string, depth: number) => {
+    const g = await item(ctx, path, true);
+    const field = g?.fields?.nodes.find((f) => f.name === 'Renderings');
+    if (field) {
+      groups.push(g!.name);
+      for (const part of field.value.split('|')) if (part) offered.add(id(part));
+    } else if (depth === 0) {
+      for (const c of g?.children?.nodes ?? []) await readGroup(c.path, 1);
+    }
+  };
+  for (const group of available?.children?.nodes ?? []) await readGroup(group.path, 0);
+  const problems: string[] = [];
+  const found: { component: Component; name: string; rendering: Item }[] = [];
+  for (const [i, n] of names.entries()) {
+    const hits = all.get(n.toLowerCase()) ?? [];
+    if (!hits.length) problems.push(`rendering ${n} not under ${root}`);
+    else if (hits.length > 1)
+      problems.push(
+        `${hits.length} renderings named ${n} (${hits.map((h) => `${h.path} ${h.itemId}`).join(', ')}): keep one, delete the others, and offer the one kept`,
+      );
+    else if (!offered.has(id(hits[0]!.itemId)))
+      problems.push(
+        `${n} (${hits[0]!.itemId}) isn't in Available Renderings: none of ${groups.length ? groups.join(', ') : `the groups under ${groupsPath} (there are none)`} lists that ID`,
+      );
+    else {
+      const rendering = await item(ctx, hits[0]!.path);
+      if (rendering) found.push({ component: components[i]!, name: n, rendering });
+    }
+  }
+  return { names, problems, found };
+}
+
 export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck> {
   /** Does each route resolve on Experience Edge with the given Context ID? */
   async function routes(ctx: PlatformCheckContext, paths: string[], credentialId: string) {
@@ -229,46 +298,74 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     'structural.renderings': async (ctx) => {
       const components = inScope(ctx, 'components');
       if (!components.length) return pending('The Blueprint has no components to check.');
-      const b = sitecoreBindings(ctx.target);
-      const root = `/sitecore/layout/Renderings/Project/${b.module}`;
-      const names = components.map(renderingName);
-      const all = new Map<string, Child[]>();
-      await findByName(ctx, root, names, all);
-      // The site's groups of renderings, and groups kept in folders one level down.
-      const groupsPath = `${b.sitePath}/Presentation/Available Renderings`;
-      const available = await item(ctx, groupsPath, true);
-      const offered = new Set<string>();
-      const groups: string[] = [];
-      const readGroup = async (path: string, depth: number) => {
-        const g = await item(ctx, path, true);
-        const field = g?.fields?.nodes.find((f) => f.name === 'Renderings');
-        if (field) {
-          groups.push(g!.name);
-          for (const part of field.value.split('|')) if (part) offered.add(id(part));
-        } else if (depth === 0) {
-          for (const c of g?.children?.nodes ?? []) await readGroup(c.path, 1);
-        }
-      };
-      for (const group of available?.children?.nodes ?? []) await readGroup(group.path, 0);
-      const problems: string[] = [];
-      for (const n of names) {
-        const hits = all.get(n.toLowerCase()) ?? [];
-        if (!hits.length) problems.push(`rendering ${n} not under ${root}`);
-        else if (hits.length > 1)
+      const r = await renderingsOf(ctx, components);
+      return r.problems.length
+        ? fail(r.problems)
+        : pass(`${r.names.length} renderings exist and are offered in Page builder.`);
+    },
+
+    // What Page builder needs to offer a component and add it to a page: its rendering, offered
+    // in Available Renderings, named for the head's component, and its datasource template there.
+    'editor.component-enabled': async (ctx) => {
+      const components = inScope(ctx, 'components');
+      if (!components.length) return pending('The Blueprint has no components to check.');
+      const r = await renderingsOf(ctx, components);
+      const problems = [...r.problems];
+      for (const { component, name, rendering } of r.found) {
+        const f = fieldsOf(rendering);
+        if (!f.get('componentname'))
           problems.push(
-            `${hits.length} renderings named ${n} (${hits.map((h) => `${h.path} ${h.itemId}`).join(', ')}): keep one, delete the others, and offer the one kept`,
+            `${name} has no componentName: Page builder can't match it to the head's code`,
           );
-        else if (!offered.has(id(hits[0]!.itemId)))
+        const template = f.get('datasource template') ?? '';
+        if (!template && wantsDatasource(component))
           problems.push(
-            `${n} (${hits[0]!.itemId}) isn't in Available Renderings: none of ${groups.length ? groups.join(', ') : `the groups under ${groupsPath} (there are none)`} lists that ID`,
+            `${name} has fields but no Datasource Template: Page builder can't create its content`,
           );
+        else if (template.startsWith('/') && !(await item(ctx, template)))
+          problems.push(`${name}'s Datasource Template ${template} doesn't exist`);
       }
       return problems.length
         ? fail(problems)
-        : pass(`${names.length} renderings exist and are offered in Page builder.`);
+        : pass(
+            `${r.found.length} component${r.found.length === 1 ? '' : 's'} can be added in Page builder: offered in Available Renderings, named for the head's code, datasource templates in place.`,
+          );
     },
 
-    // Each kept page has components on its layout, pointing at renderings by IDs Sitecore can read.
+    // Page builder's "create new content" needs a datasource template and a location to create
+    // it in; a location given as a path must exist.
+    'editor.new-datasource': async (ctx) => {
+      const components = inScope(ctx, 'components');
+      if (!components.length) return pending('The Blueprint has no components to check.');
+      const r = await renderingsOf(ctx, components);
+      const problems = [...r.problems];
+      let creatable = 0;
+      for (const { name, rendering } of r.found) {
+        const f = fieldsOf(rendering);
+        const template = f.get('datasource template') ?? '';
+        if (!template) continue;
+        const location = f.get('datasource location') ?? '';
+        if (!location) {
+          problems.push(
+            `${name} has a Datasource Template but no Datasource Location: Page builder has nowhere to create its content`,
+          );
+          continue;
+        }
+        if (location.startsWith('/') && !(await item(ctx, location))) {
+          problems.push(`${name}'s Datasource Location ${location} doesn't exist`);
+          continue;
+        }
+        creatable++;
+      }
+      return problems.length
+        ? fail(problems)
+        : pass(
+            creatable
+              ? `${creatable} component${creatable === 1 ? '' : 's'} can create new content in Page builder: datasource template and location set.`
+              : 'No component in scope takes a datasource.',
+          );
+    },
+
     'structural.layouts': async (ctx) => {
       if (!inScope(ctx, 'pages').length) return pending('The Blueprint has no pages to check.');
       const b = sitecoreBindings(ctx.target);

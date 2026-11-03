@@ -218,6 +218,62 @@ describe('SitecoreAI checks', () => {
     expect(all.detail).not.toContain('[object Object]');
   });
 
+  it('checks what Page builder needs to add a component and create its content', async () => {
+    const r = '/sitecore/layout/Renderings/Project/Brands/ansco';
+    const groups = '/sitecore/content/Brands/ansco/Presentation/Available Renderings';
+    const tpl = '/sitecore/templates/Project/Brands/ansco/Components/Hero';
+    const t = tenant({
+      [r]: {},
+      [`${r}/Hero`]: {
+        id: '{AAAA-1}',
+        fields: {
+          componentName: 'Hero',
+          'Datasource Template': tpl,
+          'Datasource Location': './Data',
+        },
+      },
+      [`${r}/Cards`]: { id: '{BBBB-2}', fields: { componentName: 'Cards' } },
+      [`${r}/Banner`]: {
+        id: '{CCCC-3}',
+        fields: { 'Datasource Template': '/sitecore/templates/Project/Brands/ansco/Gone' },
+      },
+      [tpl]: {},
+      [groups]: {},
+      [`${groups}/Page Content`]: { fields: { Renderings: '{AAAA-1}|{BBBB-2}|{CCCC-3}' } },
+    });
+    const bp = {
+      collections: {
+        components: [
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero', fields: ['heading'] } },
+          { key: 'cards', name: 'Cards', attrs: { rendering: 'Cards', fields: ['title'] } },
+          { key: 'banner', name: 'Banner', attrs: { rendering: 'Banner' } },
+        ],
+      },
+    };
+    const enabled = await pack.checks!['editor.component-enabled']!(ctx(t.read, bp));
+    expect(enabled.status).toBe('fail');
+    expect(enabled.detail).toContain(
+      "Cards has fields but no Datasource Template: Page builder can't create its content",
+    );
+    expect(enabled.detail).toContain('Banner has no componentName');
+    expect(enabled.detail).toContain(
+      "Banner's Datasource Template /sitecore/templates/Project/Brands/ansco/Gone doesn't exist",
+    );
+    const hero = await pack.checks!['editor.component-enabled']!(
+      ctx(t.read, bp, { collection: 'components', items: ['hero'] }),
+    );
+    expect(hero.status).toBe('pass');
+    const create = await pack.checks!['editor.new-datasource']!(
+      ctx(t.read, bp, { collection: 'components', items: ['hero'] }),
+    );
+    expect(create).toMatchObject({ status: 'pass' });
+    expect(create.detail).toContain('1 component can create new content');
+    const banner = await pack.checks!['editor.new-datasource']!(
+      ctx(t.read, bp, { collection: 'components', items: ['banner'] }),
+    );
+    expect(banner.detail).toContain('no Datasource Location');
+  });
+
   it('names duplicate renderings, and reads groups kept in folders', async () => {
     const r = '/sitecore/layout/Renderings/Project/Brands/ansco';
     const groups = '/sitecore/content/Brands/ansco/Presentation/Available Renderings';
