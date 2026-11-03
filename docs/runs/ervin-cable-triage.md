@@ -14,6 +14,7 @@ change removes the card entirely?
 
 | 2 | 19:57 | Rendering host item won't take the editing URL (switch-editing-host) | tool | opt-1: engineering fixes rendering-host.set (capability gap) | Director (Claude), opt-1 | Yes | Same cause as card 1, one step on: re-registering the Deploy host `ervin-cable` at the editing address succeeded in Deploy, but the CM item Deploy manages still read the production URL, and the Authoring API can't change it. | Same fix |
 | 3 | 20:31 | By hand: Prove the pilot slice end to end (prove-pilot-slice) | manual | (none: a Director checklist step) | Waiting on the Director | n/a | Not a fault: the playbook keeps one Page builder check mid-build, by hand, because agents have no Pages sign-in. It is the only human stop between Blueprint and UAT, so it decides whether the build runs unattended. | Director: automate it. Marked done on the checks that exist; playbook changed (below) |
+| 4 | 20:35 | Hero reel video is 157 MB, over the 50 MB Edge limit (upload-media-hero-reel-video) | tool | Forwarded: no rule; every option changes the client's asset | Director (Claude), opt-3: still image in the hero, reel in known gaps | n/a (forwarded) | The source's only video files are 157 MB (MP4) and 87 MB (WebM); `media.upload` takes up to 25 MB and Edge serves up to 50 MB; no tool transcodes. | Rule R-25 (platform, tool): over-size media uses the source's still, logged as a known gap with a hosting recommendation, so the Lead decides it next time. Capability gap noted: a transcode tool would keep the video. |
 
 ## Fixes
 
