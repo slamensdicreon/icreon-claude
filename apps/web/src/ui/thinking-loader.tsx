@@ -1,6 +1,12 @@
-"use client";
+/*
+ * Restyled to the Cypher Design System tokens (docs/redesign/cypher-handoff/design-system).
+ * Original: affectUI Thinking Loader, see git history.
+ *
+ * In Cypher this is the one place shimmer is allowed: Cypher's presence while it works (README §11).
+ */
+'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /*
  * Thinking Loader – a small "the model is working" pill, in a single self-contained file.
@@ -24,13 +30,13 @@ export type ThinkingLoaderProps = {
   done?: boolean;
   /** Label once done – a string, or a function that gets the seconds since the loader started */
   doneLabel?: string | ((seconds: number) => string);
-  size?: "sm" | "md";
+  size?: 'sm' | 'md';
   /** "pill" = bordered capsule, "plain" = just the spinner and the label, e.g. inside a chat bubble */
-  variant?: "pill" | "plain";
+  variant?: 'pill' | 'plain';
   className?: string;
 };
 
-const DEFAULT_PHASES = ["Thinking", "Searching the web", "Reading sources", "Writing response"];
+const DEFAULT_PHASES = ['Thinking', 'Searching the web', 'Reading sources', 'Writing response'];
 const RAYS = Array.from({ length: 8 }, (_, i) => i);
 // 75s reads "1m 15s", a long run "2h 05m" or "3d 4h"
 const took = (s: number) => {
@@ -38,7 +44,7 @@ const took = (s: number) => {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ${s % 60}s`;
   const h = Math.floor(m / 60);
-  return h < 24 ? `${h}h ${String(m % 60).padStart(2, "0")}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+  return h < 24 ? `${h}h ${String(m % 60).padStart(2, '0')}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
 };
 
 export function ThinkingLoader({
@@ -48,14 +54,15 @@ export function ThinkingLoader({
   loop = false,
   done = false,
   doneLabel = (s) => `Thought for ${took(s)}`,
-  size = "md",
-  variant = "pill",
+  size = 'md',
+  variant = 'pill',
   className,
 }: ThinkingLoaderProps) {
   // An empty or missing list still says something; 0 or NaN never spins the timer every frame
-  const given = Array.isArray(phasesProp) ? phasesProp.map((p) => String(p ?? "")) : [];
+  const given = Array.isArray(phasesProp) ? phasesProp.map((p) => String(p ?? '')) : [];
   const phases = given.length ? given : DEFAULT_PHASES.slice(0, 1);
-  const interval = Number.isFinite(intervalProp) && intervalProp > 0 ? Math.max(intervalProp, 200) : 2200;
+  const interval =
+    Number.isFinite(intervalProp) && intervalProp > 0 ? Math.max(intervalProp, 200) : 2200;
   const [step, setStep] = useState(0);
   const [started, setStarted] = useState(() => Date.now());
   const [seconds, setSeconds] = useState<number | null>(null);
@@ -80,7 +87,10 @@ export function ThinkingLoader({
 
   const wanted = phase !== undefined && Number.isFinite(phase) ? Math.floor(phase) : step;
   const index = Math.min(Math.max(wanted, 0), Math.max(phases.length - 1, 0));
-  const label = String((done ? (typeof doneLabel === "function" ? doneLabel(elapsed) : doneLabel) : phases[index]) ?? "");
+  const label = String(
+    (done ? (typeof doneLabel === 'function' ? doneLabel(elapsed) : doneLabel) : phases[index]) ??
+      '',
+  );
 
   // The label on screen and the one rolling out – swapped during render so both animate in the same frame
   const [shown, setShown] = useState({ key: 0, text: label });
@@ -108,33 +118,36 @@ export function ThinkingLoader({
     // Measured with the box at the label's full width – a parent that wraps around the pill grows with it, so only a
     // container that's really too narrow cuts the label. Without a transition, so the pill still glides from where it was.
     const was = { width: b.style.width, transition: b.style.transition };
-    b.style.transition = "none";
+    b.style.transition = 'none';
     b.style.width = `${full}px`;
     const pad = parent ? getComputedStyle(parent) : null;
-    const inner = parent && pad ? parent.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight) : 0;
+    const inner =
+      parent && pad
+        ? parent.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight)
+        : 0;
     const room = parent ? Math.floor(inner - (r.offsetWidth - b.offsetWidth)) : full;
     b.style.width = was.width;
     b.getBoundingClientRect();
     b.style.transition = was.transition;
     const cut = room > 0 && full > room;
-    r.toggleAttribute("data-cut", cut);
+    r.toggleAttribute('data-cut', cut);
     b.style.width = `${cut ? room : full}px`;
   };
   useLayoutEffect(() => {
     const b = box.current;
     if (!b) return;
-    if (!measured.current) b.style.transition = "none";
+    if (!measured.current) b.style.transition = 'none';
     fit.current();
     if (!measured.current) {
       b.getBoundingClientRect();
-      b.style.transition = "";
+      b.style.transition = '';
       measured.current = true;
     }
   }, [shown.key]);
   // A container that narrows or widens gets the label fitted again
   useEffect(() => {
     const parent = root.current?.parentElement;
-    if (!parent || typeof ResizeObserver === "undefined") return;
+    if (!parent || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => fit.current());
     ro.observe(parent);
     return () => ro.disconnect();
@@ -143,7 +156,7 @@ export function ThinkingLoader({
   return (
     <span
       ref={root}
-      className={["ui-tl", className].filter(Boolean).join(" ")}
+      className={['ui-tl', className].filter(Boolean).join(' ')}
       data-size={size}
       data-variant={variant}
       data-done={done || undefined}
@@ -189,7 +202,9 @@ export function ThinkingLoader({
         <span
           key={shown.key}
           ref={current}
-          className={["ui-tl__label", shown.key > 0 && "ui-tl__label--in", !done && "ui-tl__shine"].filter(Boolean).join(" ")}
+          className={['ui-tl__label', shown.key > 0 && 'ui-tl__label--in', !done && 'ui-tl__shine']
+            .filter(Boolean)
+            .join(' ')}
           data-text={shown.text}
           title={shown.text}
           dir="auto"
@@ -202,48 +217,49 @@ export function ThinkingLoader({
 }
 
 const css = /* css */ `
+/* Cypher tokens (tokens.css): a surface pill with a mist line; ink rays, a green check when done */
 .ui-tl {
-  --ui-tl-ink: #171717;
-  --ui-tl-text: #6b6b6b;
-  --ui-tl-ray: #171717;
-  --ui-tl-bg: #ffffff;
-  --ui-tl-line: #e7e7e7;
-  --ui-tl-shine: rgba(255, 255, 255, 0.82);
-  --ui-tl-done: #171717;
-  --ui-tl-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --ui-tl-h: 34px;
-  --ui-tl-font: 14px;
-  --ui-tl-icon: 15px;
+  --ui-tl-ink: var(--ink);
+  --ui-tl-text: var(--text-3);
+  --ui-tl-ray: var(--ink);
+  --ui-tl-bg: var(--surface);
+  --ui-tl-line: var(--mist);
+  --ui-tl-shine: color-mix(in srgb, var(--surface) 82%, transparent);
+  --ui-tl-done: var(--green);
+  --ui-tl-ease: ease-out;
+  --ui-tl-h: 36px;
+  --ui-tl-font: 15px;
+  --ui-tl-icon: 16px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   box-sizing: border-box;
   height: var(--ui-tl-h);
-  padding: 0 15px 0 12px;
-  border-radius: 999px;
+  padding: 0 var(--space-4) 0 var(--space-3);
+  border: 1px solid var(--ui-tl-line);
+  border-radius: var(--radius-pill);
   background: var(--ui-tl-bg);
-  box-shadow: inset 0 0 0 1px var(--ui-tl-line), 0 1px 2px rgba(0, 0, 0, 0.04);
   color: var(--ui-tl-text);
-  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--ui-tl-font);
-  font-weight: 450;
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.006em;
+  font-variant-numeric: tabular-nums;
   max-width: 100%;
   vertical-align: middle;
   -webkit-font-smoothing: antialiased;
 }
 .ui-tl[data-size="sm"] {
-  --ui-tl-h: 28px;
-  --ui-tl-font: 13px;
-  --ui-tl-icon: 13px;
-  gap: 7px;
-  padding: 0 12px 0 10px;
+  --ui-tl-h: 30px;
+  --ui-tl-font: 13.5px;
+  --ui-tl-icon: 14px;
+  gap: 6px;
+  padding: 0 var(--space-3) 0 10px;
 }
 .ui-tl[data-variant="plain"] {
   padding: 0;
+  border: 0;
   background: none;
-  box-shadow: none;
 }
 
 /* Spinner and check share one square and swap with a little scale */
@@ -259,7 +275,7 @@ const css = /* css */ `
   width: 100%;
   height: 100%;
   overflow: visible;
-  transition: opacity 240ms ease, transform 420ms var(--ui-tl-ease);
+  transition: opacity 200ms ease-out, transform 200ms var(--ui-tl-ease);
 }
 .ui-tl__spinner line {
   stroke: var(--ui-tl-ray);
@@ -290,7 +306,7 @@ const css = /* css */ `
   transform: none;
 }
 .ui-tl[data-done] .ui-tl__check path {
-  animation: ui-tl-draw 360ms var(--ui-tl-ease) 120ms forwards;
+  animation: ui-tl-draw 240ms var(--ui-tl-ease) 80ms forwards;
 }
 
 /* The text box glides to the width of the incoming label; labels roll through it */
@@ -301,7 +317,7 @@ const css = /* css */ `
   min-width: 0;
   height: 1.3em;
   overflow: hidden;
-  transition: width 460ms var(--ui-tl-ease);
+  transition: width 200ms var(--ui-tl-ease);
 }
 .ui-tl__label {
   position: absolute;
@@ -319,13 +335,13 @@ const css = /* css */ `
   color: var(--ui-tl-ink);
 }
 .ui-tl__label--in {
-  animation: ui-tl-in 460ms var(--ui-tl-ease) both;
+  animation: ui-tl-in 240ms var(--ui-tl-ease) both;
 }
 .ui-tl__label--out {
-  animation: ui-tl-out 320ms var(--ui-tl-ease) both;
+  animation: ui-tl-out 200ms var(--ui-tl-ease) both;
 }
 
-/* A soft light sweeping over the label while it works */
+/* A soft light sweeping over the label while it works – the only shimmer in Cypher */
 .ui-tl__shine::after {
   content: attr(data-text);
   content: attr(data-text) / "";
@@ -360,27 +376,19 @@ const css = /* css */ `
   to { background-position: 0% 0; }
 }
 
+/* Reduced motion: everything settles at once. Animations end in 1ms rather than being removed, so the
+   outgoing label still fires animationend and leaves; the spinner holds still and the shimmer is gone */
 @media (prefers-reduced-motion: reduce) {
   .ui-tl *,
   .ui-tl *::after {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
+    transition: none !important;
   }
-  .ui-tl__spinner line { opacity: 0.6; }
+  .ui-tl__label--out { visibility: hidden; }
+  .ui-tl__spinner line { opacity: 0.6; animation: none !important; }
   .ui-tl__shine::after { display: none; }
   .ui-tl__check path { stroke-dashoffset: 0; }
-}
-
-/* Dark mode: follows a .dark class or data-theme="dark" on any ancestor, e.g. <html> */
-:where(.dark, [data-theme="dark"]) .ui-tl {
-  --ui-tl-ink: #ededed;
-  --ui-tl-text: #8f8f8f;
-  --ui-tl-ray: #ededed;
-  --ui-tl-bg: #161618;
-  --ui-tl-line: rgba(255, 255, 255, 0.1);
-  --ui-tl-shine: rgba(255, 255, 255, 0.95);
-  --ui-tl-done: #ededed;
 }
 `;

@@ -1,6 +1,13 @@
-"use client";
+/*
+ * Restyled to the Cypher Design System tokens (docs/redesign/cypher-handoff/design-system).
+ * Original: affectUI Smart Recommendation, see git history.
+ *
+ * In Cypher this is the base of the Yours card: a surface card on radius-xl with shadow-card, Cypher's
+ * recommendation in a surface-quiet well, the pick as the ink primary button, the alternative in surface.
+ */
+'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 /*
  * Smart Recommendation – a suggestion card with a confidence signal, alternatives and one-click accept, in a single
@@ -28,17 +35,18 @@ export type SmartRecommendationProps = {
   className?: string;
 };
 
-const signalText = ["No signal", "Weak signal", "Good signal", "Strong signal"];
+const signalText = ['No signal', 'Weak signal', 'Good signal', 'Strong signal'];
 /** Any signal outside 0–3 (NaN, "3", 7, -1) is read as the nearest valid level, NaN as no signal */
 const level = (s: unknown): 0 | 1 | 2 | 3 => {
   const n = Math.round(Number(s));
   return (Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 0) as 0 | 1 | 2 | 3;
 };
 /** "Incremental sync" → "incremental sync", but "AWS backup" and "S3 sync" keep their capitals */
-const lowerFirst = (s: string) => (/^\p{Lu}\p{Ll}/u.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+const lowerFirst = (s: string) =>
+  /^\p{Lu}\p{Ll}/u.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
 
 export function SmartRecommendation({
-  title = "Smart recommendation",
+  title = 'Smart recommendation',
   options,
   onAccept,
   onUndo,
@@ -56,22 +64,26 @@ export function SmartRecommendation({
   const [flip, setFlip] = useState(false);
   useLayoutEffect(() => {
     const alt = menuRef.current;
-    const pop = alt?.querySelector<HTMLElement>(".ui-sr__menu");
-    const card = alt?.closest<HTMLElement>(".ui-sr");
-    if (!menu || !alt || !pop || !card || getComputedStyle(alt).position === "static") return setFlip(false);
+    const pop = alt?.querySelector<HTMLElement>('.ui-sr__menu');
+    const card = alt?.closest<HTMLElement>('.ui-sr');
+    if (!menu || !alt || !pop || !card || getComputedStyle(alt).position === 'static')
+      return setFlip(false);
     // Some slack: a menu that only grazes the edge (as in the demo) keeps opening to the left
-    setFlip(alt.getBoundingClientRect().right - pop.offsetWidth < card.getBoundingClientRect().left - 24);
+    setFlip(
+      alt.getBoundingClientRect().right - pop.offsetWidth < card.getBoundingClientRect().left - 24,
+    );
   }, [menu]);
 
   useEffect(() => {
     if (!menu) return;
-    const away = (e: PointerEvent) => !menuRef.current?.contains(e.target as Node) && setMenu(false);
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
-    window.addEventListener("pointerdown", away);
-    window.addEventListener("keydown", esc);
+    const away = (e: PointerEvent) =>
+      !menuRef.current?.contains(e.target as Node) && setMenu(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false);
+    window.addEventListener('pointerdown', away);
+    window.addEventListener('keydown', esc);
     return () => {
-      window.removeEventListener("pointerdown", away);
-      window.removeEventListener("keydown", esc);
+      window.removeEventListener('pointerdown', away);
+      window.removeEventListener('keydown', esc);
     };
   }, [menu]);
 
@@ -89,13 +101,22 @@ export function SmartRecommendation({
       <style href="ui-smart-recommendation" precedence="default">
         {css}
       </style>
-      <section className={["ui-sr", className].filter(Boolean).join(" ")} aria-label={title} data-accepted={done || undefined}>
+      <section
+        className={['ui-sr', className].filter(Boolean).join(' ')}
+        aria-label={title}
+        data-accepted={done || undefined}
+      >
         <div className="ui-sr__card">
-          <button type="button" className="ui-sr__head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <button
+            type="button"
+            className="ui-sr__head"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+          >
             <SparkIcon />
             <span className="ui-sr__title" dir="auto" title={title}>
-            {title}
-          </span>
+              {title}
+            </span>
             {!isRecommended && <span className="ui-sr__pill">Alternative</span>}
             <span className="ui-sr__chevron">
               <Icon d="m4.5 6.25 3.5 3.5 3.5-3.5" />
@@ -151,7 +172,11 @@ export function SmartRecommendation({
                           </span>
                           {i === 0 && <span className="ui-sr__tag">Recommended</span>}
                         </span>
-                        <span className="ui-sr__mini" data-level={level(o.signal)} aria-label={signalText[level(o.signal)]}>
+                        <span
+                          className="ui-sr__mini"
+                          data-level={level(o.signal)}
+                          aria-label={signalText[level(o.signal)]}
+                        >
                           {[1, 2, 3].map((n) => (
                             <span key={n} data-on={level(o.signal) >= n || undefined} />
                           ))}
@@ -203,14 +228,35 @@ export function SmartRecommendation({
 }
 
 const SparkIcon = () => (
-  <svg className="ui-sr__spark" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg
+    className="ui-sr__spark"
+    viewBox="0 0 16 16"
+    width="16"
+    height="16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     <path d="M9 3.5H4A1.5 1.5 0 0 0 2.5 5v7A1.5 1.5 0 0 0 4 13.5h7a1.5 1.5 0 0 0 1.5-1.5V8" />
     <path d="M12.5 1.5v4M10.5 3.5h4" />
   </svg>
 );
 
 const Icon = ({ d, size = 16 }: { d: string; size?: number }) => (
-  <svg viewBox="0 0 16 16" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     <path d={d} />
   </svg>
 );
@@ -218,257 +264,252 @@ const Icon = ({ d, size = 16 }: { d: string; size?: number }) => (
 /* ---------- Styles ---------- */
 
 const css = /* css */ `
+/* Cypher tokens (tokens.css): a "yours" card – surface on radius-xl with shadow-card, the recommendation in a quiet well */
 .ui-sr {
-  --ui-sr-tray: #f0f0f0;
-  --ui-sr-card: #ffffff;
-  --ui-sr-ink: #171717;
-  --ui-sr-text: #404040;
-  --ui-sr-muted: #8f8f8f;
-  --ui-sr-accent: #2f6bff;
-  --ui-sr-ok: #1f8a4c;
-  --ui-sr-accent-text: #2f6bff;
-  --ui-sr-border: #e5e5e5;
-  --ui-sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --ui-sr-head-hover: #f8f8f8;
-  --ui-sr-pill: #f4f0ff;
-  --ui-sr-pill-text: #7c4dff;
-  --ui-sr-bar: #d4d4d4;
-  --ui-sr-btn: #fff;
-  --ui-sr-btn-hover: #f7f7f7;
-  --ui-sr-menu: #fff;
-  --ui-sr-option-hover: #f5f5f5;
-  --ui-sr-option-on: #f5f8ff;
-  --ui-sr-tag: #eef3ff;
-  --ui-sr-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ui-sr-tray: var(--surface);
+  --ui-sr-card: var(--surface-quiet);
+  --ui-sr-ink: var(--ink);
+  --ui-sr-text: var(--text-2);
+  --ui-sr-muted: var(--text-3);
+  --ui-sr-accent: color-mix(in srgb, var(--blue) 40%, transparent);
+  --ui-sr-ok: var(--green);
+  --ui-sr-warn: var(--gold);
+  --ui-sr-accent-text: var(--coral-text);
+  --ui-sr-border: var(--mist);
+  --ui-sr-shadow: var(--shadow-card);
+  --ui-sr-head-hover: var(--mist-2);
+  --ui-sr-pill: var(--mist-2);
+  --ui-sr-pill-text: var(--text-2);
+  --ui-sr-bar: var(--mist);
+  --ui-sr-bar-on: var(--ink);
+  --ui-sr-btn: var(--surface);
+  --ui-sr-btn-hover: var(--surface-quiet);
+  --ui-sr-primary: var(--ink);
+  --ui-sr-primary-hover: var(--ink-2);
+  --ui-sr-on-primary: var(--on-ink);
+  --ui-sr-menu: var(--surface);
+  --ui-sr-option-hover: var(--surface-quiet);
+  --ui-sr-option-on: var(--mist-2);
+  --ui-sr-tag: var(--mist-2);
+  --ui-sr-tag-text: var(--text-2);
+  --ui-sr-ease: ease-out;
   box-sizing: border-box;
   width: 100%;
   max-width: 440px;
   container-type: inline-size;
-  /* Like the Chat Composer: the white card on a gray tray, the actions live in the tray below */
   background: var(--ui-sr-tray);
-  /* The gray tray frames the white card on every side */
-  padding: 6px;
-  border-radius: 22px;
-  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--ui-sr-shadow);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   color: var(--ui-sr-ink);
   -webkit-font-smoothing: antialiased;
 }
 .ui-sr *, .ui-sr *::before, .ui-sr *::after { box-sizing: border-box; }
 .ui-sr button { margin: 0; font: inherit; color: inherit; cursor: pointer; }
-.ui-sr button:focus-visible { outline: 2px solid var(--ui-sr-accent); outline-offset: 2px; }
+/* Focus: 3px of blue at 40%, outside the control */
+.ui-sr button:focus-visible { outline: 3px solid var(--ui-sr-accent); outline-offset: 0; }
 
+/* Cypher's recommendation: a surface-quiet well inside the card */
 .ui-sr__card {
-  padding: 6px 8px 8px;
+  padding: var(--space-1) var(--space-1) var(--space-2);
   background: var(--ui-sr-card);
-  border: 1px solid var(--ui-sr-border);
-  border-radius: 16px;
-  box-shadow: var(--ui-sr-shadow);
+  border-radius: var(--radius-lg);
 }
 .ui-sr__head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   width: 100%;
-  height: 40px;
-  padding: 0 10px;
+  min-height: 44px;
+  padding: 0 var(--space-3);
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: transparent;
   text-align: left;
-  transition: background-color 140ms ease;
+  transition: background-color 200ms ease-out;
 }
 .ui-sr__head:hover { background: var(--ui-sr-head-hover); }
 .ui-sr__spark { flex: none; color: var(--ui-sr-accent-text); }
-.ui-sr__title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 15px; font-weight: 500; }
+/* The label row of a yours card: label style, in coral-text */
+.ui-sr__title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ui-sr-accent-text);
+}
 .ui-sr__pill {
   flex: none;
-  padding: 1px 8px;
-  border-radius: 999px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
   background: var(--ui-sr-pill);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
   color: var(--ui-sr-pill-text);
 }
-.ui-sr__chevron { display: grid; margin-left: auto; color: var(--ui-sr-muted); transition: transform 280ms var(--ui-sr-ease); }
+.ui-sr__chevron { display: grid; margin-left: auto; color: var(--ui-sr-muted); transition: transform 200ms var(--ui-sr-ease); }
 .ui-sr__head[aria-expanded="false"] .ui-sr__chevron { transform: rotate(-90deg); }
 .ui-sr__body {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 340ms var(--ui-sr-ease);
+  transition: grid-template-rows 200ms var(--ui-sr-ease);
 }
 .ui-sr__body[data-open] { grid-template-rows: 1fr; }
+/* The verdict in body-small, text-2; the bold part in ink */
 .ui-sr__reason {
   min-height: 0;
   overflow: hidden;
   margin: 0;
-  padding: 0 10px;
-  font-size: 14px;
-  line-height: 21px;
+  padding: 0 var(--space-3);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--ui-sr-text);
   text-align: start;
   white-space: pre-line;
   overflow-wrap: anywhere;
-  animation: ui-sr-swap 360ms var(--ui-sr-ease);
+  animation: ui-sr-swap 200ms var(--ui-sr-ease);
 }
-.ui-sr__body[data-open] .ui-sr__reason { padding-bottom: 8px; }
-.ui-sr__reason strong { font-weight: 500; color: var(--ui-sr-ink); }
+.ui-sr__body[data-open] .ui-sr__reason { padding-bottom: var(--space-2); }
+.ui-sr__reason strong { font-weight: 700; color: var(--ui-sr-ink); }
 
 .ui-sr__foot {
   display: flex;
   align-items: center;
-  /* Narrow containers: the actions move below the signal instead of running out of the tray */
+  /* Narrow containers: the actions move below the signal instead of running out of the card */
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px 10px;
-  min-height: 50px;
-  padding: 8px 8px 8px 16px;
+  gap: var(--space-2) var(--space-3);
+  min-height: 44px;
+  margin-top: var(--space-4);
 }
 .ui-sr__signal {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--space-2);
+  font-size: 13.5px;
+  line-height: 1.4;
   white-space: nowrap;
   color: var(--ui-sr-muted);
 }
 .ui-sr__bars, .ui-sr__mini { display: inline-flex; align-items: flex-end; gap: 2px; }
 .ui-sr__bars span, .ui-sr__mini span {
   width: 3px;
-  border-radius: 1px;
+  border-radius: var(--radius-pill);
   background: var(--ui-sr-bar);
-  transition: background-color 260ms ease;
+  transition: background-color 200ms ease-out;
 }
 .ui-sr__bars span:nth-child(1), .ui-sr__mini span:nth-child(1) { height: 6px; }
 .ui-sr__bars span:nth-child(2), .ui-sr__mini span:nth-child(2) { height: 9px; }
 .ui-sr__bars span:nth-child(3), .ui-sr__mini span:nth-child(3) { height: 12px; }
-/* Scoped to the card, so other components with data-level on the page keep their colors */
-.ui-sr [data-level="1"] > span[data-on] { background: #f59e0b; }
-.ui-sr [data-level="2"] > span[data-on] { background: var(--ui-sr-accent); }
-.ui-sr [data-level="3"] > span[data-on] { background: var(--ui-sr-ok); }
-.ui-sr__signal[data-level="0"] .ui-sr__bars span:first-child { background: #8f8f8f; }
+/* Scoped to the card, so other components with data-level on the page keep their colors.
+   Weak is the waiting/warning gold; good and strong are ink and differ by bar count (lightness, not hue) */
+.ui-sr [data-level="1"] > span[data-on] { background: var(--ui-sr-warn); }
+.ui-sr [data-level="2"] > span[data-on] { background: var(--ui-sr-bar-on); }
+.ui-sr [data-level="3"] > span[data-on] { background: var(--ui-sr-bar-on); }
+.ui-sr__signal[data-level="0"] .ui-sr__bars span:first-child { background: var(--ui-sr-muted); }
 
-/* Never wider than the row – a long label shortens in its button instead of running out of the tray */
-.ui-sr__actions { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; margin-left: auto; }
+/* Never wider than the row – a long label shortens in its button instead of running out of the card */
+.ui-sr__actions { display: flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; margin-left: auto; }
 .ui-sr__alt, .ui-sr__actions > .ui-sr__btn:not(.ui-sr__btn--primary) { flex: none; }
+/* Buttons: pills in the button style (15px / 700), 44px tall; the alternative in surface with a mist line */
 .ui-sr__btn {
-  height: 32px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 10px;
+  height: 44px;
+  padding: 0 20px;
+  border: 1px solid var(--ui-sr-border);
+  border-radius: var(--radius-pill);
   background: var(--ui-sr-btn);
-  box-shadow: 0 0 0 1px var(--ui-sr-border), 0 1px 2px rgba(0, 0, 0, 0.04);
-  font-size: 13px !important;
-  font-weight: 500;
+  font-size: 15px !important;
+  font-weight: 700;
+  line-height: 1.2;
   min-width: 0;
   max-width: 100%;
   white-space: nowrap;
-  transition: background-color 160ms ease, transform 160ms ease;
+  transition: background-color 200ms ease-out, transform 200ms ease-out;
 }
 .ui-sr__btn--primary { display: inline-flex; align-items: center; }
 .ui-sr__btn-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ui-sr__btn:hover { background: var(--ui-sr-btn-hover); }
 .ui-sr__btn:active { transform: scale(0.98); }
+/* Cypher's pick: ink with on-ink text */
 .ui-sr__btn--primary {
-  background: linear-gradient(#323137, #201e25);
-  box-shadow: 0 0 0 1px #0d0d0d, 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  color: #fff !important;
+  border-color: var(--ui-sr-primary);
+  background: var(--ui-sr-primary);
+  color: var(--ui-sr-on-primary) !important;
 }
-.ui-sr__btn--primary:hover { background: linear-gradient(#3b3a41, #26242b); }
+.ui-sr__btn--primary:hover { border-color: var(--ui-sr-primary-hover); background: var(--ui-sr-primary-hover); }
 .ui-sr__done {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding-right: 4px;
-  font-size: 13px;
-  font-weight: 500;
+  padding-right: var(--space-1);
+  font-size: 15px;
+  font-weight: 700;
   color: var(--ui-sr-ok);
-  animation: ui-sr-swap 300ms var(--ui-sr-ease);
+  animation: ui-sr-swap 200ms var(--ui-sr-ease);
 }
 
 .ui-sr__alt { position: relative; }
+/* The alternatives menu: a surface panel with a mist line, no shadow */
 .ui-sr__menu {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + var(--space-2));
   right: 0;
   z-index: 5;
   display: grid;
   gap: 2px;
   /* The column never grows with a long name; a long list scrolls */
   grid-template-columns: minmax(0, 1fr);
-  width: 260px;
+  width: 280px;
   max-height: min(320px, 60vh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 4px;
-  border-radius: 12px;
+  padding: var(--space-1);
+  border: 1px solid var(--ui-sr-border);
+  border-radius: var(--radius-lg);
   background: var(--ui-sr-menu);
-  box-shadow: 0 0 0 1px var(--ui-sr-border), 0 12px 30px -8px rgba(0, 0, 0, 0.2);
-  animation: ui-sr-drop 180ms var(--ui-sr-ease);
+  animation: ui-sr-drop 200ms var(--ui-sr-ease);
 }
 .ui-sr__menu[data-flip] { right: auto; left: 0; }
 /* Narrow: the actions sit on their own row – the menu lines up with its right edge so it stays inside */
 @container (max-width: 420px) {
   .ui-sr__actions { position: relative; }
   .ui-sr__alt { position: static; }
-  .ui-sr__menu { width: min(260px, 100cqw - 24px); }
+  .ui-sr__menu { width: min(280px, 100cqw - 24px); }
 }
 .ui-sr__option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  min-height: 34px;
-  padding: 0 10px;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: 0 var(--space-3);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
-  font-size: 13px !important;
+  font-size: 15px !important;
   text-align: left;
 }
 .ui-sr__option:hover { background: var(--ui-sr-option-hover); }
-.ui-sr__option[aria-checked="true"] { background: var(--ui-sr-option-on); }
+.ui-sr__option[aria-checked="true"] { background: var(--ui-sr-option-on); font-weight: 700; }
 .ui-sr__option-label { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; }
 .ui-sr__option-name, .ui-sr__done-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .ui-sr__tag, .ui-sr__mini { flex: none; }
-.ui-sr__tag { padding: 0 6px; border-radius: 999px; background: var(--ui-sr-tag); font-size: 10.5px; font-weight: 500; line-height: 16px; color: var(--ui-sr-accent-text); }
+.ui-sr__tag { padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--ui-sr-tag); font-size: 13px; font-weight: 600; line-height: 20px; color: var(--ui-sr-tag-text); }
 
 @keyframes ui-sr-swap { from { opacity: 0; transform: translateY(2px); } }
 @keyframes ui-sr-drop { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
+/* Reduced motion: nothing slides, folds, fades or presses */
 @media (prefers-reduced-motion: reduce) {
-  .ui-sr__reason, .ui-sr__done, .ui-sr__menu { animation: none; }
-  .ui-sr__body, .ui-sr__chevron { transition: none; }
+  .ui-sr *, .ui-sr *::before, .ui-sr *::after { animation: none !important; transition: none !important; }
+  .ui-sr__btn:active { transform: none; }
 }
-
-/* Dark mode: follows a .dark class or data-theme="dark" on any ancestor, e.g. <html> */
-:where(.dark, [data-theme="dark"]) .ui-sr {
-  --ui-sr-tray: #161618;
-  --ui-sr-card: #232326;
-  --ui-sr-ink: #ededed;
-  --ui-sr-text: #c4c4c4;
-  --ui-sr-muted: #8f8f8f;
-  --ui-sr-ok: #3dbb6f;
-  --ui-sr-accent-text: #6b95ff;
-  --ui-sr-border: rgba(255, 255, 255, 0.08);
-  --ui-sr-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --ui-sr-head-hover: rgba(255, 255, 255, 0.06);
-  --ui-sr-pill: rgba(139, 92, 246, 0.18);
-  --ui-sr-pill-text: #b49cff;
-  --ui-sr-bar: rgba(255, 255, 255, 0.14);
-  --ui-sr-btn: #2a2a2d;
-  --ui-sr-btn-hover: #313135;
-  --ui-sr-menu: #2a2a2d;
-  --ui-sr-option-hover: #313135;
-  --ui-sr-option-on: rgba(47, 107, 255, 0.16);
-  --ui-sr-tag: rgba(47, 107, 255, 0.16);
-}
-:where(.dark, [data-theme="dark"]) .ui-sr__menu {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 30px -8px rgba(0, 0, 0, 0.5);
-}
-:where(.dark, [data-theme="dark"]) .ui-sr__btn--primary {
-  background: linear-gradient(#f4f4f5, #e4e4e7);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.35), inset 0 1px 0 #ffffff;
-  color: #121213 !important;
-}
-:where(.dark, [data-theme="dark"]) .ui-sr__btn--primary:hover { background: linear-gradient(#ffffff, #ececef); }
 `;

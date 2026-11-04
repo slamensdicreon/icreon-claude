@@ -1,4 +1,12 @@
-"use client";
+/*
+ * Restyled to the Cypher Design System tokens (docs/redesign/cypher-handoff/design-system).
+ * Original: affectUI Segmented Control (Clean), see git history.
+ *
+ * Cypher additions: kind="toggle" renders the Dial (role="group" of real buttons with aria-pressed, arrow keys
+ * still move), and tone="onInk" restyles it for the ink shell. With kind="toggle" and no variant, the variant
+ * is "tray": a surface pill with a mist border and 4px padding, the active option an ink pill.
+ */
+'use client';
 
 import {
   useEffect,
@@ -9,7 +17,7 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
-} from "react";
+} from 'react';
 
 /*
  * Segmented Control (Clean) – switch between two to six options, in a single self-contained file.
@@ -44,16 +52,20 @@ export type SegmentedControlProps<T extends string = string> = {
   /** Starting value when uncontrolled – defaults to the first enabled option */
   defaultValue?: T;
   onChange?: (value: T) => void;
-  size?: "sm" | "md" | "lg";
-  /** "buttons" = separate chips, the active one filled; "tray" = light track with a raised pill; "underline" = text tabs with a sliding line */
-  variant?: "buttons" | "tray" | "underline";
+  size?: 'sm' | 'md' | 'lg';
+  /** "buttons" = separate chips, the active one filled; "tray" = light track with a raised pill; "underline" = text tabs with a sliding line.
+   *  Defaults to "buttons", or to "tray" with kind="toggle" (the Dial) */
+  variant?: 'buttons' | 'tray' | 'underline';
+  /** "default" for light grounds; "onInk" inside the ink shell (active option surface with ink text, inactive on-ink-muted) */
+  tone?: 'default' | 'onInk';
   /** Fill the container with equal segments */
   fullWidth?: boolean;
-  /** "radio" (a radiogroup, the default) or "tabs" (a tablist that switches panels) */
-  kind?: "radio" | "tabs";
+  /** "radio" (a radiogroup, the default), "tabs" (a tablist that switches panels) or "toggle" (a group of
+   *  buttons with aria-pressed – the Cypher Dial; label it with aria-label, e.g. "How much to show") */
+  kind?: 'radio' | 'tabs' | 'toggle';
   disabled?: boolean;
-  "aria-label"?: string;
-  "aria-labelledby"?: string;
+  'aria-label'?: string;
+  'aria-labelledby'?: string;
   className?: string;
 };
 
@@ -62,13 +74,14 @@ export function SegmentedControl<T extends string = string>({
   value,
   defaultValue,
   onChange,
-  size: sizeProp = "md",
-  variant: variantProp = "buttons",
+  size: sizeProp = 'md',
+  variant: variantProp,
+  tone = 'default',
   fullWidth = false,
-  kind = "radio",
+  kind = 'radio',
   disabled = false,
-  "aria-label": ariaLabel,
-  "aria-labelledby": ariaLabelledby,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledby,
   className,
 }: SegmentedControlProps<T>) {
   // Gaps and repeated values are dropped – one value, one option
@@ -81,9 +94,16 @@ export function SegmentedControl<T extends string = string>({
     });
   }, [rawOptions]);
   // Unknown sizes and variants fall back to the defaults
-  const size = sizeProp === "sm" || sizeProp === "lg" ? sizeProp : "md";
-  const variant = variantProp === "tray" || variantProp === "underline" ? variantProp : "buttons";
-  const [inner, setInner] = useState<T | undefined>(() => defaultValue ?? options.find((o) => !o.disabled)?.value);
+  const size = sizeProp === 'sm' || sizeProp === 'lg' ? sizeProp : 'md';
+  const variant =
+    variantProp === 'tray' || variantProp === 'underline' || variantProp === 'buttons'
+      ? variantProp
+      : kind === 'toggle'
+        ? 'tray'
+        : 'buttons';
+  const [inner, setInner] = useState<T | undefined>(
+    () => defaultValue ?? options.find((o) => !o.disabled)?.value,
+  );
   const current = value !== undefined ? value : inner;
 
   const root = useRef<HTMLDivElement>(null);
@@ -96,9 +116,16 @@ export function SegmentedControl<T extends string = string>({
   const gliding = useRef(false);
   const glideTimer = useRef(0);
   const placed = useRef<T | undefined>(undefined);
-  const press = useRef<{ id: number; touch: boolean; drag: boolean; x: number; moved: boolean } | null>(null);
+  const press = useRef<{
+    id: number;
+    touch: boolean;
+    drag: boolean;
+    x: number;
+    moved: boolean;
+  } | null>(null);
 
-  const buttons = () => Array.from(track.current?.querySelectorAll<HTMLElement>(":scope > .ui-segc__opt") ?? []);
+  const buttons = () =>
+    Array.from(track.current?.querySelectorAll<HTMLElement>(':scope > .ui-segc__opt') ?? []);
   const activeIndex = options.findIndex((o) => o.value === current);
   const tabbable = activeIndex >= 0 ? activeIndex : options.findIndex((o) => !o.disabled);
 
@@ -113,13 +140,14 @@ export function SegmentedControl<T extends string = string>({
   /** Buttons get the width of their content, so a changed label or count makes them – and the control – glide to the new size */
   const measure = () => {
     const els = buttons();
-    if (!els.length || !track.current) return;
-    const cs = getComputedStyle(els[0]);
+    const first = els[0];
+    if (!first || !track.current) return;
+    const cs = getComputedStyle(first);
     const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     const widths = els.map((b) => (b.firstElementChild as HTMLElement).offsetWidth + pad);
     if (fullWidth) {
-      track.current.style.setProperty("--ui-segc-min", `${Math.max(...widths)}px`);
-      els.forEach((b) => (b.style.width = ""));
+      track.current.style.setProperty('--ui-segc-min', `${Math.max(...widths)}px`);
+      els.forEach((b) => (b.style.width = ''));
     } else els.forEach((b, i) => (b.style.width = `${widths[i]}px`));
   };
 
@@ -128,15 +156,15 @@ export function SegmentedControl<T extends string = string>({
     const t = track.current;
     const p = pill.current;
     if (!t || !p) return;
-    const btn = t.querySelector<HTMLElement>(":scope > .ui-segc__opt[data-active]");
+    const btn = t.querySelector<HTMLElement>(':scope > .ui-segc__opt[data-active]');
     if (!btn || !btn.offsetWidth) {
-      p.style.opacity = "0";
+      p.style.opacity = '0';
       return;
     }
     let x = btn.offsetLeft;
     let w = btn.offsetWidth;
     // The line sits under the text only, not under the whole button
-    if (variant === "underline") {
+    if (variant === 'underline') {
       const content = btn.firstElementChild as HTMLElement;
       x += content.offsetLeft;
       w = content.offsetWidth;
@@ -144,15 +172,15 @@ export function SegmentedControl<T extends string = string>({
     const instant = !p.dataset.ready || (!animate && !gliding.current);
     const prev = parseFloat(p.style.left) || 0;
     // The edge facing the target leads, the other one trails – the stretch
-    if (!instant && x !== prev) p.dataset.dir = x > prev ? "right" : "left";
-    if (instant) p.style.transition = "none";
-    p.style.opacity = "1";
+    if (!instant && x !== prev) p.dataset.dir = x > prev ? 'right' : 'left';
+    if (instant) p.style.transition = 'none';
+    p.style.opacity = '1';
     p.style.left = `${x}px`;
     p.style.right = `${t.clientWidth - x - w}px`;
     if (instant) {
-      p.dataset.ready = "1";
+      p.dataset.ready = '1';
       void p.offsetWidth;
-      p.style.transition = "";
+      p.style.transition = '';
     }
   };
 
@@ -161,19 +189,22 @@ export function SegmentedControl<T extends string = string>({
     const s = scroller.current;
     if (!s) return;
     const max = s.scrollWidth - s.clientWidth;
-    root.current?.toggleAttribute("data-overflow", max > 1);
-    s.style.setProperty("--ui-segc-fade-l", s.scrollLeft > 1 ? "24px" : "0px");
-    s.style.setProperty("--ui-segc-fade-r", s.scrollLeft < max - 1 ? "24px" : "0px");
+    root.current?.toggleAttribute('data-overflow', max > 1);
+    s.style.setProperty('--ui-segc-fade-l', s.scrollLeft > 1 ? '24px' : '0px');
+    s.style.setProperty('--ui-segc-fade-r', s.scrollLeft < max - 1 ? '24px' : '0px');
   };
 
   /** Keeps the active option in view when the control scrolls */
   const reveal = (smooth: boolean) => {
     const s = scroller.current;
     const t = track.current;
-    const btn = t?.querySelector<HTMLElement>(":scope > .ui-segc__opt[data-active]");
+    const btn = t?.querySelector<HTMLElement>(':scope > .ui-segc__opt[data-active]');
     if (!s || !t || !btn || s.scrollWidth <= s.clientWidth + 1) return;
     const left = t.offsetLeft + btn.offsetLeft - (s.clientWidth - btn.offsetWidth) / 2;
-    s.scrollTo({ left: Math.max(0, left), behavior: smooth ? "smooth" : "auto" });
+    s.scrollTo({
+      left: Math.max(0, left),
+      behavior: smooth && !reducedMotion() ? 'smooth' : 'auto',
+    });
   };
 
   // Sizes: measured on mount and whenever a label, the container or the font changes
@@ -188,7 +219,7 @@ export function SegmentedControl<T extends string = string>({
     };
     sync();
     // Width transitions only after the first measure, so nothing grows in on load
-    const ready = requestAnimationFrame(() => root.current?.setAttribute("data-ready", ""));
+    const ready = requestAnimationFrame(() => root.current?.setAttribute('data-ready', ''));
     // One frame later, so setting widths inside the observer never loops
     let frame = 0;
     const ro = new ResizeObserver(() => {
@@ -197,7 +228,7 @@ export function SegmentedControl<T extends string = string>({
     });
     ro.observe(s);
     ro.observe(t);
-    t.querySelectorAll(".ui-segc__opt, .ui-segc__content").forEach((el) => ro.observe(el));
+    t.querySelectorAll('.ui-segc__opt, .ui-segc__content').forEach((el) => ro.observe(el));
     return () => {
       ro.disconnect();
       cancelAnimationFrame(frame);
@@ -219,7 +250,8 @@ export function SegmentedControl<T extends string = string>({
     place(!first);
     reveal(!first);
     const t = track.current;
-    if (!first && t && t.contains(document.activeElement)) buttons()[activeIndex]?.focus({ preventScroll: true });
+    if (!first && t && t.contains(document.activeElement))
+      buttons()[activeIndex]?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current]);
 
@@ -230,14 +262,15 @@ export function SegmentedControl<T extends string = string>({
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const enabled = options.filter((o) => !o.disabled);
     if (!enabled.length || disabled) return;
-    const prevKeys = kind === "radio" ? ["ArrowLeft", "ArrowUp"] : ["ArrowLeft"];
-    const nextKeys = kind === "radio" ? ["ArrowRight", "ArrowDown"] : ["ArrowRight"];
+    // Radio and toggle groups move on both axes; a horizontal tablist only on left and right
+    const prevKeys = kind === 'tabs' ? ['ArrowLeft'] : ['ArrowLeft', 'ArrowUp'];
+    const nextKeys = kind === 'tabs' ? ['ArrowRight'] : ['ArrowRight', 'ArrowDown'];
     const at = enabled.findIndex((o) => o.value === latest.current);
     let target: SegmentOption<T> | undefined;
     if (prevKeys.includes(e.key)) target = enabled[(at - 1 + enabled.length) % enabled.length];
     else if (nextKeys.includes(e.key)) target = enabled[(at + 1) % enabled.length];
-    else if (e.key === "Home") target = enabled[0];
-    else if (e.key === "End") target = enabled[enabled.length - 1];
+    else if (e.key === 'Home') target = enabled[0];
+    else if (e.key === 'End') target = enabled[enabled.length - 1];
     if (!target) return;
     e.preventDefault();
     select(target.value);
@@ -263,18 +296,18 @@ export function SegmentedControl<T extends string = string>({
 
   const endPress = () => {
     press.current = null;
-    root.current?.removeAttribute("data-pressed");
+    root.current?.removeAttribute('data-pressed');
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (disabled || e.button !== 0) return;
     const opt = optionAt(e.clientX);
     if (!opt || opt.disabled) return;
-    const touch = e.pointerType === "touch";
+    const touch = e.pointerType === 'touch';
     // Touch: picks on lift (so swiping to scroll doesn't pick), but the pill itself can be dragged right away
     const drag = !touch || opt.value === latest.current;
     press.current = { id: e.pointerId, touch, drag, x: e.clientX, moved: false };
-    if (drag) root.current?.setAttribute("data-pressed", "");
+    if (drag) root.current?.setAttribute('data-pressed', '');
     if (!touch) {
       select(opt.value);
       try {
@@ -305,14 +338,16 @@ export function SegmentedControl<T extends string = string>({
     endPress();
   };
 
-  const isTabs = kind === "tabs";
+  const isTabs = kind === 'tabs';
+  const isToggle = kind === 'toggle';
 
   return (
     <div
       ref={root}
-      className={["ui-segc", className].filter(Boolean).join(" ")}
+      className={['ui-segc', className].filter(Boolean).join(' ')}
       data-size={size}
       data-variant={variant}
+      data-tone={tone === 'onInk' ? 'on-ink' : undefined}
       data-full={fullWidth || undefined}
       data-disabled={disabled || undefined}
     >
@@ -325,11 +360,11 @@ export function SegmentedControl<T extends string = string>({
         <div
           ref={track}
           className="ui-segc__track"
-          role={isTabs ? "tablist" : "radiogroup"}
+          role={isTabs ? 'tablist' : isToggle ? 'group' : 'radiogroup'}
           aria-label={ariaLabel}
           aria-labelledby={ariaLabelledby}
           aria-disabled={disabled || undefined}
-          aria-orientation={isTabs ? "horizontal" : undefined}
+          aria-orientation={isTabs ? 'horizontal' : undefined}
           onKeyDown={onKeyDown}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -348,9 +383,10 @@ export function SegmentedControl<T extends string = string>({
                 key={String(o.value)}
                 type="button"
                 className="ui-segc__opt"
-                role={isTabs ? "tab" : "radio"}
-                aria-checked={isTabs ? undefined : active}
+                role={isTabs ? 'tab' : isToggle ? undefined : 'radio'}
+                aria-checked={isTabs || isToggle ? undefined : active}
                 aria-selected={isTabs ? active : undefined}
+                aria-pressed={isToggle ? active : undefined}
                 aria-controls={isTabs ? o.controls : undefined}
                 aria-label={o.ariaLabel}
                 data-active={active || undefined}
@@ -361,7 +397,12 @@ export function SegmentedControl<T extends string = string>({
               >
                 <span className="ui-segc__content">
                   {o.icon && (
-                    <span className="ui-segc__icon" onErrorCapture={(e) => ((e.target as HTMLElement).style.visibility = "hidden")}>
+                    <span
+                      className="ui-segc__icon"
+                      onErrorCapture={(e) =>
+                        ((e.target as HTMLElement).style.visibility = 'hidden')
+                      }
+                    >
                       {o.icon}
                     </span>
                   )}
@@ -371,7 +412,7 @@ export function SegmentedControl<T extends string = string>({
                       {label}
                     </span>
                   )}
-                  {count != null && count !== "" && (
+                  {count != null && count !== '' && (
                     <span key={String(count)} className="ui-segc__count">
                       {count}
                     </span>
@@ -387,9 +428,14 @@ export function SegmentedControl<T extends string = string>({
   );
 }
 
+/** The scroll that keeps the active option in view jumps instead of gliding when motion is reduced */
+const reducedMotion = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 
 /** 1284 → "1,284"; NaN and Infinity show nothing */
-const countText = (c: number | string | undefined) => (typeof c === "number" ? (Number.isFinite(c) ? c.toLocaleString("en-US") : null) : c);
+const countText = (c: number | string | undefined) =>
+  typeof c === 'number' ? (Number.isFinite(c) ? c.toLocaleString('en-US') : null) : c;
 
 const css = /* css */ `
 /* Animatable custom properties: the equal segment width and the soft edges glide too */
@@ -397,51 +443,70 @@ const css = /* css */ `
 @property --ui-segc-fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @property --ui-segc-fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
 
+/* Cypher tokens (tokens.css): on light grounds the active option is an ink pill with on-ink text */
 .ui-segc {
-  --ui-segc-ink: rgba(0, 0, 0, 0.88);
-  --ui-segc-text: rgba(0, 0, 0, 0.61);
-  --ui-segc-hover-text: rgba(0, 0, 0, 0.75);
-  --ui-segc-line: rgba(0, 0, 0, 0.06);
-  --ui-segc-wash: rgba(0, 0, 0, 0.03);
-  --ui-segc-fill: rgba(0, 0, 0, 0.06);
-  --ui-segc-track: rgba(0, 0, 0, 0.04);
-  --ui-segc-card: #ffffff;
-  --ui-segc-card-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 1px -1px rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --ui-segc-accent: rgba(0, 96, 226, 0.765);
-  --ui-segc-accent-soft: rgba(0, 96, 226, 0.08);
-  --ui-segc-focus: rgba(0, 96, 226, 0.35);
-  --ui-segc-ease: cubic-bezier(0.25, 0.9, 0.3, 1);
-  /* Size: md – 28px chips, 4px 10px */
-  --ui-segc-h: 28px;
-  --ui-segc-px: 10px;
-  --ui-segc-fs: 13px;
+  --ui-segc-ink: var(--ink);
+  --ui-segc-text: var(--text-3);
+  --ui-segc-hover-text: var(--text-2);
+  --ui-segc-line: var(--mist);
+  --ui-segc-wash: var(--surface-quiet);
+  --ui-segc-fill: var(--ink);
+  --ui-segc-on-fill: var(--on-ink);
+  --ui-segc-track: var(--surface);
+  --ui-segc-tag: var(--mist-2);
+  --ui-segc-tag-text: var(--text-2);
+  --ui-segc-tag-on: color-mix(in srgb, var(--on-ink) 20%, transparent);
+  --ui-segc-tag-on-text: var(--on-ink);
+  --ui-segc-focus: color-mix(in srgb, var(--blue) 40%, transparent);
+  --ui-segc-ease: ease-out;
+  /* Size: md – 44px, the Dial; labels in the button style (15px / 700) */
+  --ui-segc-h: 44px;
+  --ui-segc-px: var(--space-4);
+  --ui-segc-fs: 15px;
   --ui-segc-lh: 20px;
-  --ui-segc-icon: 16px;
-  --ui-segc-gap: 8px;
-  --ui-segc-pad: 2px;
+  --ui-segc-icon: 18px;
+  --ui-segc-gap: var(--space-2);
+  --ui-segc-pad: var(--space-1);
   --ui-segc-ring: 3px;
   box-sizing: border-box;
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
   vertical-align: middle;
-  border-radius: 8px;
-  font-family: "Inter", "InterVariable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
   font-size: var(--ui-segc-fs);
-  font-weight: 500;
+  font-weight: 700;
   line-height: var(--ui-segc-lh);
+  font-variant-numeric: tabular-nums;
   color: var(--ui-segc-text);
   -webkit-font-smoothing: antialiased;
 }
-.ui-segc[data-size="sm"] { --ui-segc-h: 24px; --ui-segc-px: 8px; --ui-segc-fs: 12px; --ui-segc-lh: 16px; --ui-segc-icon: 14px; --ui-segc-gap: 6px; }
-.ui-segc[data-size="lg"] { --ui-segc-h: 32px; --ui-segc-px: 12px; --ui-segc-icon: 16px; --ui-segc-gap: 8px; }
+/* Inside the ink shell: a surface pill with ink text on an ink-2 track with an ink-3 line */
+.ui-segc[data-tone="on-ink"] {
+  --ui-segc-ink: var(--on-ink);
+  --ui-segc-text: var(--on-ink-muted);
+  --ui-segc-hover-text: var(--on-ink);
+  --ui-segc-line: var(--ink-3);
+  --ui-segc-wash: var(--ink-3);
+  --ui-segc-fill: var(--surface);
+  --ui-segc-on-fill: var(--ink);
+  --ui-segc-track: var(--ink-2);
+  --ui-segc-tag: var(--ink-3);
+  --ui-segc-tag-text: var(--on-ink-muted);
+  --ui-segc-tag-on: var(--mist-2);
+  --ui-segc-tag-on-text: var(--ink);
+}
+.ui-segc[data-size="sm"] { --ui-segc-h: 36px; --ui-segc-px: var(--space-3); --ui-segc-fs: 13px; --ui-segc-lh: 18px; --ui-segc-icon: 16px; --ui-segc-gap: var(--space-1); }
+.ui-segc[data-size="lg"] { --ui-segc-h: 48px; --ui-segc-px: 20px; --ui-segc-fs: 16px; --ui-segc-icon: 20px; }
 .ui-segc[data-full] { display: flex; width: 100%; }
 .ui-segc[data-disabled] { opacity: 0.5; pointer-events: none; }
 .ui-segc *, .ui-segc *::before, .ui-segc *::after { box-sizing: border-box; }
 :where(.ui-segc) button { margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
 :where(.ui-segc) svg { display: block; flex: none; }
 
-/* Scrolls sideways only when it doesn't fit; the padding keeps focus rings from being cut off */
+/* Scrolls sideways only when it doesn't fit; the padding keeps focus rings from being cut off.
+   The mask reads alpha only, so the opaque stop is any token */
 .ui-segc__scroller {
   position: relative;
   flex: 1;
@@ -452,9 +517,9 @@ const css = /* css */ `
   border-radius: inherit;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--ui-segc-fade-l), #000 calc(100% - var(--ui-segc-fade-r)), transparent);
-  mask-image: linear-gradient(to right, transparent, #000 var(--ui-segc-fade-l), #000 calc(100% - var(--ui-segc-fade-r)), transparent);
-  transition: --ui-segc-fade-l 160ms ease, --ui-segc-fade-r 160ms ease;
+  -webkit-mask-image: linear-gradient(to right, transparent, var(--ink) var(--ui-segc-fade-l), var(--ink) calc(100% - var(--ui-segc-fade-r)), transparent);
+  mask-image: linear-gradient(to right, transparent, var(--ink) var(--ui-segc-fade-l), var(--ink) calc(100% - var(--ui-segc-fade-r)), transparent);
+  transition: --ui-segc-fade-l 160ms ease-out, --ui-segc-fade-r 160ms ease-out;
 }
 .ui-segc__scroller::-webkit-scrollbar { display: none; }
 
@@ -486,23 +551,23 @@ const css = /* css */ `
   height: var(--ui-segc-h);
   padding: 0 var(--ui-segc-px);
   overflow: clip;
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   white-space: nowrap;
-  /* Hover washes are short and crisp, in and out */
-  transition: color 90ms ease, background-color 90ms ease;
+  transition: color 200ms ease-out, background-color 200ms ease-out;
 }
-.ui-segc[data-ready]:not([data-full]) .ui-segc__opt { transition: color 90ms ease, background-color 90ms ease, width 200ms var(--ui-segc-ease); }
-.ui-segc__opt[data-active] { color: var(--ui-segc-ink); }
+.ui-segc[data-ready]:not([data-full]) .ui-segc__opt { transition: color 200ms ease-out, background-color 200ms ease-out, width 200ms var(--ui-segc-ease); }
+.ui-segc__opt[data-active] { color: var(--ui-segc-on-fill); }
 .ui-segc__opt:disabled { opacity: 0.4; cursor: not-allowed; }
-.ui-segc__opt:focus-visible { outline: 2px solid var(--ui-segc-focus); outline-offset: 1px; }
+/* Focus: 3px of blue at 40%, outside the control */
+.ui-segc__opt:focus-visible { outline: var(--ui-segc-ring) solid var(--ui-segc-focus); outline-offset: 0; }
 @media (hover: hover) {
-  .ui-segc__opt:not([data-active]):not(:disabled):hover { background-color: var(--ui-segc-wash); }
+  .ui-segc__opt:not([data-active]):not(:disabled):hover { background-color: var(--ui-segc-wash); color: var(--ui-segc-hover-text); }
 }
 
-.ui-segc__content { display: inline-flex; flex: none; align-items: center; gap: 6px; }
-.ui-segc[data-size="sm"] .ui-segc__content { gap: 5px; }
-.ui-segc__icon { display: grid; place-items: center; width: var(--ui-segc-icon); height: var(--ui-segc-icon); color: rgba(0, 0, 0, 0.447); transition: color 90ms ease; }
-.ui-segc__opt[data-active] .ui-segc__icon { color: var(--ui-segc-ink); }
+.ui-segc__content { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); }
+.ui-segc[data-size="sm"] .ui-segc__content { gap: 6px; }
+/* Icons take the option's text color, so they follow its state */
+.ui-segc__icon { display: grid; place-items: center; width: var(--ui-segc-icon); height: var(--ui-segc-icon); color: inherit; }
 .ui-segc__icon svg, .ui-segc__icon img { width: 100%; height: 100%; }
 /* Images fill the tile without leaving it, whatever their shape */
 .ui-segc__icon { overflow: hidden; }
@@ -512,33 +577,34 @@ const css = /* css */ `
 .ui-segc__count {
   display: inline-grid;
   place-items: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 5px;
-  background: var(--ui-segc-fill);
-  font-size: 11px;
-  line-height: 16px;
-  font-weight: 500;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--ui-segc-tag);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--ui-segc-text);
+  color: var(--ui-segc-tag-text);
   animation: ui-segc-in 200ms var(--ui-segc-ease) both;
 }
-.ui-segc__opt[data-active] .ui-segc__count { background: var(--ui-segc-card); box-shadow: 0 0 0 0.5px var(--ui-segc-line); color: var(--ui-segc-ink); }
-.ui-segc[data-size="sm"] .ui-segc__count { min-width: 14px; height: 14px; padding: 0 3px; border-radius: 4px; font-size: 10px; line-height: 14px; }
 .ui-segc__badge {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 5px;
-  background: var(--ui-segc-accent-soft);
-  font-size: 11px;
-  line-height: 16px;
-  font-weight: 500;
-  color: var(--ui-segc-accent);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--ui-segc-tag);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ui-segc-tag-text);
 }
-.ui-segc[data-size="sm"] .ui-segc__badge { height: 16px; padding: 0 5px; font-size: 10px; }
+.ui-segc[data-size="sm"] .ui-segc__count { min-width: 18px; height: 18px; padding: 0 5px; line-height: 18px; }
+.ui-segc[data-size="sm"] .ui-segc__badge { height: 18px; padding: 0 6px; }
+/* On the filled pill, counts and tags turn to the pill's own text color */
+.ui-segc:not([data-variant="underline"]) .ui-segc__opt[data-active] :is(.ui-segc__count, .ui-segc__badge) { background: var(--ui-segc-tag-on); color: var(--ui-segc-tag-on-text); }
 
 /* The indicator: left and right edges slide separately – the one facing the target leads a touch. Short and crisp */
 .ui-segc__pill {
@@ -548,69 +614,49 @@ const css = /* css */ `
   left: 0;
   right: 100%;
   z-index: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-pill);
   background: var(--ui-segc-fill);
   opacity: 0;
   pointer-events: none;
-  transition: left 200ms var(--ui-segc-ease), right 200ms var(--ui-segc-ease), scale 120ms var(--ui-segc-ease), opacity 120ms ease;
+  transition: left 200ms var(--ui-segc-ease), right 200ms var(--ui-segc-ease), scale 120ms var(--ui-segc-ease), opacity 120ms ease-out;
 }
-.ui-segc__pill[data-dir="right"] { transition-duration: 220ms, 160ms, 120ms, 120ms; }
-.ui-segc__pill[data-dir="left"] { transition-duration: 160ms, 220ms, 120ms, 120ms; }
+.ui-segc__pill[data-dir="right"] { transition-duration: 220ms, 180ms, 120ms, 120ms; }
+.ui-segc__pill[data-dir="left"] { transition-duration: 180ms, 220ms, 120ms, 120ms; }
 /* Press feedback: the indicator gives a little while held or dragged */
 .ui-segc[data-pressed]:not([data-variant="underline"]) .ui-segc__pill { scale: 0.97; }
 
-/* Buttons (default): separate chips with a hairline; the light-gray fill slides to the active one.
+/* Buttons (default): separate pills with a mist line; the ink fill slides to the active one.
    The control reaches a few px past its box so focus rings are never clipped, and still lines up with its neighbours */
 .ui-segc[data-variant="buttons"] { --ui-segc-pad: var(--ui-segc-ring); margin: calc(var(--ui-segc-ring) * -1); max-width: calc(100% + var(--ui-segc-ring) * 2); }
 .ui-segc[data-variant="buttons"][data-full] { width: calc(100% + var(--ui-segc-ring) * 2); }
 .ui-segc[data-variant="buttons"] .ui-segc__track { gap: var(--ui-segc-gap); }
-.ui-segc[data-variant="buttons"] .ui-segc__opt { box-shadow: inset 0 0 0 0.5px var(--ui-segc-line); }
+.ui-segc[data-variant="buttons"] .ui-segc__opt:not([data-active]) { box-shadow: inset 0 0 0 1px var(--ui-segc-line); }
 
-/* Tray: a compact light-gray track with a white raised pill */
-.ui-segc[data-variant="tray"] { background: var(--ui-segc-track); }
-.ui-segc[data-variant="tray"] .ui-segc__opt { height: calc(var(--ui-segc-h) - var(--ui-segc-pad) * 2); }
-.ui-segc[data-variant="tray"] .ui-segc__pill { background: var(--ui-segc-card); box-shadow: var(--ui-segc-card-shadow); }
+/* Tray – the Dial: a surface pill with a mist line and 4px of padding; the ink pill glides inside it */
+.ui-segc[data-variant="tray"] { background: var(--ui-segc-track); border: 1px solid var(--ui-segc-line); }
+.ui-segc[data-variant="tray"] .ui-segc__opt { height: calc(var(--ui-segc-h) - var(--ui-segc-pad) * 2 - 2px); }
 
-/* Underline: text tabs on a hairline */
-.ui-segc[data-variant="underline"] { --ui-segc-px: 2px; --ui-segc-gap: 20px; border-radius: 0; box-shadow: inset 0 -0.5px 0 var(--ui-segc-line); }
+/* Underline: text tabs on a mist line; the active one in ink with an ink line under it */
+.ui-segc[data-variant="underline"] { --ui-segc-px: 2px; --ui-segc-gap: var(--space-5); border-radius: 0; box-shadow: inset 0 -1px 0 var(--ui-segc-line); }
 .ui-segc[data-variant="underline"] .ui-segc__scroller { padding: 0; }
 .ui-segc[data-variant="underline"]:not([data-full]) .ui-segc__track { gap: var(--ui-segc-gap); }
-.ui-segc[data-variant="underline"][data-full] { --ui-segc-px: 10px; }
-.ui-segc[data-variant="underline"] .ui-segc__opt { height: calc(var(--ui-segc-h) + 6px); }
-.ui-segc[data-variant="underline"] .ui-segc__opt:focus-visible { outline-offset: -2px; }
-.ui-segc[data-variant="underline"] .ui-segc__pill { top: auto; height: 1.5px; border-radius: 1.5px 1.5px 0 0; background: var(--ui-segc-ink); }
+.ui-segc[data-variant="underline"][data-full] { --ui-segc-px: var(--space-3); }
+.ui-segc[data-variant="underline"] .ui-segc__opt { border-radius: var(--radius-sm); }
+.ui-segc[data-variant="underline"] .ui-segc__opt[data-active] { color: var(--ui-segc-ink); }
+.ui-segc[data-variant="underline"] .ui-segc__opt:focus-visible { outline-offset: calc(var(--ui-segc-ring) * -1); }
+.ui-segc[data-variant="underline"] .ui-segc__pill { top: auto; height: 2px; border-radius: var(--radius-pill) var(--radius-pill) 0 0; background: var(--ui-segc-ink); }
 @media (hover: hover) {
   .ui-segc[data-variant="underline"] .ui-segc__opt:not([data-active]):not(:disabled):hover { background-color: transparent; color: var(--ui-segc-hover-text); }
 }
 
 @keyframes ui-segc-in { from { opacity: 0; transform: translateY(2px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
 
-/* Touch screens: every option at least 40px tall */
+/* Touch screens: nothing tappable under 44px */
 @media (hover: none) and (pointer: coarse) {
-  .ui-segc[data-size] { --ui-segc-h: 40px; }
-  .ui-segc[data-size="lg"] { --ui-segc-h: 44px; }
-  .ui-segc[data-variant="tray"][data-size] { --ui-segc-h: 44px; }
-  .ui-segc[data-variant="underline"] .ui-segc__opt { height: var(--ui-segc-h); }
+  .ui-segc[data-size="sm"] { --ui-segc-h: 44px; }
 }
+/* Reduced motion: the pill jumps, nothing fades, grows or glides */
 @media (prefers-reduced-motion: reduce) {
-  .ui-segc *, .ui-segc *::before, .ui-segc *::after { animation: none !important; transition: none !important; }
+  .ui-segc, .ui-segc *, .ui-segc *::before, .ui-segc *::after { animation: none !important; transition: none !important; }
 }
-
-/* Dark mode: follows a .dark class or data-theme="dark" on any ancestor, e.g. <html> */
-:where(.dark, [data-theme="dark"]) .ui-segc {
-  --ui-segc-ink: rgba(255, 255, 255, 0.9);
-  --ui-segc-text: rgba(255, 255, 255, 0.62);
-  --ui-segc-hover-text: rgba(255, 255, 255, 0.78);
-  --ui-segc-line: rgba(255, 255, 255, 0.08);
-  --ui-segc-wash: rgba(255, 255, 255, 0.04);
-  --ui-segc-fill: rgba(255, 255, 255, 0.08);
-  --ui-segc-track: rgba(255, 255, 255, 0.05);
-  --ui-segc-card: #2c2c2f;
-  --ui-segc-card-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --ui-segc-accent: #4d8dff;
-  --ui-segc-accent-soft: rgba(77, 141, 255, 0.14);
-  --ui-segc-focus: rgba(77, 141, 255, 0.45);
-}
-:where(.dark, [data-theme="dark"]) .ui-segc__icon { color: rgba(255, 255, 255, 0.46); }
-:where(.dark, [data-theme="dark"]) .ui-segc__opt[data-active] .ui-segc__icon { color: var(--ui-segc-ink); }
 `;
