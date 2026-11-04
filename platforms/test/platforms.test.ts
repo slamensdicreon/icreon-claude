@@ -1006,6 +1006,378 @@ describe('SitecoreAI checks', () => {
   });
 });
 
+describe('SitecoreAI discovery checks', () => {
+  const target = {
+    cmHost: 'xmc.sitecorecloud.io',
+    siteCollection: 'Brands',
+    site: 'acme',
+    languages: ['en'],
+  };
+  /** A response as fetch gives it after redirects: `url` is where it ended up. */
+  const at = (body: string, url: string, status = 200) => {
+    const res = new Response(body, { status });
+    Object.defineProperty(res, 'url', { value: url });
+    return res;
+  };
+  /** A Content SDK page's layout data, as the App Router writes it into the HTML. */
+  const flight = (names: string[]) =>
+    `<script>self.__next_f.push([1,${JSON.stringify(
+      JSON.stringify({
+        placeholders: names.map((n, i) => ({
+          uid: `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
+          componentName: n,
+          fields: {
+            image: { value: { src: `https://edge.sitecorecloud.io/acme/media/${n}.jpg` } },
+          },
+        })),
+      }),
+    )}])</script>`;
+  const page = (title: string, description: string, body: string) =>
+    `<html><head><title>${title}</title><meta content="${description}" name="description"></head><body>${body}</body></html>`;
+  const home = page(
+    'Acme Broadband &amp; Telecom',
+    'Acme builds networks.',
+    `<h1>Welcome</h1><img src="https://cdn.acme-media.com/uploads/hero.jpg" alt="">` +
+      `<img src="/_next/image?url=https%3A%2F%2Fedge.sitecorecloud.io%2Facme%2Fmedia%2Fteam.jpg&amp;w=640">` +
+      `<noscript><img src="https://www.facebook.com/tr?id=1" height="1"></noscript>` +
+      `<form role="search" action="/"><input name="s"></form>` +
+      flight(['HeroBanner', 'PartnerCarousel', 'Container']),
+  );
+  /** The source site: a Gravity Form on /contact, and /services a 302 to the home page. */
+  const SOURCE: Record<string, () => Response> = {
+    'https://src.example/': () => at(home, 'https://src.example/'),
+    'https://src.example/contact': () =>
+      at(
+        page(
+          'Contact Us - Acme',
+          'Talk to Acme.',
+          '<h1>Contact</h1><form id="gform_2" action="/contact/" method="post"><input name="input_1"><textarea name="input_2"></textarea></form>',
+        ),
+        'https://src.example/contact',
+      ),
+    'https://src.example/services': () => at(home, 'https://src.example/'),
+    'https://src.example/services/fiber': () =>
+      at(
+        page('Fiber Construction - Acme', 'Fiber builds.', '<h1>Fiber</h1>'),
+        'https://src.example/services/fiber',
+      ),
+    'https://src.example/sitemap.xml': () =>
+      at(
+        '<?xml version="1.0"?><urlset>' +
+          ['/', '/contact/', '/services/fiber/', '/careers/']
+            .map((p) => `<url><loc>https://src.example${p}</loc></url>`)
+            .join('') +
+          '</urlset>',
+        'https://src.example/sitemap.xml',
+      ),
+  };
+  const site = () => {
+    const asked: string[] = [];
+    const fetcher = (async (u: string | URL | Request) => {
+      const url = String(u);
+      asked.push(url);
+      return SOURCE[url]?.() ?? at('', url, 404);
+    }) as typeof fetch;
+    const checks = createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fetcher } }).get(
+      'sitecoreai',
+    )!.checks!;
+    return { checks, asked };
+  };
+  const input = (docs: Record<string, unknown>, blueprint: unknown = null) => ({
+    projectId: 'p',
+    target,
+    scope: { collection: null, items: [] },
+    blueprint: blueprint as never,
+    read: async () => ({ code: 404, body: {} }),
+    credential: async () => null,
+    document: async (id: string) => docs[id] ?? null,
+  });
+  /** An inventory written to the current prompt, recording everything the source shows. */
+  const complete = {
+    origin: 'https://src.example',
+    crawl: { pagesFound: 5, pagesInventoried: 3, partial: false, sampling: 'every page found' },
+    pages: [
+      { path: '/', title: 'Acme Broadband & Telecom', description: 'Acme builds networks.' },
+      { path: '/contact', title: 'Contact Us - Acme', description: 'Talk to Acme.' },
+      {
+        url: 'https://src.example/services/fiber',
+        title: 'Fiber Construction - Acme',
+        description: 'Fiber builds.',
+      },
+    ],
+    forms: [
+      { id: 'gform_2', by: 'Gravity Forms', pages: ['/contact'], fields: ['Name', 'Message'] },
+    ],
+    redirects: [{ from: '/services', to: '/', status: 302 }],
+    layoutData: { pages: 'all', components: ['HeroBanner', 'PartnerCarousel', 'Container'] },
+    mediaHosts: [
+      'https://cdn.acme-media.com/uploads/',
+      'https://edge.sitecorecloud.io/acme/media/',
+    ],
+    excluded: [{ url: 'https://src.example/careers/', reason: 'job board on another system' }],
+  };
+
+  it('fails an inventory that leaves out what the source pages show, naming each gap', async () => {
+    const { checks, asked } = site();
+    const res = await checks['discovery.inventory']!(
+      input({
+        'page-inventory': {
+          origin: 'https://src.example',
+          crawl: { pagesFound: 3, pagesInventoried: 3, partial: false, sampling: 'all' },
+          pages: [
+            // The heading, not the <title>.
+            { path: '/', title: 'Welcome', description: 'Acme builds networks.' },
+            { path: '/contact', title: 'Contact Us - Acme' },
+            { path: '/services/fiber', description: 'Fiber builds.' },
+          ],
+          forms: [],
+        },
+      }),
+    );
+    expect(res.status).toBe('fail');
+    for (const problem of [
+      '1 page has no title (/services/fiber)',
+      '/ is recorded as "Welcome"; its <title> is "Acme Broadband & Telecom"',
+      '1 page records no description (/contact)',
+      "forms the inventory doesn't record: form#gform_2 on /contact.",
+      'not recorded: /services (a parent of pages you list) redirects to /.',
+      "layout data the inventory doesn't record: / (HeroBanner, PartnerCarousel).",
+      "media on 2 hosts the inventory doesn't name: cdn.acme-media.com (https://cdn.acme-media.com/uploads/hero.jpg on /), edge.sitecorecloud.io (https://edge.sitecorecloud.io/acme/media/team.jpg on /)",
+      'the sitemap lists 1 page the inventory neither lists nor excludes (/careers)',
+    ])
+      expect(res.detail).toContain(problem);
+    // The search box and the tracking pixel aren't a form or media.
+    expect(res.detail).not.toMatch(/search|facebook/);
+    // Its pages and the parent the pages imply, once each, and the sitemap.
+    expect(asked.sort()).toEqual([
+      'https://src.example/',
+      'https://src.example/contact',
+      'https://src.example/services',
+      'https://src.example/services/fiber',
+      'https://src.example/sitemap.xml',
+    ]);
+  });
+
+  it('passes an inventory that records titles, forms, redirects, layout data, media hosts and coverage', async () => {
+    const { checks } = site();
+    expect(
+      await checks['discovery.inventory']!(input({ 'page-inventory': complete })),
+    ).toMatchObject({
+      status: 'pass',
+      detail:
+        '3 pages, each with its <title> and meta description; 3 source pages read, their forms, redirects, layout data and media hosts recorded; the whole site.',
+    });
+    // A partial inventory says how its pages were chosen.
+    const partial = { ...complete, excluded: [], crawl: { partial: true } };
+    const res = await checks['discovery.inventory']!(input({ 'page-inventory': partial }));
+    expect(res).toMatchObject({
+      status: 'fail',
+      detail:
+        "the inventory is partial but doesn't say how its pages were chosen (crawl.sampling).",
+    });
+  });
+
+  it('leaves an inventory written before these fields pending, with what the source shows', async () => {
+    const { checks } = site();
+    const old = {
+      origin: 'https://src.example',
+      pages: [
+        { path: '/', title: 'Acme Broadband & Telecom' },
+        { path: '/contact', title: 'Contact Us - Acme' },
+        { path: '/services/fiber', title: 'Fiber Construction - Acme' },
+      ],
+    };
+    const res = await checks['discovery.inventory']!(input({ 'page-inventory': old }));
+    expect(res.status).toBe('pending');
+    expect(res.detail).toMatch(/^The page inventory predates what discovery records now/);
+    expect(res.detail).toContain('form#gform_2 on /contact');
+    expect(res.detail).toContain('/services (a parent of pages you list) redirects to /');
+    // Titles were always recorded: a page without one still fails.
+    const untitled = { ...old, pages: [...old.pages, { path: '/about' }] };
+    expect(
+      (await checks['discovery.inventory']!(input({ 'page-inventory': untitled }))).status,
+    ).toBe('fail');
+    expect((await checks['discovery.inventory']!(input({}))).status).toBe('fail');
+  });
+
+  it('reads at most 20 source pages: the home page, form pages and structural parents first', async () => {
+    const { checks, asked } = site();
+    const pages = [
+      ...Array.from({ length: 40 }, (_, i) => ({
+        path: `/news/item-${i}`,
+        title: `News ${i}`,
+        template: 'article',
+      })),
+      { path: '/request-a-quote', title: 'Request a quote' },
+      { path: '/', title: 'Acme Broadband & Telecom' },
+    ];
+    await checks['discovery.inventory']!(
+      input({ 'page-inventory': { origin: 'https://src.example', pages } }),
+    );
+    const read = asked.filter((u) => !u.endsWith('sitemap.xml'));
+    expect(read).toHaveLength(20);
+    expect(read).toEqual(
+      expect.arrayContaining([
+        'https://src.example/',
+        'https://src.example/request-a-quote',
+        'https://src.example/news',
+      ]),
+    );
+  });
+
+  /** A Blueprint that decides what the source shows: forms, redirects, 404, components, media. */
+  const decided = {
+    collections: {
+      components: [
+        {
+          key: 'hero-banner',
+          name: 'Hero Banner',
+          attrs: { rendering: 'HeroBanner', sourceComponents: ['HeroBanner'] },
+        },
+        { key: 'partners', name: 'Partner Carousel', attrs: { rendering: 'PartnerCarousel' } },
+        {
+          key: 'stats',
+          name: 'Stats',
+          status: 'drop',
+          attrs: { sourceComponents: ['StatsBand'], reason: 'retired' },
+        },
+        {
+          key: 'form',
+          name: 'Form',
+          attrs: {
+            rendering: 'Form',
+            builtIn: true,
+            forms: [{ id: 'gform_2', pages: ['/contact'], fields: ['Name'], builtBy: 'director' }],
+          },
+        },
+      ],
+      pages: [
+        { key: 'home', name: 'Home', attrs: { path: '/', template: 'home' } },
+        { key: 'contact', name: 'Contact', attrs: { path: '/contact', template: 'content' } },
+        // The source sends /services home; it stays as the parent of /services/fiber.
+        { key: 'services', name: 'Services', attrs: { path: '/services', redirect: '/' } },
+        { key: 'fiber', name: 'Fiber', attrs: { path: '/services/fiber', template: 'content' } },
+        { key: 'not-found', name: 'Not Found', attrs: { path: '/404', errorPage: 404 } },
+      ],
+      media: [
+        {
+          key: 'hero',
+          name: 'hero.jpg',
+          attrs: { url: 'https://cdn.acme-media.com/uploads/hero.jpg' },
+        },
+        {
+          key: 'team',
+          name: 'team.jpg',
+          attrs: { url: 'https://edge.sitecorecloud.io/acme/media/team.jpg' },
+        },
+      ],
+    },
+  };
+  /** The inventory as an earlier prompt wrote it: no forms, redirects, layout data or media hosts. */
+  const older = {
+    origin: 'https://src.example',
+    pages: [
+      { path: '/', title: 'Acme Broadband & Telecom' },
+      { path: '/contact', title: 'Contact Us - Acme' },
+      { path: '/services/fiber', title: 'Fiber Construction - Acme' },
+    ],
+  };
+
+  it('fails a Blueprint that leaves a form, a redirect, the 404 page, components or media hosts undecided', async () => {
+    const { checks } = site();
+    const bp = {
+      collections: {
+        components: [
+          { key: 'hero-banner', name: 'Hero Banner', attrs: { rendering: 'HeroBanner' } },
+          {
+            key: 'form',
+            name: 'Form',
+            // "Live markup has no form" on /contact: but Gravity Forms renders one there.
+            attrs: {
+              rendering: 'Form',
+              builtIn: true,
+              forms: [{ id: 'gform_1', pages: ['/subcontractor-request'], builtBy: 'director' }],
+            },
+          },
+        ],
+        pages: [
+          { key: 'home', name: 'Home', attrs: { path: '/' } },
+          { key: 'contact', name: 'Contact', attrs: { path: '/contact' } },
+          { key: 'services', name: 'Services', attrs: { path: '/services' } },
+          { key: 'fiber', name: 'Fiber', attrs: { path: '/services/fiber' } },
+        ],
+        media: [{ key: 'hero', name: 'hero.jpg', attrs: { url: '/uploads/hero.jpg' } }],
+      },
+    };
+    const inv = { ...older, layoutData: { pages: ['/'], components: ['StatsBand'] } };
+    const res = await checks['discovery.blueprint']!(input({ 'page-inventory': inv }, bp));
+    expect(res.status).toBe('fail');
+    for (const problem of [
+      'the Blueprint plans no 404 page: add a page with attrs.path "/404" and attrs.errorPage: 404',
+      "forms on the source the Blueprint doesn't account for: form#gform_2 on /contact. Form keeps the SDK's built-in Form (attrs.builtIn), so each is a Director item",
+      'source URLs that redirect elsewhere with no decision: /services (services) redirects to / on the source.',
+      'source components no Blueprint component maps: StatsBand, PartnerCarousel (/).',
+      'media on 2 hosts neither the Blueprint nor an inventory names: cdn.acme-media.com',
+    ])
+      expect(res.detail).toContain(problem);
+    expect(res.detail).not.toContain('HeroBanner');
+  });
+
+  it('passes a Blueprint that places every form as a Director item, decides redirects and maps the source', async () => {
+    const { checks } = site();
+    const inv = { ...older, redirects: [{ from: '/services', to: '/' }] };
+    const res = await checks['discovery.blueprint']!(input({ 'page-inventory': inv }, decided));
+    expect(res).toMatchObject({
+      status: 'pass',
+      detail:
+        '3 source pages compared with the Blueprint: 1 form accounted for (1 Director item), 1 redirect decided, the 404 page at /404, 2 source components mapped, media hosts named.',
+    });
+    // Dropping the redirected URL decides it too.
+    const drop = structuredClone(decided);
+    drop.collections.pages[2] = {
+      key: 'services',
+      name: 'Services',
+      status: 'drop',
+      attrs: { path: '/services', reason: 'redirects home on the source' },
+    } as never;
+    expect(
+      (await checks['discovery.blueprint']!(input({ 'page-inventory': inv }, drop))).status,
+    ).toBe('pass');
+  });
+
+  it('names built-in forms not marked as Director items, and a 404 page away from /404', async () => {
+    const { checks } = site();
+    const bp = structuredClone(decided);
+    bp.collections.components[3]!.attrs = {
+      rendering: 'Form',
+      builtIn: true,
+      forms: [{ id: 'form#gform_2', pages: ['/contact'] }],
+    } as never;
+    bp.collections.pages[4]!.attrs = { path: '/page-not-found', errorPage: 404 } as never;
+    const res = await checks['discovery.blueprint']!(input({ 'page-inventory': older }, bp));
+    expect(res).toEqual(
+      expect.objectContaining({
+        status: 'fail',
+        detail:
+          "not-found (/page-not-found) is the 404 page: give it attrs.path \"/404\" (and drop the source's own URL for it). Next.js reserves /404, so the page renders only through the site's error-handling setting, at a URL that doesn't exist, which is where it is checked; " +
+          'Form keeps the SDK\'s built-in Form (attrs.builtIn), so form#gform_2 on /contact is a Director item (SitecoreAI Forms, built by hand before UAT): mark its attrs.forms entry "builtBy": "director".',
+      }),
+    );
+  });
+
+  it('is pending without a Blueprint, or without a source to compare it with', async () => {
+    const { checks, asked } = site();
+    expect((await checks['discovery.blueprint']!(input({}))).status).toBe('pending');
+    const res = await checks['discovery.blueprint']!(input({}, decided));
+    expect(res).toMatchObject({
+      status: 'pending',
+      detail:
+        'No page inventory gives the source site, so no source page was compared; the 404 page is planned',
+    });
+    expect(asked).toEqual([]);
+  });
+});
+
 describe('Optimizely pack', () => {
   const okJson = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {

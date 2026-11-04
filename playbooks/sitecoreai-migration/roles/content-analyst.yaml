@@ -42,7 +42,9 @@ tools:
     ops:
       - check
 acceptance:
-  - validator:inventory.sitemap-covered
+  # The discovery crawl's: titles, descriptions, forms, redirects, layout data, media hosts and
+  # sitemap coverage, against a sample of source pages.
+  - validator:discovery.inventory
 escalateWhen:
   - rejectedTwice
   - accessDenied
