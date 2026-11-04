@@ -210,6 +210,7 @@ templates:
     title: Redirects, SEO, sitemap, robots, error pages and dictionary
     # Sitecore items only: it runs while Page builder (for the proof variant) isn't connected.
     uses: [sitecore-authoring, blackboard, artifacts]
+    acceptance: [validator:seo.titles]
   # 8 — Deployment and publishing
   - id: finalize-head
     phase: 8

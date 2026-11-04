@@ -604,6 +604,22 @@ describe('SitecoreAI checks', () => {
     pages['https://ansco-site-editing.vercel.app/about'] =
       `<header><div id="header"><nav>Home</nav></div></header><h1>About Ansco</h1><h2>Our Services</h2><p>Telecommunications engineering construction wireless splicing</p>${push({ uid, componentName: 'CardGrid', fields: { data: { datasource: { children: { results: [{}] } } } } })}${push({ rendering: { componentName: 'CardGrid', uid }, children: 'x' })}<footer><div id="footer"><p>Ansco</p></div></footer>`;
     expect(await run()).toEqual(ok);
+
+    // A form on the source: counted as page text, unless the Blueprint leaves forms to the
+    // SDK's built-in Form (made in SitecoreAI Forms by the Director).
+    pages['https://src.example/about/'] +=
+      '<form id="gform_1"><label>States licensed to perform work</label><label>Alabama</label><label>Alaska</label><label>Arizona</label><label>Arkansas</label><label>California</label><label>Colorado</label></form>';
+    expect((await run()).detail).toMatch(/\/about shows \d+% of the source page's text/);
+    bp.collections.components.push({
+      key: 'form',
+      name: 'Form',
+      attrs: { rendering: 'Form', builtIn: true } as never,
+    });
+    expect(await run()).toEqual({
+      status: 'pass',
+      detail:
+        'Rendered parity with the source: /about 100%; forms left out (built in SitecoreAI Forms).',
+    });
   });
 
   it('compares each page with the source as a visitor sees it, and names the differences', async () => {
@@ -865,9 +881,59 @@ describe('SitecoreAI checks', () => {
       parity: 50,
       pages: [
         { path: '/', ok: true, targetWords: 6 },
-        { path: '/about', ok: false, problem: 'title not found' },
+        { path: '/about', ok: false, problem: '1 of 40 words' },
       ],
     });
+  });
+
+  it("compares each page's <title> on the editing host with the source page's", async () => {
+    const html = (title: string) =>
+      `<html><head><title>${title}</title></head><body><h1>Heading</h1></body></html>`;
+    const fetcher = (async (u: string | URL | Request) => {
+      const url = String(u);
+      if (url === 'https://acme-editing.vercel.app/')
+        return new Response(html('Broadband &amp; Telecom - Acme'));
+      if (url === 'https://acme-editing.vercel.app/safety') return new Response(html('Safety'));
+      return new Response('', { status: 404 });
+    }) as typeof fetch;
+    const checks = createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fetcher } }).get(
+      'sitecoreai',
+    )!.checks!;
+    const input = (hostingProject?: string) => ({
+      projectId: 'p',
+      target: { ...target, hostingProject } as typeof target,
+      scope: { collection: null, items: [] },
+      blueprint: {
+        collections: {
+          pages: [
+            { key: 'home', name: 'Home', attrs: { path: '/' } },
+            { key: 'safety', name: 'Safety', attrs: { path: '/safety' } },
+            { key: 'jobs', name: 'Jobs', attrs: { path: '/jobs' } },
+            { key: 'old', name: 'Old', status: 'drop' as const, attrs: { path: '/old' } },
+          ],
+        },
+      },
+      read: async () => ({ code: 404, body: {} }),
+      credential: async () => null,
+      document: async (id: string) =>
+        id === 'page-inventory'
+          ? {
+              pages: [
+                { path: '/', title: 'Broadband & Telecom - Acme' },
+                { url: 'https://source.example/safety/', title: 'Safety Training - Acme' },
+                { path: '/jobs', title: 'Jobs - Acme' },
+                { path: '/old', title: 'Old - Acme' },
+              ],
+            }
+          : null,
+    });
+    const res = await checks['seo.titles']!(input('acme'));
+    expect(res).toEqual({
+      status: 'fail',
+      detail:
+        '/safety has the title "Safety"; the source page\'s is "Safety Training - Acme"; /jobs answered 404 on the editing host.',
+    });
+    expect((await checks['seo.titles']!(input())).status).toBe('pending');
   });
 });
 

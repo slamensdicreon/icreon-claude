@@ -521,6 +521,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       );
       const problems: string[] = [];
       const notes: string[] = [];
+      const forms = formsLeftToDirector(ctx);
       let unread = 0;
       for (const path of pagePaths(ctx).slice(0, 20)) {
         const page = await getText(cfg, `${host}${path}`);
@@ -528,7 +529,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           problems.push(`${path} answered ${page.status || 'nothing'} on the editing host`);
           continue;
         }
-        const text = visibleText(page.body);
+        const text = visibleText(forms(page.body));
         const empty = (id: string) => new RegExp(`<div id="${id}">\\s*</div>`).test(page.body);
         if (empty('header') || empty('footer'))
           problems.push(
@@ -548,11 +549,12 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           unread++;
           continue;
         }
-        const want = wordsOf(visibleText(source.body));
+        const sourceBody = forms(source.body);
+        const want = wordsOf(visibleText(sourceBody));
         const have = wordsOf(text);
         const shared = [...want].filter((w) => have.has(w)).length;
         const coverage = want.size ? Math.round((shared / want.size) * 100) : 100;
-        const heads = headingsOf(source.body);
+        const heads = headingsOf(sourceBody);
         const lower = text.toLowerCase();
         const missing = heads.filter((h) => !lower.includes(h.toLowerCase()));
         notes.push(`${path} ${coverage}%`);
@@ -568,7 +570,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       if (unread && !notes.length)
         return pending("The source pages couldn't be read to compare with.");
       return pass(
-        `Rendered parity with the source: ${notes.join(', ')}${unread ? `; ${unread} source page${unread === 1 ? '' : 's'} unreadable` : ''}.`,
+        `Rendered parity with the source: ${notes.join(', ')}${unread ? `; ${unread} source page${unread === 1 ? '' : 's'} unreadable` : ''}${forms.active ? '; forms left out (built in SitecoreAI Forms)' : ''}.`,
       );
     },
 
@@ -675,16 +677,12 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const inv = ((await ctx.document('parity-inventory')) ??
         (await ctx.document('page-inventory'))) as {
         origin?: string;
-        pages?: { path?: string; url?: string; title?: string; words?: number }[];
+        pages?: { path?: string; url?: string; words?: number }[];
       } | null;
       if (!inv?.pages?.length) return pending('No source inventory to compare with.');
       const kept = new Set(pagePaths(ctx));
       const source = inv.pages
-        .map((p) => ({
-          path: (p.path ?? (p.url ? new URL(p.url).pathname : '')).replace(/\/$/, '') || '/',
-          title: (p.title ?? '').split(/\s[|–-]\s/)[0]!.trim(),
-          words: p.words ?? 0,
-        }))
+        .map((p) => ({ path: inventoryPath(p), words: p.words ?? 0 }))
         .filter((p) => kept.has(p.path));
       if (!source.length) return pending('No kept page appears in the source inventory.');
       const r = await routes(
@@ -699,6 +697,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
       const origin = (inv.origin ?? '').replace(/\/$/, '');
       const count = (t: string) => t.split(/\s+/).filter(Boolean).length;
+      const forms = formsLeftToDirector(ctx);
       const asRendered = async (path: string) => {
         if (!project || !origin) return null;
         const [have, want] = await Promise.all([
@@ -706,20 +705,22 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           getText(cfg, `${origin}${path === '/' ? '/' : `${path}/`}`),
         ]);
         if (have.status !== 200 || want.status !== 200) return null;
-        return { have: count(visibleText(have.body)), want: count(visibleText(want.body)) };
+        return {
+          have: count(visibleText(forms(have.body))),
+          want: count(visibleText(forms(want.body))),
+        };
       };
       const pages = await Promise.all(
         source.map(async (p) => {
           const text = textOf(r.rendered.get(p.path));
           const words = count(text);
-          const titled = !p.title || text.toLowerCase().includes(p.title.toLowerCase());
           let enough = !p.words || words >= p.words * 0.9;
           let rendered: { have: number; want: number } | null = null;
-          if (!enough && r.rendered.has(p.path) && titled) {
+          if (!enough && r.rendered.has(p.path)) {
             rendered = await asRendered(p.path);
             enough = !!rendered && rendered.have >= rendered.want * 0.9;
           }
-          const ok = r.rendered.has(p.path) && titled && enough;
+          const ok = r.rendered.has(p.path) && enough;
           return {
             path: p.path,
             ok,
@@ -728,13 +729,11 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
             ...(rendered ? { rendered } : {}),
             problem: !r.rendered.has(p.path)
               ? 'missing'
-              : !titled
-                ? 'title not found'
-                : !enough
-                  ? rendered
-                    ? `${rendered.have} of ${rendered.want} words as rendered`
-                    : `${words} of ${p.words} words`
-                  : null,
+              : !enough
+                ? rendered
+                  ? `${rendered.have} of ${rendered.want} words as rendered`
+                  : `${words} of ${p.words} words`
+                : null,
           };
         }),
       );
@@ -746,6 +745,39 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           : fail([`Content parity ${parity}% (98% needed)`, ...bad])),
         data: { parity, pages },
       };
+    },
+
+    // Page titles: each kept page's <title> on the editing host is the source page's <title>.
+    // Sites often give a page an SEO title its heading doesn't carry; the SEO step sets it in the
+    // page's metadata title field. Content parity leaves titles to this check.
+    'seo.titles': async (ctx) => {
+      const inv = ((await ctx.document('parity-inventory')) ??
+        (await ctx.document('page-inventory'))) as {
+        pages?: { path?: string; url?: string; title?: string }[];
+      } | null;
+      if (!inv?.pages?.length) return pending('No source inventory gives the source titles.');
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      if (!project) return pending('No hosting project is recorded for the head.');
+      const kept = new Set(pagePaths(ctx));
+      const source = inv.pages
+        .map((p) => ({ path: inventoryPath(p), title: visibleText(p.title ?? '') }))
+        .filter((p) => p.title && kept.has(p.path))
+        .slice(0, 60);
+      if (!source.length) return pending('No kept page has a source title.');
+      const problems = (
+        await mapLimit(source, 6, async (p) => {
+          const page = await getText(cfg, `https://${project}-editing.vercel.app${p.path}`);
+          if (page.status !== 200)
+            return `${p.path} answered ${page.status || 'nothing'} on the editing host`;
+          const have = titleOf(page.body);
+          return have.toLowerCase() === p.title.toLowerCase()
+            ? null
+            : `${p.path} has the title "${have}"; the source page's is "${p.title}"`;
+        })
+      ).filter((x): x is string => !!x);
+      return problems.length
+        ? fail(problems)
+        : pass(`${source.length} pages carry their source page's title.`);
     },
 
     // Every image in the project's media folder carries alt text.
@@ -813,6 +845,30 @@ export function visibleText(html: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * When the Blueprint keeps Form as the SDK's built-in, each form is made in SitecoreAI Forms,
+ * which no agent can author: the Director builds them for UAT. Text parity then leaves forms out
+ * on both sides, so a page isn't sent back for a form only the Director can make.
+ */
+function formsLeftToDirector(ctx: PlatformCheckContext) {
+  const active = (ctx.blueprint?.collections.components ?? []).some(
+    (c) =>
+      c.status !== 'drop' &&
+      c.attrs?.builtIn === true &&
+      /\bform\b/i.test(String(c.attrs?.componentName ?? c.name)),
+  );
+  const strip = (html: string) => (active ? html.replace(/<form\b[\s\S]*?<\/form>/gi, ' ') : html);
+  return Object.assign(strip, { active });
+}
+
+/** A source inventory entry's path, as the Blueprint's pages give it. */
+const inventoryPath = (p: { path?: string; url?: string }) =>
+  (p.path ?? (p.url ? new URL(p.url).pathname : '')).replace(/\/$/, '') || '/';
+
+/** A page's <title>, as a browser tab shows it. */
+export const titleOf = (html: string) =>
+  visibleText(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? '');
 
 /** Distinct words of five letters or more: what a page says, not its glue words. */
 export const wordsOf = (text: string) =>

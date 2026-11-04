@@ -666,11 +666,23 @@ async function assetHosts(
   const hosts = new Set<string>();
   for (const a of docs) {
     const d = await library.read(projectId, a.artifactId);
-    for (const m of d?.content.matchAll(/https?:\/\/([a-z0-9.-]+\.[a-z]{2,})(?=[/:"'\s?#]|$)/gi) ??
-      [])
-      hosts.add(m[1]!.toLowerCase());
+    for (const h of hostsNamedIn(d?.content ?? '')) hosts.add(h);
   }
   seen.set(projectId, { key, hosts: [...hosts] });
+  return [...hosts];
+}
+
+/**
+ * Hosts a document points at: full URLs, URLs encoded in another (`/_next/image?url=https%3A…`),
+ * and hosts written without a scheme before a path (`edge.sitecorecloud.io/acme/media/…`).
+ */
+export function hostsNamedIn(text: string): string[] {
+  const decoded = text.replace(/%3A/gi, ':').replace(/%2F/gi, '/');
+  const hosts = new Set<string>();
+  for (const m of decoded.matchAll(/https?:\/\/([a-z0-9.-]+\.[a-z]{2,})(?=[/:"'\s?#]|$)/gi))
+    hosts.add(m[1]!.toLowerCase());
+  for (const m of decoded.matchAll(/(?<![\w.@/-])((?:[a-z0-9-]+\.)+[a-z]{2,})(?=\/[\w%~-])/gi))
+    hosts.add(m[1]!.toLowerCase());
   return [...hosts];
 }
 
