@@ -8,3 +8,6 @@ coverage/
 !.env.example
 .data/
 .vercel/
+
+# Local git worktrees for parallel agent sessions.
+.claude/worktrees/
