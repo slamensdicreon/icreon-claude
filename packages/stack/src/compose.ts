@@ -202,6 +202,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     opts.playbook.roles.find((r) => r.role === 'quality-lead') ??
     opts.playbook.roles.find((r) => r.role === 'chief-of-staff');
   const screens = opts.screens;
+  // What the last comparison of each page said, so the next one doesn't contradict it.
+  const lastFindings = new Map<string, string[]>();
   /** Desktop screenshots of both pages, sliced, judged side by side. */
   const compareScreens =
     screens && judge
@@ -234,19 +236,85 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
                   role: judge.role,
                 })
                 .catch(() => [])) ?? [];
-            return await screens({
+            const key = `${projectId}:${page.path}`;
+            const verdict = await screens({
               path: page.path,
               source,
               candidate,
               model: judge.model.id,
               effort: judge.model.effort,
-              accepted: accepted.map((r) => `${r.ref}: when ${r.when} ${r.then}`),
+              accepted: [
+                ...accepted.map((r) => `${r.ref}: when ${r.when} ${r.then}`),
+                ...(await decidedForPage(projectId, page.path)),
+              ],
+              previous: lastFindings.get(key),
+              measured: await measuredSections(projectId, page),
             });
+            lastFindings.set(key, [...verdict.differences, ...(verdict.minor ?? [])]);
+            return verdict;
           } catch (err) {
             return { error: (err as Error).message };
           }
         }
       : undefined;
+  /**
+   * What's already settled about a page, so a comparison doesn't report it again: forms made by
+   * hand in SitecoreAI Forms (when the Blueprint keeps Form as the SDK's built-in), and the
+   * Director's or rules' decisions that name the page.
+   */
+  async function decidedForPage(projectId: string, path: string): Promise<string[]> {
+    const out: string[] = [];
+    const doc = await library.read(projectId, 'blueprint').catch(() => null);
+    try {
+      const bp = doc ? (JSON.parse(doc.content) as Blueprint) : null;
+      const builtInForm = (bp?.collections.components ?? []).some(
+        (c) => c.status !== 'drop' && c.attrs?.builtIn === true && /\bform\b/i.test(c.name),
+      );
+      if (builtInForm)
+        out.push(
+          "Forms are made by hand in SitecoreAI Forms before UAT: a form that is missing or different isn't a difference to report.",
+        );
+    } catch {
+      /* unreadable Blueprint: nothing settled from it */
+    }
+    if (path.length > 1) {
+      const named = new RegExp(
+        `(^|[\\s(:'"])${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([\\s).,:;'"]|$)`,
+      );
+      const decisions = opts.projections.get(projectId)?.decisions ?? [];
+      for (const d of decisions.filter((x) => x.decidedBy !== 'default').slice(-200))
+        if (named.test(`${d.question} ${d.answer} ${d.rationale}`))
+          out.push(`${d.ref}: ${d.question} → ${d.answer}. ${d.rationale}`.slice(0, 400));
+    }
+    return out.slice(-8);
+  }
+
+  /** Both pages' top-level sections as the browser measures them, for the judge to stand on. */
+  async function measuredSections(
+    projectId: string,
+    page: ScreenPair,
+  ): Promise<string | undefined> {
+    const outline = async (url: string) => {
+      const r = await readOnly(projectId, 'browser', 'page.markup', { url });
+      const sections =
+        (r.body as { sections?: { tag: string; headings: string[]; backgrounds?: string[] }[] })
+          ?.sections ?? [];
+      if (r.code !== 200 || !sections.length) return null;
+      return sections
+        .map(
+          (s, i) =>
+            `${i + 1}. ${s.tag}${s.headings.length ? ` (${s.headings.slice(0, 3).join(' | ')})` : ''}${s.backgrounds?.length ? ' [background image]' : ''}`,
+        )
+        .join('; ');
+    };
+    try {
+      const [a, b] = await Promise.all([outline(page.source), outline(page.candidate)]);
+      return a && b ? `Measured sections, in order. Source: ${a}. New page: ${b}.` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** One of the platform's checks, with the project's target, Blueprint and read access. */
   const runPlatformCheck = async (projectId: string, check: PlatformCheck) => {
     await opts.projections.catchUp(projectId);

@@ -686,6 +686,23 @@ describe('SitecoreAI checks', () => {
       detail:
         "1 page looks like the source on https://ansco-site-editing.vercel.app; 1 couldn't be compared.",
     });
+
+    // Spacing, sizes and weights never send a page back: they're listed for the UAT list.
+    const small = await check({
+      ...base,
+      compareScreens: async (page) => ({
+        verdict: 'differs',
+        differences: [],
+        minor:
+          page.path === '/about' ? ['Intro: the source heading is 40px, the new one 48px'] : [],
+        tokens: 10,
+      }),
+    });
+    expect(small).toEqual({
+      status: 'pass',
+      detail:
+        '2 pages look like the source on https://ansco-site-editing.vercel.app. Minor differences for the UAT list (not failed): /about: Intro: the source heading is 40px, the new one 48px.',
+    });
   });
 
   it('requires a Component Query on every rendering whose component lists child items', async () => {

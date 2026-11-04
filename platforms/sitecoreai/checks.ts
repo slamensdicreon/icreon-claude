@@ -606,6 +606,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const problems: string[] = [];
       const matched: string[] = [];
       const unread: string[] = [];
+      const minor: string[] = [];
       for (const path of pagePaths(ctx).slice(0, 20)) {
         const source = `${origin}${path === '/' ? '/' : `${path}/`}`;
         if (redirectedAway(source, (await getText(cfg, source)).url)) {
@@ -617,8 +618,13 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           source,
           candidate: `${host}${onEditingHost(path).path}`,
         });
-        if ('error' in r) unread.push(`${path} (${r.error})`);
-        else if (r.verdict === 'match') matched.push(path);
+        if ('error' in r) {
+          unread.push(`${path} (${r.error})`);
+          continue;
+        }
+        // Spacing, sizes and weights go on the UAT list; they never send a page back.
+        minor.push(...(r.minor ?? []).map((m) => `${path}: ${m}`));
+        if (r.verdict === 'match' || !r.differences.length) matched.push(path);
         else {
           const shown = r.differences.slice(0, 6);
           const more = r.differences.length - shown.length;
@@ -627,11 +633,17 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           );
         }
       }
-      if (problems.length) return fail(problems);
+      const small = minor.length
+        ? ` Minor differences for the UAT list (not failed): ${minor.slice(0, 8).join('; ')}${minor.length > 8 ? `; and ${minor.length - 8} more` : ''}.`
+        : '';
+      if (problems.length) {
+        const r = fail(problems);
+        return { ...r, detail: `${r.detail}${small}` };
+      }
       if (!matched.length)
         return pending(`The pages couldn't be compared: ${unread.slice(0, 3).join('; ')}`);
       return pass(
-        `${matched.length} page${matched.length === 1 ? ' looks' : 's look'} like the source on ${host}${unread.length ? `; ${unread.length} couldn't be compared` : ''}.`,
+        `${matched.length} page${matched.length === 1 ? ' looks' : 's look'} like the source on ${host}${unread.length ? `; ${unread.length} couldn't be compared` : ''}.${small}`,
       );
     },
 

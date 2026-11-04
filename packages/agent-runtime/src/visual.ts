@@ -5,8 +5,14 @@ import { z } from 'zod';
 /** A model's side-by-side judgment of a migrated page against its source. */
 export const ScreenVerdict = z.object({
   verdict: z.enum(['match', 'differs']),
-  /** Each difference a visitor would notice: the section, what the source shows, what the new page shows. */
+  /**
+   * Each major difference: what a visitor would see as a different page (a section missing or
+   * moved, another layout, a missing image, unreadable text). The section, what the source shows,
+   * what the new page shows.
+   */
   differences: z.array(z.string()),
+  /** Smaller differences (spacing, sizes, weights, a slightly different crop): listed, not failed. */
+  minor: z.array(z.string()),
 });
 export type ScreenVerdict = z.infer<typeof ScreenVerdict>;
 
@@ -20,6 +26,10 @@ export interface ScreenInput {
   effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Differences the Director has accepted (the project's rules): not to be reported again. */
   accepted?: string[];
+  /** What the last comparison of this page reported: not to be contradicted. */
+  previous?: string[];
+  /** Both pages' sections as measured in the browser, in order: facts to ground the comparison. */
+  measured?: string;
 }
 
 const SYSTEM = `You check a website migration the way the client will: the source page and the new site's page, each as full-page desktop screenshots cut into slices from top to bottom. The new page must look like the source: same sections in the same order, same layouts, same imagery, same colours and bands, same header and footer.
@@ -34,7 +44,11 @@ Report every difference a visitor would notice, section by section, for example:
 
 Ignore: cookie or consent banners, video players that show blank or grey (they don't play in screenshots), job postings or other live data that changes daily, font hinting, and spacing differences of a few pixels.
 
-Write each difference as one line: the section, what the source shows, what the new page shows. Answer "match" only when a visitor would see the same page with nothing notable changed.`;
+Sort what you find. "differences" are major: a visitor would see a different page (a section missing, added or moved, another layout such as columns, sides, grid or carousel, an image or logo missing or broken, a different band or colour, text that can't be read, a header or footer arranged differently). "minor" is the rest that is still noticeable: spacing, sizes, font weights, a slightly different crop or aspect, small alignment shifts. Write each as one line: the section, what the source shows, what the new page shows. Answer "match" when there is no major difference.
+
+When the measured sections are given, they are facts from the browser: the sections each page has, in order, with their headings. Ground what you report in them and don't report a section as missing or moved when the measurements show it in place.
+
+When last round's findings for this page are given, they were reported to the team, who changed the page. Never report the reverse of one of them (if last round asked for one row, don't now ask for separate pieces). A finding the page now satisfies is fixed: don't restate it in other words.`;
 
 const image = (png: Uint8Array) => ({
   type: 'image' as const,
@@ -61,6 +75,15 @@ export async function compareScreens(
       {
         role: 'user',
         content: [
+          ...(input.measured ? [{ type: 'text' as const, text: input.measured }] : []),
+          ...(input.previous?.length
+            ? [
+                {
+                  type: 'text' as const,
+                  text: `Last round's findings for this page:\n${input.previous.map((p) => `- ${p}`).join('\n')}`,
+                },
+              ]
+            : []),
           { type: 'text', text: `Page ${input.path}. The source, top to bottom:` },
           ...input.source.map(image),
           { type: 'text', text: 'The new site, top to bottom:' },

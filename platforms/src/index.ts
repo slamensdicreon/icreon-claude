@@ -157,7 +157,15 @@ export interface ScreenPair {
 
 /** What the comparison saw: the differences a visitor would notice, or why it couldn't look. */
 export type ScreenComparison =
-  { verdict: 'match' | 'differs'; differences: string[]; tokens: number } | { error: string };
+  | {
+      verdict: 'match' | 'differs';
+      /** Major differences: the page fails on these. */
+      differences: string[];
+      /** Smaller ones (spacing, sizes, weights): listed for UAT, never failed. */
+      minor?: string[];
+      tokens: number;
+    }
+  | { error: string };
 
 export interface CheckResult {
   status: 'pass' | 'fail' | 'pending';
