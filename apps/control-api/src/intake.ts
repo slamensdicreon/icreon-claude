@@ -172,6 +172,14 @@ export class IntakeService {
   }
 
   /** The platform pack a project runs on, from its intake. */
+  /** The release steps of the project's playbook, for standing approvals. */
+  releaseSteps(s: ProjectState): { id: string; title: string; standing: boolean }[] {
+    const pb = s.playbook && this.deps.catalog.get(s.playbook.id)?.playbook;
+    return (pb?.plan.templates ?? [])
+      .filter((t) => t.release)
+      .map((t) => ({ id: t.id, title: t.title, standing: t.release!.standing === true }));
+  }
+
   private packOf(s: ProjectState): PlatformPack | undefined {
     return s.intake ? this.deps.platforms.get(s.intake.platform) : undefined;
   }
@@ -376,6 +384,23 @@ export class IntakeService {
         },
       },
       ...credentialEvents,
+      // Standing approvals carried over from the project this one remixes: only release steps
+      // this playbook has.
+      ...(() => {
+        const releases = new Set(playbook.plan.templates.filter((t) => t.release).map((t) => t.id));
+        const ids = [...new Set(intake.standingApprovals)].filter((id) => releases.has(id));
+        return ids.length
+          ? [
+              {
+                type: 'settings.changed' as const,
+                actor: { kind: 'director' as const, id: 'director' },
+                subject: { kind: 'project' as const, id: projectId },
+                severity: 'notable' as const,
+                data: { key: 'standingApprovals' as const, value: ids },
+              },
+            ]
+          : [];
+      })(),
       {
         type: 'cos.message',
         actor: { kind: 'agent', id: 'chief-of-staff' },
@@ -887,6 +912,9 @@ export class IntakeService {
       brief: Object.fromEntries(s.brief.map((b) => [b.key, b.answer])),
       target: { ...target, ...(connection?.target ?? {}) },
       providedCredentials: connection ? Object.keys(connection.credentials) : [],
+      standingApprovals: Array.isArray(s.settings.standingApprovals)
+        ? (s.settings.standingApprovals as string[])
+        : [],
     };
   }
 

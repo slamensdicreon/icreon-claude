@@ -50,19 +50,10 @@ describe('project workflow', () => {
     const types = Object.values(s.escalations)
       .map((x) => x.type)
       .sort();
-    // Both phase gates, the approval of each release (hosting, the site's editing host, code
-    // deploy, publish), and the one Page builder step the Director does by hand: the UAT.
-    expect(types).toEqual([
-      'access',
-      'decision',
-      'decision',
-      'gate',
-      'gate',
-      'gate',
-      'gate',
-      'gate',
-      'gate',
-    ]);
+    // Both phase gates, the approval of each production release (code deploy, publish), and the
+    // one Page builder step the Director does by hand: the UAT. Hosting and the site's editing
+    // host change only the project's own build: the playbook approves them once.
+    expect(types).toEqual(['access', 'decision', 'decision', 'gate', 'gate', 'gate', 'gate']);
     expect(
       Object.values(s.escalations)
         .filter((x) => x.title.startsWith('By hand'))
@@ -75,11 +66,17 @@ describe('project workflow', () => {
         .map((x) => x.context.split('. ')[0])
         .sort(),
     ).toEqual([
-      'Deploy the head to Vercel and register it as the editing host',
       'Deploy the reviewed commit to the editing and delivery hosts',
-      'Point the site at its own editing host',
       'Publish to Experience Edge and verify every route',
     ]);
+    // The two build-only releases passed without a card, each with its approval on record.
+    expect(
+      s.decisions
+        .filter((d) => d.answer === 'Approved in advance')
+        .map((d) => d.scopeKey)
+        .sort(),
+    ).toEqual(['release:approve-prepare-hosting', 'release:approve-switch-editing-host']);
+    expect(plan(s).tasks.find((t) => t.taskId === 'switch-editing-host')!.state).toBe('done');
     expect(s.decisions.filter((d) => d.decidedBy === 'director').length).toBeGreaterThanOrEqual(3);
 
     const events = await h.store.read(p.projectId);

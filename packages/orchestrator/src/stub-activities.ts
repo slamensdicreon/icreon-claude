@@ -121,6 +121,10 @@ export function createStubActivities(deps: StubDeps): Activities {
     async triage() {
       return { level: 'ask', tokens: 0, usd: 0 };
     },
+    // Nothing is approved in advance on a stub project.
+    async standingApproval() {
+      return false;
+    },
     async interpretDirective({ text, blueprint }) {
       if (/^\/?status\b/i.test(text) || /\b(status|where are we)\b/i.test(text))
         return { kind: 'status' };

@@ -683,6 +683,7 @@ export class PortfolioCypher {
     return {
       playbookId: playbook.id,
       from: null,
+      standingApprovals: [],
       connectionId: connection?.id ?? null,
       client,
       timezone: 'America/New_York',

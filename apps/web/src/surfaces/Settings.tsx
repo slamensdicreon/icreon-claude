@@ -352,6 +352,52 @@ export function Settings() {
           </section>
         )}
 
+        {s.standingApprovals.length > 0 && (
+          <section className="panel autonomy">
+            <h2>
+              Standing approvals <small>releases approved in advance</small>
+            </h2>
+            <p className="muted">
+              An approved release runs without its card; the approval and its rollback go in the
+              Decision Log. A remix of this project keeps these.
+            </p>
+            <div className="auto-rows">
+              {s.standingApprovals.map((r) => (
+                <div className="auto-row" key={r.id}>
+                  <span>
+                    {r.title}
+                    {r.byPlaybook && (
+                      <small className="muted">
+                        Approved by the playbook: it changes only this project’s own build
+                      </small>
+                    )}
+                  </span>
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-label={`Approve “${r.title}” in advance`}
+                      checked={r.approved}
+                      disabled={r.byPlaybook}
+                      onChange={() =>
+                        void run(() =>
+                          put(`${base}/settings/standingApprovals`, {
+                            value: s.standingApprovals
+                              .filter(
+                                (x) => !x.byPlaybook && (x.id === r.id ? !x.approved : x.approved),
+                              )
+                              .map((x) => x.id),
+                          }),
+                        )
+                      }
+                    />{' '}
+                    {r.approved ? 'Approved in advance' : 'Ask me'}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="panel">
           <h2>Escalation policy</h2>
           <table>

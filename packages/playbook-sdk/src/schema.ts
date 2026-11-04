@@ -181,7 +181,17 @@ export const TaskTemplate = z.object({
    * A release (deploy, publish, register a host): it waits for the Director's approval, which
    * shows the rollback plan, and only release tasks may call release-affecting operations.
    */
-  release: z.object({ rollback: z.string() }).optional(),
+  release: z
+    .object({
+      rollback: z.string(),
+      /**
+       * Approved once, in the playbook: the step changes only the project's own build (its new
+       * site's editing host, its own hosting project), nothing a client or visitor sees, and it
+       * has a rollback. Its checkpoint passes by itself and records the standing approval.
+       */
+      standing: z.boolean().optional(),
+    })
+    .optional(),
   /**
    * A step the Director does by hand until an agent can (Page builder work before M7): the
    * checklist the card shows. The task raises that card instead of running an agent, and is done

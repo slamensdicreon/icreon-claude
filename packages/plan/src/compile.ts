@@ -34,6 +34,8 @@ export interface PlannedTask {
   manual?: string;
   /** Tasks whose redo this one follows: it runs again after any of them is redone. */
   redoWith?: string[];
+  /** A release's approval checkpoint that passes by itself: the playbook approved it once. */
+  standing?: boolean;
 }
 
 export interface Plan {
@@ -263,6 +265,8 @@ export function compilePlan(
         rollback: release.rollback,
         maxAttempts: 1,
       },
+      // Only when set, so plans of releases without it stay exactly as they were.
+      ...(release.standing ? { standing: true } : {}),
     };
     tasks.splice(tasks.indexOf(t), 0, approval);
     byId.set(approval.taskId, approval);

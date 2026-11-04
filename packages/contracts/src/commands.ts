@@ -89,6 +89,8 @@ export const ProjectIntake = z.object({
    * the intake doesn't give (each is still checked against the live service).
    */
   connectionId: z.string().max(80).nullable().default(null),
+  /** Release steps approved once (Settings, Standing approvals), carried over by a remix. */
+  standingApprovals: z.array(z.string().max(80)).max(20).default([]),
   /**
    * Drafted by Cypher on the Dashboard: why this playbook, and what the brief asks for that it
    * won't do. The project's own conversation opens with it.

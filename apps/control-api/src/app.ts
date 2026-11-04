@@ -1174,13 +1174,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get<P>('/projects/:id/preview', async (req) => preview(known(req.params.id)));
 
-  app.get<P>('/projects/:id/settings', async (req) =>
-    settingsView(
-      known(req.params.id),
-      deps.policyDefaults?.(req.params.id) ?? [],
-      deps.autonomyDefaults?.(req.params.id) ?? {},
-    ),
-  );
+  app.get<P>('/projects/:id/settings', async (req) => {
+    const s = known(req.params.id);
+    const chosen = Array.isArray(s.settings.standingApprovals)
+      ? (s.settings.standingApprovals as string[])
+      : [];
+    return {
+      ...settingsView(
+        s,
+        deps.policyDefaults?.(req.params.id) ?? [],
+        deps.autonomyDefaults?.(req.params.id) ?? {},
+      ),
+      standingApprovals: (deps.intake?.releaseSteps(s) ?? []).map((r) => ({
+        id: r.id,
+        title: r.title,
+        byPlaybook: r.standing,
+        approved: r.standing || chosen.includes(r.id),
+      })),
+    };
+  });
 
   const readJson = async (projectId: string, ref: string | null) => {
     if (!ref || !deps.artifactContent) return null;
@@ -1491,6 +1503,29 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.put<{ Params: { id: string; key: string } }>('/projects/:id/settings/:key', async (req) => {
     const key = SettingKey.parse(req.params.key);
     const { value } = ChangeSetting.parse(req.body);
+    if (key === 'standingApprovals') {
+      // Release steps of this project's playbook, approved once: their cards stop coming.
+      const s = known(req.params.id);
+      const ids = z.array(z.string().min(1)).max(20).parse(value);
+      const releases = new Set((deps.intake?.releaseSteps(s) ?? []).map((r) => r.id));
+      const unknown = ids.filter((id) => !releases.has(id));
+      if (unknown.length)
+        throw new CommandError(
+          422,
+          'invalid',
+          `Not a release step of this project's playbook: ${unknown.join(', ')}. Release steps: ${[...releases].join(', ') || 'none'}.`,
+        );
+      await store.append(s.projectId, [
+        {
+          type: 'settings.changed',
+          actor: { kind: 'director', id: 'director' },
+          subject: { kind: 'project', id: s.projectId },
+          severity: 'notable',
+          data: { key, value: [...new Set(ids)] },
+        },
+      ]);
+      return settled(s.projectId);
+    }
     if (key === 'autonomy') {
       const levels = AutonomySetting.parse(value);
       const locked = LOCKED_CATEGORIES.find((c) => levels[c] && levels[c] !== 'ask');

@@ -79,6 +79,8 @@ export function settingsView(
     gates: [...directorGates, ...optional],
     escalationPolicy: policyDefaults.map((row) => ({ ...row, ...overrides[row.type] })),
     autonomy: autonomyOf(s, autonomyDefaults),
+    // The playbook's release steps come from the API, which holds the playbook.
+    standingApprovals: [],
     conventions: { entries: s.conventions, lockedAt },
     capabilityGaps: Object.entries(s.capabilityGaps)
       .map(([key, g]) => ({

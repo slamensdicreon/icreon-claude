@@ -852,6 +852,21 @@ export const SettingsSnapshot = z.object({
       }),
     )
     .default([]),
+  /**
+   * The playbook's release steps, each approved in advance or not: by the playbook (a step that
+   * changes only this project's own build) or by the Director here. An approved step's card
+   * doesn't come; its approval is recorded in the Decision Log.
+   */
+  standingApprovals: z
+    .array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        byPlaybook: z.boolean(),
+        approved: z.boolean(),
+      }),
+    )
+    .default([]),
   conventions: z.object({
     entries: z.array(z.object({ key: z.string(), value: z.string() })),
     lockedAt: z.iso.datetime().nullable(),
@@ -972,6 +987,8 @@ export const RemixDraft = z.object({
   target: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
   /** Credentials the connection provides: the wizard doesn't ask for them. */
   providedCredentials: z.array(z.string()),
+  /** Release steps the remixed project approved once: the new project starts with them. */
+  standingApprovals: z.array(z.string()).default([]),
 });
 export type RemixDraft = z.infer<typeof RemixDraft>;
 

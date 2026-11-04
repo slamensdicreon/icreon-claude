@@ -35,6 +35,11 @@ export interface Activities {
    * decides whether the Lead answers it, answers it for the record (shadow), or passes it on.
    */
   triage(req: TriageRequest): Promise<TriageOutcome>;
+  /**
+   * Whether the Director approved a kind of release once for this project (Settings, Standing
+   * approvals): its checkpoint then passes without a card. `release` is the release's template.
+   */
+  standingApproval(req: { projectId: string; release: string }): Promise<boolean>;
   /** Runs the task's rollback recipe (delete created items, revert its commit). */
   rollbackTask(req: { projectId: string; task: PlannedTask }): Promise<void>;
 }

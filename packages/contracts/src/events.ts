@@ -350,6 +350,8 @@ export const SettingKey = z.enum([
   'escalationPolicy',
   'notifications',
   'autonomy',
+  // Release steps (their plan template ids) the Director approves once for the project.
+  'standingApprovals',
 ]);
 export type SettingKey = z.infer<typeof SettingKey>;
 

@@ -63,6 +63,8 @@ templates:
     role: deployment-engineer
     title: Deploy the head to Vercel and register it as the editing host
     release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
       rollback: >-
         Delete the editing host registration in the Deploy app and the Vercel project; nothing
         is published and no content changes.
@@ -120,6 +122,8 @@ templates:
     # And on the pilot components' integrations (the pilot's verify list adds them).
     dependsOn: [integrate-head]
     release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
       rollback: >-
         Set the site's Site Grouping rendering host back to the value the result names; the new
         rendering host item can stay, nothing else uses it.

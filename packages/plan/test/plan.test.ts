@@ -197,6 +197,15 @@ describe('compilePlan', () => {
     expect(ids.indexOf('approve-prepare-hosting')).toBe(ids.indexOf('prepare-hosting') - 1);
   });
 
+  it('marks the approval of a build-only release as standing, and keeps production releases asked', () => {
+    const plan = compilePlan(pb, blueprint());
+    const byId = new Map(plan.tasks.map((t) => [t.taskId, t]));
+    expect(byId.get('approve-switch-editing-host')!.standing).toBe(true);
+    expect(byId.get('approve-prepare-hosting')!.standing).toBe(true);
+    expect('standing' in byId.get('approve-deploy-code')!).toBe(false);
+    expect('standing' in byId.get('approve-publish-edge')!).toBe(false);
+  });
+
   it("gives each component's integration its port to follow when the port is redone", () => {
     const plan = compilePlan(pb, blueprint());
     const byId = new Map(plan.tasks.map((t) => [t.taskId, t]));

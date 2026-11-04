@@ -262,6 +262,8 @@ export function NewProject() {
         .filter(([, v]) => v),
     ),
     connectionId: draft?.connectionId ?? null,
+    // A remix keeps the release steps its project approved once.
+    standingApprovals: draft?.standingApprovals ?? [],
     origin: newProjectIntent.origin ?? null,
   });
 

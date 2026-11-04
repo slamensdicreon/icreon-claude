@@ -76,6 +76,11 @@ const triageActs = proxyActivities<Pick<Activities, 'triage'>>({
   startToCloseTimeout: '2 minutes',
   retry: { maximumAttempts: 2 },
 });
+/** A standing approval is a convenience: when the lookup fails, the release card goes up. */
+const standingActs = proxyActivities<Pick<Activities, 'standingApproval'>>({
+  startToCloseTimeout: '1 minute',
+  retry: { maximumAttempts: 3 },
+});
 /** Lead answers in a row on one task before the next question goes to the Director. */
 const MAX_LEAD_ANSWERS = 2;
 
@@ -2393,7 +2398,32 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         await send(...completeCheckpoint(t, 'Pilot slice complete'));
         progressed = true;
       } else if ((gates.get(t.taskId)?.status ?? 'none') === 'none') {
-        await raiseGate(t.taskId, t.phase, t.dependsOn, t);
+        // A release approved once (by the playbook, or by the Director in Settings) passes
+        // without a card; the approval is recorded like the Director's own.
+        const standing =
+          t.gate === RELEASE_GATE && patched('standing-approvals')
+            ? t.standing
+              ? "the playbook approves this kind of release once: it changes only this project's own build"
+              : (await standingActs
+                    .standingApproval({ projectId, release: t.templateId.replace(/^approve-/, '') })
+                    .catch(() => false))
+                ? 'the Director approved this kind of release in advance (Settings, Standing approvals)'
+                : null
+            : null;
+        if (standing) {
+          gates.set(t.taskId, { status: 'approved', escalationId: null });
+          await send(
+            ...completeCheckpoint(t, 'Approved in advance'),
+            decision(
+              t.title,
+              'Approved in advance',
+              `Standing approval: ${standing}. Rollback: ${t.contract?.rollback ?? 'not recorded'}`,
+              'director',
+              `release:${t.taskId}`,
+              null,
+            ),
+          );
+        } else await raiseGate(t.taskId, t.phase, t.dependsOn, t);
         progressed = true;
       }
     }

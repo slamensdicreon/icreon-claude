@@ -112,8 +112,19 @@ it('saves a tenant as a connection, starts the next site from it, and rotates a 
   expect(raw).not.toContain(SECRET);
   expect(raw).not.toContain('ctx-preview-1234');
 
+  // Standing approvals: only the playbook's release steps; a remix carries them over.
+  expect(
+    (await call('PUT', `/projects/${ansco}/settings/standingApprovals`, { value: ['site-crawl'] }))
+      .status,
+  ).toBe(422);
+  expect(
+    (await call('PUT', `/projects/${ansco}/settings/standingApprovals`, { value: ['deploy-code'] }))
+      .status,
+  ).toBe(200);
+
   // Remix: same playbook, client, brief and connection; the site is left to fill.
   const draft = RemixDraft.parse((await call('GET', `/projects/${ansco}/remix`)).body);
+  expect(draft.standingApprovals).toEqual(['deploy-code']);
   expect(draft).toMatchObject({
     playbookId: 'sitecoreai-migration',
     connectionId: id,
@@ -135,11 +146,13 @@ it('saves a tenant as a connection, starts the next site from it, and rotates a 
     brief: draft.brief,
     connectionId: id,
     credentials: {},
+    standingApprovals: draft.standingApprovals,
   });
   expect(b.status).toBe(201);
   const careers = b.body.projectId as string;
   await projections.catchUpAll();
   const sb = projections.get(careers)!;
+  expect(sb.settings.standingApprovals).toEqual(['deploy-code']);
   expect(sb.intake).toMatchObject({
     connectionId: id,
     target: { cmHost: 'xmc-globex.sitecorecloud.io', site: 'globex-careers' },
