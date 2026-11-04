@@ -137,7 +137,9 @@ origins.
 3. The `worker` daemon's log shows "Temporal: connected to …" and each Claude model as ok.
 4. Leave a page open for five minutes: Activity keeps updating across the stream's scheduled
    reconnects, with no "Reconnecting" note.
-5. With the operator's email set up, the Dashboard's Diagnostics lists "Operator notices" with the
+5. Environment variables reach the services at their next deployment: after adding or changing one
+   (`RESEND`, `OPERATOR_EMAIL_TO`), redeploy production or push. With the operator's email set up,
+   the Dashboard's Diagnostics lists "Operator notices" with the
    recipients and sender, and a test arrives from
    `curl -X POST -H "Authorization: Bearer <api key>" https://<domain>/projects/<id>/operator/test-email`.
    When Resend refuses it (a sender domain not verified, or Resend's test sender writing to anyone
