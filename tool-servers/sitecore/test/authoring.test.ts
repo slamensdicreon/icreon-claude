@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SitecoreAuthoringToolServer } from '../src';
+import { richTextImages, SitecoreAuthoringToolServer } from '../src';
 
 const facts = {
   cmHost: 'xmc-acme.sitecorecloud.io',
@@ -430,6 +430,39 @@ describe('SitecoreAuthoringToolServer', () => {
     const s2 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: links.fetch });
     await s2.call('item.update', { path: hero, fields: [{ name: 'ctaLink', value: pdf }] }, ctx);
     expect(links.queries.find((q) => q.includes('updateItem'))!).toContain('linktype=\\"media\\"');
+  });
+
+  it('writes images inside rich text as media links, and leaves an Image field as it is', () => {
+    const body =
+      '<p>Our partners</p><image mediaid="{9A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9}" alt="KYSAFE" /><p>More</p>';
+    expect(richTextImages(body)).toBe(
+      '<p>Our partners</p><img src="-/media/9A1B2C3D4E5F60718293A4B5C6D7E8F9.ashx" alt="KYSAFE" /><p>More</p>',
+    );
+  });
+
+  it('turns Image-field XML in a rich-text value into an img on update', async () => {
+    const item = '/sitecore/content/Brands/ansco/Home/Data/Safety';
+    const cm = fakeCm({ [item]: 's-id' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    const r = await s.call(
+      'item.update',
+      {
+        path: item,
+        fields: [
+          {
+            name: 'body',
+            value: '<p>Text</p><image mediaid="{0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9}" />',
+          },
+          { name: 'image', value: '<image mediaid="{0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9}" />' },
+        ],
+      },
+      ctx,
+    );
+    const update = cm.queries.find((q) => q.includes('updateItem'))!;
+    expect(update).toContain('-/media/0A1B2C3D4E5F60718293A4B5C6D7E8F9.ashx');
+    // An Image field's own XML stays as it is.
+    expect(update).toContain('<image mediaid=\\"{0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9}\\" />');
+    expect(r.summary).toContain('body (rich-text images as media links)');
   });
 
   it('renames an item, keeping its ID, and reads it back under the new name', async () => {

@@ -42,6 +42,16 @@ export interface AuthoringServerOptions {
 const MEDIA_ROOT = '/sitecore/media library/';
 /** A value that is only a media item's path: what an agent writes when it means that image. */
 const MEDIA_PATH = /^\/sitecore\/media library\/\S/i;
+
+/** `<image mediaid="{ID}" alt="…" />` in HTML, rewritten as the img rich text renders. */
+export function richTextImages(html: string): string {
+  return html.replace(/<image\b([^>]*?)\/?>(?:\s*<\/image>)?/gi, (tag, attrs: string) => {
+    const id = /mediaid\s*=\s*["']\{?([0-9a-f-]{32,36})\}?["']/i.exec(attrs)?.[1];
+    if (!id) return tag;
+    const alt = /\balt\s*=\s*["']([^"']*)["']/i.exec(attrs)?.[1] ?? '';
+    return `<img src="-/media/${id.replace(/-/g, '').toUpperCase()}.ashx" alt="${alt}" />`;
+  });
+}
 const EDGE_URL = 'https://edge-platform.sitecorecloud.io';
 const JSON_RENDERING = '/sitecore/templates/Foundation/JavaScript Services/Json Rendering';
 const LANGUAGE_TEMPLATE = '/sitecore/templates/System/Language';
@@ -719,6 +729,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         const link = /link|cta|url|href|button|document|download|file/i.test(f.name);
         f.value = link ? `<link linktype="media" id="${id}" />` : `<image mediaid="${id}" />`;
         asImage.push(`${f.name} (${link ? 'media link' : 'image'})`);
+      } else if (/<image\b/i.test(v) && /<(?!\/?image\b)[a-z]/i.test(v)) {
+        // Rich text holding Image-field XML renders an img with an empty src. In HTML a media
+        // item is a dynamic link, which Sitecore expands to the right URL wherever it renders.
+        f.value = richTextImages(f.value);
+        asImage.push(`${f.name} (rich-text images as media links)`);
       }
     }
     const isIdList = (v: string) => !!v.trim() && v.split('|').every((p) => HEX_ID.test(p.trim()));
