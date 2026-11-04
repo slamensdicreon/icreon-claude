@@ -43,8 +43,6 @@ import {
   type PortfolioDiagnostics,
   type PlaybookScorecard,
   type RuleDraftView,
-  type RuleView as RuleViewT,
-  type EscalationView as EscalationViewT,
   type KnowledgeEntry,
   type ServiceHealth,
 } from '@lw/contracts';
@@ -83,6 +81,7 @@ import type {
   RuleStore,
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
+import { harvestRules } from '@lw/stack';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
@@ -647,75 +646,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post<P>('/projects/:id/rules/harvest', async (req, reply) => {
     const store = rules(reply);
     if (!store) return;
-    const s = known(req.params.id);
-    const names = (y: EscalationViewT) =>
-      taskNames(y.sourceTaskId ? s.tasks[y.sourceTaskId] : undefined);
-    const groups = new Map<
-      string,
-      { cards: EscalationViewT[]; answer: string; category: DecisionCategory }
-    >();
-    for (const y of Object.values(s.escalations)) {
-      if (y.gate) continue;
-      const category = cardCategory(y);
-      if (LOCKED_CATEGORIES.includes(category)) continue;
-      const chosen = chosenOptionId(y);
-      const answer = y.options.find((o) => o.id === chosen)?.label;
-      if (!answer) continue;
-      const key = [category, problemOf(y.title, names(y)), answer].join('\n');
-      const g = groups.get(key) ?? { cards: [], answer, category };
-      g.cards.push(y);
-      groups.set(key, g);
-    }
-    const covered = new Set(
-      (await store.list())
-        .filter((r) => r.status !== 'retired')
-        .flatMap((r) => r.sources.map((x) => x.escalationId)),
-    );
-    // A card already behind a rule is left out; the rest of its group still counts.
-    const worth = [...groups.values()]
-      .map((g) => ({ ...g, cards: g.cards.filter((c) => !covered.has(c.escalationId)) }))
-      .filter((g) => g.cards.length >= 2)
-      .sort((a, b) => b.cards.length - a.cards.length)
-      .slice(0, 20);
-    const created: RuleViewT[] = [];
-    for (const g of worth) {
-      const [first, ...rest] = g.cards;
-      const t = first!.sourceTaskId ? s.tasks[first!.sourceTaskId] : undefined;
-      let drafted = { when: first!.title.replace(/[?.]$/, '').toLowerCase(), then: g.answer };
-      if (deps.ruleDrafter)
-        drafted = await deps
-          .ruleDrafter({
-            card: {
-              title: first!.title,
-              context: first!.context,
-              options: first!.options.map((o) => o.label),
-            },
-            answer: g.answer,
-            notes: first!.resolution?.notes ?? null,
-            role: t?.role ?? null,
-            task: t?.title ?? null,
-            similar: rest.slice(0, 8).map((y) => ({ title: y.title, answer: g.answer })),
-          })
-          .catch(() => drafted);
-      created.push(
-        await store.create({
-          ...drafted,
-          category: g.category,
-          scope: s.playbook
-            ? { kind: 'playbook', id: s.playbook.id }
-            : { kind: 'project', id: s.projectId },
-          sources: g.cards.slice(0, 20).map((y) => ({
-            projectId: s.projectId,
-            escalationId: y.escalationId,
-            title: y.title,
-            answer: g.answer,
-          })),
-          author: 'cypher',
-          status: 'proposed',
-        }),
-      );
-    }
-    return { proposed: created, groups: groups.size };
+    return harvestRules({ rules: store, drafter: deps.ruleDrafter }, known(req.params.id));
   });
 
   app.get<{ Querystring: { status?: string } }>('/rules', async (req, reply) => {

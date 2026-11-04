@@ -7,11 +7,13 @@ import type { EventStore, Projections } from '@lw/events';
 export interface OperatorNotice {
   projectId: string;
   project: string;
-  kind: 'attention' | 'stalled';
+  kind: 'attention' | 'stalled' | 'review';
   title: string;
   body: string;
   /** The cards and gates the notice is about (attention notices). */
   needs?: { escalationId: string; type: EscalationType; title: string }[];
+  /** How many proposals wait for review (review notices): told again only when it grows. */
+  proposals?: number;
 }
 
 export interface OperatorDeps {
@@ -24,9 +26,12 @@ export interface OperatorDeps {
   attentionMinutes?: number;
   /** Nothing moving this long, with work left and nothing waiting on the Director: stalled (default 30). */
   stallMinutes?: number;
+  /** Proposed rules and lessons from a project that wait for the Director's review. */
+  pendingReview?: (projectId: string) => Promise<{ rules: number; lessons: number }>;
 }
 
 const LABEL = 'Operator';
+const STALLED = 'Nothing has moved';
 const SYSTEM = { kind: 'system', id: 'operator' } as const;
 const SETTLED = new Set(['done', 'cancelled']);
 const minutes = (from: string, to: Date) => (to.getTime() - Date.parse(from)) / 60_000;
@@ -44,7 +49,11 @@ export async function operatorSweep(deps: OperatorDeps): Promise<OperatorNotice[
   const out: OperatorNotice[] = [];
   for (const s of deps.projections.all()) {
     if (s.mode !== 'live' || s.status !== 'running') continue;
-    const notice = noticeFor(s, now, deps);
+    const notice =
+      noticeFor(s, now, deps) ??
+      (deps.pendingReview
+        ? reviewNotice(s, await deps.pendingReview(s.projectId).catch(() => null))
+        : null);
     if (!notice) continue;
     await deps.store.append(s.projectId, [message(notice, s)]);
     await deps.notify?.(notice).catch(() => undefined);
@@ -87,7 +96,7 @@ export function noticeFor(
   // Once per stall: not again until something has happened since the last notice.
   const lastNotice = [...s.conversation]
     .reverse()
-    .find((c) => c.label === LABEL && !c.needs.length);
+    .find((c) => c.label === LABEL && c.title === STALLED);
   if (lastNotice && Date.parse(lastNotice.ts) >= Date.parse(last)) return null;
   const count = (state: string) => left.filter((t) => t.state === state).length;
   const parts = [
@@ -104,8 +113,39 @@ export function noticeFor(
     projectId: s.projectId,
     project: s.name,
     kind: 'stalled',
-    title: 'Nothing has moved',
+    title: STALLED,
     body: `${s.name}: nothing has happened for ${Math.round(minutes(last, now))} minutes, with ${left.length} task${left.length === 1 ? '' : 's'} left (${parts.join(', ')}) and nothing waiting on you. ${running ? "An agent may be hung, or the project's workflow may be failing" : "The project's workflow may be failing, or a wait may have no task to end it"}: open Diagnostics in the project to see which.`,
+  };
+}
+
+/**
+ * What the team proposes to learn from the project's cards, waiting on the Director: told once,
+ * and again only when there is more than last time.
+ */
+export function reviewNotice(
+  s: ProjectState,
+  pending: { rules: number; lessons: number } | null,
+): OperatorNotice | null {
+  const total = (pending?.rules ?? 0) + (pending?.lessons ?? 0);
+  if (!pending || !total) return null;
+  const told = Math.max(
+    0,
+    ...s.conversation
+      .filter((c) => c.label === LABEL)
+      .map((c) => Number(c.rows.find((r) => r.label === 'proposals')?.value ?? 0)),
+  );
+  if (total <= told) return null;
+  const parts = [
+    pending.rules ? `${pending.rules} rule${pending.rules === 1 ? '' : 's'}` : '',
+    pending.lessons ? `${pending.lessons} lesson${pending.lessons === 1 ? '' : 's'}` : '',
+  ].filter(Boolean);
+  return {
+    projectId: s.projectId,
+    project: s.name,
+    kind: 'review',
+    title: 'The team proposes what to learn',
+    body: `${s.name}: ${parts.join(' and ')} drafted from settled cards wait for your review (Rules; Lessons learned). Approved, they settle the same questions next time without a card.`,
+    proposals: total,
   };
 }
 
@@ -122,6 +162,7 @@ function message(n: OperatorNotice, s: ProjectState): NewEvent {
       body: n.body,
       label: LABEL,
       needs: n.needs ?? [],
+      rows: n.proposals ? [{ label: 'proposals', value: String(n.proposals) }] : [],
     },
   } as NewEvent;
 }

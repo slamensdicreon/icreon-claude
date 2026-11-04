@@ -2,7 +2,13 @@ import type { NewEvent } from '@lw/contracts';
 import type { ProjectState } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
 import { expect, it } from 'vitest';
-import { noticeFor, operatorSweep, webhookNotifier, type OperatorNotice } from '../src/operator';
+import {
+  noticeFor,
+  operatorSweep,
+  reviewNotice,
+  webhookNotifier,
+  type OperatorNotice,
+} from '../src/operator';
 
 const at = (iso: string) => new Date(iso);
 
@@ -74,7 +80,12 @@ it('flags a stall once: work left, nothing waiting on the Director, nothing happ
     '45 minutes, with 2 tasks left (1 waiting on other tasks, 1 not started)',
   );
   expect(n.body).toContain('open Diagnostics');
-  s.conversation.push({ label: 'Operator', needs: [], ts: '2026-11-04T11:45:00.000Z' } as never);
+  s.conversation.push({
+    label: 'Operator',
+    title: 'Nothing has moved',
+    needs: [],
+    ts: '2026-11-04T11:45:00.000Z',
+  } as never);
   expect(noticeFor(s, at('2026-11-04T12:30:00.000Z'))).toBeNull();
   // Something happened, then it stalled again: a new notice.
   s.latest = [{ ts: '2026-11-04T12:40:00.000Z' }] as never;
@@ -128,4 +139,23 @@ it('posts each notice to the project and the webhook, for live running projects 
   expect(JSON.parse(posts[0]!.body).text).toMatch(
     /^\*A decision waits on you\*: Ervin Cable: Card a/,
   );
+});
+
+it('says once that proposals wait for review, and again only when there are more', () => {
+  const s = project();
+  expect(reviewNotice(s, { rules: 0, lessons: 0 })).toBeNull();
+  const n = reviewNotice(s, { rules: 2, lessons: 1 })!;
+  expect(n).toMatchObject({ kind: 'review', proposals: 3 });
+  expect(n.body).toContain('2 rules and 1 lesson drafted from settled cards wait for your review');
+  s.conversation.push({
+    label: 'Operator',
+    title: n.title,
+    needs: [],
+    rows: [{ label: 'proposals', value: '3' }],
+    ts: '2026-11-04T11:00:00.000Z',
+  } as never);
+  expect(reviewNotice(s, { rules: 2, lessons: 1 })).toBeNull();
+  expect(reviewNotice(s, { rules: 3, lessons: 1 })?.proposals).toBe(4);
+  // A review notice doesn't count as a stall notice.
+  expect(noticeFor(s, at('2026-11-04T11:45:00.000Z'))?.kind).toBe('stalled');
 });

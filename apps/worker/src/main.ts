@@ -3,6 +3,7 @@ import {
   anthropicModelClient,
   checkModels,
   compareScreens,
+  draftRule,
   readDirective,
   reviewTask,
   attributeFailures,
@@ -34,6 +35,7 @@ import {
   composeStack,
   GuardedBrowser,
   hostingToolServer,
+  learnAsCardsSettle,
   retrospectAtPhaseExit,
   seedPlatformKnowledge,
   sitecoreFacts,
@@ -391,6 +393,23 @@ const stopRetros =
         retrospect: (input) => retrospect(input),
       })
     : () => undefined;
+// And during a phase: every 8 settled cards, the answers are harvested into proposed rules and
+// the phase's retrospective proposes lessons, for the Director to approve in a batch.
+const stopLearning =
+  env.AGENTS === 'claude'
+    ? learnAsCardsSettle({
+        projections,
+        store: opened.store,
+        knowledge,
+        rules,
+        drafter: (input) => draftRule(input),
+        playbookOf: (id, version) => {
+          const entry = (id ? catalog.get(id) : undefined) ?? [...catalog.values()][0]!;
+          return versionOf(entry, version).playbook;
+        },
+        retrospect: (input) => retrospect(input),
+      })
+    : () => undefined;
 
 if (env.AGENTS === 'claude') {
   const models = [...catalog.values()].flatMap((e) => e.playbook.roles.map((r) => r.model.id));
@@ -445,9 +464,22 @@ const beating = setInterval(() => void beat(), 30_000);
 const notify = env.DIRECTOR_WEBHOOK_URL ? webhookNotifier(env.DIRECTOR_WEBHOOK_URL) : undefined;
 const operating = setInterval(
   () =>
-    void operatorSweep({ projections, store: opened.store, notify }).catch((err: unknown) =>
-      console.error('Operator sweep failed', err),
-    ),
+    void operatorSweep({
+      projections,
+      store: opened.store,
+      notify,
+      // What the team proposes to learn from a project, waiting for the Director's review.
+      pendingReview: async (projectId) => ({
+        rules: rules
+          ? (await rules.list({ status: 'proposed' })).filter((r) =>
+              r.sources.some((x) => x.projectId === projectId),
+            ).length
+          : 0,
+        lessons: (await knowledge.list({ status: 'proposed' })).filter(
+          (e) => e.source?.projectId === projectId,
+        ).length,
+      }),
+    }).catch((err: unknown) => console.error('Operator sweep failed', err)),
   env.OPERATOR_MINUTES * 60_000,
 );
 
@@ -456,6 +488,7 @@ const stop = () => {
   clearInterval(beating);
   clearInterval(operating);
   stopRetros();
+  stopLearning();
   workers.forEach((w) => w.shutdown());
 };
 process.on('SIGINT', stop);
