@@ -125,6 +125,10 @@ export function createStubActivities(deps: StubDeps): Activities {
     async standingApproval() {
       return false;
     },
+    // On by default, as on a live project.
+    async finishPastLimit() {
+      return true;
+    },
     async interpretDirective({ text, blueprint }) {
       if (/^\/?status\b/i.test(text) || /\b(status|where are we)\b/i.test(text))
         return { kind: 'status' };

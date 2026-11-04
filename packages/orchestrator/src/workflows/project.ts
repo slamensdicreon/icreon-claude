@@ -81,6 +81,11 @@ const standingActs = proxyActivities<Pick<Activities, 'standingApproval'>>({
   startToCloseTimeout: '1 minute',
   retry: { maximumAttempts: 3 },
 });
+/** A project setting read when it matters: when the lookup fails, the card goes up as before. */
+const settingActs = proxyActivities<Pick<Activities, 'finishPastLimit'>>({
+  startToCloseTimeout: '1 minute',
+  retry: { maximumAttempts: 3 },
+});
 /** Lead answers in a row on one task before the next question goes to the Director. */
 const MAX_LEAD_ANSWERS = 2;
 
@@ -922,8 +927,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             return d.phase > t.phase && !started.has(d.phase) && stateOf(x.taskId) !== 'done';
           })
         : [];
-      const backNow = back.filter((x) => !handOn.includes(x));
-      const named = [...new Set([...w.taskIds, ...backNow.map((x) => x.taskId)])].filter(
+      let backNow = back.filter((x) => !handOn.includes(x));
+      let named = [...new Set([...w.taskIds, ...backNow.map((x) => x.taskId)])].filter(
         (id) => id !== t.taskId && task(id)?.kind === 'work',
       );
       const cycle = named.some((id) => waitingOn.get(id)?.ids.includes(t.taskId));
@@ -931,7 +936,75 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       // don't spend another page's, nor an integrator's (one component, many askers).
       const backKey = (x: { taskId: string }) =>
         patched('send-back-per-requester') ? `${t.taskId}>${x.taskId}` : x.taskId;
-      const overSent = backNow.filter((x) => (sentBack[backKey(x)] ?? 0) >= MAX_SEND_BACKS);
+      let overSent = backNow.filter((x) => (sentBack[backKey(x)] ?? 0) >= MAX_SEND_BACKS);
+      // Past its allowance on a component, a task doesn't come to the Director (the project's
+      // finishPastLimit setting, on unless turned off): the component's differences go to the
+      // tasks that follow this one (the parity audit), and the task finishes when its own work
+      // passed review, or runs again for its own fixes without waiting on the component.
+      let pastNote = '';
+      if (
+        overSent.length &&
+        patched('finish-past-limit') &&
+        (await settingActs.finishPastLimit({ projectId }).catch(() => false))
+      ) {
+        const past = new Set(overSent.map((x) => x.taskId));
+        const pastTitles = [...past].map(titleOf).join(', ');
+        const who = `${roles.get(t.role)?.name ?? t.role} (${t.title})`;
+        const collectors = plan.tasks.filter(
+          (d) =>
+            d.kind === 'work' &&
+            d.dependsOn.includes(t.taskId) &&
+            !SETTLED_STATES.has(stateOf(d.taskId)),
+        );
+        const pastFixes = overSent.map((x) => x.fixes).join(' ');
+        const handed = `Handed on by ${who}, which already sent ${pastTitles} back ${MAX_SEND_BACKS} times: ${pastFixes}`;
+        for (const c of collectors)
+          if (!(instructions[c.taskId] ?? '').includes(handed))
+            instructions[c.taskId] = [instructions[c.taskId], handed].filter(Boolean).join('\n\n');
+        const handedTo = collectors.length
+          ? collectors.map((c) => titleOf(c.taskId)).join(', ')
+          : "the Director's UAT list";
+        backNow = backNow.filter((x) => !past.has(x.taskId));
+        named = named.filter((id) => !past.has(id));
+        overSent = [];
+        const nothingElse =
+          !backNow.length && !handOn.length && named.every((id) => SETTLED_STATES.has(stateOf(id)));
+        if (w.review && !w.review.fixes && nothingElse) {
+          finishedCount += 1;
+          waitingOn.delete(t.taskId);
+          // Its review ran: from validating (or still running) the task walks on to done.
+          const path: Partial<Record<TaskState, TaskState[]>> = {
+            ...PATH_TO_DONE,
+            running: ['validating', 'done'],
+            validating: ['done'],
+          };
+          events.push(
+            ...(path[stateOf(t.taskId)] ?? []).map((to) =>
+              taskMove(
+                t,
+                to,
+                to === 'done'
+                  ? `Done: its own work passed review; ${pastTitles} had been sent back ${MAX_SEND_BACKS} times, so their differences went to ${handedTo}`
+                  : null,
+              ),
+            ),
+            agentRefresh(t.role),
+            decision(
+              `${t.title}: finish past the send-back limit?`,
+              'Finished; the component differences were handed on',
+              `Its own work passed review and it waited only on ${pastTitles}, already sent back ${MAX_SEND_BACKS} times. Handed to ${handedTo}: ${pastFixes}`,
+              'rule',
+              `past-limit:${t.taskId}`,
+              null,
+            ),
+          );
+          states[t.taskId] = 'done';
+          await send(...events);
+          poke();
+          return;
+        }
+        pastNote = `${pastTitles} ${past.size === 1 ? 'was' : 'were'} already sent back ${MAX_SEND_BACKS} times for this task: don't wait on or send ${past.size === 1 ? 'it' : 'them'} back again. ${past.size === 1 ? 'Its' : 'Their'} differences went to ${handedTo}. Finish what is yours, and list those differences in your summary.`;
+      }
       // Only a wait with nothing under way to end it counts toward the limit. Waiting on a fix
       // that is queued or running, or sending finished work back to be redone, is progress: the
       // task checks again once that work lands, and send-backs have their own limit.
@@ -949,7 +1022,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         : (waits[t.taskId] = (waits[t.taskId] ?? 0) + 1);
       const asked = [...w.taskIds, ...(w.sendBack ?? []).map((x) => x.taskId)];
       const problem =
-        !named.length && !handOn.length
+        !named.length && !handOn.length && !pastNote
           ? `it named no task in the plan that makes it (${asked.join(', ')})`
           : cycle
             ? `${named.map(titleOf).join(', ')} wait on this task in turn`
@@ -1032,13 +1105,20 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
               ? `Your fixes for ${handOn.map((x) => titleOf(x.taskId)).join(', ')} are in ${handOn.length === 1 ? 'its' : 'their'} brief for when ${handOn.length === 1 ? 'it runs' : 'they run'} in a later phase. Don't wait on or send back to ${handOn.length === 1 ? 'it' : 'them'} again: finish now, and say in your summary what you handed on.`
               : '',
             w.review?.fixes ? `The review also found what is yours to fix: ${w.review.fixes}` : '',
+            pastNote,
           ]
             .filter(Boolean)
             .join(' ') || undefined,
       });
       if (w.review && !w.review.fixes) revalidate.add(t.taskId);
       events.push(
-        taskMove(t, 'waiting', `Waiting on ${named.map(titleOf).join(', ')}: ${w.what}`),
+        taskMove(
+          t,
+          'waiting',
+          named.length
+            ? `Waiting on ${named.map(titleOf).join(', ')}: ${w.what}`
+            : `Runs again for its own work: ${w.what}`,
+        ),
         agentRefresh(t.role),
       );
       await send(...events);

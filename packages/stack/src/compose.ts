@@ -425,6 +425,10 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       const chosen = opts.projections.get(req.projectId)?.settings.standingApprovals;
       return Array.isArray(chosen) && chosen.includes(req.release);
     },
+    async finishPastLimit(req) {
+      await opts.projections.catchUp(req.projectId);
+      return opts.projections.get(req.projectId)?.settings.finishPastLimit !== false;
+    },
     async triage(req) {
       const ask = { level: 'ask' as const, tokens: 0, usd: 0 };
       if (!(await isLive(req.projectId))) return ask;

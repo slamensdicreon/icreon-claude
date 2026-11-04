@@ -1526,6 +1526,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       ]);
       return settled(s.projectId);
     }
+    if (key === 'finishPastLimit') {
+      // Read by the run when a task reaches its send-back limit: recorded, not sent to the run.
+      const s = known(req.params.id);
+      await store.append(s.projectId, [
+        {
+          type: 'settings.changed',
+          actor: { kind: 'director', id: 'director' },
+          subject: { kind: 'project', id: s.projectId },
+          severity: 'notable',
+          data: { key, value: z.boolean().parse(value) },
+        },
+      ]);
+      return settled(s.projectId);
+    }
     if (key === 'autonomy') {
       const levels = AutonomySetting.parse(value);
       const locked = LOCKED_CATEGORIES.find((c) => levels[c] && levels[c] !== 'ask');

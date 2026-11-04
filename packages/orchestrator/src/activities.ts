@@ -40,6 +40,12 @@ export interface Activities {
    * approvals): its checkpoint then passes without a card. `release` is the release's template.
    */
   standingApproval(req: { projectId: string; release: string }): Promise<boolean>;
+  /**
+   * Whether a task past its send-backs to a component finishes on its own (Settings, the
+   * finishPastLimit setting; on unless the Director turns it off): the component's differences
+   * go to the tasks that follow it, and no card comes.
+   */
+  finishPastLimit(req: { projectId: string }): Promise<boolean>;
   /** Runs the task's rollback recipe (delete created items, revert its commit). */
   rollbackTask(req: { projectId: string; task: PlannedTask }): Promise<void>;
 }

@@ -867,6 +867,12 @@ export const SettingsSnapshot = z.object({
       }),
     )
     .default([]),
+  /**
+   * A task that has sent a component back as often as it may, and whose own work passed review,
+   * finishes: the component's remaining differences go to the tasks that follow it (the parity
+   * audit) instead of a card. On unless the Director turns it off.
+   */
+  finishPastLimit: z.boolean().default(true),
   conventions: z.object({
     entries: z.array(z.object({ key: z.string(), value: z.string() })),
     lockedAt: z.iso.datetime().nullable(),

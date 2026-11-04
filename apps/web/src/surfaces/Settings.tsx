@@ -398,6 +398,34 @@ export function Settings() {
           </section>
         )}
 
+        <section className="panel autonomy">
+          <h2>
+            Send-back limit <small>when a page has asked a component for fixes twice</small>
+          </h2>
+          <p className="muted">
+            A page whose own work passed review finishes, and the component’s remaining differences
+            go to the parity audit instead of a card. Turned off, the card comes to you.
+          </p>
+          <div className="auto-rows">
+            <div className="auto-row">
+              <span>Finish past the send-back limit</span>
+              <label>
+                <input
+                  type="checkbox"
+                  aria-label="Finish past the send-back limit"
+                  checked={s.finishPastLimit}
+                  onChange={() =>
+                    void run(() =>
+                      put(`${base}/settings/finishPastLimit`, { value: !s.finishPastLimit }),
+                    )
+                  }
+                />{' '}
+                {s.finishPastLimit ? 'Finish and hand on' : 'Ask me'}
+              </label>
+            </div>
+          </div>
+        </section>
+
         <section className="panel">
           <h2>Escalation policy</h2>
           <table>

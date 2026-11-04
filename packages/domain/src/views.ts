@@ -81,6 +81,7 @@ export function settingsView(
     autonomy: autonomyOf(s, autonomyDefaults),
     // The playbook's release steps come from the API, which holds the playbook.
     standingApprovals: [],
+    finishPastLimit: s.settings.finishPastLimit !== false,
     conventions: { entries: s.conventions, lockedAt },
     capabilityGaps: Object.entries(s.capabilityGaps)
       .map(([key, g]) => ({

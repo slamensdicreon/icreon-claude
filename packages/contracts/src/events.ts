@@ -352,6 +352,8 @@ export const SettingKey = z.enum([
   'autonomy',
   // Release steps (their plan template ids) the Director approves once for the project.
   'standingApprovals',
+  // Whether a task past its send-backs to a component finishes and hands the rest on (default on).
+  'finishPastLimit',
 ]);
 export type SettingKey = z.infer<typeof SettingKey>;
 

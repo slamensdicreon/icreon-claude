@@ -84,6 +84,7 @@ export async function startHarness(): Promise<Harness> {
     interpretDirective: (req) => route(req.projectId).interpretDirective(req),
     triage: (req) => route(req.projectId).triage(req),
     standingApproval: (req) => route(req.projectId).standingApproval(req),
+    finishPastLimit: (req) => route(req.projectId).finishPastLimit(req),
     rollbackTask: (req) => route(req.projectId).rollbackTask(req),
   };
   const worker = await createWorker({
@@ -116,6 +117,8 @@ export async function launch(
     validate?: Activities['validate'];
     /** Stands in for the project's standing approvals (Settings). */
     standingApproval?: Activities['standingApproval'];
+    /** Stands in for the project's finishPastLimit setting. */
+    finishPastLimit?: Activities['finishPastLimit'];
   } = {},
 ) {
   const projectId = `p${++counter}`;
@@ -133,6 +136,7 @@ export async function launch(
     ...(opts.triage ? { triage: opts.triage } : {}),
     ...(opts.validate ? { validate: opts.validate } : {}),
     ...(opts.standingApproval ? { standingApproval: opts.standingApproval } : {}),
+    ...(opts.finishPastLimit ? { finishPastLimit: opts.finishPastLimit } : {}),
   });
   const policy = defaultPolicy(h.playbook, {
     budgets: { tokens: 50_000_000, usd: 10_000, hours: 10_000 },
