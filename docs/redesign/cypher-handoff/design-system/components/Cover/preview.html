@@ -1,0 +1,34 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Cypher</title>
+<style>
+body{margin:0;width:960px;height:288px;position:relative;background:var(--bliss,#f6f5fc);font-family:var(--font-sans,'Plus Jakarta Sans','Helvetica Neue',Arial,sans-serif);overflow:hidden}
+.ink{fill:var(--ink,#141433)}.coral{fill:var(--coral,#e8553d)}.iris{fill:var(--iris,#6b4ee6)}.blue{fill:var(--blue,#2f5ee6)}.ground{fill:var(--bliss,#f6f5fc)}.mist{fill:var(--mist-2,#eeedf7)}
+.name{position:absolute;left:48px;bottom:46px;margin:0;font-size:120px;line-height:.92;font-weight:800;letter-spacing:-.045em;color:var(--ink,#141433);max-width:440px}
+.tag{position:absolute;left:52px;bottom:26px;margin:0;font-size:14px;color:var(--text-3,#6a6889);max-width:440px}
+</style>
+</head>
+<body>
+<!--
+blocks: ink slab 480→760 full height bleeding top (space-8 pitch), coral disc r=72 (radius-pill) at 840,96, iris block 760→960 × 176→288, blue pill 528→712 × 212→260 (radius-pill = 24, half the short side)
+arrangement: one tall slab with satellites: the ink slab is Cypher, the coral disc the eye that needs a word, iris and blue the two most-seen team hues
+pattern row: soft, friendly, large radii → discs: the README says the mark is a disc and the product is calm, so five ground discs r=20 (radius-sm × 2) cut out of the ink slab at a space-7 (40px) pitch
+scales: space-7 pitch, space-8 inset, radius-sm and radius-pill
+-->
+<svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true" style="position:absolute;left:0;top:0">
+  <rect class="ink" x="480" y="-20" width="280" height="328"/>
+  <rect class="iris" x="760" y="176" width="200" height="112"/>
+  <rect class="mist" x="760" y="0" width="200" height="176"/>
+  <circle class="coral" cx="840" cy="96" r="72"/>
+  <rect class="blue" x="528" y="212" width="184" height="48" rx="24"/>
+  <circle class="ground" cx="528" cy="56" r="20"/>
+  <circle class="ground" cx="568" cy="56" r="20"/>
+  <circle class="ground" cx="608" cy="56" r="20"/>
+  <circle class="ground" cx="648" cy="56" r="20"/>
+  <circle class="ground" cx="688" cy="56" r="20"/>
+</svg>
+<p class="name">Cypher</p>
+<p class="tag">Ignorance is bliss.</p>
+</body>
+</html>

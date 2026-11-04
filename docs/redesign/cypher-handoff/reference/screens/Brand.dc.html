@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cypher brand sheet</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+a{color:#4a32b8}a:hover{color:#3a2690}
+@media (max-width:720px){.two{grid-template-columns:minmax(0,1fr)!important}}
+</style>
+</helmet>
+<div style="display: flex; flex-direction: column; min-height: 1000px; font-family: 'Plus Jakarta Sans', 'Helvetica Neue', Arial, sans-serif; font-size: 16px; line-height: 1.5; color: #141433; background: #ffffff">
+
+<section class="two" style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 48px; padding: 56px 64px 44px; background: #f6f5fc; border-bottom: 1px solid #e3e0f2">
+  <div style="display: flex; flex-direction: column; gap: 22px">
+    <div style="display: flex; align-items: center; gap: 18px">
+      <svg width="72" height="72" viewBox="0 0 72 72" role="img" aria-label="Cypher mark, an eye at rest"><circle cx="36" cy="36" r="31" fill="#141433"/><path d="M20 36 Q36 50 52 36" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/></svg>
+      <span style="font-size: 64px; font-weight: 800; letter-spacing: -0.045em; line-height: 1">cypher</span>
+    </div>
+    <p style="margin: 0; font-size: 46px; font-weight: 300; line-height: 1.1; letter-spacing: -0.03em">Ignorance is <span style="font-weight: 700">bliss.</span></p>
+    <p style="margin: 0; font-size: 18px; line-height: 1.5; max-width: 560px; color: #3b3a5c">Your chief of staff for SitecoreAI builds. Cypher knows everything about the engagement so that you only have to know what matters, and it tells you in a sentence.</p>
+    <p style="margin: 0; font-size: 14px; color: #6a6889; max-width: 560px">Calm. Discreet. Decisive. Says less than it knows. Never surprises you.</p>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 14px; justify-content: center">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6a6889">The eye is Cypher's presence</span>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 12px; background: #ffffff; border-radius: 18px; border: 1px solid #e3e0f2"><svg width="56" height="56" viewBox="0 0 72 72" role="img" aria-label="Resting"><circle cx="36" cy="36" r="31" fill="#141433"/><path d="M20 36 Q36 50 52 36" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/></svg><span style="font-weight: 700">Resting</span><span style="font-size: 13px; color: #6a6889; text-align: center">Nothing needs you. The eye stays closed.</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 12px; background: #ffffff; border-radius: 18px; border: 1px solid #e3e0f2"><svg width="56" height="56" viewBox="0 0 72 72" role="img" aria-label="Watching"><circle cx="36" cy="36" r="31" fill="#141433"/><path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linejoin="round"/><circle cx="36" cy="36" r="5" fill="#ffffff"/></svg><span style="font-weight: 700">Watching</span><span style="font-size: 13px; color: #6a6889; text-align: center">Agents are working. Cypher is reading along.</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 12px; background: #ffffff; border-radius: 18px; border: 1px solid #e3e0f2"><svg width="56" height="56" viewBox="0 0 72 72" role="img" aria-label="Needs a word"><circle cx="36" cy="36" r="31" fill="#e8553d"/><path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" fill="#ffffff"/><circle cx="36" cy="36" r="7" fill="#141433"/></svg><span style="font-weight: 700">Needs a word</span><span style="font-size: 13px; color: #6a6889; text-align: center">One decision is yours. It blinks once, then waits.</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="two" style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; padding: 40px 64px; border-bottom: 1px solid #e3e0f2">
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6a6889">Color means something</span>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+      <sc-for list="{{swatches}}" as="s" hint-placeholder-count="9">
+        <div style="display: flex; flex-direction: column; gap: 6px"><span aria-hidden="true" style="height: 64px; border-radius: 14px; background: {{s.hex}}; border: 1px solid {{s.border}}"></span><span style="font-weight: 700; font-size: 14px">{{s.name}} <span style="font-weight: 400; color: #6a6889">{{s.hex}}</span></span><span style="font-size: 13px; color: #3b3a5c">{{s.role}}</span></div>
+      </sc-for>
+    </div>
+    <p style="margin: 4px 0 0; font-size: 14px; color: #3b3a5c; max-width: 560px">Hue says which team. Coral says it is yours. Green says it is done. Everything else is ink on bliss. Nothing is colored for decoration, so when color appears, it is information.</p>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6a6889">One family, four sizes, nothing under 13</span>
+    <div style="display: flex; flex-direction: column; border: 1px solid #e3e0f2; border-radius: 18px; overflow: hidden">
+      <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center; padding: 18px 20px; border-bottom: 1px solid #e3e0f2"><span style="font-size: 13px; color: #6a6889">Voice · Light 42</span><span style="font-size: 36px; font-weight: 300; line-height: 1.12; letter-spacing: -0.025em">One thing before 2:24. <span style="font-weight: 600">The rest is handled.</span></span></div>
+      <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e3e0f2"><span style="font-size: 13px; color: #6a6889">Title · Bold 22</span><span style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em">Campaign slots: one rendering or three?</span></div>
+      <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e3e0f2"><span style="font-size: 13px; color: #6a6889">Body · Regular 16</span><span style="font-size: 16px; line-height: 1.5">Aisha would build one and let marketers pick the layout.</span></div>
+      <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e3e0f2"><span style="font-size: 13px; color: #6a6889">Label · Bold 13</span><span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6889">Raised by Aisha · 4 min · Discovery</span></div>
+      <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center; padding: 14px 20px"><span style="font-size: 13px; color: #6a6889">Number · Semibold 32</span><span style="font-size: 32px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1">23 <span style="font-size: 16px; font-weight: 500; color: #6a6889">of 37</span></span></div>
+    </div>
+    <p style="margin: 4px 0 0; font-size: 14px; color: #3b3a5c">One voice line per screen. Two lines per card. Counts under thirteen are written as words, because Cypher speaks. Light when Cypher talks, bold when something is yours. No second typeface and no monospace, even in Everything.</p>
+  </div>
+</section>
+
+<section class="two" style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; padding: 40px 64px 56px">
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6a6889">How Cypher talks</span>
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <sc-for list="{{voice}}" as="v" hint-placeholder-count="4">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px">
+          <div style="padding: 14px 16px; border-radius: 14px; background: #f6f5fc; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 13px; font-weight: 700; color: #1e8e5a">Says</span><span style="font-size: 19px; font-weight: 300; line-height: 1.3; letter-spacing: -0.015em">{{v.say}}</span></div>
+          <div style="padding: 14px 16px; border-radius: 14px; border: 1px solid #e3e0f2; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 13px; font-weight: 700; color: #c8402b">Not</span><span style="font-size: 14px; color: #6a6889; line-height: 1.4">{{v.not}}</span></div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 14px">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6a6889">Six rules for how much to show</span>
+    <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px">
+      <sc-for list="{{rules}}" as="r" hint-placeholder-count="6">
+        <li style="display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; align-items: start"><span style="width: 32px; height: 32px; border-radius: 999px; background: #141433; color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px">{{r.n}}</span><span><b style="font-weight: 700">{{r.title}}</b> <span style="color: #3b3a5c">{{r.text}}</span></span></li>
+      </sc-for>
+    </ol>
+    <div style="margin-top: 10px; padding: 18px 20px; border-radius: 18px; background: #141433; color: #ffffff; display: flex; flex-direction: column; gap: 12px">
+      <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #b7a6ff">The dial, on every screen</span>
+      <div role="group" aria-label="How much to show" style="display: inline-flex; align-items: center; gap: 0; padding: 4px; border-radius: 999px; background: #1d1d45; align-self: flex-start">
+        <button aria-pressed="true" style="font: inherit; font-size: 15px; font-weight: 700; padding: 8px 18px; border-radius: 999px; border: 0; background: #ffffff; color: #141433; cursor: pointer">Bliss</button>
+        <button aria-pressed="false" style="font: inherit; font-size: 15px; font-weight: 500; padding: 8px 18px; border-radius: 999px; border: 0; background: transparent; color: #b7a6ff; cursor: pointer">Everything</button>
+      </div>
+      <span style="font-size: 14px; color: #d6d0f5; line-height: 1.5">Bliss is the default: Cypher's sentence, at most three things that are yours, the quiet state of each project. The sidebar shrinks to a labelled rail and Cypher does not chat; its recommendation sits inside every card. Everything is the full console, one gesture away: the open sidebar, search, tables, and Cypher as a chat you open from the eye button that sits bottom right on every Everything screen. The dial remembers your choice per screen.</span>
+    </div>
+  </div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      swatches: [
+        { name: 'Ink', hex: '#141433', role: 'Cypher. Headlines, the shell, the mark.', border: '#141433' },
+        { name: 'Bliss', hex: '#f6f5fc', role: 'The ground. Calm, faintly lavender.', border: '#e3e0f2' },
+        { name: 'Coral', hex: '#e8553d', role: 'Yours: decisions, blocks, clocks.', border: '#e8553d' },
+        { name: 'Iris', hex: '#6b4ee6', role: 'Discovery, and Cypher thinking.', border: '#6b4ee6' },
+        { name: 'Blue', hex: '#2f5ee6', role: 'Engineering.', border: '#2f5ee6' },
+        { name: 'Teal', hex: '#0b7b7d', role: 'Content.', border: '#0b7b7d' },
+        { name: 'Gold', hex: '#9a6b00', role: 'Quality.', border: '#9a6b00' },
+        { name: 'Green', hex: '#1e8e5a', role: 'Done, passed, handled.', border: '#1e8e5a' },
+        { name: 'Mist', hex: '#e3e0f2', role: 'Lines and quiet surfaces. Never text.', border: '#d2cdeb' },
+      ],
+      voice: [
+        { say: 'Three things moved. One needs you before 2:24.', not: '2 escalations raised, 1 resolved, 11 cards settled by leads, Components 48% → 62%, +$14 consumed.' },
+        { say: 'Emily is waiting on you. Everyone else is fine.', not: 'Engineering: 4 active, 1 blocked. Quality: 2 active, 1 waiting. Discovery: done, 1 consult open.' },
+        { say: 'I\'d pick one. Say the word.', not: 'Option A (recommended, 84% confidence). Proceeds with default action A at 14:24 ET unless overridden.' },
+        { say: 'Handled. I\'ll say nothing until five.', not: 'Resolved. Daily digest scheduled for 17:00 project time.' },
+      ],
+      rules: [
+        { n: '1', title: 'Three is the limit.', text: 'Never more than three things are yours at once. The fourth waits, and Cypher says so.' },
+        { n: '2', title: 'A sentence before a table.', text: 'Every screen opens with what Cypher would say out loud. Data comes after, if at all.' },
+        { n: '3', title: 'Detail is a door, not a wall.', text: 'The 212 tool calls exist. They are one gesture away, never on the first screen.' },
+        { n: '4', title: 'A number has to change a decision.', text: 'Progress, cost and time show when they move your mind. Otherwise they are a word: on pace.' },
+        { n: '5', title: 'Agents are people.', text: 'A face, a name, one line of what they are doing. Logs and tokens stay underneath.' },
+        { n: '6', title: 'Nothing moves while you read.', text: 'Motion marks arrivals, then stops. The eye blinks once. Shimmer only while Cypher is thinking.' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

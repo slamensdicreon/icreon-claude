@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ansell Mission Control, Everything</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+a{color:#4a32b8}a:hover{color:#3a2690}
+@media (max-width:720px){.side{max-width:none!important}.rail{max-width:none!important;border-left:0!important}.two,.metrics{grid-template-columns:minmax(0,1fr)!important}}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1340px; font-family: 'Plus Jakarta Sans', 'Helvetica Neue', Arial, sans-serif; font-size: 15px; line-height: 1.5; color: #141433; background: #f6f5fc; font-variant-numeric: tabular-nums">
+
+<nav class="side" aria-label="Cypher" style="flex: 1 1 224px; max-width: 240px; min-width: 0; box-sizing: border-box; padding: 22px 14px 18px; background: #141433; color: #ffffff; display: flex; flex-direction: column; gap: 4px">
+  <a href="Dashboard-Everything.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 2px 8px 18px; text-decoration: none; color: #ffffff">
+    <svg width="36" height="36" viewBox="0 0 72 72" role="img" aria-label="Cypher, needs a word"><circle cx="36" cy="36" r="31" fill="#e8553d"/><path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" fill="#ffffff"/><circle cx="36" cy="36" r="7" fill="#141433"/></svg>
+    <span style="font-size: 24px; font-weight: 800; letter-spacing: -0.04em; line-height: 1">cypher</span>
+  </a>
+  <button style="font: inherit; text-align: left; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; border: 1px solid #2c2c5a; background: #1d1d45; color: #ffffff; cursor: pointer">
+    <span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 9px; background: #2f5ee6; color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex: none">AN</span>
+    <span style="display: flex; flex-direction: column; line-height: 1.2; min-width: 0"><span style="font-weight: 700; font-size: 15px">Ansell</span><span style="font-size: 13px; color: #b7a6ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Components, day 4</span></span>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b7a6ff" stroke-width="2.2" stroke-linecap="round" aria-hidden="true" style="margin-left: auto; flex: none"><path d="m6 9 6 6 6-6"/></svg>
+  </button>
+  <div style="height: 10px"></div>
+  <sc-for list="{{nav}}" as="n" hint-placeholder-count="8">
+    <a href="{{n.href}}" style="display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; text-decoration: none; color: {{n.fg}}; background: {{n.bg}}; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.d}}"/></svg>{{n.label}}<span style="margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: {{n.badgeBg}}; color: #ffffff; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center">{{n.badge}}</span></a>
+  </sc-for>
+  <div style="flex: 1 1 auto"></div>
+  <a href="Dashboard-Everything.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; text-decoration: none; color: #b7a6ff; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>All projects</a>
+  <a href="#settings" style="display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; text-decoration: none; color: #b7a6ff; font-weight: 600; font-size: 15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg>Settings</a>
+  <div style="display: flex; align-items: center; gap: 10px; padding: 14px 12px 4px; border-top: 1px solid #2c2c5a; margin-top: 6px"><span aria-hidden="true" style="width: 36px; height: 36px; border-radius: 999px; background: #6b4ee6; color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px">S</span><span style="display: flex; flex-direction: column; line-height: 1.2"><span style="font-weight: 700; font-size: 15px">Steven</span><span style="font-size: 13px; color: #b7a6ff">Director</span></span></div>
+</nav>
+
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+  <header style="display: flex; align-items: center; gap: 14px; padding: 0 28px; height: 76px; background: #ffffff; border-bottom: 1px solid #e3e0f2; flex-wrap: wrap">
+    <span style="display: flex; flex-direction: column; line-height: 1.2"><span style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em">Mission Control</span><span style="font-size: 14px; color: #6a6889">Ansell · Components at 62%, Templates alongside · 11:42 AM ET</span></span>
+    <label for="cmd" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search or command</label>
+    <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 10px; height: 42px; padding: 0 8px 0 14px; border-radius: 999px; background: #f6f5fc; border: 1px solid #e3e0f2; color: #6a6889; width: 260px; max-width: 100%"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="cmd" type="text" placeholder="Search, or a command" style="font: inherit; font-size: 15px; flex: 1 1 auto; min-width: 0; border: 0; outline: none; background: transparent; color: #141433"></span>
+    <div role="group" aria-label="How much to show" style="display: inline-flex; align-items: center; padding: 4px; border-radius: 999px; background: #f6f5fc; border: 1px solid #e3e0f2">
+      <a href="Mission-Bliss.dc.html" style="font-size: 15px; font-weight: 500; padding: 8px 18px; border-radius: 999px; color: #6a6889; text-decoration: none">Bliss</a>
+      <button aria-pressed="true" style="font: inherit; font-size: 15px; font-weight: 700; padding: 8px 18px; border-radius: 999px; border: 0; background: #141433; color: #ffffff; cursor: pointer">Everything</button>
+    </div>
+    <span style="display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px 7px 8px; border-radius: 999px; background: #fdeae6; color: #c8402b; font-size: 14px; font-weight: 700"><svg width="22" height="22" viewBox="0 0 72 72" role="img" aria-label="Needs a word"><circle cx="36" cy="36" r="31" fill="#e8553d"/><path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" fill="#ffffff"/><circle cx="36" cy="36" r="7" fill="#141433"/></svg>3 yours · 2:24</span>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1 1 auto">
+    <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 24px 28px 36px; display: flex; flex-direction: column; gap: 18px">
+      <section aria-label="Phases" style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px"><h2 style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em">Phases</h2><span style="font-size: 13.5px; color: #6a6889">Gate 1 approved Oct 31 · Gate 2 at UAT, forecast Nov 11 · $286 of $1,200</span></div>
+        <div style="display: flex; gap: 6px; overflow-x: auto">
+          <sc-for list="{{phases}}" as="ph" hint-placeholder-count="10">
+            <span style="flex: 1 1 0; min-width: 72px; display: flex; flex-direction: column; gap: 6px"><span aria-hidden="true" style="height: 10px; border-radius: 5px; background: #eeedf7; overflow: hidden"><i style="display: block; height: 100%; width: {{ph.pct}}; background: {{ph.color}}; border-radius: 5px"></i></span><span style="font-size: 13px; font-weight: {{ph.fw}}; color: {{ph.fg}}; white-space: nowrap">{{ph.name}}</span><span style="font-size: 12.5px; color: #6a6889">{{ph.sub}}</span></span>
+          </sc-for>
+        </div>
+      </section>
+
+      <section class="metrics" aria-label="Metrics" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+        <div style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 6px"><span style="display: flex; align-items: baseline; justify-content: space-between"><span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6889">Renderings registered</span><span style="font-size: 13.5px; color: #6a6889">6 today</span></span><span style="font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05">23 <span style="font-size: 16px; font-weight: 500; color: #6a6889">of 37</span></span><svg width="100%" height="56" viewBox="0 0 300 56" preserveAspectRatio="none" role="img" aria-label="Renderings registered over four days"><path d="M0 56 L0 54 L60 52 L120 46 L180 38 L240 22 L300 12 L300 56 Z" fill="#2f5ee6" opacity=".12"/><path d="M0 54 L60 52 L120 46 L180 38 L240 22 L300 12" fill="none" stroke="#2f5ee6" stroke-width="2.2"/></svg></div>
+        <div style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 6px"><span style="display: flex; align-items: baseline; justify-content: space-between"><span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6889">QA pass rate</span><span style="font-size: 13.5px; color: #6a6889">target 90%</span></span><span style="font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05">83% <span style="font-size: 16px; font-weight: 500; color: #6a6889">19 of 23</span></span><svg width="100%" height="56" viewBox="0 0 300 56" preserveAspectRatio="none" role="img" aria-label="QA pass rate trend against a 90 percent target"><path d="M0 42 L60 32 L120 36 L180 22 L240 26 L300 18" fill="none" stroke="#1e8e5a" stroke-width="2.2"/><line x1="0" y1="14" x2="300" y2="14" stroke="#d2cdeb" stroke-dasharray="4 4"/></svg></div>
+        <div style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 6px"><span style="display: flex; align-items: baseline; justify-content: space-between"><span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6889">Parity, pilot pages</span><span style="font-size: 13.5px; color: #6a6889">3 of 12 pages</span></span><span style="font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; color: #1e8e5a">97%</span><svg width="100%" height="56" viewBox="0 0 300 56" preserveAspectRatio="none" role="img" aria-label="Parity per pilot page: Hero, Quick actions, Hazard route"><rect x="10" y="10" width="70" height="44" rx="4" fill="#9a6b00"/><rect x="100" y="6" width="70" height="48" rx="4" fill="#9a6b00"/><rect x="190" y="14" width="70" height="40" rx="4" fill="#9a6b00"/><rect x="270" y="42" width="24" height="12" rx="3" fill="#eeedf7"/></svg></div>
+        <div style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 6px"><span style="display: flex; align-items: baseline; justify-content: space-between"><span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6889">Cost against budget</span><span style="font-size: 13.5px; color: #6a6889">forecast $920 at UAT</span></span><span style="font-size: 32px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.05">$286 <span style="font-size: 16px; font-weight: 500; color: #6a6889">of $1,200</span></span><svg width="100%" height="56" viewBox="0 0 300 56" preserveAspectRatio="none" role="img" aria-label="Cost burn against budget with forecast"><line x1="0" y1="6" x2="300" y2="6" stroke="#c8402b" stroke-dasharray="4 4"/><path d="M0 54 L40 50 L80 45 L120 38 L150 32" fill="none" stroke="#141433" stroke-width="2.2"/><path d="M150 32 L200 27 L250 21 L300 16" fill="none" stroke="#8f86c4" stroke-width="2" stroke-dasharray="5 4"/></svg></div>
+      </section>
+
+      <section aria-label="Needs you" style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; display: flex; flex-direction: column">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #e3e0f2"><h2 style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em">Needs you</h2><span style="min-width: 24px; height: 24px; padding: 0 8px; border-radius: 999px; background: #c8402b; color: #ffffff; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center">3</span><span style="margin-left: auto; font-size: 13.5px; color: #6a6889">By clock, then type</span></div>
+        <sc-for list="{{needs}}" as="n" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 14px; padding: 13px 18px; border-bottom: 1px solid #eeedf7"><span style="width: 86px; flex: none; font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 4px 0; border-radius: 999px; background: {{n.typeBg}}; color: #ffffff; text-align: center">{{n.type}}</span><span style="display: flex; flex-direction: column; line-height: 1.3; flex: 1 1 auto; min-width: 0"><span style="font-weight: 600">{{n.title}}</span><span style="font-size: 13.5px; color: #6a6889">{{n.who}} · {{n.age}} · {{n.impact}}</span></span><span style="font-size: 14px; font-weight: 700; color: {{n.slaFg}}; white-space: nowrap">{{n.sla}}</span><button style="font: inherit; font-size: 14px; font-weight: 700; padding: 8px 14px; border-radius: 999px; border: 0; background: #141433; color: #ffffff; cursor: pointer; white-space: nowrap">{{n.action}}</button></div>
+        </sc-for>
+      </section>
+
+      <section aria-label="Tasks" style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; overflow-x: auto">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #e3e0f2; flex-wrap: wrap"><h2 style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em">Tasks</h2><span style="display: inline-flex; gap: 6px"><button aria-pressed="true" style="font: inherit; font-size: 13.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px; border: 1px solid #141433; background: #141433; color: #ffffff; cursor: pointer">Running 11</button><button aria-pressed="false" style="font: inherit; font-size: 13.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; border: 1px solid #e3e0f2; background: #ffffff; color: #3b3a5c; cursor: pointer">Queued 23</button><button aria-pressed="false" style="font: inherit; font-size: 13.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; border: 1px solid #e3e0f2; background: #ffffff; color: #3b3a5c; cursor: pointer">Blocked 1</button><button aria-pressed="false" style="font: inherit; font-size: 13.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; border: 1px solid #e3e0f2; background: #ffffff; color: #3b3a5c; cursor: pointer">Done 48</button></span><a href="#plan" style="margin-left: auto; font-size: 13.5px; font-weight: 600; text-decoration: none">Open the plan</a></div>
+        <table style="width: 100%; border-collapse: collapse; min-width: 700px; font-size: 14.5px">
+          <thead><tr style="text-align: left; font-size: 13px; color: #6a6889"><th style="padding: 10px 18px; font-weight: 600; border-bottom: 1px solid #eeedf7">Task</th><th style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #eeedf7">Agent</th><th style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #eeedf7">State</th><th style="padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #eeedf7; text-align: right">Elapsed</th><th style="padding: 10px 18px; font-weight: 600; border-bottom: 1px solid #eeedf7; text-align: right">Attempt</th></tr></thead>
+          <tbody>
+            <sc-for list="{{tasks}}" as="t" hint-placeholder-count="6">
+              <tr style="border-bottom: 1px solid #eeedf7"><td style="padding: 11px 18px"><span style="color: #6a6889; font-weight: 600; margin-right: 10px">{{t.id}}</span>{{t.title}}</td><td style="padding: 11px 14px; color: #3b3a5c; white-space: nowrap">{{t.agent}}</td><td style="padding: 11px 14px"><span style="display: inline-flex; align-items: center; gap: 8px; color: {{t.fg}}; font-weight: 700"><i aria-hidden="true" style="width: 9px; height: 9px; border-radius: 999px; background: {{t.fg}}; display: inline-block"></i>{{t.state}}</span></td><td style="padding: 11px 14px; text-align: right; color: #3b3a5c">{{t.el}}</td><td style="padding: 11px 18px; text-align: right; color: #6a6889">{{t.att}}</td></tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="two" aria-label="Team and activity" style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 14px">
+        <div style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; display: flex; flex-direction: column">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid #e3e0f2"><h2 style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em">Team</h2><span style="margin-left: auto; font-size: 13.5px; color: #6a6889">9 of 20 working</span></div>
+          <sc-for list="{{team}}" as="a" hint-placeholder-count="8">
+            <span style="display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid #eeedf7; font-size: 14.5px"><span aria-hidden="true" style="width: 30px; height: 30px; border-radius: 999px; background: {{a.hue}}; color: #ffffff; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex: none; opacity: {{a.op}}">{{a.ini}}</span><span style="display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; line-height: 1.25"><span style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{a.name}}</span><span style="font-size: 13.5px; color: {{a.lineFg}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{a.line}}</span></span><span style="font-size: 13.5px; font-weight: 600; color: #6a6889; flex: none">{{a.rate}}</span></span>
+          </sc-for>
+        </div>
+        <div style="background: #ffffff; border: 1px solid #e3e0f2; border-radius: 18px; display: flex; flex-direction: column">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid #e3e0f2; flex-wrap: wrap"><h2 style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em">Activity</h2><span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: #3b3a5c; margin-left: 4px"><i aria-hidden="true" style="width: 8px; height: 8px; border-radius: 999px; background: #1e8e5a; display: inline-block"></i>Live, 3 new</span><a href="#floor" style="margin-left: auto; font-size: 13.5px; font-weight: 600; text-decoration: none">Open the floor</a></div>
+          <sc-for list="{{log}}" as="e" hint-placeholder-count="6">
+            <span style="display: flex; align-items: flex-start; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #eeedf7; font-size: 14px; background: {{e.bg}}"><span style="color: #6a6889; flex: none; width: 44px">{{e.ts}}</span><span style="display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; line-height: 1.3"><span style="font-weight: 600">{{e.who}} <span style="font-weight: 400; color: #6a6889">· {{e.tool}}</span></span><span style="color: #3b3a5c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{e.op}}</span></span><span style="font-weight: 700; color: {{e.resFg}}; white-space: nowrap; flex: none">{{e.res}}</span></span>
+          </sc-for>
+        </div>
+      </section>
+    </main>
+
+    <section role="dialog" aria-label="Cypher" style="position: fixed; right: 24px; bottom: 104px; width: 420px; max-width: calc(100% - 48px); max-height: 720px; background: #ffffff; border: 1px solid #e3e0f2; border-radius: 24px; box-shadow: 0 24px 64px rgba(20,20,51,0.22); display: flex; flex-direction: column; overflow: hidden">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid #e3e0f2"><svg width="34" height="34" viewBox="0 0 72 72" role="img" aria-label="Cypher, needs a word"><circle cx="36" cy="36" r="31" fill="#e8553d"/><path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" fill="#ffffff"/><circle cx="36" cy="36" r="7" fill="#141433"/></svg><span style="display: flex; flex-direction: column; line-height: 1.2"><span style="font-weight: 700; font-size: 16px">Cypher</span><span style="font-size: 13.5px; color: #6a6889">Ansell · re-planning batch three</span></span><button aria-label="Close" style="font: inherit; margin-left: auto; width: 36px; height: 36px; border-radius: 999px; border: 0; background: #f6f5fc; color: #3b3a5c; cursor: pointer; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <div style="padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto">
+        <div style="border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; background: #f6f5fc">
+          <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6889">Status, 11:41</span>
+          <sc-for list="{{status}}" as="s" hint-placeholder-count="6"><span style="display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; font-size: 14px"><span style="color: #6a6889">{{s.k}}</span><span style="font-weight: 600; color: {{s.c}}">{{s.v}}</span></span></sc-for>
+        </div>
+        <span style="align-self: flex-end; max-width: 86%; padding: 11px 15px; border-radius: 18px 18px 6px 18px; background: #141433; color: #ffffff; font-size: 15px">Pause Emily after Hero.</span>
+        <div style="border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: #fdf1ee; font-size: 14px"><span style="color: #9a6b00; font-weight: 600">Applying in 22 s · <a href="#stop" style="color: #c8402b; text-decoration: none">Stop</a></span><span aria-hidden="true" style="height: 6px; border-radius: 3px; background: #ffffff; overflow: hidden"><i style="display: block; height: 100%; width: 70%; background: #9a6b00; border-radius: 3px"></i></span></div>
+        <p style="margin: 0; font-size: 15px; line-height: 1.5; padding: 14px 16px; border-radius: 18px 18px 18px 6px; background: #f6f5fc">Emily finishes step five of Hero in about four minutes, then holds. Quick actions moves to Carlos unless you say otherwise.</p>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #6a6889; padding-bottom: 6px">Up next</span>
+          <sc-for list="{{next}}" as="u" hint-placeholder-count="4"><span style="display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-top: 1px solid #eeedf7; font-size: 14px; line-height: 1.35"><span style="font-weight: 600; color: #6a6889">{{u.t}}</span><span style="display: flex; flex-direction: column"><span style="font-weight: 600">{{u.what}}</span><span style="font-size: 13.5px; color: {{u.c}}">{{u.waits}}</span></span></span></sc-for>
+        </div>
+      </div>
+      <div style="padding: 12px 18px 16px; border-top: 1px solid #e3e0f2; display: flex; flex-direction: column; gap: 10px">
+        <span style="display: flex; gap: 6px; flex-wrap: wrap"><button style="font: inherit; font-size: 13.5px; font-weight: 600; padding: 7px 12px; border-radius: 999px; border: 1px solid #e3e0f2; background: #ffffff; cursor: pointer">Status</button><button style="font: inherit; font-size: 13.5px; font-weight: 600; padding: 7px 12px; border-radius: 999px; border: 1px solid #e3e0f2; background: #ffffff; cursor: pointer">Approve</button><button style="font: inherit; font-size: 13.5px; font-weight: 600; padding: 7px 12px; border-radius: 999px; border: 1px solid #e3e0f2; background: #ffffff; cursor: pointer">Roll back</button></span>
+        <label for="say" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message Cypher</label>
+        <div style="display: flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 6px 6px 16px; background: #f6f5fc; border: 1px solid #e3e0f2"><input id="say" type="text" placeholder="Ask Cypher anything" style="font: inherit; font-size: 15px; flex: 1 1 auto; min-width: 0; border: 0; outline: none; background: transparent; color: #141433"><button aria-label="Send" style="font: inherit; width: 36px; height: 36px; border-radius: 999px; border: 0; background: #141433; color: #ffffff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div>
+      </div>
+    </section>
+    <a href="#cypher" aria-label="Cypher is open. Three things are yours." style="position: fixed; right: 24px; bottom: 24px; width: 64px; height: 64px; border-radius: 999px; background: #141433; box-shadow: 0 12px 32px rgba(20,20,51,0.28); display: inline-flex; align-items: center; justify-content: center; text-decoration: none">
+      <svg width="40" height="40" viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="31" fill="#e8553d"/><path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" fill="#ffffff"/><circle cx="36" cy="36" r="7" fill="#141433"/></svg>
+      <span style="position: absolute; top: -4px; right: -4px; min-width: 24px; height: 24px; padding: 0 7px; box-sizing: border-box; border-radius: 999px; background: #c8402b; color: #ffffff; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; border: 2px solid #f6f5fc">3</span>
+    </a>
+  </div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1340}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const WS = { disc: '#6b4ee6', eng: '#2f5ee6', content: '#0b7b7d', qa: '#9a6b00' };
+    const I = {
+      home: 'M4 5a1 1 0 0 1 1-1h5v7H4zM14 4h5a1 1 0 0 1 1 1v3h-6zM14 11h6v8a1 1 0 0 1-1 1h-5zM4 14h6v6H5a1 1 0 0 1-1-1z',
+      inbox: 'M4 4h16v11l-2 5H6l-2-5zM4 15h5l1.5 2h3L15 15h5',
+      team: 'M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 20a7 7 0 0 1 14 0M17 11.5a3 3 0 1 0 0-6M22 19a5.5 5.5 0 0 0-5.5-5.5',
+      plan: 'M4 6h12M4 12h16M4 18h8M19 15l2 2-2 2',
+      bench: 'M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6',
+      site: 'M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 9h18M7 6.5h.01',
+      activity: 'M3 12h4l3 7 4-14 3 7h4',
+      score: 'M4 20h16M7 16V9M12 16V4M17 16v-6',
+    };
+    const item = (label, href, d, on, badge) => ({ label, href, d, badge, bg: on ? '#ffffff' : 'transparent', fg: on ? '#141433' : '#ffffff', badgeBg: badge ? '#c8402b' : 'transparent' });
+    const names = ['Intake', 'Discovery', 'Blueprint', 'Foundation', 'Components', 'Templates', 'Migration', 'Experience', 'Deployment', 'UAT'];
+    const owner = ['eng', 'disc', 'disc', 'eng', 'eng', 'eng', 'content', 'content', 'eng', 'qa'];
+    const pcts = [100, 100, 100, 100, 62, 18, 0, 0, 0, 0];
+    const subs = ['done', 'done', 'Gate 1 ✓', 'done', '62%', '18%', '412 items', '', '', 'Gate 2'];
+    const phases = names.map((name, i) => ({ name, pct: pcts[i] + '%', color: WS[owner[i]], sub: subs[i], fw: i === 4 || i === 5 ? 700 : 500, fg: pcts[i] ? '#141433' : '#6a6889' }));
+    const st = { run: ['Running', '#2f5ee6'], q: ['Queued', '#6a6889'], b: ['Blocked', '#c8402b'], w: ['Waiting', '#9a6b00'] };
+    const task = (id, title, agent, s, el, att) => ({ id, title, agent, state: st[s][0], fg: st[s][1], el, att });
+    const member = (ini, name, ws, line, rate, kind) => ({ ini, name, line, rate, hue: WS[ws], op: kind === 'idle' ? 0.45 : 1, lineFg: kind === 'bad' ? '#c8402b' : kind === 'wait' ? '#9a6b00' : '#6a6889' });
+    return {
+      nav: [item('Mission Control', 'Mission-Everything.dc.html', I.home, true, ''), item('Needs you', '#needs', I.inbox, false, '3'), item('Team', '#team', I.team, false, ''), item('Plan', '#plan', I.plan, false, ''), item('Workbench', '#workbench', I.bench, false, ''), item('Site preview', '#site', I.site, false, ''), item('Activity', '#activity', I.activity, false, ''), item('Scorecard', '#scorecard', I.score, false, '')],
+      phases,
+      needs: [
+        { type: 'Decide', typeBg: WS.disc, title: 'Campaign slots: one rendering with three variants, or three renderings', who: 'Aisha Johnson', age: '4 min', impact: 'blocks three tasks', sla: '2 h 42 m, then A', slaFg: '#c8402b', action: 'Choose' },
+        { type: 'Grant', typeBg: WS.eng, title: 'Vercel token for ansell-website expired; preview 7 is queued', who: 'Ryan Mitchell', age: '31 min', impact: 'Samantha waits on it', sla: 'No clock', slaFg: '#6a6889', action: 'Rotate' },
+        { type: 'Approve', typeBg: WS.qa, title: 'Pilot slice proven: Hero, Quick actions and Hazard route edit and publish', who: 'Kevin Nguyen', age: '1 h', impact: 'releases batch three', sla: 'No clock', slaFg: '#6a6889', action: 'Approve' },
+      ],
+      tasks: [
+        task('4.03', 'Rebuild Hero in the Content SDK head', 'Emily Chen', 'run', '14 min', '1 of 3'),
+        task('4.07', 'Model the Campaign slot rendering and templates', 'Carlos Ramirez', 'run', '9 min', '1 of 3'),
+        task('4.12', 'Validate batch two against SXA and CCL rules', 'Andre Jackson', 'run', '4 min', '1 of 3'),
+        task('3.09', 'Preview deploy 7 of ansell-website', 'David Kim', 'w', '8 min', '2 of 3'),
+        task('4.11', 'Rebuild Campaign slot', 'Emily Chen', 'b', '—', '0 of 3'),
+        task('5.02', 'Page design: Product page', 'Carlos Ramirez', 'q', '—', '0 of 3'),
+      ],
+      team: [
+        member('MR', 'Marcus Reyes, lead', 'eng', 'Reviewing Campaign slot templates', '4.8k', 'ok'), member('EC', 'Emily Chen', 'eng', 'Hero, step 3 of 5', '31k', 'ok'), member('CR', 'Carlos Ramirez', 'eng', 'Campaign slot rendering', '18k', 'ok'),
+        member('DK', 'David Kim', 'eng', 'Preview 7 waits on the token', '6k', 'wait'), member('RM', 'Ryan Mitchell', 'eng', 'Blocked 31 minutes', '0', 'bad'),
+        member('KN', 'Kevin Nguyen, lead', 'qa', 'Deciding what goes back', '3.2k', 'ok'), member('AJ', 'Andre Jackson', 'qa', 'Batch two, six items', '12k', 'ok'), member('AJ', 'Aisha Johnson', 'disc', 'Consulting on the slot decision', '7k', 'ok'),
+      ],
+      log: [
+        { ts: '11:41', who: 'Emily Chen', tool: 'SitecoreAI', op: 'Registered rendering Hero in the component map', res: '200', resFg: '#1e8e5a', bg: 'transparent' },
+        { ts: '11:40', who: 'Carlos Ramirez', tool: 'SitecoreAI', op: 'Created template Campaign slot and its datasource', res: '200', resFg: '#1e8e5a', bg: 'transparent' },
+        { ts: '11:38', who: 'Andre Jackson', tool: 'Validators', op: 'Structure check on batch two, six items', res: '1 warning', resFg: '#9a6b00', bg: '#fdf8ec' },
+        { ts: '11:36', who: 'David Kim', tool: 'Vercel', op: 'Deployed ansell-website preview 6', res: 'Green', resFg: '#1e8e5a', bg: 'transparent' },
+        { ts: '11:33', who: 'Kevin Nguyen', tool: 'Review', op: 'Sent Hazard route v1 back to Emily, missing alt text', res: 'Rejected', resFg: '#c8402b', bg: '#fdf1ee' },
+        { ts: '11:32', who: 'Ryan Mitchell', tool: 'Vercel', op: 'Deploy preview 7 refused, token expired', res: 'Failed', resFg: '#c8402b', bg: '#fdf1ee' },
+      ],
+      status: [
+        { k: 'Phase', v: 'Components 62%, Templates alongside', c: '#141433' }, { k: 'Yours', v: '3, one clock at 2:24', c: '#c8402b' }, { k: 'Blocked', v: 'Ryan, on the Vercel token', c: '#c8402b' },
+        { k: 'Renderings', v: '23 of 37, 19 passed QA', c: '#141433' }, { k: 'Next gate', v: 'UAT, forecast Nov 11', c: '#141433' }, { k: 'Cost', v: '$286 of $1,200, on pace', c: '#141433' },
+      ],
+      next: [
+        { t: '11:55', what: 'Marcus reviews Hero', waits: 'after Emily finishes step five', c: '#6a6889' }, { t: '12:10', what: 'Emily rebuilds Campaign slot', waits: 'waits for your decision; A at 2:24', c: '#c8402b' },
+        { t: '12:30', what: 'Carlos starts the Product page', waits: 'after batch two validates', c: '#6a6889' }, { t: '12:30', what: 'Samantha runs parity on batch two', waits: 'waits for preview 7', c: '#9a6b00' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
