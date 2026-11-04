@@ -117,6 +117,8 @@ Set them in the project's settings. Variables the images already default are in
 | `TEMPORAL_NAMESPACE`                       | api, worker       | Real mode: `<namespace>.<account>`                                     |
 | `TEMPORAL_API_KEY`                         | api, worker       | Real mode: connects over TLS with the key                              |
 | `AGENTS`, `ANTHROPIC_API_KEY`              | worker            | Real mode: `AGENTS=claude` runs roles whose tools are connected on Claude |
+| `DIRECTOR_WEBHOOK_URL`                     | worker            | Optional: a Slack-style incoming webhook (receives `{ text }`). The operator posts there, as well as in the project, when a card no Lead could settle waits on the Director or nothing has moved for 30 minutes |
+| `OPERATOR_MINUTES`                         | worker            | Optional: how often the operator looks at the projects (default 5) |
 
 Leave "Automatically expose System Environment Variables" on: the API reads
 `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_URL` and `VERCEL_BRANCH_URL` for its URLs and allowed

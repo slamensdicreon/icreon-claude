@@ -4,3 +4,4 @@ export * from './knowledge';
 export * from './retrospective';
 export * from './versions';
 export * from './hosting';
+export * from './operator';

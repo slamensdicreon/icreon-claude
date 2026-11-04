@@ -37,8 +37,10 @@ import {
   retrospectAtPhaseExit,
   seedPlatformKnowledge,
   sitecoreFacts,
+  operatorSweep,
   type Stack,
   uncheckedValidators,
+  webhookNotifier,
 } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
@@ -81,6 +83,10 @@ const env = z
     PLAYBOOKS_DIR: z
       .string()
       .default(fileURLToPath(new URL('../../../playbooks', import.meta.url))),
+    /** Where the operator's notices go beyond the app: a Slack-style incoming webhook (posts { text }). */
+    DIRECTOR_WEBHOOK_URL: z.string().url().optional(),
+    /** How often the operator looks at the projects, in minutes. */
+    OPERATOR_MINUTES: z.coerce.number().positive().default(5),
   })
   .parse(process.env);
 
@@ -434,9 +440,21 @@ const beat = () =>
 void beat();
 const beating = setInterval(() => void beat(), 30_000);
 
+// The operator: tells the Director, once, when a card no Lead settled waits on them or nothing has
+// moved for a while; in the project's conversation, and on DIRECTOR_WEBHOOK_URL when it is set.
+const notify = env.DIRECTOR_WEBHOOK_URL ? webhookNotifier(env.DIRECTOR_WEBHOOK_URL) : undefined;
+const operating = setInterval(
+  () =>
+    void operatorSweep({ projections, store: opened.store, notify }).catch((err: unknown) =>
+      console.error('Operator sweep failed', err),
+    ),
+  env.OPERATOR_MINUTES * 60_000,
+);
+
 // Vercel sends SIGTERM on rollout and gives the grace period to finish; the workers drain.
 const stop = () => {
   clearInterval(beating);
+  clearInterval(operating);
   stopRetros();
   workers.forEach((w) => w.shutdown());
 };
