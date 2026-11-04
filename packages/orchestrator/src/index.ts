@@ -6,6 +6,7 @@ export * from './client';
 export * from './live-guard';
 export * from './definitions';
 export * from './evidence';
+export * from './sessions';
 export * from './stub-activities';
 export * from './types';
 export * from './worker';

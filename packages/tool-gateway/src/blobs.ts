@@ -9,6 +9,11 @@ import { del as delBlobs, get as getBlob, list as listBlobs, put as putBlob } fr
 export interface BlobStore {
   put(projectId: string, key: string, bytes: Uint8Array, contentType: string): Promise<string>;
   get(ref: string): Promise<Uint8Array>;
+  /**
+   * Deletes these blobs; references to nothing are ignored. A store without it keeps them until
+   * the project is reset.
+   */
+  delete?(refs: string[]): Promise<void>;
   /** Deletes everything stored for a project (a project reset). */
   deleteProject(projectId: string): Promise<void>;
 }
@@ -27,6 +32,15 @@ export class LocalBlobStore implements BlobStore {
     const m = /^blob:\/\/([^/]+)\/(.+)$/.exec(ref);
     if (!m) throw new Error(`Not a blob reference: ${ref}`);
     return new Uint8Array(await readFile(this.path(m[1]!, m[2]!)));
+  }
+
+  async delete(refs: string[]) {
+    await Promise.all(
+      refs.map((ref) => {
+        const [projectId, key] = parseRef(ref);
+        return rm(this.path(projectId, key), { force: true });
+      }),
+    );
   }
 
   async deleteProject(projectId: string) {
@@ -56,6 +70,10 @@ export class MemoryBlobStore implements BlobStore {
     const b = this.blobs.get(ref);
     if (!b) throw new Error(`No blob at ${ref}`);
     return b;
+  }
+
+  async delete(refs: string[]) {
+    for (const ref of refs) this.blobs.delete(ref);
   }
 
   async deleteProject(projectId: string) {
@@ -99,6 +117,15 @@ export class VercelBlobStore implements BlobStore {
     return new Uint8Array(await new Response(res.stream).arrayBuffer());
   }
 
+  async delete(refs: string[]) {
+    if (!refs.length) return;
+    const paths = refs.map((ref) => {
+      const [projectId, key] = parseRef(ref);
+      return this.pathname(projectId, key);
+    });
+    await delBlobs(paths, await this.auth());
+  }
+
   async deleteProject(projectId: string) {
     this.pathname(projectId, 'x');
     let cursor: string | undefined;
@@ -133,6 +160,12 @@ export class VercelBlobStore implements BlobStore {
     }
     return {};
   }
+}
+
+function parseRef(ref: string): [projectId: string, key: string] {
+  const m = /^blob:\/\/([^/]+)\/(.+)$/.exec(ref);
+  if (!m) throw new Error(`Not a blob reference: ${ref}`);
+  return [m[1]!, m[2]!];
 }
 
 export type BlobStoreKind = 'memory' | 'local' | 'vercel';

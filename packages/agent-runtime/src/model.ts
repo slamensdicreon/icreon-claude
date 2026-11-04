@@ -6,7 +6,11 @@ import type {
 
 /** One model turn. The runtime only needs this; tests supply a scripted fake. */
 export interface ModelClient {
-  create(params: MessageCreateParamsNonStreaming): Promise<BetaMessage>;
+  /** `signal` abandons the turn (the session is being stopped); a fake may ignore it. */
+  create(
+    params: MessageCreateParamsNonStreaming,
+    options?: { signal?: AbortSignal },
+  ): Promise<BetaMessage>;
 }
 
 /**
@@ -17,8 +21,10 @@ export interface ModelClient {
  */
 export function anthropicModelClient(client: Anthropic = new Anthropic()): ModelClient {
   return {
-    async create(params) {
-      return client.beta.messages.stream(params).finalMessage();
+    async create(params, options) {
+      return client.beta.messages
+        .stream(params, options?.signal ? { signal: options.signal } : undefined)
+        .finalMessage();
     },
   };
 }

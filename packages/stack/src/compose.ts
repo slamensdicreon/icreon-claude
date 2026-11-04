@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import {
   AgentRuntime,
+  BlobCheckpoints,
   type ContextProvider,
   type DirectiveInput,
   type DirectiveReading,
@@ -675,6 +676,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           },
         }),
         runsLive,
+        // Each turn is saved with the artifacts, so a session survives its worker (a deploy).
+        { checkpoints: new BlobCheckpoints(blobs) },
       )
     : base;
   // Locks keep two sessions off the same item at once; a session that ended holds nothing, so

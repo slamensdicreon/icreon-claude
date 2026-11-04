@@ -3,6 +3,7 @@ import {
   ActivityFailure,
   ApplicationFailure,
   condition,
+  patched,
   proxyActivities,
   setHandler,
 } from '@temporalio/workflow';
@@ -16,6 +17,7 @@ import {
   NEEDS_DECISION,
   WAITING,
   NOT_CONNECTED,
+  SESSION_ATTEMPTS,
   type AgentDecision,
   type AgentWaiting,
   type AgentRequest,
@@ -34,20 +36,30 @@ const { emit } = proxyActivities<Activities>({
   retry: { maximumAttempts: 10 },
 });
 
+const NON_RETRYABLE = [
+  ACCESS_DENIED,
+  NEEDS_DECISION,
+  WAITING,
+  AGENT_FAILED,
+  NOT_CONNECTED,
+  PROVIDER_DOWN,
+];
+
 const agents = proxyActivities<Activities>({
   startToCloseTimeout: '2 hours',
   heartbeatTimeout: '5 minutes',
-  retry: {
-    maximumAttempts: 3,
-    nonRetryableErrorTypes: [
-      ACCESS_DENIED,
-      NEEDS_DECISION,
-      WAITING,
-      AGENT_FAILED,
-      NOT_CONNECTED,
-      PROVIDER_DOWN,
-    ],
-  },
+  retry: { maximumAttempts: 3, nonRetryableErrorTypes: NON_RETRYABLE },
+});
+
+/**
+ * Agent sessions resume after their worker goes away (a deploy, a crash), and the activity
+ * counts its attempts by how they ended: three for its own errors, three for lost workers, and
+ * handoffs from a worker shutting down cost none. Temporal's limit is only the backstop.
+ */
+const sessions = proxyActivities<Activities>({
+  startToCloseTimeout: '2 hours',
+  heartbeatTimeout: '5 minutes',
+  retry: { maximumAttempts: SESSION_ATTEMPTS.max, nonRetryableErrorTypes: NON_RETRYABLE },
 });
 
 interface Control {
@@ -140,7 +152,8 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
           usd: 0,
           summary: 'Checked again without a new attempt: the work it waited on has been redone.',
         };
-      } else result = await agents.runAgent(request);
+      } else if (patched('resumable-sessions')) result = await sessions.runAgent(request);
+      else result = await agents.runAgent(request);
     } catch (err) {
       const cause = err instanceof ActivityFailure ? err.cause : err;
       const message = cause instanceof Error ? cause.message : String(cause);
