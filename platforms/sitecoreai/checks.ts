@@ -845,7 +845,7 @@ const PLACEHOLDERS = [
   'Lorem ipsum',
 ];
 
-async function getText(
+export async function getText(
   cfg: VerifyConfig,
   url: string,
 ): Promise<{ status: number; body: string; url?: string }> {

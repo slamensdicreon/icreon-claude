@@ -36,6 +36,9 @@ templates:
     phase: 1
     role: content-analyst
     title: Crawl the source site and build the page inventory
+    # Compared with a sample of source pages: each page's <title> and meta description, forms,
+    # URLs that redirect elsewhere, embedded layout data, media hosts, and how much it covers.
+    acceptance: [validator:discovery.inventory]
   - id: platform-notes
     phase: 1
     role: research-agent
@@ -47,7 +50,9 @@ templates:
     role: solution-architect
     title: Draft the Implementation Blueprint
     dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
-    acceptance: [validator:blueprint.coverage]
+    # discovery.blueprint: every source form placed (a Director item when Form is the SDK's
+    # built-in), redirects decided, the 404 page at /404, source components mapped, media hosts named.
+    acceptance: [validator:blueprint.coverage, validator:discovery.blueprint]
 
   # 3 — Foundation
   - id: create-site
