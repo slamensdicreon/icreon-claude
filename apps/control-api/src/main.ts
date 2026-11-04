@@ -31,6 +31,8 @@ import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '
 import {
   composeStack,
   hostingStatus,
+  recipients,
+  resendNotifier,
   runRetrospective,
   seedPlatformKnowledge,
   setUpHosting,
@@ -132,6 +134,13 @@ const env = z
     PLAYBOOKS_DIR: z
       .string()
       .default(fileURLToPath(new URL('../../../playbooks', import.meta.url))),
+    /** The Operator's email (the worker sends it; here for the test send): Resend key, to, from. */
+    RESEND: z
+      .string()
+      .optional()
+      .transform((v) => v?.trim() || undefined),
+    OPERATOR_EMAIL_TO: z.string().optional(),
+    OPERATOR_EMAIL_FROM: z.string().default('Launchworks Operator <onboarding@resend.dev>'),
   })
   .parse(process.env);
 
@@ -503,6 +512,15 @@ const app = await buildApp({
   },
   logger: true,
   heartbeat: integrations ? () => integrations.get<WorkerHeartbeat>('heartbeat:worker') : undefined,
+  operatorTestEmail:
+    env.RESEND && recipients(env.OPERATOR_EMAIL_TO).length
+      ? resendNotifier({
+          apiKey: env.RESEND,
+          to: recipients(env.OPERATOR_EMAIL_TO),
+          from: env.OPERATOR_EMAIL_FROM,
+          appUrl,
+        })
+      : null,
   rules,
   ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,
   knowledge,

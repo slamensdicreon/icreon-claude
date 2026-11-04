@@ -43,6 +43,9 @@ import {
   type Stack,
   uncheckedValidators,
   webhookNotifier,
+  notifyAll,
+  resendNotifier,
+  recipients,
 } from '@lw/stack';
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
@@ -87,6 +90,18 @@ const env = z
       .default(fileURLToPath(new URL('../../../playbooks', import.meta.url))),
     /** Where the operator's notices go beyond the app: a Slack-style incoming webhook (posts { text }). */
     DIRECTOR_WEBHOOK_URL: z.string().url().optional(),
+    /** The Resend API key: the operator emails its notices when it and OPERATOR_EMAIL_TO are set. */
+    RESEND: z
+      .string()
+      .optional()
+      .transform((v) => v?.trim() || undefined),
+    /** Who the operator emails: one address, or several separated by commas. */
+    OPERATOR_EMAIL_TO: z.string().optional(),
+    /** The sender, on a domain verified in Resend. Resend's test sender reaches only its account's owner. */
+    OPERATOR_EMAIL_FROM: z.string().default('Launchworks Operator <onboarding@resend.dev>'),
+    /** The Control Center's public URL, for links in the emails (default: the production URL). */
+    APP_URL: z.string().url().optional(),
+    VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
     /** How often the operator looks at the projects, in minutes. */
     OPERATOR_MINUTES: z.coerce.number().positive().default(5),
     /**
@@ -457,6 +472,30 @@ const workers = await Promise.all(
   ),
 );
 
+// The operator: tells the Director, once, when a card no Lead settled waits on them or nothing has
+// moved for a while; in the project's conversation, by email (RESEND and OPERATOR_EMAIL_TO) and on
+// DIRECTOR_WEBHOOK_URL when those are set.
+const operatorTo = recipients(env.OPERATOR_EMAIL_TO);
+const notify = notifyAll([
+  ...(env.RESEND && operatorTo.length
+    ? [
+        resendNotifier({
+          apiKey: env.RESEND,
+          to: operatorTo,
+          from: env.OPERATOR_EMAIL_FROM,
+          appUrl:
+            env.APP_URL ??
+            (env.VERCEL_PROJECT_PRODUCTION_URL
+              ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`
+              : null),
+        }),
+      ]
+    : []),
+  ...(env.DIRECTOR_WEBHOOK_URL ? [webhookNotifier(env.DIRECTOR_WEBHOOK_URL)] : []),
+]);
+if (env.RESEND && !operatorTo.length)
+  console.warn('RESEND is set but OPERATOR_EMAIL_TO is not: the operator will not email');
+
 // A heartbeat every 30 s for the Dashboard's diagnostics: when it was last up, and what it runs.
 const beatStore = opened.sql ? new PostgresIntegrationStore(opened.sql) : null;
 const beat = () =>
@@ -467,14 +506,16 @@ const beat = () =>
       servers: servers.map((x) => x.name),
       liveRoles: [...new Set(stacks.flatMap(({ stack }) => stack.liveRoles))],
       temporal: workers.every((w) => w.getState() === 'RUNNING' || w.getState() === 'INITIALIZED'),
+      operator: {
+        emailTo: env.RESEND ? operatorTo.length : 0,
+        emailFrom: env.RESEND && operatorTo.length ? env.OPERATOR_EMAIL_FROM : null,
+        webhook: Boolean(env.DIRECTOR_WEBHOOK_URL),
+      },
     })
     .catch((err: unknown) => console.error('Heartbeat not written', err));
 void beat();
 const beating = setInterval(() => void beat(), 30_000);
 
-// The operator: tells the Director, once, when a card no Lead settled waits on them or nothing has
-// moved for a while; in the project's conversation, and on DIRECTOR_WEBHOOK_URL when it is set.
-const notify = env.DIRECTOR_WEBHOOK_URL ? webhookNotifier(env.DIRECTOR_WEBHOOK_URL) : undefined;
 const operating = setInterval(
   () =>
     void operatorSweep({

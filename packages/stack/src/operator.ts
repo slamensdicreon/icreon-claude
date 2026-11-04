@@ -19,8 +19,10 @@ export interface OperatorNotice {
 export interface OperatorDeps {
   projections: Projections;
   store: EventStore;
-  /** Sends a notice beyond the app (a Slack-style webhook); absent: in the app only. */
-  notify?: (n: OperatorNotice) => Promise<void>;
+  /** Sends a notice beyond the app (email, a Slack-style webhook); absent: in the app only. */
+  notify?: (n: OperatorNotice) => Promise<unknown>;
+  /** Where a notice that couldn't be sent is reported (default console.error). */
+  log?: (message: string, err?: unknown) => void;
   now?: () => Date;
   /** A card open this long without a Lead settling it reaches the Director (default 10 minutes). */
   attentionMinutes?: number;
@@ -41,7 +43,7 @@ const minutes = (from: string, to: Date) => (to.getTime() - Date.parse(from)) / 
  * running project and tells the Director, once, when something needs them (a card no Lead could
  * settle, a gate) or when nothing has moved for a while with nothing waiting on them (a failing
  * workflow, a hung agent, a wait no task can end). Notices land in the project's conversation,
- * and on the webhook when one is set. Nothing is decided here: it only makes sure someone knows.
+ * and by email or webhook when those are set. Nothing is decided here: it only makes sure someone knows.
  */
 export async function operatorSweep(deps: OperatorDeps): Promise<OperatorNotice[]> {
   const now = deps.now?.() ?? new Date();
@@ -56,7 +58,11 @@ export async function operatorSweep(deps: OperatorDeps): Promise<OperatorNotice[
         : null);
     if (!notice) continue;
     await deps.store.append(s.projectId, [message(notice, s)]);
-    await deps.notify?.(notice).catch(() => undefined);
+    await deps
+      .notify?.(notice)
+      .catch((err: unknown) =>
+        (deps.log ?? console.error)(`Operator notice for ${s.projectId} not sent`, err),
+      );
     out.push(notice);
   }
   return out;
@@ -165,6 +171,25 @@ function message(n: OperatorNotice, s: ProjectState): NewEvent {
       rows: n.proposals ? [{ label: 'proposals', value: String(n.proposals) }] : [],
     },
   } as NewEvent;
+}
+
+/**
+ * Several notifiers as one: each gets every notice; one failing doesn't stop the others, and the
+ * failures are reported together.
+ */
+export function notifyAll(
+  notifiers: ((n: OperatorNotice) => Promise<unknown>)[],
+): ((n: OperatorNotice) => Promise<void>) | undefined {
+  if (!notifiers.length) return undefined;
+  return async (n) => {
+    const failed = (await Promise.allSettled(notifiers.map((f) => f(n)))).filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    );
+    if (failed.length)
+      throw new Error(
+        failed.map((r) => (r.reason as Error)?.message ?? String(r.reason)).join('; '),
+      );
+  };
 }
 
 /** A webhook notifier: posts `{ text }`, which Slack incoming webhooks and most chat tools accept. */

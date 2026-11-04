@@ -81,7 +81,7 @@ import type {
   RuleStore,
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
-import { harvestRules } from '@lw/stack';
+import { harvestRules, type OperatorNotice } from '@lw/stack';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
@@ -121,6 +121,8 @@ export interface AppDeps {
   /** Event stream timing; see StreamOptions. Defaults suit a long-running server. */
   stream?: Partial<Pick<StreamOptions, 'pollMs' | 'maxMs'>>;
   logger?: boolean;
+  /** Sends an Operator email as a test (Resend, to the configured recipients); null: not set up. */
+  operatorTestEmail?: ((n: OperatorNotice, opts: { test: true }) => Promise<{ id: string }>) | null;
   /** The worker's last heartbeat (it writes one every 30 s), for the Dashboard's diagnostics. */
   heartbeat?: () => Promise<WorkerHeartbeat | null>;
   /** Rules from the Director's answers, applied by Lead triage. Absent where nothing stores them. */
@@ -164,6 +166,8 @@ export interface WorkerHeartbeat {
   /** Roles that run on Claude here. */
   liveRoles: string[];
   temporal: boolean;
+  /** Where the operator's notices go beyond the app: email recipients and sender, a webhook. */
+  operator?: { emailTo: number; emailFrom: string | null; webhook: boolean };
 }
 
 type P = { Params: { id: string } };
@@ -382,6 +386,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           : 'Not reported in this mode',
       checkedAt: beat?.at ?? null,
     });
+    if (beat?.operator) {
+      const o = beat.operator;
+      const ways = [
+        o.emailTo
+          ? `email to ${o.emailTo} recipient${o.emailTo === 1 ? '' : 's'} from ${o.emailFrom}`
+          : '',
+        o.webhook ? 'the webhook' : '',
+      ].filter(Boolean);
+      services.push({
+        key: 'operator',
+        label: 'Operator notices',
+        status: ways.length ? 'ok' : 'degraded',
+        detail: ways.length
+          ? `In the project's conversation, and by ${ways.join(' and ')}`
+          : "In the project's conversation only: set RESEND and OPERATOR_EMAIL_TO to email them",
+        checkedAt: beat.at,
+      });
+    }
     services.push({
       key: 'temporal',
       label: 'Orchestration (Temporal)',
@@ -1098,6 +1120,36 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!s) throw new CommandError(404, 'unknown_project', `No project "${id}".`);
     return s;
   };
+
+  /**
+   * A test of the Operator's email: what it sends, to whom it sends it, with the project's open
+   * cards as the example. Resend's reason comes back when it refuses (an unverified sender domain).
+   */
+  app.post<P>('/projects/:id/operator/test-email', async (req, reply) => {
+    const s = known(req.params.id);
+    if (!deps.operatorTestEmail)
+      return reply.status(409).send({
+        error: 'email_not_configured',
+        message:
+          "Set RESEND and OPERATOR_EMAIL_TO on the deployment to email the Operator's notices.",
+      });
+    const open = Object.values(s.escalations)
+      .filter((e) => e.status === 'open')
+      .slice(0, 5);
+    const notice: OperatorNotice = {
+      projectId: s.projectId,
+      project: s.name,
+      kind: 'attention',
+      title: 'The Operator can reach you',
+      body: `${s.name}: when a card no Lead can settle waits on you, nothing has moved for 30 minutes, or the team proposes what to learn, the Operator emails you once, like this.${open.length ? " Below are the project's open cards now." : ''}`,
+      needs: open.map((e) => ({ escalationId: e.escalationId, type: e.type, title: e.title })),
+    };
+    try {
+      return { sent: true, ...(await deps.operatorTestEmail(notice, { test: true })) };
+    } catch (err) {
+      return reply.status(502).send({ error: 'email_failed', message: (err as Error).message });
+    }
+  });
 
   app.get<P>('/projects/:id/schedule', async (req) =>
     scheduleSnapshot(known(req.params.id), now()),

@@ -5,4 +5,5 @@ export * from './retrospective';
 export * from './versions';
 export * from './hosting';
 export * from './operator';
+export * from './operator-email';
 export * from './learning';

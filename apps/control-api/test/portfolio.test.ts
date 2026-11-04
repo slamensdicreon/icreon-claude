@@ -24,6 +24,7 @@ afterEach(async () => {
 async function start(
   heartbeat?: () => Promise<WorkerHeartbeat | null>,
   ruleDrafter?: Parameters<typeof buildApp>[0]['ruleDrafter'],
+  operatorTestEmail?: Parameters<typeof buildApp>[0]['operatorTestEmail'],
 ) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
@@ -44,6 +45,7 @@ async function start(
     now: () => NOW,
     heartbeat,
     ruleDrafter,
+    operatorTestEmail,
   });
   closers.push(() => app.close());
   return app;
@@ -73,6 +75,7 @@ it("reports the services and says plainly when the worker hasn't been seen", asy
     servers: ['github', 'sitecore-authoring'],
     liveRoles: ['content-analyst'],
     temporal: true,
+    operator: { emailTo: 1, emailFrom: 'Operator <ops@example.com>', webhook: false },
   }));
   const d = PortfolioDiagnostics.parse(
     (await fresh.inject({ method: 'GET', url: '/portfolio/diagnostics' })).json(),
@@ -83,6 +86,11 @@ it("reports the services and says plainly when the worker hasn't been seen", asy
   expect(by.worker).toMatchObject({ status: 'ok' });
   expect(by.worker!.detail).toContain('20 s ago on abc1234: 2 tool servers, 1 roles on Claude');
   expect(by.temporal!.status).toBe('ok');
+  expect(by.operator).toMatchObject({
+    status: 'ok',
+    detail:
+      "In the project's conversation, and by email to 1 recipient from Operator <ops@example.com>",
+  });
   // Demo projects aren't orchestrated: only live ones are listed.
   expect(d.projects).toEqual([]);
 
@@ -97,6 +105,8 @@ it("reports the services and says plainly when the worker hasn't been seen", asy
     (await stale.inject({ method: 'GET', url: '/portfolio/diagnostics' })).json(),
   );
   expect(s.services.find((x) => x.key === 'worker')!.status).toBe('down');
+  // An older worker that doesn't report it: no row, rather than a wrong one.
+  expect(s.services.find((x) => x.key === 'operator')).toBeUndefined();
 
   const none = await start();
   const n = PortfolioDiagnostics.parse(
@@ -220,4 +230,32 @@ it('takes a capability gap key as long as the capability is written out', async 
   // Not 414: the route is reached and answers for the gap itself.
   expect(r.statusCode).toBe(404);
   expect(r.json()).toMatchObject({ error: { code: 'not_found' } });
+});
+
+it("sends a test of the Operator's email, and says why when it can't", async () => {
+  const off = await start();
+  const r = await off.inject({ method: 'POST', url: '/projects/p1/operator/test-email' });
+  expect(r.statusCode).toBe(409);
+  expect(r.json().error).toBe('email_not_configured');
+
+  const sent: { title: string; needs: number; test: boolean }[] = [];
+  const on = await start(undefined, undefined, async (n, opts) => {
+    sent.push({ title: n.title, needs: n.needs?.length ?? 0, test: opts.test });
+    return { id: 'em_1' };
+  });
+  const ok = await on.inject({ method: 'POST', url: '/projects/p1/operator/test-email' });
+  expect(ok.statusCode).toBe(200);
+  expect(ok.json()).toEqual({ sent: true, id: 'em_1' });
+  expect(sent).toEqual([{ title: 'The Operator can reach you', needs: 0, test: true }]);
+
+  const refused = await start(undefined, undefined, async () => {
+    throw new Error('Resend refused the email (403): The example.com domain is not verified.');
+  });
+  const no = await refused.inject({ method: 'POST', url: '/projects/p1/operator/test-email' });
+  expect(no.statusCode).toBe(502);
+  expect(no.json().message).toContain('domain is not verified');
+  expect(
+    (await refused.inject({ method: 'POST', url: '/projects/nope/operator/test-email' }))
+      .statusCode,
+  ).toBe(404);
 });

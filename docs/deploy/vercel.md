@@ -117,7 +117,11 @@ Set them in the project's settings. Variables the images already default are in
 | `TEMPORAL_NAMESPACE`                       | api, worker       | Real mode: `<namespace>.<account>`                                     |
 | `TEMPORAL_API_KEY`                         | api, worker       | Real mode: connects over TLS with the key                              |
 | `AGENTS`, `ANTHROPIC_API_KEY`              | worker            | Real mode: `AGENTS=claude` runs roles whose tools are connected on Claude |
-| `DIRECTOR_WEBHOOK_URL`                     | worker            | Optional: a Slack-style incoming webhook (receives `{ text }`). The operator posts there, as well as in the project, when a card no Lead could settle waits on the Director or nothing has moved for 30 minutes |
+| `RESEND`                                   | worker, api       | Optional: a Resend API key. With `OPERATOR_EMAIL_TO`, the operator emails its notices (a card no Lead could settle, a stall, proposals to review), branded on the Icreon Design System. The api uses it only for the test send |
+| `OPERATOR_EMAIL_TO`                        | worker, api       | Who the operator emails: one address, or several separated by commas |
+| `OPERATOR_EMAIL_FROM`                      | worker, api       | Optional: the sender, on a domain verified in Resend, such as `Launchworks Operator <operator@mail.example.com>`. Default `Launchworks Operator <onboarding@resend.dev>`, Resend's test sender, which reaches only the Resend account owner's address |
+| `APP_URL`                                  | worker            | Optional: the Control Center's URL for links, the lockup and Hero New in emails (default `https://$VERCEL_PROJECT_PRODUCTION_URL`) |
+| `DIRECTOR_WEBHOOK_URL`                     | worker            | Optional: a Slack-style incoming webhook (receives `{ text }`). The operator posts there, as well as in the project and by email, when a card no Lead could settle waits on the Director or nothing has moved for 30 minutes |
 | `OPERATOR_MINUTES`                         | worker            | Optional: how often the operator looks at the projects (default 5) |
 | `WORKER_SHUTDOWN_GRACE_SECONDS`            | worker            | Optional (default 240): how long activities get to finish after SIGTERM. Keep it plus 30 under the daemon's `terminationGracePeriodSeconds` (300 in `vercel.json`); see [Deploying while projects run](#deploying-while-projects-run) |
 
@@ -133,6 +137,11 @@ origins.
 3. The `worker` daemon's log shows "Temporal: connected to …" and each Claude model as ok.
 4. Leave a page open for five minutes: Activity keeps updating across the stream's scheduled
    reconnects, with no "Reconnecting" note.
+5. With the operator's email set up, the Dashboard's Diagnostics lists "Operator notices" with the
+   recipients and sender, and a test arrives from
+   `curl -X POST -H "Authorization: Bearer <api key>" https://<domain>/projects/<id>/operator/test-email`.
+   When Resend refuses it (a sender domain not verified, or Resend's test sender writing to anyone
+   but the Resend account's owner), the response says why.
 
 ## Project credentials
 
