@@ -15,7 +15,6 @@ import {
   type AttributeInput,
   type Attribution,
 } from '@lw/agent-runtime';
-import { DECISION_CATEGORY_LABEL } from '@lw/contracts';
 import { autonomyFor } from '@lw/domain';
 import type { EventStore, KnowledgeStore, Projections, RuleStore } from '@lw/events';
 import {
@@ -30,7 +29,7 @@ import type { PlatformCheck, PlatformPack, ScreenComparison, ScreenPair } from '
 import { selfCheck, withReview } from './review';
 import { factsBrief } from './facts';
 import { lessonsFor } from './knowledge';
-import { relevantDecisions, relevantLessons } from './triage-context';
+import { blueprintEntries, leadTriageInput } from './lead-triage';
 import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
@@ -505,64 +504,16 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       const s = opts.projections.get(req.projectId)!;
       const level = autonomyFor(s, req.category, opts.playbook.manifest.defaults.autonomy);
       if (level === 'ask' || level === 'agents') return { level, tokens: 0, usd: 0 };
-      const roles = new Map(opts.playbook.roles.map((r) => [r.role, r]));
-      const role = roles.get(req.role);
-      const lead = (role?.reportsTo && roles.get(role.reportsTo)) || roles.get('chief-of-staff');
-      if (!opts.triage || !lead) return ask;
-      const task = s.tasks[req.taskId];
-      const template = opts.playbook.plan.templates.find((t) => t.id === task?.group);
-      // Rules that cover this question; the Lead sees them by their short ref ("R-3").
-      const covering =
-        (await opts.rules
-          ?.matching({
-            projectId: req.projectId,
-            playbookId: s.playbook?.id ?? opts.playbook.manifest.id,
-            platform: s.intake?.platform ?? null,
-            category: req.category,
-            role: req.role,
-          })
-          .catch(() => [])) ?? [];
-      const byRef = new Map(covering.map((r) => [r.ref, r.id]));
-      const r = await opts.triage({
-        lead: {
-          name: lead.persona ? `${lead.persona}, ${lead.name}` : lead.name,
-          mandate: lead.mandate,
-          model: lead.model.id,
-          effort: 'low',
-        },
-        specialist: role?.name ?? req.role,
-        category: DECISION_CATEGORY_LABEL[req.category],
-        charter: opts.playbook.manifest.charter,
-        task: { title: task?.title ?? req.taskId, acceptance: role?.acceptance ?? [] },
-        blueprint: await blueprintEntries(library, req.projectId, {
-          collection: template?.forEach ?? null,
-          itemKeys: task?.itemKeys ?? [],
-        }),
-        card: req.card,
-        permissions: Object.entries(role?.tools ?? {}).map(
-          ([server, grant]) =>
-            `${server}: ${grant.ops.join(', ')}${grant.scope?.paths?.length ? ` (writes only under ${grant.scope.paths.join(', ')})` : ''}`,
-        ),
-        previous: req.previous,
-        rules: covering.map((x) => ({ id: x.ref, when: x.when, then: x.then })),
-        decisions: relevantDecisions(s, req.taskId, req.card),
-        lessons: opts.knowledge
-          ? await relevantLessons(
-              opts.knowledge,
-              {
-                projectId: req.projectId,
-                playbookId: s.playbook?.id ?? opts.playbook.manifest.id,
-                platform: s.intake?.platform ?? null,
-                role: req.role,
-                operations: Object.entries(role?.tools ?? {}).flatMap(([server, g]) =>
-                  g.ops.map((op) => `${server}.${op}`),
-                ),
-              },
-              req.card,
-            )
-          : [],
-      });
-      const who = { leadId: lead.role, leadName: lead.persona ?? lead.name };
+      if (!opts.triage) return ask;
+      const built = await leadTriageInput(
+        { playbook: opts.playbook, library, rules: opts.rules, knowledge: opts.knowledge },
+        s,
+        req,
+      );
+      if (!built) return ask;
+      const { byRef } = built;
+      const r = await opts.triage(built.input);
+      const who = { leadId: built.lead.role, leadName: built.lead.name };
       if (r.decision === 'answer') {
         const ruleIds = r.ruleIds.map((ref) => byRef.get(ref)).filter((id): id is string => !!id);
         // A rule that settled a question has been applied; in shadow the Director's answer tells.
@@ -799,31 +750,6 @@ export function projectHosts(hosting: { project: string; url: string | null } | 
   // Long names are cut in generated addresses; the first 24 characters still identify it.
   if (name.length >= 8) out.push(`${name.slice(0, 24)}*.vercel.app`);
   return out;
-}
-
-/** The approved Blueprint's entries for a task's items, as JSON for its brief (capped). */
-async function blueprintEntries(
-  library: ArtifactLibrary,
-  projectId: string,
-  task: { collection: string | null; itemKeys: string[] },
-) {
-  if (!task.collection || !task.itemKeys.length) return null;
-  const doc = await library.read(projectId, 'blueprint');
-  if (!doc) return null;
-  try {
-    const bp = JSON.parse(doc.content) as {
-      collections?: Record<string, { key: string }[]>;
-    };
-    const wanted = new Set(task.itemKeys);
-    const entries = (bp.collections?.[task.collection] ?? []).filter((i) => wanted.has(i.key));
-    if (!entries.length) return null;
-    const text = JSON.stringify(entries, null, 1);
-    return text.length > 12_000
-      ? `${text.slice(0, 12_000)}\n… (cut; read the rest from the Blueprint)`
-      : text;
-  } catch {
-    return null;
-  }
 }
 
 /**

@@ -25,6 +25,7 @@ async function start(
   heartbeat?: () => Promise<WorkerHeartbeat | null>,
   ruleDrafter?: Parameters<typeof buildApp>[0]['ruleDrafter'],
   operatorTestEmail?: Parameters<typeof buildApp>[0]['operatorTestEmail'],
+  triageReplay?: Parameters<typeof buildApp>[0]['triageReplay'],
 ) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
@@ -46,6 +47,7 @@ async function start(
     heartbeat,
     ruleDrafter,
     operatorTestEmail,
+    triageReplay,
   });
   closers.push(() => app.close());
   return app;
@@ -258,4 +260,39 @@ it("sends a test of the Operator's email, and says why when it can't", async () 
     (await refused.inject({ method: 'POST', url: '/projects/nope/operator/test-email' }))
       .statusCode,
   ).toBe(404);
+});
+
+it("replays a project's answered cards in batches, and says when it can't", async () => {
+  const off = await start();
+  expect((await off.inject({ method: 'POST', url: '/projects/p1/triage/replay' })).statusCode).toBe(
+    409,
+  );
+
+  const runs: { limit: number; fresh?: boolean }[] = [];
+  const on = await start(undefined, undefined, undefined, {
+    run: async (_id, opts) => {
+      runs.push(opts);
+      return { replayed: [], remaining: 0, summary: { cases: 0 } };
+    },
+    results: async () => ({ cases: [], summary: { cases: 0 } }),
+  });
+  const r = await on.inject({
+    method: 'POST',
+    url: '/projects/p1/triage/replay',
+    payload: { limit: 500, fresh: true },
+  });
+  expect(r.statusCode).toBe(200);
+  expect(r.json()).toEqual({ replayed: [], remaining: 0, summary: { cases: 0 } });
+  await on.inject({ method: 'POST', url: '/projects/p1/triage/replay' });
+  expect(runs).toEqual([
+    { limit: 25, fresh: true },
+    { limit: 8, fresh: false },
+  ]);
+  expect((await on.inject({ method: 'GET', url: '/projects/p1/triage/replay' })).json()).toEqual({
+    cases: [],
+    summary: { cases: 0 },
+  });
+  expect((await on.inject({ method: 'GET', url: '/projects/nope/triage/replay' })).statusCode).toBe(
+    404,
+  );
 });

@@ -39,18 +39,24 @@ export function relevantDecisions(
     );
 }
 
-/** The team's lessons that bear on a card's question, for the role that asked it. */
+/**
+ * The team's lessons that bear on a card's question, for the role that asked it. With `keep`, only
+ * the lessons it allows (a replay leaves out what the card itself taught).
+ */
 export async function relevantLessons(
   knowledge: KnowledgeStore,
   ctx: Omit<KnowledgeContext, 'text' | 'templateId' | 'docs'>,
   card: { title: string; context: string },
   limit = 6,
+  keep?: (e: KnowledgeEntry) => boolean,
 ): Promise<string[]> {
   const found: KnowledgeEntry[] = await knowledge
     .retrieve(
       { ...ctx, templateId: null, docs: [], text: `${card.title} ${clip(card.context, 600)}` },
-      limit,
+      keep ? limit * 3 : limit,
     )
     .catch(() => []);
-  return found.map((e) => `${e.ref}: ${e.title}. ${clip(e.text, 500)}`);
+  return (keep ? found.filter(keep) : found)
+    .slice(0, limit)
+    .map((e) => `${e.ref}: ${e.title}. ${clip(e.text, 500)}`);
 }

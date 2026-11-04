@@ -121,6 +121,17 @@ export interface AppDeps {
   /** Event stream timing; see StreamOptions. Defaults suit a long-running server. */
   stream?: Partial<Pick<StreamOptions, 'pollMs' | 'maxMs'>>;
   logger?: boolean;
+  /**
+   * Replays a project's answered cards through today's Lead, with only what was known when each
+   * was raised, and keeps the results; null when no model is set up.
+   */
+  triageReplay?: {
+    run(
+      projectId: string,
+      opts: { limit: number; fresh?: boolean },
+    ): Promise<{ replayed: unknown[]; remaining: number; summary: unknown } | null>;
+    results(projectId: string): Promise<{ cases: unknown[]; summary: unknown }>;
+  } | null;
   /** Sends an Operator email as a test (Resend, to the configured recipients); null: not set up. */
   operatorTestEmail?: ((n: OperatorNotice, opts: { test: true }) => Promise<{ id: string }>) | null;
   /** The worker's last heartbeat (it writes one every 30 s), for the Dashboard's diagnostics. */
@@ -1120,6 +1131,32 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!s) throw new CommandError(404, 'unknown_project', `No project "${id}".`);
     return s;
   };
+
+  /**
+   * Proof before a project runs unattended: today's Lead answers the cards the Director answered,
+   * knowing only what was known then, and agreement is kept by category. A batch per request
+   * (`limit`, default 8); `remaining` says how many are left. `fresh` starts over.
+   */
+  app.post<P & { Body: { limit?: number; fresh?: boolean } | undefined }>(
+    '/projects/:id/triage/replay',
+    async (req, reply) => {
+      known(req.params.id);
+      if (!deps.triageReplay)
+        return reply.status(409).send({
+          error: 'replay_unavailable',
+          message: 'Replaying needs a model (ANTHROPIC_API_KEY) and the integrations store.',
+        });
+      const limit = Math.min(25, Math.max(1, Math.floor(Number(req.body?.limit ?? 8)) || 8));
+      return deps.triageReplay.run(req.params.id, { limit, fresh: req.body?.fresh === true });
+    },
+  );
+
+  app.get<P>('/projects/:id/triage/replay', async (req, reply) => {
+    known(req.params.id);
+    if (!deps.triageReplay)
+      return reply.status(409).send({ error: 'replay_unavailable', message: 'Not set up here.' });
+    return deps.triageReplay.results(req.params.id);
+  });
 
   /**
    * A test of the Operator's email: what it sends, to whom it sends it, with the project's open

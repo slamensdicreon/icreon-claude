@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient, draftRule, retrospect } from '@lw/agent-runtime';
+import { anthropicModelClient, draftRule, retrospect, triageQuestion } from '@lw/agent-runtime';
 import {
   CommandBus,
   masterKey,
@@ -36,6 +36,7 @@ import {
   runRetrospective,
   seedPlatformKnowledge,
   setUpHosting,
+  triageReplayer,
   type HostingWiring,
 } from '@lw/stack';
 import { openBlobStore } from '@lw/tool-gateway';
@@ -512,6 +513,19 @@ const app = await buildApp({
   },
   logger: true,
   heartbeat: integrations ? () => integrations.get<WorkerHeartbeat>('heartbeat:worker') : undefined,
+  triageReplay:
+    integrations && process.env.ANTHROPIC_API_KEY
+      ? triageReplayer({
+          projections,
+          store,
+          blobs,
+          playbookFor: pinnedPlaybook,
+          rules,
+          knowledge,
+          triage: (input) => triageQuestion(input),
+          results: integrations,
+        })
+      : null,
   operatorTestEmail:
     env.RESEND && recipients(env.OPERATOR_EMAIL_TO).length
       ? resendNotifier({

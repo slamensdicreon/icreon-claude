@@ -6,4 +6,6 @@ export * from './versions';
 export * from './hosting';
 export * from './operator';
 export * from './operator-email';
+export * from './lead-triage';
+export * from './triage-replay';
 export * from './learning';
