@@ -410,6 +410,59 @@ describe('snapshot, screenshot, fetch.asset', () => {
 });
 
 describe('network safety', () => {
+  it('reads a page’s components and fields from its embedded layout data', async () => {
+    const res = await browser.call('page.data', { url: `${origin}/layout-data` }, ctx);
+    expect(res.code).toBe(200);
+    const body = res.body as {
+      embedsLayoutData: boolean;
+      components: { name: string; dataSource: string | null; fields: unknown }[];
+    };
+    expect(body.embedsLayoutData).toBe(true);
+    // Each component once (the error boundary's copy has no fields), its values without chrome.
+    expect(body.components).toEqual([
+      {
+        name: 'TeamBanner',
+        dataSource: '/sitecore/content/Acme/Home/about/Data/Team',
+        fields: {
+          Title: 'Meet our Team',
+          Members: [
+            {
+              name: 'Jane Doe',
+              fields: {
+                Name: 'Jane Doe',
+                Role: 'Chief Executive',
+                Photo: {
+                  src: 'https://cdn.acme.test/jane.png',
+                  alt: 'Jane Doe',
+                  width: '600',
+                  height: '800',
+                },
+              },
+            },
+          ],
+        },
+      },
+      {
+        name: 'GoodBanner',
+        dataSource: '/sitecore/content/Acme/Home/about/Data/Good',
+        fields: { Cta: { href: '/contact-us', text: 'Learn more' } },
+      },
+    ]);
+    // One component by name; a Pages Router page; a page with none.
+    const one = await browser.call(
+      'page.data',
+      { url: `${origin}/layout-data`, component: 'goodbanner' },
+      ctx,
+    );
+    expect((one.body as { components: unknown[] }).components).toHaveLength(1);
+    const pages = await browser.call('page.data', { url: `${origin}/next-data` }, ctx);
+    expect(
+      (pages.body as { components: { name: string }[] }).components.map((c) => c.name),
+    ).toEqual(['Hero', 'Promo']);
+    const none = await browser.call('page.data', { url: `${origin}/about` }, ctx);
+    expect(none.body).toMatchObject({ embedsLayoutData: false, components: [] });
+  });
+
   it('only goes to the project’s source hosts', async () => {
     const r = await browser.call('snapshot', { url: 'http://elsewhere.example/' }, ctx);
     expect(r).toMatchObject({

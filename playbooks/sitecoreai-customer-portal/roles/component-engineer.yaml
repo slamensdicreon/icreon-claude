@@ -45,6 +45,9 @@ tools:
       - screenshot
       - page.markup
       - page.styles
+      # The page's content as its CMS delivered it (fields, images, links, lists the page builds
+      # in the browser), when it embeds its layout data: Next.js sites on Sitecore do.
+      - page.data
   blackboard:
     ops:
       - read

@@ -24,6 +24,9 @@ tools:
       - screenshot
       # A page's sections (headings, text, background images) when a snapshot reads little.
       - page.markup
+      # The page's content as its CMS delivered it (fields, images, links, lists the page builds
+      # in the browser), when it embeds its layout data: Next.js sites on Sitecore do.
+      - page.data
   artifacts:
     ops:
       # Its own earlier inventory, when a retry amends it instead of crawling again.

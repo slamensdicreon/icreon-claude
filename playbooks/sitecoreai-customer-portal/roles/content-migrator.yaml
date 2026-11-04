@@ -40,6 +40,9 @@ tools:
       - snapshot
       # Images set by CSS (a hero's or section's background) aren't in a snapshot: computed styles give their URL.
       - page.styles
+      # The page's content as its CMS delivered it (fields, images, links, lists the page builds
+      # in the browser), when it embeds its layout data: Next.js sites on Sitecore do.
+      - page.data
   # The source repository, where a site built from code keeps its copy (content files).
   github:
     ops:

@@ -4,6 +4,7 @@ import type { BrowserContext, Page } from 'playwright-core';
 import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
 import { extractContent, extractPage, type PageExtract } from './extract';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
+import { layoutData } from './layout-data';
 import { assertNavigable, BlockedUrlError, type UrlPolicy } from './ssrf';
 
 export interface BrowserServerOptions {
@@ -175,6 +176,22 @@ const CATALOG: OperationCatalog = {
     mutates: false,
     untrusted: true,
   },
+  'page.data': {
+    description:
+      "A page's content as its CMS delivered it, when the page embeds its layout data (Next.js sites on Sitecore, SitecoreAI or XM Cloud do): each component in order, with its datasource and fields (text, rich text, images with src and alt, links with href, child items with their fields). It includes what the page renders only in the browser (carousels, tabs, team and award lists) and link targets a snapshot shows only as button text. Without `component`, every component up to `maxChars` (default 40000); give `component` (a name from the list) for that one in full. Returns no components when the page embeds no layout data: use snapshot and page.markup then.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        component: { type: 'string' },
+        maxChars: { type: 'integer', minimum: 2000, maximum: 120000 },
+      },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
   'page.styles': {
     description:
       "How a live page looks, in values a builder can use: computed styles (font, size, weight, colour, background, spacing, borders per side, radius, layout, clip-path, opacity) of up to 20 selectors (a selector may end in ::before or ::after), plus the page's design tokens (most used fonts, text colours, backgrounds and font sizes; :root custom properties; media-query breakpoints) and its stylesheets. Measured at desktop width (1440) unless `width` says otherwise: give 768 or 390 to read the tablet or phone layout.",
@@ -274,6 +291,8 @@ export class BrowserToolServer implements ToolServer {
         case 'page.markup':
         case 'page.styles':
           return await this.structure(policy, op, args);
+        case 'page.data':
+          return await this.pageData(policy, args);
         default:
           return { code: 400, body: { error: `Unknown operation ${op}` } };
       }
@@ -514,6 +533,78 @@ export class BrowserToolServer implements ToolServer {
       code: 200,
       body: { url: url.toString(), shots },
       summary: `Screenshots of ${url.pathname} at ${breakpoints.join(', ')}`,
+    };
+  }
+
+  /** The page's components and fields from its embedded layout data, within a size budget. */
+  private async pageData(policy: UrlPolicy, args: Record<string, unknown>): Promise<ToolResult> {
+    let url = await assertNavigable(String(args.url), policy);
+    let res: Response | null = null;
+    for (let hop = 0; hop < 5; hop++) {
+      res = await fetch(url, {
+        redirect: 'manual',
+        headers: BROWSER_HEADERS,
+        signal: AbortSignal.timeout(30_000),
+      });
+      const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!to) break;
+      url = await assertNavigable(new URL(to, url).toString(), policy);
+    }
+    let status = res?.status ?? 0;
+    let html = res?.ok ? await res.text() : null;
+    if (!html && [401, 403, 429, 503].includes(status)) {
+      // Some sites turn away anything but a browser: ask the real one for the page as served.
+      const got = await this.withPage(policy, async (context) => {
+        const page = await context.newPage();
+        try {
+          const r = await page.goto(url.toString(), {
+            timeout: this.opts.navigationTimeoutMs ?? 30_000,
+          });
+          return { status: r?.status() ?? 0, body: r?.ok() ? await r.text() : null };
+        } finally {
+          await page.close();
+        }
+      });
+      status = got.status;
+      html = got.body;
+    }
+    if (!html)
+      return {
+        code: status === 404 ? 404 : 422,
+        body: { error: `HTTP ${status} from ${url.host}`, url: url.toString() },
+        summary: `Couldn't read ${url.pathname}: HTTP ${status}`,
+      };
+    const all = layoutData(html);
+    const want = typeof args.component === 'string' ? args.component.toLowerCase() : null;
+    const picked = want ? all.filter((c) => c.name.toLowerCase() === want) : all;
+    const budget = Number(args.maxChars) || (want ? 120_000 : 40_000);
+    let used = 0;
+    const components = picked.map((c) => {
+      const size = JSON.stringify(c.fields ?? null).length;
+      if (used + size > budget)
+        return {
+          name: c.name,
+          dataSource: c.dataSource,
+          fieldsOmitted: `${size} characters: ask for this component by name`,
+        };
+      used += size;
+      return c;
+    });
+    return {
+      code: 200,
+      body: {
+        url: url.toString(),
+        embedsLayoutData: all.length > 0,
+        components,
+        ...(want && !picked.length
+          ? {
+              note: `No component named ${String(args.component)}: ${[...new Set(all.map((c) => c.name))].join(', ') || 'none'}`,
+            }
+          : {}),
+      },
+      summary: all.length
+        ? `${url.pathname}: ${picked.length} of ${all.length} components from its layout data`
+        : `${url.pathname} embeds no layout data`,
     };
   }
 
