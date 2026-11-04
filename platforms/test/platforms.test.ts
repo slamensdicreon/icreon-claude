@@ -886,6 +886,58 @@ describe('SitecoreAI checks', () => {
     });
   });
 
+  it('reads /404 at a missing URL, and skips source pages that redirect elsewhere', async () => {
+    const at = (body: string, url = '', status = 200) => {
+      const res = new Response(body, { status });
+      Object.defineProperty(res, 'url', { value: url });
+      return res;
+    };
+    const chrome = (main: string) =>
+      `<header><div id="header"><nav>Home</nav></div></header>${main}<footer><div id="footer"><p>Acme</p></div></footer>`;
+    const notFound = chrome('<h1>Page not found</h1><p>The page you are looking for has moved</p>');
+    const asked: string[] = [];
+    const fetcher = (async (u: string | URL | Request) => {
+      const url = String(u);
+      asked.push(url);
+      if (url === 'https://acme-editing.vercel.app/launchworks-missing-page')
+        return at(notFound, url, 404);
+      if (url === 'https://acme-editing.vercel.app/services')
+        return at(chrome('<h1>Services</h1>'), url);
+      if (url === 'https://src.example/404/') return at(notFound, url);
+      // The source sends /services to its home page.
+      if (url === 'https://src.example/services/')
+        return at(
+          '<h1>Welcome home</h1><p>Clients, case studies and news</p>',
+          'https://src.example/',
+        );
+      return at('', url, 404);
+    }) as typeof fetch;
+    const checks = createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fetcher } }).get(
+      'sitecoreai',
+    )!.checks!;
+    const bp = {
+      collections: {
+        pages: [
+          { key: 'not-found', name: 'Not Found', attrs: { path: '/404' } },
+          { key: 'services', name: 'Services', attrs: { path: '/services' } },
+        ],
+      },
+    };
+    const input = {
+      ...ctx(tenant({}).read, bp),
+      target: { ...target, hostingProject: 'acme' },
+      document: async (id: string) =>
+        id === 'page-inventory' ? { origin: 'https://src.example' } : null,
+    };
+    expect(await checks['parity.render']!(input)).toEqual({
+      status: 'pass',
+      detail:
+        'Rendered parity with the source: /404 100%; /services redirects elsewhere on the source, nothing to compare.',
+    });
+    expect(asked).not.toContain('https://acme-editing.vercel.app/404');
+    expect((await checks['head.pages-render']!(input)).status).toBe('pass');
+  });
+
   it("compares each page's <title> on the editing host with the source page's", async () => {
     const html = (title: string) =>
       `<html><head><title>${title}</title></head><body><h1>Heading</h1></body></html>`;

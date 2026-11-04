@@ -420,9 +420,10 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const problems: string[] = [];
       const cached: string[] = [];
       for (const path of paths.slice(0, 40)) {
+        const want = onEditingHost(path);
         let status = 0;
         try {
-          const res = await cfg.fetch(`${host}${path}`, {
+          const res = await cfg.fetch(`${host}${want.path}`, {
             redirect: 'manual',
             signal: AbortSignal.timeout(cfg.timeoutMs),
           });
@@ -437,7 +438,10 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           problems.push(
             `${path} answered ${status || 'nothing'} on ${host}: a component throws while rendering; the head's runtime log names it`,
           );
-        else if (status === 404) problems.push(`${path} isn't found on ${host}`);
+        else if (want.status === 404 && status !== 404)
+          problems.push(`a missing page answers ${status} on ${host}, not 404`);
+        else if (status === 404 && want.status !== 404)
+          problems.push(`${path} isn't found on ${host}`);
       }
       // An editing host serves unpublished content: a cached render hides Sitecore edits and keeps
       // signed CM media links that expire (every image breaks).
@@ -470,15 +474,16 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           continue;
         }
         let html = '';
+        const want = onEditingHost(path);
         try {
-          const res = await cfg.fetch(`${host}${path}`, {
+          const res = await cfg.fetch(`${host}${want.path}`, {
             signal: AbortSignal.timeout(cfg.timeoutMs),
           });
-          if (res.status === 404 && path !== '/') {
+          if (res.status === 404 && path !== '/' && want.status !== 404) {
             notYet.push(path);
             continue;
           }
-          if (!res.ok) {
+          if (res.status !== want.status && !res.ok) {
             problems.push(`${path} answered ${res.status} on ${host}`);
             continue;
           }
@@ -523,10 +528,16 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const notes: string[] = [];
       const forms = formsLeftToDirector(ctx);
       let unread = 0;
+      const moved: string[] = [];
       for (const path of pagePaths(ctx).slice(0, 20)) {
-        const page = await getText(cfg, `${host}${path}`);
-        if (page.status !== 200) {
-          problems.push(`${path} answered ${page.status || 'nothing'} on the editing host`);
+        const at = onEditingHost(path);
+        const page = await getText(cfg, `${host}${at.path}`);
+        if (page.status !== at.status) {
+          problems.push(
+            at.status === 404
+              ? `a missing page answers ${page.status || 'nothing'} on the editing host, not 404 with the site's 404 page`
+              : `${path} answered ${page.status || 'nothing'} on the editing host`,
+          );
           continue;
         }
         const text = visibleText(forms(page.body));
@@ -544,9 +555,14 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
               `${path}: ${c.name} renders no items (its rendering needs a Component Query returning its children, and its datasource needs child items)`,
             );
         if (!origin) continue;
-        const source = await getText(cfg, `${origin}${path === '/' ? '/' : `${path}/`}`);
+        const sourceUrl = `${origin}${path === '/' ? '/' : `${path}/`}`;
+        const source = await getText(cfg, sourceUrl);
         if (source.status !== 200) {
           unread++;
+          continue;
+        }
+        if (redirectedAway(sourceUrl, source.url)) {
+          moved.push(path);
           continue;
         }
         const sourceBody = forms(source.body);
@@ -567,10 +583,10 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       }
       if (problems.length) return fail(problems);
       if (!origin) return pending('No source inventory gives the source site to compare with.');
-      if (unread && !notes.length)
+      if (unread && !notes.length && !moved.length)
         return pending("The source pages couldn't be read to compare with.");
       return pass(
-        `Rendered parity with the source: ${notes.join(', ')}${unread ? `; ${unread} source page${unread === 1 ? '' : 's'} unreadable` : ''}${forms.active ? '; forms left out (built in SitecoreAI Forms)' : ''}.`,
+        `Rendered parity with the source: ${notes.join(', ')}${unread ? `; ${unread} source page${unread === 1 ? '' : 's'} unreadable` : ''}${moved.length ? `; ${moved.join(', ')} redirect${moved.length === 1 ? 's' : ''} elsewhere on the source, nothing to compare` : ''}${forms.active ? '; forms left out (built in SitecoreAI Forms)' : ''}.`,
       );
     },
 
@@ -591,10 +607,15 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const matched: string[] = [];
       const unread: string[] = [];
       for (const path of pagePaths(ctx).slice(0, 20)) {
+        const source = `${origin}${path === '/' ? '/' : `${path}/`}`;
+        if (redirectedAway(source, (await getText(cfg, source)).url)) {
+          matched.push(path);
+          continue;
+        }
         const r = await ctx.compareScreens({
           path,
-          source: `${origin}${path === '/' ? '/' : `${path}/`}`,
-          candidate: `${host}${path}`,
+          source,
+          candidate: `${host}${onEditingHost(path).path}`,
         });
         if ('error' in r) unread.push(`${path} (${r.error})`);
         else if (r.verdict === 'match') matched.push(path);
@@ -700,11 +721,15 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const forms = formsLeftToDirector(ctx);
       const asRendered = async (path: string) => {
         if (!project || !origin) return null;
+        const at = onEditingHost(path);
+        const sourceUrl = `${origin}${path === '/' ? '/' : `${path}/`}`;
         const [have, want] = await Promise.all([
-          getText(cfg, `https://${project}-editing.vercel.app${path}`),
-          getText(cfg, `${origin}${path === '/' ? '/' : `${path}/`}`),
+          getText(cfg, `https://${project}-editing.vercel.app${at.path}`),
+          getText(cfg, sourceUrl),
         ]);
-        if (have.status !== 200 || want.status !== 200) return null;
+        if (have.status !== at.status || want.status !== 200) return null;
+        // The source sends this path elsewhere: there is no page of its own to measure against.
+        if (redirectedAway(sourceUrl, want.url)) return { have: 0, want: 0 };
         return {
           have: count(visibleText(forms(have.body))),
           want: count(visibleText(forms(want.body))),
@@ -761,7 +786,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const kept = new Set(pagePaths(ctx));
       const source = inv.pages
         .map((p) => ({ path: inventoryPath(p), title: visibleText(p.title ?? '') }))
-        .filter((p) => p.title && kept.has(p.path))
+        .filter((p) => p.title && kept.has(p.path) && onEditingHost(p.path).status === 200)
         .slice(0, 60);
       if (!source.length) return pending('No kept page has a source title.');
       const problems = (
@@ -820,22 +845,44 @@ const PLACEHOLDERS = [
   'Lorem ipsum',
 ];
 
-async function getText(cfg: VerifyConfig, url: string): Promise<{ status: number; body: string }> {
+async function getText(
+  cfg: VerifyConfig,
+  url: string,
+): Promise<{ status: number; body: string; url?: string }> {
   try {
     const res = await cfg.fetch(url, {
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; Launchworks parity check)' },
       signal: AbortSignal.timeout(Math.max(cfg.timeoutMs, 20_000)),
     });
-    return { status: res.status, body: await res.text() };
+    return { status: res.status, body: await res.text(), url: res.url };
   } catch {
     return { status: 0, body: '' };
+  }
+}
+
+/**
+ * Next.js reserves /404 for its not-found page, so a site's 404 page item never renders at its own
+ * path: the head shows it (through the site's error-handling setting) for any URL that doesn't
+ * exist, with status 404. Checks read it there.
+ */
+export const onEditingHost = (path: string) =>
+  path === '/404' ? { path: '/launchworks-missing-page', status: 404 } : { path, status: 200 };
+
+/** Whether a source page answered from another path: it redirects there (`/services` to `/`). */
+export function redirectedAway(requested: string, final: string | undefined): boolean {
+  if (!final) return false;
+  try {
+    const at = (u: string) => new URL(u).pathname.replace(/\/$/, '').toLowerCase() || '/';
+    return at(final) !== at(requested);
+  } catch {
+    return false;
   }
 }
 
 /** What a visitor reads on an HTML page: scripts, styles and markup removed. */
 export function visibleText(html: string): string {
   return html
-    .replace(/<(script|style|noscript|svg|template)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<(head|script|style|noscript|svg|template)\b[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;|&#160;/g, ' ')
     .replace(/&amp;/g, '&')
