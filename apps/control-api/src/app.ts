@@ -134,6 +134,11 @@ export interface AppDeps {
   } | null;
   /** Sends an Operator email as a test (Resend, to the configured recipients); null: not set up. */
   operatorTestEmail?: ((n: OperatorNotice, opts: { test: true }) => Promise<{ id: string }>) | null;
+  /**
+   * The watchdog over the worker (Vercel Cron calls it every few minutes): tells the Director once
+   * when the worker has gone silent while a project runs, and once when it is back.
+   */
+  watchdog?: (() => Promise<unknown>) | null;
   /** The worker's last heartbeat (it writes one every 30 s), for the Dashboard's diagnostics. */
   heartbeat?: () => Promise<WorkerHeartbeat | null>;
   /** Rules from the Director's answers, applied by Lead triage. Absent where nothing stores them. */
@@ -1150,6 +1155,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return deps.triageReplay.run(req.params.id, { limit, fresh: req.body?.fresh === true });
     },
   );
+
+  app.get('/portfolio/watchdog', async (_req, reply) => {
+    if (!deps.watchdog)
+      return reply.status(409).send({ error: 'watchdog_unavailable', message: 'Not set up here.' });
+    return deps.watchdog();
+  });
 
   app.get<P>('/projects/:id/triage/replay', async (req, reply) => {
     known(req.params.id);

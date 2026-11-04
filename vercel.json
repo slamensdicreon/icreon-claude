@@ -160,5 +160,11 @@
       },
       "terminationGracePeriodSeconds": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/portfolio/watchdog",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

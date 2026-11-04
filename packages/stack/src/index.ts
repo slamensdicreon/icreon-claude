@@ -8,4 +8,5 @@ export * from './operator';
 export * from './operator-email';
 export * from './lead-triage';
 export * from './triage-replay';
+export * from './watchdog';
 export * from './learning';

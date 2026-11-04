@@ -23,6 +23,10 @@ const T = {
   n50: '#f8f8f7',
   warning: '#b26a00',
   warningBg: '#fbf0dd',
+  danger: '#c8372d',
+  dangerBg: '#fbe9e7',
+  success: '#1e8e5a',
+  successBg: '#e7f5ee',
   font: "'Hero New', 'Helvetica Neue', Helvetica, Arial, sans-serif",
 } as const;
 
@@ -30,6 +34,8 @@ const KIND: Record<OperatorNotice['kind'], { chip: string; fg: string; bg: strin
   attention: { chip: 'Needs you', fg: T.blueDeep, bg: T.blueTint },
   stalled: { chip: 'Stalled', fg: T.warning, bg: T.warningBg },
   review: { chip: 'To review', fg: T.blueDeep, bg: T.blueTint },
+  down: { chip: 'Worker down', fg: T.danger, bg: T.dangerBg },
+  up: { chip: 'Back up', fg: T.success, bg: T.successBg },
 };
 
 const TYPE_LABEL: Record<EscalationType, string> = {
@@ -55,6 +61,7 @@ const esc = (s: string) =>
 
 /** Where the email's button goes in the Control Center, and what it says. */
 function action(n: OperatorNotice, appUrl: string): { href: string; label: string } {
+  if (!n.projectId) return { href: `${appUrl}/`, label: 'Open the Dashboard' };
   const project = `${appUrl}/p/${encodeURIComponent(n.projectId)}`;
   if (n.kind === 'attention') return { href: `${project}/inbox`, label: 'Answer in Launchworks' };
   if (n.kind === 'review') return { href: `${appUrl}/manage/rules`, label: 'Review proposals' };

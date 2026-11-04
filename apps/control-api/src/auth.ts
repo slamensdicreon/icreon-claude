@@ -15,6 +15,11 @@ export interface GithubAuthOptions {
    * SHA-256 of each key, hex, with the name its actions are recorded under. Only hashes are kept.
    */
   apiKeys?: { login: string; sha256: string }[];
+  /**
+   * Vercel Cron's secret (CRON_SECRET): its scheduled calls carry `Authorization: Bearer <it>`, and
+   * may reach the paths in CRON_PATHS only.
+   */
+  cronSecret?: string | null;
   /** If set, the account must also be an active member of this org (where 2FA is enforced). */
   requiredOrg?: string;
   /** At least 32 characters; signs session cookies. */
@@ -42,6 +47,8 @@ const STATE = 'lw_oauth_state';
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 // The app's post-install page is open: it lands client repository owners, who aren't operators.
 const OPEN_PATHS = ['/health', '/auth/', '/integrations/github/installed'];
+// What a scheduled call (Vercel Cron) may reach with the cron secret.
+const CRON_PATHS = ['/portfolio/watchdog'];
 
 /**
  * Sign-in with GitHub for the one or two operators who run Launchworks. Only identity is kept:
@@ -86,9 +93,19 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
     return keys.find((k) => k.hash.length === hash.length && timingSafeEqual(k.hash, hash)) ?? null;
   };
 
+  const cron = opts.cronSecret
+    ? createHash('sha256').update(`Bearer ${opts.cronSecret}`).digest()
+    : null;
+  const isCron = (header: string | undefined) =>
+    !!cron && !!header && timingSafeEqual(createHash('sha256').update(header).digest(), cron);
+
   app.addHook('onRequest', async (req, reply) => {
     if (req.method === 'OPTIONS' || OPEN_PATHS.some((p) => req.url === p || req.url.startsWith(p)))
       return;
+    if (isCron(req.headers.authorization) && CRON_PATHS.some((p) => req.url.startsWith(p))) {
+      req.operator = { login: 'vercel-cron', name: 'Scheduled check', avatarUrl: null };
+      return;
+    }
     const key = byKey(req.headers.authorization);
     if (key) {
       req.operator = { login: key.login, name: `${key.login} (API key)`, avatarUrl: null };

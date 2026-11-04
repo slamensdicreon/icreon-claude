@@ -171,6 +171,24 @@ describe('GitHub sign-in', () => {
     expect((await as(key)).statusCode).toBe(401);
   });
 
+  it('lets Vercel Cron reach the watchdog with its secret, and nothing else', async () => {
+    const a = await start(fakeGithub('slamensdicreon'), { cronSecret: 'cron-secret-1' });
+    const as = (url: string, authorization?: string) =>
+      a.inject({ url, headers: authorization ? { authorization } : {} });
+    // No watchdog in this app: past sign-in, it answers that it isn't set up.
+    expect((await as('/portfolio/watchdog', 'Bearer cron-secret-1')).statusCode).toBe(409);
+    expect((await as('/portfolio/watchdog', 'Bearer cron-secret-2')).statusCode).toBe(401);
+    expect((await as('/portfolio/watchdog')).statusCode).toBe(401);
+    expect((await as('/projects', 'Bearer cron-secret-1')).statusCode).toBe(401);
+    // Without a secret configured, no bearer opens it.
+    await a.close();
+    const none = await start(fakeGithub('slamensdicreon'));
+    expect(
+      (await none.inject({ url: '/portfolio/watchdog', headers: { authorization: 'Bearer ' } }))
+        .statusCode,
+    ).toBe(401);
+  });
+
   it('rejects a callback whose state does not match, and a failed code exchange', async () => {
     const a = await start(fakeGithub('slamensdicreon'));
     expect(

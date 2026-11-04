@@ -7,7 +7,8 @@ import type { EventStore, Projections } from '@lw/events';
 export interface OperatorNotice {
   projectId: string;
   project: string;
-  kind: 'attention' | 'stalled' | 'review';
+  /** down/up: the worker itself, told by the watchdog (no project). */
+  kind: 'attention' | 'stalled' | 'review' | 'down' | 'up';
   title: string;
   body: string;
   /** The cards and gates the notice is about (attention notices). */

@@ -37,6 +37,7 @@ import {
   seedPlatformKnowledge,
   setUpHosting,
   triageReplayer,
+  watchWorker,
   type HostingWiring,
 } from '@lw/stack';
 import { openBlobStore } from '@lw/tool-gateway';
@@ -141,6 +142,8 @@ const env = z
       .optional()
       .transform((v) => v?.trim() || undefined),
     OPERATOR_EMAIL_TO: z.string().optional(),
+    /** Vercel Cron's secret: the watchdog's scheduled calls carry it. */
+    CRON_SECRET: z.string().optional(),
     OPERATOR_EMAIL_FROM: z.string().default('Launchworks Operator <onboarding@resend.dev>'),
   })
   .parse(process.env);
@@ -178,6 +181,7 @@ const auth =
           .filter((p): p is [string, string] => p.length === 2 && /^[0-9a-f]{64}$/i.test(p[1]!))
           .map(([login, sha256]) => ({ login, sha256 })),
         requiredOrg: env.GITHUB_ORG,
+        cronSecret: env.CRON_SECRET?.trim() || null,
         secureCookies: required('PUBLIC_URL', publicUrl).startsWith('https://'),
       }
     : undefined;
@@ -478,6 +482,17 @@ function hostingWiring(): HostingWiring | null {
 }
 const hosting = hostingWiring();
 
+// The Operator's email: the worker sends the notices; here, the test send and the watchdog.
+const operatorMail =
+  env.RESEND && recipients(env.OPERATOR_EMAIL_TO).length
+    ? resendNotifier({
+        apiKey: env.RESEND,
+        to: recipients(env.OPERATOR_EMAIL_TO),
+        from: env.OPERATOR_EMAIL_FROM,
+        appUrl,
+      })
+    : null;
+
 const app = await buildApp({
   store,
   projections,
@@ -526,15 +541,17 @@ const app = await buildApp({
           results: integrations,
         })
       : null,
-  operatorTestEmail:
-    env.RESEND && recipients(env.OPERATOR_EMAIL_TO).length
-      ? resendNotifier({
-          apiKey: env.RESEND,
-          to: recipients(env.OPERATOR_EMAIL_TO),
-          from: env.OPERATOR_EMAIL_FROM,
-          appUrl,
+  operatorTestEmail: operatorMail,
+  watchdog: integrations
+    ? () =>
+        watchWorker({
+          lastBeat: async () =>
+            (await integrations.get<WorkerHeartbeat>('heartbeat:worker'))?.at ?? null,
+          projections,
+          store: integrations,
+          notify: operatorMail ?? undefined,
         })
-      : null,
+    : null,
   rules,
   ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,
   knowledge,
