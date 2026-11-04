@@ -15,7 +15,7 @@ const PAGE = 'migrate-pages-page-1';
 const HERO_FIX = 'Hero: the source shows a grey band; the page shows black.';
 
 /** A page whose review keeps finding the Hero's code at fault; `own` adds fixes of its own on one check. */
-function scenario(opts: { passOn?: number; ownFixesOn?: number } = {}) {
+function scenario(opts: { passOn?: number; ownFixesOn?: number; ownFixesFrom?: number } = {}) {
   const runs: RunRequest[] = [];
   const checks: string[] = [];
   const runner = {
@@ -43,7 +43,12 @@ function scenario(opts: { passOn?: number; ownFixesOn?: number } = {}) {
         taskIds: [],
         sendBack: [{ taskId: 'port-hero', fixes: HERO_FIX }],
         what: 'fixes to Hero',
-        review: { fixes: n === opts.ownFixesOn ? 'Remove the empty spacer above the band.' : null },
+        review: {
+          fixes:
+            n === opts.ownFixesOn || (opts.ownFixesFrom && n >= opts.ownFixesFrom)
+              ? 'Remove the empty spacer above the band.'
+              : null,
+        },
       },
     };
   };
@@ -95,6 +100,26 @@ it('runs a page past its limit once more for fixes of its own, without asking th
   expect(page[1]!.instructions).toContain('already sent back 2 times for this task');
   // Hero wasn't sent back a third time.
   expect(sc.runs.filter((r) => r.task.taskId === 'port-hero')).toHaveLength(3);
+}, 180_000);
+
+it('finishes after that one run when the review finds the same fixes of its own again', async () => {
+  const sc = scenario({ ownFixesFrom: 3 });
+  const p = await launch(h, { runner: sc.runner, validate: sc.validate });
+  const bot = directorBot(p, () => null);
+  await p.handle.result();
+  await bot.stop();
+  const s = p.state()!;
+
+  // One run for its own fixes (check 3), then the review found them again (check 4): it
+  // finished, with its findings handed to the audit alongside Hero's, and no card.
+  expect(Object.values(s.escalations).filter((x) => x.title.startsWith('Migrate'))).toEqual([]);
+  expect(s.tasks[PAGE]!.state).toBe('done');
+  expect(sc.runs.filter((r) => r.task.taskId === PAGE)).toHaveLength(2);
+  expect(sc.checks.filter((c) => c === PAGE)).toHaveLength(4);
+  const audit = sc.runs.find((r) => r.task.taskId === 'audit-parity')!;
+  expect(audit.instructions).toContain(
+    'Its own findings, found again: Remove the empty spacer above the band.',
+  );
 }, 180_000);
 
 it('asks the Director as before when the project turns the setting off', async () => {

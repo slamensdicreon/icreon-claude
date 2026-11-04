@@ -158,6 +158,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
    * what waited on the leader waits on them too, and none of it takes them as finished before.
    */
   const redoPending = new Set<string>();
+  // Past its send-back limit, a task runs again once for fixes of its own; then it finishes.
+  const pastLimitRerun = new Set<string>();
   /**
    * Whether merged Blueprint items get tasks of their own: decided once, when the Blueprint is
    * first adopted, and kept, so a replan never reshapes a plan its history was written against.
@@ -852,7 +854,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       finishedCount += 1;
       if (redoing.delete(t.taskId)) redoneAt[t.taskId] = finishedCount;
     }
-    if (outcome.outcome === 'done' || outcome.outcome === 'cancelled') redoPending.delete(t.taskId);
+    if (outcome.outcome === 'done' || outcome.outcome === 'cancelled') {
+      redoPending.delete(t.taskId);
+      pastLimitRerun.delete(t.taskId);
+    }
     // Work that follows this task's redo (a component's integration after its port) runs again
     // after it: a fix that stops at the port's branch never reaches the editing host. Marked
     // before the first await, so no wait on them ends in between.
@@ -956,7 +961,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             d.dependsOn.includes(t.taskId) &&
             !SETTLED_STATES.has(stateOf(d.taskId)),
         );
-        const pastFixes = overSent.map((x) => x.fixes).join(' ');
+        // Its own fixes found again after the one run it had for them: what remains is the
+        // components' too (a review often names a component's layout as the page's), so it goes on.
+        const again =
+          !!w.review?.fixes && pastLimitRerun.has(t.taskId) && patched('finish-past-limit-once');
+        const pastFixes = [
+          ...overSent.map((x) => x.fixes),
+          ...(again ? [`Its own findings, found again: ${w.review!.fixes}`] : []),
+        ].join(' ');
         const handed = `Handed on by ${who}, which already sent ${pastTitles} back ${MAX_SEND_BACKS} times: ${pastFixes}`;
         for (const c of collectors)
           if (!(instructions[c.taskId] ?? '').includes(handed))
@@ -969,7 +981,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         overSent = [];
         const nothingElse =
           !backNow.length && !handOn.length && named.every((id) => SETTLED_STATES.has(stateOf(id)));
-        if (w.review && !w.review.fixes && nothingElse) {
+        if (w.review && (!w.review.fixes || again) && nothingElse) {
+          pastLimitRerun.delete(t.taskId);
           finishedCount += 1;
           waitingOn.delete(t.taskId);
           // Its review ran: from validating (or still running) the task walks on to done.
@@ -992,7 +1005,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             decision(
               `${t.title}: finish past the send-back limit?`,
               'Finished; the component differences were handed on',
-              `Its own work passed review and it waited only on ${pastTitles}, already sent back ${MAX_SEND_BACKS} times. Handed to ${handedTo}: ${pastFixes}`,
+              again
+                ? `It ran once more for its own fixes and the review found them again, with ${pastTitles} already sent back ${MAX_SEND_BACKS} times. Handed to ${handedTo}: ${pastFixes}`
+                : `Its own work passed review and it waited only on ${pastTitles}, already sent back ${MAX_SEND_BACKS} times. Handed to ${handedTo}: ${pastFixes}`,
               'rule',
               `past-limit:${t.taskId}`,
               null,
@@ -1003,6 +1018,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           poke();
           return;
         }
+        if (w.review?.fixes) pastLimitRerun.add(t.taskId);
         pastNote = `${pastTitles} ${past.size === 1 ? 'was' : 'were'} already sent back ${MAX_SEND_BACKS} times for this task: don't wait on or send ${past.size === 1 ? 'it' : 'them'} back again. ${past.size === 1 ? 'Its' : 'Their'} differences went to ${handedTo}. Finish what is yours, and list those differences in your summary.`;
       }
       // Only a wait with nothing under way to end it counts toward the limit. Waiting on a fix
@@ -2254,6 +2270,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         retryFromBlocked.delete(id);
         reruns.delete(id);
         waitingOn.delete(id);
+        pastLimitRerun.delete(id);
         await send(
           ...path.map((to) =>
             taskMove(t, to, to === 'done' ? `Done outside the agents: ${why}` : null),
@@ -2336,6 +2353,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const id of r.revalidate ?? []) revalidate.add(id);
     for (const id of r.redoing ?? []) redoing.add(id);
     for (const id of r.redoPending ?? []) redoPending.add(id);
+    for (const id of r.pastLimitRerun ?? []) pastLimitRerun.add(id);
     skipMerged = r.skipMerged ?? false;
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
     for (const id of r.reruns) reruns.add(id);
@@ -2385,6 +2403,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       revalidate: [...revalidate],
       redoing: [...redoing],
       redoPending: [...redoPending],
+      pastLimitRerun: [...pastLimitRerun],
       skipMerged,
       taskEscalation: [...taskEscalation],
       started: [...started],

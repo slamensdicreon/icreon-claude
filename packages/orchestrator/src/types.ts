@@ -130,6 +130,8 @@ export interface ProjectSnapshot {
   redoing?: string[];
   /** Followers re-run after their leader's redo, until they finish again (absent before). */
   redoPending?: string[];
+  /** Tasks past their send-back limit that already ran once more for fixes of their own. */
+  pastLimitRerun?: string[];
   /** Merged Blueprint items get no tasks of their own (absent, so false, before). */
   skipMerged?: boolean;
   taskEscalation: [string, string][];
