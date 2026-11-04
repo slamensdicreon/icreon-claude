@@ -2,7 +2,7 @@ import { MemoryIntegrationStore } from '@lw/events';
 import { expect, it } from 'vitest';
 import type { OperatorNotice } from '../src/operator';
 import { operatorEmail } from '../src/operator-email';
-import { watchWorker } from '../src/watchdog';
+import { watchdogStatus, watchWorker } from '../src/watchdog';
 
 const at = (iso: string) => new Date(iso);
 const projects = (status: string) =>
@@ -81,4 +81,25 @@ it('stays quiet while nothing runs, and retries a notice it could not send', asy
   await expect(flaky()).rejects.toThrow('Resend down');
   expect(await flaky()).toMatchObject({ told: 'down' });
   expect(attempts).toBe(2);
+});
+
+it('records when the schedule last ran it, not when a person checked', async () => {
+  const store = new MemoryIntegrationStore();
+  const run = (now: string, scheduled: boolean) =>
+    watchWorker({
+      lastBeat: async () => now,
+      projections: projects('running'),
+      store,
+      now: () => at(now),
+      scheduled,
+    });
+  expect(await watchdogStatus(store)).toEqual({ scheduledAt: null, downAt: null });
+  await run('2026-11-04T10:00:00.000Z', false);
+  expect((await watchdogStatus(store)).scheduledAt).toBeNull();
+  await run('2026-11-04T10:05:00.000Z', true);
+  await run('2026-11-04T10:07:00.000Z', false);
+  expect(await watchdogStatus(store)).toEqual({
+    scheduledAt: '2026-11-04T10:05:00.000Z',
+    downAt: null,
+  });
 });

@@ -138,7 +138,10 @@ export interface AppDeps {
    * The watchdog over the worker (Vercel Cron calls it every few minutes): tells the Director once
    * when the worker has gone silent while a project runs, and once when it is back.
    */
-  watchdog?: (() => Promise<unknown>) | null;
+  watchdog?: {
+    run(opts: { scheduled: boolean }): Promise<unknown>;
+    status(): Promise<{ scheduledAt: string | null; downAt: string | null }>;
+  } | null;
   /** The worker's last heartbeat (it writes one every 30 s), for the Dashboard's diagnostics. */
   heartbeat?: () => Promise<WorkerHeartbeat | null>;
   /** Rules from the Director's answers, applied by Lead triage. Absent where nothing stores them. */
@@ -418,6 +421,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           ? `In the project's conversation, and by ${ways.join(' and ')}`
           : "In the project's conversation only: set RESEND and OPERATOR_EMAIL_TO to email them",
         checkedAt: beat.at,
+      });
+    }
+    if (deps.watchdog) {
+      const w = await deps.watchdog.status().catch(() => null);
+      const age = w?.scheduledAt ? (now() - Date.parse(w.scheduledAt)) / 60_000 : null;
+      services.push({
+        key: 'watchdog',
+        label: 'Worker watchdog',
+        status: age === null ? 'degraded' : age < 15 ? 'ok' : 'down',
+        detail:
+          age === null
+            ? "Its scheduled check hasn't run yet: Vercel Cron calls it every 5 minutes with CRON_SECRET"
+            : `Scheduled check ran ${Math.round(age)} min ago${w?.downAt ? `; the worker went silent at ${w.downAt.slice(11, 16)} UTC` : ''}${age >= 15 ? ': the cron has stopped calling it' : ''}`,
+        checkedAt: w?.scheduledAt ?? null,
       });
     }
     services.push({
@@ -1156,10 +1173,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
-  app.get('/portfolio/watchdog', async (_req, reply) => {
+  app.get('/portfolio/watchdog', async (req, reply) => {
     if (!deps.watchdog)
       return reply.status(409).send({ error: 'watchdog_unavailable', message: 'Not set up here.' });
-    return deps.watchdog();
+    return deps.watchdog.run({ scheduled: req.operator?.login === 'vercel-cron' });
   });
 
   app.get<P>('/projects/:id/triage/replay', async (req, reply) => {

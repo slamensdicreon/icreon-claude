@@ -38,6 +38,7 @@ import {
   setUpHosting,
   triageReplayer,
   watchWorker,
+  watchdogStatus,
   type HostingWiring,
 } from '@lw/stack';
 import { openBlobStore } from '@lw/tool-gateway';
@@ -543,14 +544,18 @@ const app = await buildApp({
       : null,
   operatorTestEmail: operatorMail,
   watchdog: integrations
-    ? () =>
-        watchWorker({
-          lastBeat: async () =>
-            (await integrations.get<WorkerHeartbeat>('heartbeat:worker'))?.at ?? null,
-          projections,
-          store: integrations,
-          notify: operatorMail ?? undefined,
-        })
+    ? {
+        run: ({ scheduled }) =>
+          watchWorker({
+            lastBeat: async () =>
+              (await integrations.get<WorkerHeartbeat>('heartbeat:worker'))?.at ?? null,
+            projections,
+            store: integrations,
+            notify: operatorMail ?? undefined,
+            scheduled,
+          }),
+        status: () => watchdogStatus(integrations),
+      }
     : null,
   rules,
   ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,

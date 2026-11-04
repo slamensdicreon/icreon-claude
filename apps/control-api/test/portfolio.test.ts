@@ -26,6 +26,7 @@ async function start(
   ruleDrafter?: Parameters<typeof buildApp>[0]['ruleDrafter'],
   operatorTestEmail?: Parameters<typeof buildApp>[0]['operatorTestEmail'],
   triageReplay?: Parameters<typeof buildApp>[0]['triageReplay'],
+  watchdog?: Parameters<typeof buildApp>[0]['watchdog'],
 ) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
@@ -48,6 +49,7 @@ async function start(
     ruleDrafter,
     operatorTestEmail,
     triageReplay,
+    watchdog,
   });
   closers.push(() => app.close());
   return app;
@@ -294,5 +296,26 @@ it("replays a project's answered cards in batches, and says when it can't", asyn
   });
   expect((await on.inject({ method: 'GET', url: '/projects/nope/triage/replay' })).statusCode).toBe(
     404,
+  );
+});
+
+it('shows when the scheduled watchdog last ran, and when it has stopped', async () => {
+  const row = async (scheduledAt: string | null) => {
+    const a = await start(undefined, undefined, undefined, undefined, {
+      run: async () => ({}),
+      status: async () => ({ scheduledAt, downAt: null }),
+    });
+    const d = PortfolioDiagnostics.parse(
+      (await a.inject({ method: 'GET', url: '/portfolio/diagnostics' })).json(),
+    );
+    return d.services.find((s) => s.key === 'watchdog')!;
+  };
+  expect(await row(null)).toMatchObject({ status: 'degraded' });
+  expect(await row(new Date(NOW - 3 * 60_000).toISOString())).toMatchObject({
+    status: 'ok',
+    detail: 'Scheduled check ran 3 min ago',
+  });
+  expect((await row(new Date(NOW - 40 * 60_000).toISOString())).detail).toContain(
+    'the cron has stopped calling it',
   );
 });
