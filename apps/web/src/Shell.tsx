@@ -15,6 +15,7 @@ import {
 } from './state';
 import { cypher, useCypher } from './lib/cypher';
 import type { SinceSummary } from '@lw/contracts';
+import { useMode } from './mode/mode';
 
 const HEALTH_DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
 const HEALTH_WORD = { healthy: 'Healthy', attention: 'Attention', blocked: 'Blocked' } as const;
@@ -404,6 +405,7 @@ function MenuButton() {
 
 export function MobileNav() {
   const { surface, go, layout, setLayout, openOverlay, projects, projectId } = useApp();
+  const bliss = useMode().mode === 'bliss';
   const waiting = projects.find((p) => p.id === projectId)?.waitingCount ?? 0;
   // The Dashboard has no project surfaces to switch between.
   if (!projectId) return null;
@@ -418,11 +420,24 @@ export function MobileNav() {
       {item('mission', 'dashboard', 'Mission')}
       {item('team', 'user-group', 'Team')}
       {item('plan', 'milestone', 'Plan')}
-      <button className="mn mn-cy" onClick={() => setLayout({ dockOpen: !layout.dockOpen })}>
-        <Icon name="chat" />
-        <span>Cypher</span>
-        {waiting > 0 && <span className="badge">{waiting}</span>}
-      </button>
+      {/* Bliss has no chat: what is yours is the fourth place instead. */}
+      {bliss ? (
+        <button
+          className="mn mn-cy"
+          aria-current={surface === 'inbox' ? 'page' : undefined}
+          onClick={() => go('inbox')}
+        >
+          <Icon name="notification" />
+          <span>Yours</span>
+          {waiting > 0 && <span className="badge">{waiting}</span>}
+        </button>
+      ) : (
+        <button className="mn mn-cy" onClick={() => setLayout({ dockOpen: !layout.dockOpen })}>
+          <Icon name="chat" />
+          <span>Cypher</span>
+          {waiting > 0 && <span className="badge">{waiting}</span>}
+        </button>
+      )}
       <button className="mn" onClick={() => openOverlay(<MoreSheet />)}>
         <Icon name="overflow-menu--vertical" />
         <span>More</span>

@@ -133,7 +133,7 @@ export function DemoMenu() {
 }
 
 export function MoreSheet() {
-  const { surface, go, closeOverlay, openOverlay, projects, projectId, theme, setTheme } = useApp();
+  const { surface, go, closeOverlay, openOverlay, projects, projectId } = useApp();
   const items: [Surface, string, string][] = [
     ['workbench', 'document', 'Workbench'],
     ['preview', 'view', 'Site preview'],
@@ -150,7 +150,7 @@ export function MoreSheet() {
           <button
             key={s}
             className="sh-i"
-            aria-current={surface === s}
+            aria-current={surface === s ? 'page' : undefined}
             onClick={() => {
               closeOverlay();
               go(s);
@@ -169,16 +169,6 @@ export function MoreSheet() {
         <button className="sh-i" onClick={() => openOverlay(<DemoMenu />)}>
           <Icon name="tools" />
           <span>Demo scenarios</span>
-        </button>
-        <button
-          className="sh-i"
-          onClick={() => {
-            closeOverlay();
-            setTheme(theme === 'dark' ? 'light' : 'dark');
-          }}
-        >
-          <Icon name="information" />
-          <span>Light or dark theme</span>
         </button>
       </div>
     </Scrim>

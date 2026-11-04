@@ -20,19 +20,8 @@ interface Item {
 
 export function Palette() {
   const app = useApp();
-  const {
-    go,
-    inspect,
-    closeOverlay,
-    projects,
-    projectId,
-    switchProject,
-    layout,
-    setLayout,
-    theme,
-    setTheme,
-    run,
-  } = app;
+  const { go, inspect, closeOverlay, projects, projectId, switchProject, layout, setLayout, run } =
+    app;
   const mc = useMission().data;
   const { agents } = useRoster();
   const wb = useProjectResource<WorkbenchSnapshot>('/workbench').data;
@@ -86,11 +75,6 @@ export function Palette() {
           go('mission');
         },
       },
-      {
-        label: 'Toggle theme',
-        k: 'verb',
-        run: () => setTheme(theme === 'dark' ? 'light' : 'dark'),
-      },
       { label: 'New project', k: 'verb', run: () => app.newProject() },
       ...projects
         .filter((p) => p.id !== projectId)
@@ -111,7 +95,7 @@ export function Palette() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [agents, projects, projectId, wb, paused, gate, layout.present, theme],
+    [agents, projects, projectId, wb, paused, gate, layout.present],
   );
   const list = items.filter((i) => i.label.toLowerCase().includes(q.toLowerCase()));
   const pick = (i: Item | undefined) => {

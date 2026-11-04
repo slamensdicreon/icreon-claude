@@ -1,0 +1,86 @@
+/*
+ * The bridge: the old stylesheet's variables, pointed at Cypher's tokens.
+ *
+ * The surfaces that haven't moved to the new shell yet still read `prototype.css` and `app.css`,
+ * which name the Icreon Design System's variables (`--web-*`, `--icreon-*`, `--neutral-*`,
+ * `--success`, …). Loaded after those two files, this one re-points every one of them at a Cypher
+ * token, so the old surfaces pick up Cypher's ground, ink, lines, type and status colors without
+ * their CSS changing. It is temporary: each mapping goes when the last rule that reads it is
+ * deleted at its surface's cut-over, and the whole file goes in phase 5 with the old stylesheet.
+ *
+ * Choices worth knowing:
+ * - The old blue accent becomes `ink`. In Cypher blue means Engineering, and primary controls are
+ *   ink. Old link buttons get a quiet underline so they still read as links.
+ * - Green is never a background, so the old `--success-bg` becomes the quiet `mist-2` well.
+ * - Cypher has one theme. The shell keeps `data-theme="light"` on the root, so the old dark
+ *   block never applies.
+ * - No monospace in Cypher: `--font-mono` becomes the sans, with tabular numerals from the root.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* brand core */
+  --icreon-black: var(--ink);
+  --icreon-white: var(--on-ink);
+  --icreon-blue: var(--blue);
+  --icreon-blue-deep: var(--blue);
+  --icreon-blue-soft: var(--iris);
+  --icreon-blue-tint: var(--mist-2);
+  --neutral-950: var(--ink);
+  --neutral-900: var(--ink);
+  --neutral-800: var(--ink);
+  --neutral-700: var(--text-2);
+  --neutral-500: var(--text-3);
+  --neutral-400: var(--text-3);
+  --neutral-300: var(--mist);
+  --neutral-200: var(--mist);
+  --neutral-100: var(--mist-2);
+  --neutral-50: var(--bliss);
+  --font-mono: var(--font-sans);
+
+  /* status */
+  --success: var(--green);
+  --success-bg: var(--mist-2);
+  --warning: var(--gold);
+  --warning-bg: var(--gold-tint);
+  --danger: var(--coral-text);
+  --danger-bg: var(--coral-tint);
+  --info: var(--blue);
+  --info-bg: var(--mist-2);
+
+  /* elevation and focus */
+  --elev-3: var(--shadow-card);
+  --elev-4: var(--shadow-card);
+  --elev-5: var(--shadow-decision);
+  --ring-focus: 0 0 0 3px color-mix(in srgb, var(--blue) 40%, transparent);
+
+  /* semantic surfaces */
+  --web-bg: var(--bliss);
+  --web-surface: var(--surface);
+  --web-surface-2: var(--surface-quiet);
+  --web-surface-3: var(--mist-2);
+  --web-inverse: var(--ink);
+  --web-fg: var(--ink);
+  --web-fg-2: var(--text-2);
+  --web-fg-3: var(--text-3);
+  --web-fg-on-accent: var(--on-ink);
+  --web-fg-on-inverse: var(--on-ink);
+  --web-accent: var(--ink);
+  --web-accent-hover: var(--ink-2);
+  --web-accent-text: var(--ink);
+  --web-border: var(--mist);
+  --web-border-strong: var(--mist);
+  --web-radius-1: var(--radius-sm);
+  --web-radius-2: var(--radius-md);
+  --web-radius-pill: var(--radius-pill);
+}
+
+body {
+  background: var(--bliss);
+  color: var(--ink);
+}
+
+.link-btn {
+  border-bottom-color: var(--mist);
+}

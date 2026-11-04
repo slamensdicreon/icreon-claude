@@ -1,0 +1,51 @@
+/*
+ * Cypher type: what tokens.css's `.type-*` classes can't say on their own.
+ *
+ * tokens.css is copied verbatim from the Cypher Design System and already carries one class per
+ * type style (`.type-voice`, `.type-meta`, …), generated from tokens.json › type.groups, so this
+ * file doesn't repeat them. It adds the root (one family, tabular numerals, Bliss's 16px base),
+ * the label's capitals (tokens.json has no text-transform), and the focus ring every control
+ * shares. Nothing here names a color or a size that isn't a token.
+ */
+
+html {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bliss);
+  color: var(--ink);
+}
+
+.type-label {
+  text-transform: uppercase;
+}
+
+/* Light weight carries the voice; bold carries what is yours. There is no italic. */
+.type-voice em,
+.type-voice-small em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* Focus: 3px of blue at 40%, outside the control (README §12). */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

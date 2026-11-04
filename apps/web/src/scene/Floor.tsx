@@ -71,31 +71,37 @@ interface Theme {
   font: string;
 }
 
+/**
+ * The floor's palette, read by name from Cypher's tokens (theme/tokens.css). Hue says which team
+ * (iris Discovery, blue Engineering, teal Content, gold Quality), coral text says blocked, green
+ * says done; everything else is ink on bliss. Tokens are always loaded, so there's no fallback
+ * palette to drift from them.
+ */
 function readTheme(): Theme {
   const cs = getComputedStyle(document.documentElement);
-  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+  const v = (name: string) => cs.getPropertyValue(name).trim();
   return {
-    bg: v('--web-bg', '#f8f8f7'),
-    surface: v('--web-surface', '#fff'),
-    surface2: v('--web-surface-2', '#f8f8f7'),
-    border: v('--web-border', '#e6e6e6'),
-    borderStrong: v('--web-border-strong', '#cfcfcf'),
-    fg: v('--web-fg', '#000'),
-    fg2: v('--web-fg-2', '#474747'),
-    fg3: v('--web-fg-3', '#7a7a7a'),
-    accent: v('--web-accent', '#386aff'),
-    accentText: v('--web-accent-text', '#2752e0'),
-    onAccent: v('--web-fg-on-accent', '#fff'),
-    danger: v('--danger', '#c8372d'),
-    success: v('--success', '#1e8e5a'),
-    warning: v('--warning', '#b26a00'),
+    bg: v('--bliss'),
+    surface: v('--surface'),
+    surface2: v('--surface-quiet'),
+    border: v('--mist'),
+    borderStrong: v('--mist'),
+    fg: v('--ink'),
+    fg2: v('--text-2'),
+    fg3: v('--text-3'),
+    accent: v('--ink'),
+    accentText: v('--ink'),
+    onAccent: v('--on-ink'),
+    danger: v('--coral-text'),
+    success: v('--green'),
+    warning: v('--gold'),
     ws: {
-      discovery: v('--icreon-blue-soft', '#7e9dff'),
-      engineering: v('--icreon-blue', '#386aff'),
-      content: v('--success', '#1e8e5a'),
-      quality: v('--warning', '#b26a00'),
+      discovery: v('--iris'),
+      engineering: v('--blue'),
+      content: v('--teal'),
+      quality: v('--gold'),
     },
-    font: v('--font-sans', 'system-ui, sans-serif'),
+    font: v('--font-sans'),
   };
 }
 

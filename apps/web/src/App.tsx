@@ -1,6 +1,5 @@
 import type { EscalationView } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
-import { Dock } from './dock/Dock';
 import { Inspector } from './Inspector';
 import { Sprite } from './lib/icons';
 import { live } from './lib/live';
@@ -8,7 +7,12 @@ import { NewProject } from './surfaces/NewProject';
 import { Palette } from './overlays/Palette';
 import { Boot, useBootState } from './parts/Boot';
 import { useCardActions } from './parts/Card';
-import { MobileNav, Sidebar, Strip, Toasts, useAwayLine } from './Shell';
+import { MobileNav, Toasts, useAwayLine } from './Shell';
+import { useMode } from './mode/mode';
+import { BlissHeader, TopBar } from './shell/Bars';
+import { CypherLauncher, CypherSheet } from './shell/Cypher';
+import { Rail, Sidebar } from './shell/Nav';
+import styles from './shell/Shell.module.css';
 import { AppProvider, isManagePage, useApp, useMission, type Surface } from './state';
 import { Activity } from './surfaces/Activity';
 import { GithubAppPanel } from './surfaces/GithubApp';
@@ -75,16 +79,11 @@ function Frame() {
     surfaceRef.current?.scrollTo(0, 0);
   }, [surface, projectId]);
 
-  const cls = [
-    'app',
-    layout.dockCollapsed && 'dock-collapsed',
-    layout.sideCollapsed && 'side-collapsed',
-    layout.sideOpen && 'side-open',
-    layout.dockOpen && 'dock-open',
-    layout.present && 'present',
-    // The Dashboard has no project, so no dock beside it.
-    !projectId && 'home',
-  ]
+  const { mode } = useMode();
+  const everything = mode === 'everything';
+  // `app` and its modifiers stay for the old stylesheet's presentation-mode and home rules; the
+  // shell's own module lays the frame out.
+  const cls = ['app', styles.shell, layout.present && 'present', !projectId && 'home']
     .filter(Boolean)
     .join(' ');
 
@@ -93,26 +92,40 @@ function Frame() {
     <>
       {/* While the first load runs, the shell renders underneath the boot overlay (blurred) and
           takes no focus or clicks. */}
-      <div className={cls} inert={boot.visible || undefined} aria-busy={boot.visible || undefined}>
-        <Sidebar />
-        <main className="canvas">
-          <Strip />
+      <div
+        className={cls}
+        data-mode={mode}
+        data-present={layout.present || undefined}
+        inert={boot.visible || undefined}
+        aria-busy={boot.visible || undefined}
+      >
+        {everything ? <Sidebar /> : <Rail />}
+        <main className={`canvas ${styles.main}`}>
+          {everything ? <TopBar /> : <BlissHeader />}
           <div className="surface" ref={surfaceRef} tabIndex={-1}>
-            {projectId ? (
-              <Body key={projectId} />
-            ) : view === 'new' ? (
-              <NewProject key={newProjectIntent.key} />
-            ) : isManagePage(view) ? (
-              <Manage key={view} page={view} />
-            ) : projects.length ? (
-              <Dashboard />
-            ) : (
-              <Empty />
-            )}
+            <div className={styles.measure}>
+              {projectId ? (
+                <Body key={projectId} />
+              ) : view === 'new' ? (
+                <NewProject key={newProjectIntent.key} />
+              ) : isManagePage(view) ? (
+                <Manage key={view} page={view} />
+              ) : projects.length ? (
+                <Dashboard />
+              ) : (
+                <Empty />
+              )}
+            </div>
           </div>
           <Inspector />
         </main>
-        {projectId && <Dock />}
+        {/* Cypher chats only in Everything, from the eye button; nothing docks beside the page. */}
+        {everything && projectId && (
+          <>
+            <CypherSheet />
+            <CypherLauncher />
+          </>
+        )}
       </div>
       <MobileNav />
       {overlay}

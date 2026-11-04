@@ -2,3 +2,6 @@ pnpm-lock.yaml
 docs/
 # Recorded workflow histories: replayed byte for byte.
 packages/orchestrator/test/replay/histories/
+# Copied verbatim from the Cypher Design System, which generates it from tokens.json.
+apps/web/src/theme/tokens.css
+apps/web/src/theme/tokens.json

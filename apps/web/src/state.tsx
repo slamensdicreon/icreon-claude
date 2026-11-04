@@ -312,11 +312,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  // Cypher has one theme (design system §5): the root stays light whatever the stored preference,
+  // so the old stylesheet's dark block never applies to the surfaces still on it.
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme) root.dataset.theme = theme;
-    else delete root.dataset.theme;
-  }, [theme]);
+    document.documentElement.dataset.theme = 'light';
+  }, []);
 
   const ui = useMemo(
     () => (projectId ? (uis.current.get(projectId) ?? DEFAULT_UI) : DEFAULT_UI),

@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 /**
@@ -25,6 +26,8 @@ const proxy = Object.fromEntries(
 
 export default defineConfig({
   plugins: [react()],
+  // `@/` is `src/`, as components.json (the shadcn CLI, for affectUI items) expects.
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: { port: 5173, proxy },
   preview: { port: 5173, proxy },
 });

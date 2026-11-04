@@ -1,0 +1,467 @@
+/*
+ * The Cypher shell (design system §8). Every color, size and radius is a token; the only literals
+ * are 1px hairlines and the phone breakpoint, which the old stylesheet's bottom bar shares (640).
+ */
+
+/* ---------- frame ---------- */
+.shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--bliss);
+  color: var(--ink);
+}
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* The old inspector drawer hangs from var(--top); it starts under the bar, or at the top in Bliss. */
+  --top: 0px;
+}
+.shell[data-mode='everything'] .main {
+  --top: var(--topbar);
+}
+/* Old surfaces scroll here, as they did in the old canvas. Bliss centres them on its measure. */
+.measure {
+  width: 100%;
+}
+.shell[data-mode='bliss'] .measure {
+  max-width: var(--measure);
+  margin: 0 auto;
+}
+.grow {
+  flex: 1 1 auto;
+}
+
+/* ---------- rail (Bliss) ---------- */
+.rail {
+  flex: 0 0 var(--rail);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-2) var(--space-5);
+  background: var(--ink);
+  color: var(--on-ink);
+  overflow-y: auto;
+}
+.railEye {
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.railItem {
+  position: relative;
+  width: calc(var(--rail) - var(--space-5));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--on-ink-muted);
+  cursor: pointer;
+  text-align: center;
+}
+.railItem:hover {
+  color: var(--on-ink);
+}
+.railItem[aria-current='page'] {
+  background: var(--surface);
+  color: var(--ink);
+}
+.railDot {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-4);
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--coral);
+}
+.avatar {
+  flex: none;
+  width: var(--space-7);
+  height: var(--space-7);
+  border-radius: var(--radius-pill);
+  background: var(--iris);
+  color: var(--on-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.rail .avatar {
+  margin-top: var(--space-2);
+}
+
+/* ---------- sidebar (Everything) ---------- */
+.sidebar {
+  flex: 0 0 var(--sidebar);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-3) var(--space-4);
+  background: var(--ink);
+  color: var(--on-ink);
+  overflow-y: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--on-ink);
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-md);
+}
+.wordmark {
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+.navGap {
+  height: var(--space-2);
+  flex: none;
+}
+.navLabel {
+  padding: var(--space-4) var(--space-3) var(--space-1);
+  color: var(--on-ink-quiet);
+}
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--row) - var(--space-3));
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--on-ink);
+  cursor: pointer;
+  text-align: left;
+  flex: none;
+}
+.navItem:hover {
+  background: var(--ink-2);
+}
+.navItem[aria-current='page'] {
+  background: var(--surface);
+  color: var(--ink);
+}
+.navItem.quiet:not([aria-current='page']) {
+  color: var(--on-ink-muted);
+}
+.badge {
+  margin-left: auto;
+  min-width: var(--space-5);
+  height: var(--space-5);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--coral-text);
+  color: var(--on-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0;
+}
+.user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) 0;
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--ink-3);
+}
+.userText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.userText :global(.type-meta) {
+  color: var(--on-ink-muted);
+}
+
+/* ---------- project switcher ---------- */
+.switcher,
+.switcherPill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.switcher {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ink-3);
+  background: var(--ink-2);
+  color: var(--on-ink);
+  flex: none;
+}
+.switcher :global(.type-meta) {
+  color: var(--on-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.switcherPill {
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+}
+.tile {
+  flex: none;
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--blue);
+  color: var(--on-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0;
+}
+.switcherText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.switcher .chev,
+.switcherPill .chev {
+  flex: none;
+  margin-left: auto;
+}
+
+/* ---------- top bar (Everything) ---------- */
+.topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--topbar);
+  padding: 0 var(--space-5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--mist);
+}
+.titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.titles h1 {
+  margin: 0;
+}
+.titles :global(.type-meta) {
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search {
+  margin-left: auto;
+  flex: 0 1 calc(var(--sidebar) + var(--space-5));
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: calc(var(--row) - var(--space-3));
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--surface-quiet);
+  border: 1px solid var(--mist);
+  color: var(--text-3);
+  cursor: text;
+  text-align: left;
+}
+.search > span:first-of-type {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kbd {
+  flex: none;
+}
+.presence {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4) var(--space-1) var(--space-1);
+  min-height: calc(var(--row) - var(--space-3));
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-quiet);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.presence[data-yours] {
+  background: var(--coral-tint);
+  color: var(--coral-text);
+}
+
+/* ---------- floating header (Bliss) ---------- */
+.blissHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-8) 0;
+  color: var(--text-3);
+}
+.dialSlot,
+.exitPresent {
+  margin-left: auto;
+}
+.exitPresent {
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-5);
+  min-height: calc(var(--row) - var(--space-3));
+  cursor: pointer;
+}
+
+/* ---------- Cypher button and sheet (Everything) ---------- */
+.launcher {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 30;
+  width: var(--launcher);
+  height: var(--launcher);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  box-shadow: var(--shadow-card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.launcherBadge {
+  position: absolute;
+  top: calc(var(--space-1) * -1);
+  right: calc(var(--space-1) * -1);
+  min-width: var(--space-5);
+  height: var(--space-5);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--coral-text);
+  color: var(--on-ink);
+  border: 2px solid var(--bliss);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0;
+}
+.sheet {
+  position: fixed;
+  right: var(--space-5);
+  bottom: calc(var(--space-5) + var(--launcher) + var(--space-3));
+  z-index: 30;
+  width: min(var(--sheet), calc(100vw - var(--space-5) * 2));
+  height: min(calc(var(--sheet) * 1.72), calc(100vh - var(--launcher) - var(--space-8) * 2));
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  box-shadow: var(--shadow-decision);
+  overflow: hidden;
+  /* The old dock's header is as tall as the old bar; here it's a row. */
+  --top: var(--row);
+}
+.sheetClose {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  width: calc(var(--row) - var(--space-3));
+  height: calc(var(--row) - var(--space-3));
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.sheetClose:hover {
+  background: var(--surface-quiet);
+}
+/* The old dock, made to fill the sheet: no border, no off-canvas slide, no collapse. */
+.sheet :global(.dock) {
+  position: static;
+  transform: none;
+  width: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.sheet :global(.dock-head) {
+  padding-right: calc(var(--row) + var(--space-2));
+}
+.sheet :global([data-action='collapse-dock']),
+.sheet :global(.dock-mini) {
+  display: none;
+}
+
+/* ---------- phone: the old bottom bar takes over (phase 5 redraws it) ---------- */
+@media (max-width: 640px) {
+  .rail,
+  .sidebar,
+  .launcher {
+    display: none;
+  }
+  .topbar {
+    padding: 0 var(--space-4);
+  }
+  .search {
+    display: none;
+  }
+  .blissHeader {
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .sheet {
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 85vh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+}
+
+/* ---------- presentation: the operator chrome goes ---------- */
+.shell[data-present] .rail,
+.shell[data-present] .sidebar,
+.shell[data-present] .topbar,
+.shell[data-present] .launcher,
+.shell[data-present] .sheet {
+  display: none;
+}
