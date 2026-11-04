@@ -10,6 +10,7 @@ import type { Activities } from '../activities';
 import { cancelTask, pauseTask, resumeTask } from '../definitions';
 import {
   ACCESS_DENIED,
+  PROVIDER_DOWN,
   AGENT_FAILED,
   CAPABILITY_GAP,
   NEEDS_DECISION,
@@ -38,7 +39,14 @@ const agents = proxyActivities<Activities>({
   heartbeatTimeout: '5 minutes',
   retry: {
     maximumAttempts: 3,
-    nonRetryableErrorTypes: [ACCESS_DENIED, NEEDS_DECISION, WAITING, AGENT_FAILED, NOT_CONNECTED],
+    nonRetryableErrorTypes: [
+      ACCESS_DENIED,
+      NEEDS_DECISION,
+      WAITING,
+      AGENT_FAILED,
+      NOT_CONNECTED,
+      PROVIDER_DOWN,
+    ],
   },
 });
 
@@ -146,6 +154,9 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
       if (app?.type === ACCESS_DENIED) {
         return { outcome: 'access_denied', state, attempt, reason: message, spent };
       }
+      if (app?.type === PROVIDER_DOWN) {
+        return { outcome: 'provider_down', state, attempt, reason: message, spent };
+      }
       if (app?.type === NOT_CONNECTED) {
         return {
           outcome: 'access_denied',
@@ -204,7 +215,15 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
 
     if (!(await checkpoint())) return { outcome: 'cancelled', state, attempt, spent };
     await move('validating');
-    const verdict: ValidationResult = await agents.validate({ ...request, result });
+    let verdict: ValidationResult;
+    try {
+      verdict = await agents.validate({ ...request, result });
+    } catch (err) {
+      const cause = err instanceof ActivityFailure ? err.cause : err;
+      if (cause instanceof ApplicationFailure && cause.type === PROVIDER_DOWN)
+        return { outcome: 'provider_down', state, attempt, reason: cause.message, spent };
+      throw err;
+    }
     if (verdict.pass) {
       await move('done');
       return {

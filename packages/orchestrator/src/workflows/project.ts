@@ -1161,6 +1161,41 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       );
       await send(...events);
       poke();
+    } else if (outcome.outcome === 'provider_down') {
+      // The model provider refuses every call until someone acts (credit, an API key): no task
+      // failed. The task goes back to ready without spending an attempt, and the project pauses
+      // once, saying why, instead of raising a card for every task that tries.
+      attempts[t.taskId] = Math.max(0, outcome.attempt - 1);
+      const back: TaskState[] =
+        outcome.state === 'running'
+          ? ['paused', 'ready']
+          : outcome.state === 'validating'
+            ? ['waiting', 'ready']
+            : ['ready'];
+      events.push(
+        ...back.map((to) => taskMove(t, to, to === 'ready' ? `Not run: ${outcome.reason}` : null)),
+        agentRefresh(t.role),
+      );
+      if (!projectPaused) {
+        projectPaused = true;
+        events.push(
+          {
+            type: 'project.status',
+            actor: SYSTEM,
+            subject: { kind: 'project', id: projectId },
+            severity: 'warning',
+            data: { status: 'paused' },
+          },
+          ...say(
+            'text',
+            "Agents can't reach the model provider",
+            `${outcome.reason} Every agent call fails until then, so the project is paused. The tasks that tried are back in the queue with their attempts unspent.`,
+          ),
+        );
+        signalAll(pauseTask);
+      }
+      await send(...events);
+      poke();
     } else if (outcome.outcome === 'needs_decision') {
       // The agent's own decision flag: the Director sees its question, options and recommendation.
       const d = outcome.decision;

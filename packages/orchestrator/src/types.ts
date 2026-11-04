@@ -237,6 +237,8 @@ export type TaskOutcome = { state: TaskState; attempt: number } & (
   | { outcome: 'waiting'; waiting: AgentWaiting; spent: AgentResult }
   /** The agent's tools can't do a step: the task waits for engineering to add the capability. */
   | { outcome: 'capability_gap'; summary: string; capability: string; spent: AgentResult }
+  /** The model provider refuses every call until someone acts (credit, API key): nothing failed. */
+  | { outcome: 'provider_down'; reason: string; spent: AgentResult }
   | { outcome: 'cancelled'; spent: AgentResult }
 );
 
@@ -252,6 +254,24 @@ export const WAITING = 'WaitingOnTasks';
 export const CAPABILITY_GAP = 'CapabilityGap';
 /** Error type for an agent session that ended without finishing (refusal, budget, turn limit). */
 export const AGENT_FAILED = 'AgentFailed';
+/** Error type for a model provider that refuses every call until someone acts (credit, API key). */
+export const PROVIDER_DOWN = 'ProviderDown';
+
+/**
+ * Why the model provider refuses calls until someone acts, or null for anything else. Rate limits,
+ * overload and server errors pass: they clear on their own and the activity's retries cover them.
+ */
+export function providerOutage(err: unknown): string | null {
+  const e = (err ?? {}) as { status?: number; message?: string; error?: unknown };
+  const text = [e.message, typeof e.error === 'object' ? JSON.stringify(e.error) : '']
+    .filter(Boolean)
+    .join(' ');
+  if (/credit balance is too low/i.test(text))
+    return 'The model provider says the credit balance is too low. Add credit (Anthropic Console, Plans & Billing), then resume the project.';
+  if (e.status === 401 || /authentication_error|invalid x-api-key/i.test(text))
+    return 'The model provider rejected the API key. Fix the key the workers use, then resume the project.';
+  return null;
+}
 
 /** Other tasks in the plan still have to produce what an agent needs. */
 export interface AgentWaiting {

@@ -7,6 +7,8 @@ import {
   AGENT_FAILED,
   CAPABILITY_GAP,
   NEEDS_DECISION,
+  PROVIDER_DOWN,
+  providerOutage,
   WAITING,
   type AgentRequest,
   type AgentResult,
@@ -32,7 +34,7 @@ export function withAgentRunner(
     ...base,
     async runAgent(req): Promise<AgentResult> {
       if (!only(req.task)) return base.runAgent(req);
-      const out = await runner.run(req);
+      const out = await outageAware(() => runner.run(req));
       const spent = { tokens: out.spent.tokens, usd: out.spent.usd };
       switch (out.kind) {
         case 'done': {
@@ -72,6 +74,8 @@ export function withAgentRunner(
             details: [{ spent }],
           });
         case 'failed':
+          if (providerOutage({ message: out.reason }))
+            throw down(providerOutage({ message: out.reason })!, spent);
           throw ApplicationFailure.create({
             type: AGENT_FAILED,
             message: out.reason,
@@ -80,5 +84,28 @@ export function withAgentRunner(
           });
       }
     },
+    // The Lead's review calls the model too.
+    async validate(req) {
+      return outageAware(() => base.validate(req));
+    },
   };
+}
+
+/** A failure the workflow pauses the project for, without spending the task's attempts. */
+function down(reason: string, spent = { tokens: 0, usd: 0 }) {
+  return ApplicationFailure.create({
+    type: PROVIDER_DOWN,
+    message: reason,
+    nonRetryable: true,
+    details: [{ spent }],
+  });
+}
+
+async function outageAware<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const why = providerOutage(err);
+    throw why ? down(why) : err;
+  }
 }
