@@ -121,9 +121,9 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
   });
   const triage = stack.activities.triage;
 
-  // Naming is a Lead's to settle; this playbook starts it in shadow.
+  // Naming is a Lead's to settle, and the playbook hands it to the Lead.
   expect(await triage(question('live', 'naming'))).toEqual({
-    level: 'shadow',
+    level: 'lead',
     leadId: 'engineering-lead',
     leadName: 'Marcus Reyes',
     decision: 'answer',
@@ -134,8 +134,8 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
     tokens: 300,
     usd: 0.001,
   });
-  // In shadow the rule isn't applied yet: the Director's answer will say how it did.
-  expect((await rules.get(naming.id))!.applied).toBe(0);
+  // Settled by the Lead: the rule it cites is applied.
+  expect((await rules.get(naming.id))!.applied).toBe(1);
   expect(asked[0]!.rules).toEqual([
     {
       id: naming.ref,
@@ -150,6 +150,9 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
     task: { title: 'Port Hero to Content SDK' },
   });
   expect(asked[0]!.permissions.some((p) => p.startsWith('sandbox: '))).toBe(true);
+  // No decisions taken yet, and no knowledge store: nothing more to bind the Lead.
+  expect(asked[0]!.decisions).toEqual([]);
+  expect(asked[0]!.lessons).toEqual([]);
 
   // Access is always asked; demo projects have no Lead to ask.
   expect(await triage(question('live', 'access'))).toEqual({ level: 'ask', tokens: 0, usd: 0 });
@@ -168,17 +171,17 @@ it('asks the task’s Lead on live projects, by the category’s autonomy level'
   expect(await triage(question('live', 'naming'))).toEqual({ level: 'agents', tokens: 0, usd: 0 });
   expect(asked).toHaveLength(1);
 
-  // Handed to the Lead: a rule it cites is applied.
+  // Set back to shadow: the Lead answers for the record and the rule isn't applied again.
   await store.append('live', [
     {
       ...sys,
       type: 'settings.changed',
       subject: { kind: 'project', id: 'live' },
-      data: { key: 'autonomy', value: { naming: 'lead' } },
+      data: { key: 'autonomy', value: { naming: 'shadow' } },
     } as NewEvent,
   ]);
   expect(await triage(question('live', 'naming'))).toMatchObject({
-    level: 'lead',
+    level: 'shadow',
     ruleIds: [naming.id],
   });
   expect((await rules.get(naming.id))!.applied).toBe(1);

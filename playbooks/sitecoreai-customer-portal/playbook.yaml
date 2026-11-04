@@ -126,13 +126,18 @@ defaults:
   concurrency: 6
   # Lead-decidable categories start in shadow, as on the migration playbook: the Lead answers for
   # the record and the card still reaches the Director until the scorecard shows they agree.
+  # Who may settle each category of card. The Lead settles the categories it can (it sees the
+  # Blueprint, the rules, the project's decisions and the team's lessons) and forwards to the
+  # Director what is theirs; a Director can set any category back to shadow or ask in Settings.
+  # Five projects' shadow answers showed the Lead right or nearly right on most retry,
+  # ownership and naming cards. Access, scope, releases and anything unclassified always ask.
   autonomy:
-    media: shadow
-    tool: shadow
-    retry: shadow
-    ownership: shadow
-    naming: shadow
-    content: shadow
+    media: lead
+    tool: lead
+    retry: lead
+    ownership: lead
+    naming: lead
+    content: lead
     access: ask
     scope: ask
     release: ask

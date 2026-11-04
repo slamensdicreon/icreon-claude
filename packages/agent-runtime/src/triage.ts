@@ -44,6 +44,10 @@ export interface TriageInput {
   previous: string[];
   /** Rules that may apply: when this happens, do that. */
   rules: { id: string; when: string; then: string }[];
+  /** Decisions already taken on this project that bear on the question, newest first. */
+  decisions?: string[];
+  /** The team's lessons that bear on the question. */
+  lessons?: string[];
 }
 
 /** A Lead's answer, checked: only the card's options, only the rules given. */
@@ -69,7 +73,9 @@ Forward to the Director when any of these hold:
 - It is a content, design or brand choice the client owns and nothing you can see settles it.
 - None of the options is right, or you aren't confident.
 
-Never invent an option. Write the reasoning to the specialist, plainly, in one or two sentences, naming what the answer follows from (for a rule, its id).`;
+Decisions already taken on this project, and the team's lessons, bind your answer: follow them. When one settles the question, answer from it and name it (a decision by its ref, a lesson by its K- ref). For example, when the Director made a component's work their own (built by hand, a Director item for UAT), no task will deliver it: the specialist must not wait for it, and you say so. Forward only when following one would contradict another.
+
+Never invent an option. Write the reasoning to the specialist, plainly, in one or two sentences, naming what the answer follows from (for a rule, its id). The specialist acts on your reasoning: when the option alone isn't enough, say what to do now and what not to wait for.`;
 
 /**
  * A Lead's triage of a specialist's question, with Claude. Structured output keeps it to the
@@ -98,6 +104,12 @@ export async function triageQuestion(
       : 'Rules: none yet.',
     input.previous.length
       ? `Earlier questions on this task (oldest first):\n${input.previous.map((p) => `- ${p}`).join('\n')}`
+      : '',
+    input.decisions?.length
+      ? `Decisions already taken on this project that bear on it (newest first):\n${input.decisions.map((d) => `- ${d}`).join('\n')}`
+      : '',
+    input.lessons?.length
+      ? `The team's lessons that bear on it:\n${input.lessons.map((l) => `- ${l}`).join('\n')}`
       : '',
     `The question: ${input.card.title}`,
     `Context: ${input.card.context || '(none)'}`,

@@ -29,6 +29,7 @@ import type { PlatformCheck, PlatformPack, ScreenComparison, ScreenPair } from '
 import { selfCheck, withReview } from './review';
 import { factsBrief } from './facts';
 import { lessonsFor } from './knowledge';
+import { relevantDecisions, relevantLessons } from './triage-context';
 import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
 import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
@@ -475,6 +476,22 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
         ),
         previous: req.previous,
         rules: covering.map((x) => ({ id: x.ref, when: x.when, then: x.then })),
+        decisions: relevantDecisions(s, req.taskId, req.card),
+        lessons: opts.knowledge
+          ? await relevantLessons(
+              opts.knowledge,
+              {
+                projectId: req.projectId,
+                playbookId: s.playbook?.id ?? opts.playbook.manifest.id,
+                platform: s.intake?.platform ?? null,
+                role: req.role,
+                operations: Object.entries(role?.tools ?? {}).flatMap(([server, g]) =>
+                  g.ops.map((op) => `${server}.${op}`),
+                ),
+              },
+              req.card,
+            )
+          : [],
       });
       const who = { leadId: lead.role, leadName: lead.persona ?? lead.name };
       if (r.decision === 'answer') {
