@@ -30,6 +30,14 @@ export interface OperatorDeps {
   stallMinutes?: number;
   /** Proposed rules and lessons from a project that wait for the Director's review. */
   pendingReview?: (projectId: string) => Promise<{ rules: number; lessons: number }>;
+  /** The project's workflow: whether it runs and its last failed steps, to say why it stalled. */
+  health?: (projectId: string) => Promise<WorkflowHealth | null>;
+}
+
+/** What the operator reads of a project's workflow (see `workflowHealth` in the orchestrator). */
+export interface WorkflowHealth {
+  status: string;
+  failures: { at: string | null; message: string | null }[];
 }
 
 const LABEL = 'Operator';
@@ -51,8 +59,12 @@ export async function operatorSweep(deps: OperatorDeps): Promise<OperatorNotice[
   const out: OperatorNotice[] = [];
   for (const s of deps.projections.all()) {
     if (s.mode !== 'live' || s.status !== 'running') continue;
+    let stall = noticeFor(s, now, deps);
+    // A stall is told with its cause: the workflow's own health, read only when one is due.
+    if (stall?.kind === 'stalled' && deps.health)
+      stall = noticeFor(s, now, deps, await deps.health(s.projectId).catch(() => null)) ?? stall;
     const notice =
-      noticeFor(s, now, deps) ??
+      stall ??
       (deps.pendingReview
         ? reviewNotice(s, await deps.pendingReview(s.projectId).catch(() => null))
         : null);
@@ -73,6 +85,7 @@ export function noticeFor(
   s: ProjectState,
   now: Date,
   opts: Pick<OperatorDeps, 'attentionMinutes' | 'stallMinutes'> = {},
+  health?: WorkflowHealth | null,
 ): OperatorNotice | null {
   const attention = opts.attentionMinutes ?? 10;
   const stall = opts.stallMinutes ?? 30;
@@ -120,8 +133,41 @@ export function noticeFor(
     project: s.name,
     kind: 'stalled',
     title: STALLED,
-    body: `${s.name}: nothing has happened for ${Math.round(minutes(last, now))} minutes, with ${left.length} task${left.length === 1 ? '' : 's'} left (${parts.join(', ')}) and nothing waiting on you. ${running ? "An agent may be hung, or the project's workflow may be failing" : "The project's workflow may be failing, or a wait may have no task to end it"}: open Diagnostics in the project to see which.`,
+    body: `${s.name}: nothing has happened for ${Math.round(minutes(last, now))} minutes, with ${left.length} task${left.length === 1 ? '' : 's'} left (${parts.join(', ')}) and nothing waiting on you. ${stallCause(s, health, last, running)}`,
   };
+}
+
+const clip = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+const hhmm = (iso: string) => `${iso.slice(11, 16)} UTC`;
+
+/**
+ * Why nothing moves, as far as the operator can tell: a workflow that stopped or fails every step
+ * (an engineering fix), tasks waiting on a capability the team lacks (engineering, not a
+ * decision), or, with neither, where to look.
+ */
+function stallCause(
+  s: ProjectState,
+  health: WorkflowHealth | null | undefined,
+  since: string,
+  running: number,
+): string {
+  if (health && health.status !== 'RUNNING')
+    return `Its workflow is no longer running (${health.status.toLowerCase()}), so nothing starts until it is restarted: that needs engineering.`;
+  const failing = health?.failures.find((f) => f.at && f.at >= since);
+  if (failing)
+    return `Its workflow fails every step it takes, since ${hhmm(failing.at!)}: "${clip(failing.message ?? 'no message', 300)}". That needs an engineering fix; cards and Resume won't answer until then.`;
+  const gaps = Object.values(s.capabilityGaps ?? {}).filter(
+    (g) => !g.closedAt && Object.keys(g.tasks).length,
+  );
+  if (gaps.length) {
+    const waiting = gaps.reduce((n, g) => n + Object.keys(g.tasks).length, 0);
+    return `${waiting} task${waiting === 1 ? ' waits' : 's wait'} on what the team can't do yet: ${gaps.map((g) => clip(g.capability, 120)).join('; ')}. That needs engineering (a tool or a permission), not a decision.`;
+  }
+  if (health)
+    return running
+      ? 'Its workflow is running and not failing, so an agent may be stuck in a long step: open Diagnostics in the project to see which.'
+      : 'Its workflow is running and not failing, so a wait may have no task to end it: open Diagnostics in the project to see which.';
+  return `${running ? "An agent may be hung, or the project's workflow may be failing" : "The project's workflow may be failing, or a wait may have no task to end it"}: open Diagnostics in the project to see which.`;
 }
 
 /**

@@ -26,7 +26,7 @@ import {
   PostgresVault,
   Projections,
 } from '@lw/events';
-import { createWorker, taskQueueFor } from '@lw/orchestrator';
+import { createWorker, taskQueueFor, workflowHealth } from '@lw/orchestrator';
 import { loadCatalog, versionOf, type Playbook } from '@lw/playbook-sdk';
 import { createPlatforms, ownedPaths, SITECOREAI, sitecoreTarget } from '@lw/platforms';
 import { SandboxToolServer, SitecoreCliToolServer, VercelBoxProvider } from '@lw/tool-sandbox';
@@ -516,12 +516,19 @@ const beat = () =>
 void beat();
 const beating = setInterval(() => void beat(), 30_000);
 
+const health = workflowHealth({
+  address: env.TEMPORAL_ADDRESS,
+  namespace: env.TEMPORAL_NAMESPACE,
+  apiKey: env.TEMPORAL_API_KEY,
+});
 const operating = setInterval(
   () =>
     void operatorSweep({
       projections,
       store: opened.store,
       notify,
+      // Why a project stalled: its workflow's status and last failed steps.
+      health,
       // What the team proposes to learn from a project, waiting for the Director's review.
       pendingReview: async (projectId) => ({
         rules: rules

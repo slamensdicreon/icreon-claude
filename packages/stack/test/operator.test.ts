@@ -159,3 +159,83 @@ it('says once that proposals wait for review, and again only when there are more
   // A review notice doesn't count as a stall notice.
   expect(noticeFor(s, at('2026-11-04T11:45:00.000Z'))?.kind).toBe('stalled');
 });
+
+it('names why a project stalled: a failing or stopped workflow, a missing capability', async () => {
+  const now = at('2026-11-04T11:45:00.000Z');
+  const failing = noticeFor(
+    project(),
+    now,
+    {},
+    {
+      status: 'RUNNING',
+      failures: [
+        {
+          at: '2026-11-04T11:02:00.000Z',
+          message: 'Unhandled rejection: external workflow not found',
+        },
+      ],
+    },
+  )!;
+  expect(failing.body).toContain(
+    'Its workflow fails every step it takes, since 11:02 UTC: "Unhandled rejection: external workflow not found". That needs an engineering fix',
+  );
+  // A failure from before the project last moved isn't why it stopped.
+  const old = noticeFor(
+    project(),
+    now,
+    {},
+    {
+      status: 'RUNNING',
+      failures: [{ at: '2026-11-04T10:30:00.000Z', message: 'old' }],
+    },
+  )!;
+  expect(old.body).not.toContain('old');
+  expect(old.body).toContain('Its workflow is running and not failing, so a wait may have no task');
+
+  expect(noticeFor(project(), now, {}, { status: 'FAILED', failures: [] })!.body).toContain(
+    'Its workflow is no longer running (failed)',
+  );
+
+  const gap = noticeFor(
+    project({
+      capabilityGaps: {
+        g: {
+          capability: 'view screenshot images',
+          firstAt: '2026-11-04T11:00:00.000Z',
+          tasks: { 'crawl-site': { agentId: 'a', summary: 's', at: '2026-11-04T11:00:00.000Z' } },
+          closedAt: null,
+        },
+      },
+    } as never),
+    now,
+    {},
+    { status: 'RUNNING', failures: [] },
+  )!;
+  expect(gap.body).toContain(
+    "1 task waits on what the team can't do yet: view screenshot images. That needs engineering",
+  );
+
+  // The sweep reads the workflow only when a stall is due.
+  const read: string[] = [];
+  const [n] = await operatorSweep({
+    projections: { catchUpAll: async () => {}, all: () => [project()] } as unknown as Projections,
+    store: { append: async () => {} } as unknown as EventStore,
+    now: () => now,
+    health: async (id) => {
+      read.push(id);
+      return { status: 'RUNNING', failures: [{ at: '2026-11-04T11:10:00.000Z', message: 'boom' }] };
+    },
+  });
+  expect(read).toEqual(['p1']);
+  expect(n!.body).toContain('"boom"');
+  await operatorSweep({
+    projections: { catchUpAll: async () => {}, all: () => [project()] } as unknown as Projections,
+    store: { append: async () => {} } as unknown as EventStore,
+    now: () => at('2026-11-04T11:05:00.000Z'),
+    health: async (id) => {
+      read.push(id);
+      return null;
+    },
+  });
+  expect(read).toEqual(['p1']);
+});

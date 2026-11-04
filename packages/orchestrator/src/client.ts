@@ -2,7 +2,12 @@ import type { Budgets, Control, EscalationType } from '@lw/contracts';
 import { CommandError } from '@lw/domain';
 import type { Playbook } from '@lw/playbook-sdk';
 import { ApplicationFailure } from '@temporalio/common';
-import { WorkflowNotFoundError, WorkflowUpdateFailedError, type Client } from '@temporalio/client';
+import {
+  Client,
+  Connection,
+  WorkflowNotFoundError,
+  WorkflowUpdateFailedError,
+} from '@temporalio/client';
 import {
   changeBudgets,
   rerunTask,
@@ -213,4 +218,32 @@ export class ProjectCommandsClient {
   completeTasks(taskIds: string[], note: string) {
     return this.run(() => this.handle.executeUpdate(completeTasks, { args: [{ taskIds, note }] }));
   }
+}
+
+/** What the operator needs of a project's workflow: whether it runs, and its last failed steps. */
+export interface WorkflowHealth {
+  status: string;
+  failures: { at: string | null; message: string | null }[];
+}
+
+/**
+ * Read-only health of projects' workflows, on one lazy connection: for the operator, which runs
+ * in the worker and has no client of its own. Null when the workflow can't be read.
+ */
+export function workflowHealth(conn: { address: string; namespace: string; apiKey?: string }) {
+  const client = new Client({
+    connection: Connection.lazy({
+      address: conn.address,
+      ...(conn.apiKey
+        ? { tls: true, apiKey: conn.apiKey, metadata: { 'temporal-namespace': conn.namespace } }
+        : {}),
+    }),
+    namespace: conn.namespace,
+  });
+  return async (projectId: string): Promise<WorkflowHealth | null> => {
+    const d = await new ProjectCommandsClient(client, projectId).diagnose().catch(() => null);
+    return d
+      ? { status: d.status, failures: d.failures.map((f) => ({ at: f.at, message: f.message })) }
+      : null;
+  };
 }
