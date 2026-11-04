@@ -39,6 +39,9 @@ tools:
       - snapshot
       # Images set by CSS (a hero's or section's background) aren't in a snapshot: computed styles give their URL.
       - page.styles
+      # A page's own images on a host other than the source site (its CDN, a SitecoreAI source's
+      # edge.sitecorecloud.io): media.upload takes only source-site URLs, so download first and upload the ref.
+      - fetch.asset
   # The source repository, where a site built from code keeps its copy (content files).
   github:
     ops:
