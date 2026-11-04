@@ -117,6 +117,7 @@ Set them in the project's settings. Variables the images already default are in
 | `TEMPORAL_NAMESPACE`                       | api, worker       | Real mode: `<namespace>.<account>`                                     |
 | `TEMPORAL_API_KEY`                         | api, worker       | Real mode: connects over TLS with the key                              |
 | `AGENTS`, `ANTHROPIC_API_KEY`              | worker            | Real mode: `AGENTS=claude` runs roles whose tools are connected on Claude |
+| `WORKER_SHUTDOWN_GRACE_SECONDS`            | worker            | Optional (default 240): how long activities get to finish after SIGTERM. Keep it plus 30 under the daemon's `terminationGracePeriodSeconds` (300 in `vercel.json`); see [Deploying while projects run](#deploying-while-projects-run) |
 
 Leave "Automatically expose System Environment Variables" on: the API reads
 `VERCEL_PROJECT_PRODUCTION_URL`, `VERCEL_URL` and `VERCEL_BRANCH_URL` for its URLs and allowed
@@ -194,6 +195,47 @@ project needs its own token) and `sitecore-deploy` (the Deploy API). The worker 
 API terminates its Temporal workflow, deletes its events after intake and its Blob files, and keeps
 the intake facts, credentials (and their checks) and the source site. **Start** on Mission Control
 runs it again from phase 0.
+
+## Deploying while projects run
+
+Push at any time; nothing needs pausing. Every deployment replaces the `worker` daemon, and agent
+sessions (often several minutes, sometimes far longer) carry on across it:
+
+1. Vercel sends the old worker SIGTERM. It stops taking tasks from Temporal and tells every
+   agent session in it to stop after its turn in progress.
+2. Each session finishes that turn (the model's reply and the tool calls it asked for), saves
+   it, and hands over: its activity fails with a retryable `WorkerShutdown`, and Temporal retries
+   it a second later.
+3. The new deployment's worker picks the retry up and carries the session on from the turn it
+   saved, with the same conversation, step count and spend. Nothing is redone, and the handoff
+   spends none of the task's attempts and raises no card. The task's log shows "Resumed after
+   turn N".
+4. Other activities in flight get `WORKER_SHUTDOWN_GRACE_SECONDS` (240) to finish. At the end
+   of it, a session still mid-turn (a long build, say) is cancelled: it hands over too, and the
+   next worker redoes that one turn. 30 s later the old worker exits, before Vercel's
+   `terminationGracePeriodSeconds` (300) runs out.
+
+How it works: after every completed turn the session's new messages go to the Blob store
+(`sessions/<task>/<attempt>/` under the project; deleted when the session ends), and the
+activity's heartbeat carries where they are. Temporal hands the last heartbeat to the next
+attempt. The activity counts attempts by how the earlier ones ended: an error of the session's own
+starts it over and the third ends it, as before; a worker that vanished without handing over (a
+crash, or killed before its turn finished) resumes it, and the third such loss ends it; a handoff
+is free (Temporal's limit of 25 attempts is only a backstop).
+
+What a deploy can still cost:
+
+- **The turn in progress, if the worker dies or is killed mid-turn.** The next attempt redoes it,
+  so a tool call made in that turn may run again (the agent sees the item already exists, or
+  reads before writing again). Its tokens are spent twice and counted in the budget once.
+- **A few more turns after a crash.** Heartbeats reach Temporal within 5 s of a turn; a worker
+  that dies in that window resumes one turn earlier. A crash is noticed after the 5-minute
+  heartbeat timeout.
+- **Other activities cut off at the grace period** (a Lead review, a check run) start over on the
+  next worker, as before, and spend one of their three attempts.
+- If Vercel stopped the daemon sooner than `terminationGracePeriodSeconds` (Daemons are in beta,
+  and these docs don't confirm how it treats the setting), sessions mid-turn are lost as in a
+  crash: each resumes from its last turn after the heartbeat timeout.
 
 ## Behaviour to know about
 

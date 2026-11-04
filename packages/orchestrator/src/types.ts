@@ -256,6 +256,26 @@ export const CAPABILITY_GAP = 'CapabilityGap';
 export const AGENT_FAILED = 'AgentFailed';
 /** Error type for a model provider that refuses every call until someone acts (credit, API key). */
 export const PROVIDER_DOWN = 'ProviderDown';
+/**
+ * Error type for an agent session handed on because its worker is shutting down (a deploy).
+ * Retryable: the next attempt, on another worker, carries on from the session's last turn.
+ */
+export const WORKER_SHUTDOWN = 'WorkerShutdown';
+/** Error type for an agent session whose worker was lost too often (crashes, forced stops). */
+export const WORKER_LOST = 'WorkerLost';
+
+/**
+ * How many attempts an agent session gets, by why the earlier ones ended. The activity counts
+ * them (sessions.ts) and gives up itself; Temporal's own limit is only a backstop above it.
+ */
+export const SESSION_ATTEMPTS = {
+  /** Attempts that end in an error of their own, as before resumable sessions: three. */
+  failures: 3,
+  /** Attempts whose worker vanished without handing the session on (crash, forced stop). */
+  losses: 3,
+  /** Every attempt, handoffs from deploys included: the retry policy's maximum. */
+  max: 25,
+} as const;
 
 /**
  * Why the model provider refuses calls until someone acts, or null for anything else. Rate limits,

@@ -81,6 +81,13 @@ const env = z
     PLAYBOOKS_DIR: z
       .string()
       .default(fileURLToPath(new URL('../../../playbooks', import.meta.url))),
+    /**
+     * On SIGTERM, how long activities in flight get to finish. Agent sessions stop after their
+     * turn in progress and hand over at once; at the end of it, what is still running is
+     * cancelled (a session then loses its turn in progress) and, 30 s later, the process exits.
+     * Keep it plus 30 s under the daemon's terminationGracePeriodSeconds (vercel.json: 300).
+     */
+    WORKER_SHUTDOWN_GRACE_SECONDS: z.coerce.number().int().nonnegative().default(240),
   })
   .parse(process.env);
 
@@ -408,6 +415,9 @@ const connection = await NativeConnection.connect({
 });
 console.log(`Temporal: connected to ${env.TEMPORAL_ADDRESS}, namespace ${env.TEMPORAL_NAMESPACE}`);
 
+// Aborted on SIGTERM: agent sessions save their turn in progress and hand over to the next worker.
+const draining = new AbortController();
+const grace = env.WORKER_SHUTDOWN_GRACE_SECONDS;
 const workers = await Promise.all(
   stacks.map(({ id, activities }) =>
     createWorker({
@@ -415,6 +425,9 @@ const workers = await Promise.all(
       namespace: env.TEMPORAL_NAMESPACE,
       activities,
       taskQueue: taskQueueFor(id),
+      draining: draining.signal,
+      shutdownGraceTime: `${grace} seconds`,
+      shutdownForceTime: `${grace + 30} seconds`,
     }),
   ),
 );
@@ -434,16 +447,29 @@ const beat = () =>
 void beat();
 const beating = setInterval(() => void beat(), 30_000);
 
-// Vercel sends SIGTERM on rollout and gives the grace period to finish; the workers drain.
-const stop = () => {
+// Vercel sends SIGTERM on rollout (every deploy) and waits terminationGracePeriodSeconds before
+// it kills the daemon. The workers stop taking tasks; each agent session finishes its turn in
+// progress, saves it and hands over, and the new deployment's worker carries on from there.
+const stop = (signal: string) => {
+  if (draining.signal.aborted) return;
+  console.log(
+    `${signal}: shutting down. Agent sessions hand over after their turn in progress; activities get ${grace} s.`,
+  );
+  draining.abort();
   clearInterval(beating);
   stopRetros();
   workers.forEach((w) => w.shutdown());
 };
-process.on('SIGINT', stop);
-process.on('SIGTERM', stop);
+process.on('SIGINT', () => stop('SIGINT'));
+process.on('SIGTERM', () => stop('SIGTERM'));
 
-await Promise.all(workers.map((w) => w.run()));
+try {
+  await Promise.all(workers.map((w) => w.run()));
+} catch (err) {
+  // A worker failed, or activities that ignore cancellation outlived the grace period.
+  console.error('Worker stopped:', err);
+  process.exit(1);
+}
 for (const { stack } of stacks) await stack.close();
 await browser.close();
 await opened.close();

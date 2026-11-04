@@ -1,5 +1,6 @@
 import { Client } from '@temporalio/client';
 import { fileURLToPath } from 'node:url';
+import type { CheckpointStore } from '@lw/agent-runtime';
 import type { LwEvent } from '@lw/contracts';
 import { canTransition, CommandError, type ProjectState } from '@lw/domain';
 import { InMemoryEventStore, Projections } from '@lw/events';
@@ -25,7 +26,7 @@ import {
 export const PLAYBOOK_DIR = fileURLToPath(
   new URL('../../../playbooks/sitecoreai-migration', import.meta.url),
 );
-const TASK_QUEUE = 'test-orchestration';
+export const TASK_QUEUE = 'test-orchestration';
 
 /** A small site so a full engagement runs in seconds: 5 components, 3 templates, 10 pages, 6 media. */
 export const SMALL_BLUEPRINT = Blueprint.parse({
@@ -64,12 +65,22 @@ export interface Harness {
   projections: Projections;
   playbook: Playbook;
   projects: Map<string, Activities>;
+  /** What the worker serves (every project's, routed): for a second worker on the same queue. */
+  activities: Activities;
   run: Promise<void>;
+  /** Whether stopHarness tears the server down (it started it). */
+  ownsEnv: boolean;
 }
 
 /** One Temporal test server + worker per test file; projects route to their own stub activities. */
-export async function startHarness(): Promise<Harness> {
-  const env = await TestWorkflowEnvironment.createTimeSkipping();
+export async function startHarness(
+  opts: Pick<Parameters<typeof createWorker>[0], 'draining' | 'shutdownGraceTime'> & {
+    /** A server to use instead of a new time-skipping one; the caller tears it down. */
+    env?: TestWorkflowEnvironment;
+  } = {},
+): Promise<Harness> {
+  const { env: given, ...shutdown } = opts;
+  const env = given ?? (await TestWorkflowEnvironment.createTimeSkipping());
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
@@ -91,15 +102,17 @@ export async function startHarness(): Promise<Harness> {
     connection: env.nativeConnection,
     activities,
     taskQueue: TASK_QUEUE,
+    ...shutdown,
   });
   const run = worker.run();
-  return { env, worker, store, projections, playbook, projects, run };
+  return { env, worker, store, projections, playbook, projects, activities, run, ownsEnv: !given };
 }
 
 export async function stopHarness(h: Harness) {
-  h.worker.shutdown();
+  // A test may have shut the worker down already (a deploy).
+  if (h.worker.getState() === 'RUNNING') h.worker.shutdown();
   await h.run;
-  await h.env.teardown();
+  if (h.ownsEnv) await h.env.teardown();
 }
 
 let counter = 0;
@@ -119,6 +132,8 @@ export async function launch(
     standingApproval?: Activities['standingApproval'];
     /** Stands in for the project's finishPastLimit setting. */
     finishPastLimit?: Activities['finishPastLimit'];
+    /** Where the runner's sessions are saved between turns, so a retry can resume them. */
+    checkpoints?: CheckpointStore;
   } = {},
 ) {
   const projectId = `p${++counter}`;
@@ -130,7 +145,9 @@ export async function launch(
     outputs,
     script: opts.script,
   });
-  const acts = opts.runner ? withAgentRunner(stubs, opts.runner) : stubs;
+  const acts = opts.runner
+    ? withAgentRunner(stubs, opts.runner, undefined, { checkpoints: opts.checkpoints })
+    : stubs;
   h.projects.set(projectId, {
     ...acts,
     ...(opts.triage ? { triage: opts.triage } : {}),
