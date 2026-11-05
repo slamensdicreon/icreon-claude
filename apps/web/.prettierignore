@@ -1,0 +1,4 @@
+# Copied from the Cypher Design System (tokens.json) and generated from it (tokens.css):
+# never reformatted. Mirrors the repo root .prettierignore for runs from this folder.
+src/theme/tokens.css
+src/theme/tokens.json
