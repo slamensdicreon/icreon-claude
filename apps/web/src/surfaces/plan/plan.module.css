@@ -1,0 +1,765 @@
+/*
+ * Plan, Everything face. Every length here is a token or derived from one, and the timelines'
+ * geometry lives in one place: the custom properties on `.timeline`. The TSX only places marks
+ * in percentages of the track (`--x`, `--w`) and passes the zoom and the number of grid cells.
+ */
+
+.everything {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 0 var(--space-8);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.hint {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.summary {
+  color: var(--text-3);
+}
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--text-3);
+}
+.quietText {
+  color: var(--text-3);
+}
+.secondary {
+  color: var(--text-2);
+}
+
+/* ---------- zoom ---------- */
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.zoomButton,
+.fit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--space-6) + var(--space-1));
+  height: calc(var(--space-6) + var(--space-1));
+  padding: 0 var(--space-3);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.zoomButton {
+  padding: 0;
+}
+.zoomButton:hover:not(:disabled),
+.fit:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+.zoomButton:disabled,
+.fit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.zoomRange {
+  width: calc(var(--space-8) * 3);
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+.zoomValue {
+  min-width: var(--space-7);
+  text-align: right;
+  color: var(--text-3);
+}
+
+/* ---------- the timelines ---------- */
+.scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.timeline {
+  /* The one place the timelines' geometry is set. */
+  --name-col: calc(var(--row) * 5);
+  --track-end: var(--space-5);
+  --plan-base: calc(var(--measure) * 1.4);
+  --row-h: calc(var(--row) - var(--space-2));
+  --bar-h: calc(var(--space-6) - var(--space-1));
+  --cells: 12;
+  --zoom: 1;
+
+  position: relative;
+  min-width: calc(var(--plan-base) * var(--zoom));
+  padding-right: var(--track-end);
+  color: var(--ink);
+}
+.timeline[data-view='engagement'] {
+  --name-col: calc(var(--row) * 5.5);
+  --plan-base: calc(var(--measure) * 1.2);
+  --row-h: calc(var(--row) - var(--space-3));
+  --bar-h: calc(var(--space-5) - var(--space-1));
+  --days: 10;
+}
+
+.head {
+  display: grid;
+  grid-template-columns: var(--name-col) minmax(0, 1fr);
+  border-bottom: 1px solid var(--mist);
+}
+.corner {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+  background: var(--surface);
+  border-right: 1px solid var(--mist-2);
+  color: var(--text-3);
+}
+.ticks,
+.days {
+  position: relative;
+  height: var(--row-h);
+}
+.timeline[data-hours] .days {
+  height: calc(var(--row) + var(--space-2));
+}
+.tick {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 1%);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.tick[data-first] {
+  transform: translate(0, -50%);
+  padding-left: var(--space-1);
+}
+.tick[data-minor] {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.nowTag {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 1%);
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-weight: 700;
+  white-space: nowrap;
+  /* Masks the hour labels it lands on. */
+  box-shadow: 0 0 0 var(--space-3) var(--surface);
+}
+.day {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--x) * 1%);
+  width: calc(var(--w) * 1%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--text-2);
+}
+.day[data-week] {
+  font-weight: 600;
+}
+.day[data-today] {
+  color: var(--ink);
+  font-weight: 700;
+}
+.timeline[data-hours] .day {
+  align-items: flex-start;
+  padding-top: var(--space-2);
+}
+.hour {
+  position: absolute;
+  bottom: var(--space-2);
+  left: calc(var(--x) * 1%);
+  transform: translateX(-50%);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.body {
+  position: relative;
+}
+.laneHead {
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-quiet);
+  border-bottom: 1px solid var(--mist-2);
+}
+.laneLabel {
+  position: sticky;
+  left: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+}
+.laneLabel i {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--hue);
+}
+.laneLabel :global(.type-meta) {
+  color: var(--text-3);
+  margin-left: var(--space-1);
+}
+.row {
+  display: grid;
+  grid-template-columns: var(--name-col) minmax(0, 1fr);
+  min-height: var(--row-h);
+  border-bottom: 1px solid var(--mist-2);
+}
+.body > div:last-of-type > .row:last-child {
+  border-bottom: 0;
+}
+.row[data-phase] {
+  min-height: calc(var(--row) - var(--space-2));
+  background: var(--surface-quiet);
+}
+.name {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-1) var(--space-4);
+  border: 0;
+  border-right: 1px solid var(--mist-2);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+button.name {
+  cursor: pointer;
+}
+button.name:hover b {
+  text-decoration: underline;
+  text-decoration-color: var(--mist);
+  text-underline-offset: 3px;
+}
+.row[data-phase] .name {
+  background: var(--surface-quiet);
+}
+.name[data-sub] {
+  gap: var(--space-2);
+  padding-left: calc(var(--space-4) + var(--space-2));
+}
+.nameText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.3;
+}
+.nameText b,
+.nameText > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nameText b {
+  font-weight: 600;
+}
+.nameText :global(.type-meta) {
+  color: var(--text-3);
+}
+.nameCount {
+  flex: none;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.eyeFace {
+  flex: none;
+  display: inline-flex;
+}
+.nameState {
+  flex: none;
+  display: inline-flex;
+}
+.phaseWord[data-state='done'] {
+  color: var(--green);
+  font-weight: 600;
+}
+.phaseWord[data-state='running'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.track {
+  position: relative;
+  min-width: 0;
+  background-image: linear-gradient(to right, var(--mist-2) 1px, transparent 1px);
+  background-size: calc(100% / var(--cells)) 100%;
+}
+.timeline[data-view='engagement'] .track {
+  background-size: calc(100% / var(--days)) 100%;
+}
+.timeline[data-view='engagement'][data-hours] .track {
+  background-image:
+    linear-gradient(to right, var(--mist-2) 1px, transparent 1px),
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--mist-2) 55%, transparent) 1px,
+      transparent 1px
+    );
+  background-size:
+    calc(100% / var(--days)) 100%,
+    calc(100% / var(--cells)) 100%;
+}
+.week {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--x) * 1%);
+  width: 2px;
+  background: var(--mist);
+}
+
+/* A task: a pill-shaped button, its state in its glyph, its fill and its accessible name. */
+.bar,
+.swatch {
+  --hue: var(--text-2);
+}
+.bar {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 1%);
+  z-index: 1;
+  width: calc(var(--w) * 1% - var(--space-1) / 2);
+  min-width: var(--space-2);
+  height: var(--bar-h);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bar[data-thin] {
+  padding: 0 var(--space-1);
+}
+.bar:hover,
+.bar:focus-visible {
+  z-index: 2;
+  box-shadow: 0 0 0 1px var(--ink);
+}
+.barText {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bar[data-look],
+.swatch[data-look] {
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+}
+.bar[data-look='planned'],
+.swatch[data-look='planned'] {
+  border-style: dashed;
+  border-color: var(--text-3);
+  color: var(--text-2);
+}
+.bar[data-look='ready'],
+.swatch[data-look='ready'] {
+  border-color: var(--hue);
+}
+.bar[data-look='running'],
+.swatch[data-look='running'] {
+  border-color: var(--hue);
+  background: var(--hue);
+  color: var(--on-ink);
+  font-weight: 600;
+}
+.bar[data-look='waiting'],
+.swatch[data-look='waiting'] {
+  border-color: var(--gold);
+  background: var(--gold-tint);
+}
+.bar[data-look='blocked'],
+.swatch[data-look='blocked'] {
+  border-color: var(--coral-text);
+  background: var(--coral-tint);
+}
+.bar[data-look='done'],
+.swatch[data-look='done'] {
+  border-color: var(--mist);
+  background: var(--surface-quiet);
+  color: var(--text-3);
+}
+
+.glyph {
+  flex: none;
+  width: calc(var(--space-3) + var(--space-1) / 2);
+  height: calc(var(--space-3) + var(--space-1) / 2);
+}
+.glyph[data-look='done'] {
+  color: var(--green);
+}
+.glyph[data-look='waiting'] {
+  color: var(--gold);
+}
+.glyph[data-look='blocked'] {
+  color: var(--coral-text);
+}
+.glyph[data-look='planned'],
+.glyph[data-look='ready'] {
+  color: var(--text-3);
+}
+
+/* A phase: a span across its days, filled by how much of it is done, in its team's hue. */
+.span {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 1%);
+  width: calc(var(--w) * 1%);
+  min-width: var(--space-2);
+  height: var(--space-2);
+  transform: translateY(-50%);
+  border-radius: var(--radius-pill);
+  background: var(--mist);
+  overflow: hidden;
+}
+.span i {
+  display: block;
+  width: calc(var(--done) * 1%);
+  height: 100%;
+  background: var(--hue);
+}
+
+/* The Director's gate, in coral: it is theirs. */
+.gate,
+.gateKey {
+  width: calc(var(--space-3) + var(--space-1) / 2);
+  height: calc(var(--space-3) + var(--space-1) / 2);
+  background: var(--coral);
+  border: 2px solid var(--surface);
+  border-radius: calc(var(--space-1) / 2);
+}
+.gate {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 1%);
+  z-index: 2;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.gateKey {
+  display: inline-block;
+  flex: none;
+  transform: rotate(45deg);
+}
+
+/* Now (Today) and today (Engagement): one line down the whole body. */
+.nowLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--name-col) + (100% - var(--name-col)) * var(--x) / 100);
+  z-index: 2;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  pointer-events: none;
+}
+.nowKey {
+  display: inline-block;
+  width: 2px;
+  height: var(--space-4);
+  background: var(--ink);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--mist);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-2);
+}
+.legend li,
+.todayKey {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+}
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  width: var(--space-6);
+  height: calc(var(--space-4) + var(--space-1));
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+}
+
+/* ---------- tables ---------- */
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  min-width: calc(var(--measure) * 0.6);
+  border-collapse: collapse;
+  color: var(--ink);
+}
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--mist-2);
+  white-space: nowrap;
+}
+.table td {
+  padding: var(--space-2) var(--space-3);
+  height: calc(var(--row) - var(--space-2));
+  border-bottom: 1px solid var(--mist-2);
+  vertical-align: middle;
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--space-4);
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--space-4);
+}
+.list td:first-child,
+.list td:nth-child(4),
+.list td:nth-child(5) {
+  white-space: nowrap;
+}
+.when {
+  white-space: nowrap;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.rowLink,
+.dep,
+.fold,
+.owner {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.rowLink:hover,
+.dep:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+}
+.ownerPlain,
+.owner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.ownerText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.ownerText :global(.type-meta) {
+  color: var(--text-3);
+}
+.owner:hover .ownerText > span:first-child {
+  text-decoration: underline;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+}
+.deps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+.dep {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-2);
+}
+.depGlyph {
+  display: inline-flex;
+}
+.stateWord {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+.stateWord[data-look='running'] {
+  color: var(--blue);
+}
+.stateWord[data-look='waiting'] {
+  color: var(--gold);
+}
+.stateWord[data-look='blocked'] {
+  color: var(--coral-text);
+}
+.stateWord[data-look='done'] {
+  color: var(--green);
+}
+.stateWord[data-look='running'] .glyph {
+  color: var(--blue);
+}
+.fold {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+.fold .quietText {
+  font-weight: 400;
+}
+.foldIcon {
+  flex: none;
+  color: var(--text-3);
+  transform: rotate(-90deg);
+  transition: transform 200ms ease-out;
+}
+[aria-expanded='true'] > .foldIcon {
+  transform: none;
+}
+.subRow td {
+  background: var(--surface-quiet);
+}
+.subRow td:nth-child(2) {
+  padding-left: calc(var(--space-3) + var(--space-5) + var(--space-1));
+}
+
+/* ---------- phone: the agenda ---------- */
+.phone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.phoneSum {
+  margin: 0;
+  color: var(--text-3);
+}
+.agendaRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row);
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--mist-2);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agendaRow:last-child {
+  border-bottom: 0;
+}
+.agendaRow .nameText b {
+  white-space: normal;
+}
+.agendaTime {
+  flex: none;
+  width: calc(var(--row) + var(--space-3));
+  color: var(--text-3);
+}
+.agendaWho {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.phase {
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.phaseHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.phaseHead[aria-expanded='true'] {
+  border-bottom: 1px solid var(--mist);
+}
+.phaseHead .phaseWord:not([data-state]) {
+  color: var(--text-3);
+}
+.phaseWord[data-state='planned'] {
+  color: var(--text-3);
+}
+.gateRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  color: var(--coral-text);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .everything {
+    padding-bottom: var(--space-6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foldIcon {
+    transition: none;
+  }
+}
