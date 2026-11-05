@@ -82,6 +82,8 @@ export const EscalationView = EscalationCard.extend({
     .optional(),
   /** Cypher's verdict on the card, in its voice (Mission Control and the portfolio overview). */
   recommendation: Recommendation.optional(),
+  /** What the card is about in plain words, a sentence or two, for Bliss; the details stay in context. */
+  gist: z.string().optional(),
   /** Who raised it: the agent on the source task, or the Lead who forwarded it. */
   raisedBy: Face.nullable().optional(),
 });

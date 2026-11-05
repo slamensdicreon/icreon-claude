@@ -3,6 +3,7 @@ import { age, clock } from '../../lib/fmt';
 import { useApp, useNow } from '../../state';
 import { kindOf, picks, raisedLine, useYoursActions } from '../../ui/cypher/cards';
 import { DecisionCard } from '../../ui/cypher/parts';
+import { useMode } from '../../mode/mode';
 import { ago } from './model';
 
 /**
@@ -12,6 +13,7 @@ import { ago } from './model';
  */
 export function Decision({ x, mc }: { x: EscalationView; mc: MissionControlSnapshot }) {
   const { setComposer, setLayout } = useApp();
+  const { setMode } = useMode();
   const now = useNow(30_000);
   const p = mc.project;
   const tz = p.timezone;
@@ -41,7 +43,7 @@ export function Decision({ x, mc }: { x: EscalationView; mc: MissionControlSnaps
     <DecisionCard
       label={`${kindOf(x)} · ${x.deadline ? `before ${hm(x.deadline)}` : 'no clock'}`}
       title={x.title}
-      context={x.context}
+      context={x.gist ?? shortContext(x.context)}
       raiser={x.raisedBy ?? null}
       meta={raisedLine(x, ago(age(x.raisedAt, now)))}
       rec={x.recommendation ?? null}
@@ -49,6 +51,14 @@ export function Decision({ x, mc }: { x: EscalationView; mc: MissionControlSnaps
       other={other}
       quiet={[
         ...(x.type !== 'gate' ? [{ label: 'Defer half an hour', run: () => act.defer(x) }] : []),
+        {
+          // Bliss says what's wrong; the full context is the card in Everything.
+          label: 'The details',
+          run: () => {
+            act.open('inbox', { expanded: x.escalationId });
+            setMode('everything');
+          },
+        },
         {
           label: x.raisedBy ? `Ask ${x.raisedBy.firstName}` : 'Ask Cypher',
           run: () => {
@@ -61,4 +71,13 @@ export function Decision({ x, mc }: { x: EscalationView; mc: MissionControlSnaps
       fallback={fallback}
     />
   );
+}
+
+/** Where the API wrote no gist: the context's first sentence, stopped before a long list. */
+export function shortContext(text: string): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  let first = /^(.+?[.!?])(?=\s+["“(]?[A-Z0-9])/.exec(t)?.[1] ?? t;
+  const colon = first.indexOf(': ');
+  if (colon > 20 && first.length - colon > 70) first = `${first.slice(0, colon)}.`;
+  return first.length > 170 ? `${first.slice(0, first.lastIndexOf(' ', 168))}…` : first;
 }

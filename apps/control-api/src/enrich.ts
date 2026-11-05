@@ -24,6 +24,7 @@ import {
   type ProjectState,
 } from '@lw/domain';
 import {
+  cardGist,
   cardSubject,
   choiceWords,
   documentPointers,
@@ -123,6 +124,7 @@ export function enrichEscalation(s: ProjectState, x: EscalationView): Escalation
       names: firstNames(s),
     }),
     raisedBy: raisedByOf(s, x),
+    gist: cardGist({ ...x, names: firstNames(s) }),
   };
 }
 

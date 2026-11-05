@@ -442,3 +442,41 @@ describe('handled', () => {
     });
   });
 });
+
+describe('cardGist', () => {
+  it('says what keeps failing, not the list, for a Lead’s repeated rejection', async () => {
+    const { cardGist } = await import('../src/voice');
+    const context =
+      'The Lead rejected this output and retries did not fix it. Rejected 3 times: seo.titles: /about has the title "About Us"; the source page\'s is "About Us - Ervin Cable - Broadband & Telecom Construction Services"; /construction-services has the title "Construction Services"; the source page\'s is "Broadband & Telecom Construction Services - Ervin Cable Construction"; /safety has the title "Safety"; the source page\'s is "Safety Training & Protocols - Ervin Cable Construction"; and 7 more.';
+    const gist = cardGist({
+      type: 'decision',
+      title: 'Redirects, SEO, sitemap, robots, error pages and dictionary: needs a decision',
+      context,
+    });
+    expect(gist).toBe(
+      "The Lead sent this back three times, and retrying hasn't fixed it. Ten pages fail the SEO titles check: they don't match the live site.",
+    );
+    expect(gist.length).toBeLessThan(160);
+  });
+
+  it('keeps the first sentence, and stops before a long list', async () => {
+    const { cardGist } = await import('../src/voice');
+    expect(
+      cardGist({
+        type: 'access',
+        title: 'Thumbnail upload returned 403',
+        context:
+          'The Authoring API refused the HazardRoute rendering thumbnail with 403. The Automation credential verified at 8:02 AM.',
+      }),
+    ).toBe(
+      'The Authoring API refused the HazardRoute rendering thumbnail with 403. The Automation credential verified at 8:02 AM.',
+    );
+    const long = cardGist({
+      type: 'decision',
+      title: 'Which pages move',
+      context:
+        'These pages have no owner in the brief: /about, /careers, /safety, /quality, /subcontractors, /engineering-services, /acctraining and more. Pick who decides.',
+    });
+    expect(long).toBe('These pages have no owner in the brief. Pick who decides.');
+  });
+});

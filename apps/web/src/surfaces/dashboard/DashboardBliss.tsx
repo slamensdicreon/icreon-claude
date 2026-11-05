@@ -12,6 +12,7 @@ import {
   YoursCard,
 } from '../../ui/cypher/parts';
 import { useEyeState } from '../../voice/eye';
+import { shortContext } from '../mission/Decision';
 import { ago } from '../mission/model';
 import s from './dashboard.module.css';
 
@@ -107,7 +108,7 @@ function YoursTile({
   const x = y.escalation;
   const act = useYoursActions(y.projectId, y.project, refresh);
   const { primary, secondary } = act.cardActions(x);
-  const body = firstSentences(x.context);
+  const body = x.gist ?? shortContext(x.context);
   return (
     <YoursCard
       kind={kindOf(x)}
@@ -123,13 +124,4 @@ function YoursTile({
       meta={raisedLine(x, ago(age(x.raisedAt, now)))}
     />
   );
-}
-
-/** The card's context, cut to two sentences so the card stays one glance. A sentence ends at
- * a stop followed by a space and a capital, so "products.ts" or "v1.2" don't cut it short. */
-function firstSentences(text: string, n = 2): string {
-  const t = text.replace(/\s+/g, ' ').trim();
-  const parts = t.match(/.+?[.!?](?=\s+[A-Z“"(]|\s*$)/g);
-  if (!parts) return t;
-  return parts.slice(0, n).join(' ').replace(/\s+/g, ' ').trim();
 }

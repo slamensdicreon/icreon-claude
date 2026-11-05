@@ -409,6 +409,119 @@ export function recommendationFor(card: RecommendationInput): Recommendation {
 }
 
 // ---------------------------------------------------------------------------
+// A card's gist: what is wrong, in a sentence or two, for Bliss
+// ---------------------------------------------------------------------------
+
+/** Words that are acronyms in check names ("seo.titles" → "SEO titles"). */
+const ACRONYMS = new Set([
+  'seo',
+  'url',
+  'urls',
+  'api',
+  'cms',
+  'html',
+  'css',
+  'sxa',
+  'id',
+  'ids',
+  'og',
+  'ui',
+]);
+
+/** A check's key in words: "seo.titles" → "SEO titles", "a11y.alt_text" → "alt text". */
+function checkWords(key: string): string {
+  const parts = key
+    .split('.')
+    .flatMap((p) => p.split(/[_-]/))
+    .filter((p) => p && p !== 'a11y');
+  return parts
+    .map((p) => (ACRONYMS.has(p.toLowerCase()) ? p.toUpperCase() : p.toLowerCase()))
+    .join(' ');
+}
+
+/** What a failing check's lines say, in a clause: titles that differ from the live site, … */
+function failureClause(lines: string[]): string | null {
+  const text = lines.join(' ');
+  if (
+    /source page['’]s is/i.test(text) ||
+    /differs? from|doesn['’]t match|does not match/i.test(text)
+  )
+    return "they don't match the live site";
+  if (/missing|is empty|has no\b/i.test(text)) return "they're missing";
+  if (/too long|longer than/i.test(text)) return "they're too long";
+  if (/broken|404|not found/i.test(text)) return "they're broken";
+  return null;
+}
+
+export interface GistInput {
+  type: EscalationType;
+  title: string;
+  context: string;
+  /** Rewrites role names to first names. */
+  names?: (text: string) => string;
+}
+
+/**
+ * What a card is about, in plain words and at most two sentences, for the Bliss cards: the
+ * problem, not the details (those stay in the card's context, which Everything shows). A Lead's
+ * repeated rejection says how often and what keeps failing; anything else is its first sentence,
+ * cut before a long list.
+ */
+export function cardGist(card: GistInput): string {
+  const names = card.names ?? ((t: string) => t);
+  const ctx = card.context.replace(/\s+/g, ' ').trim();
+
+  // "The Lead rejected this output and retries did not fix it. Rejected 3 times: key: detail; …"
+  const rejected =
+    /^The Lead rejected this output and retries did not fix it\.\s*Rejected (\d+) times?:\s*(.*)$/i.exec(
+      ctx,
+    );
+  if (rejected) {
+    const times = Number(rejected[1]);
+    const items = rejected[2]!.split(/;\s+/);
+    const more = /and (\d+) more\.?$/i.exec(rejected[2]!);
+    const listed = items.filter((i) => !/^and \d+ more\.?$/i.test(i.trim()));
+    // Group the lines by the check that failed ("seo.titles: …").
+    const byCheck = new Map<string, string[]>();
+    let current: string | null = null;
+    for (const item of listed) {
+      const m = /^([a-z0-9]+(?:[._][a-z0-9_]+)+):\s*(.*)$/i.exec(item.trim());
+      if (m) current = m[1]!;
+      if (current) byCheck.set(current, [...(byCheck.get(current) ?? []), m ? m[2]! : item]);
+    }
+    const head = `The Lead sent this back ${countWord(times)} ${times === 1 ? 'time' : 'times'}, and retrying hasn't fixed it.`;
+    const checks = [...byCheck.keys()];
+    if (checks.length === 1) {
+      const why = failureClause(byCheck.get(checks[0]!)!);
+      // A page's failure can run over several parts ("/about has …; the source page's is …").
+      const lines = byCheck.get(checks[0]!)!;
+      const paths = lines.filter((l) => /^\//.test(l.trim())).length;
+      const unit = paths ? 'page' : 'item';
+      const count = (paths || lines.length) + (more ? Number(more[1]) : 0);
+      const what = `${countWord(count)} ${count === 1 ? `${unit} fails` : `${unit}s fail`} the ${checkWords(checks[0]!)} check`;
+      return `${head} ${upperFirst(what)}${why ? `: ${why}` : ''}.`;
+    }
+    if (checks.length > 1) {
+      const named = checks.slice(0, 2).map(checkWords);
+      return `${head} It keeps failing the ${named.join(' and ')} checks${checks.length > 2 ? ', among others' : ''}.`;
+    }
+    return `${head} ${clip(firstSentence(rejected[2]!), 110)}`;
+  }
+
+  // Anything else: its first sentence, stopped before a long list after a colon, and the second
+  // too when both fit in a glance (the second is often the problem: "…but the API stays outside").
+  const cut = (sentence: string) => {
+    const colon = sentence.indexOf(': ');
+    return colon > 20 && sentence.length - colon > 70 ? `${sentence.slice(0, colon)}.` : sentence;
+  };
+  const first = cut(firstSentence(ctx));
+  const restText = ctx.slice(firstSentence(ctx).length).trim();
+  const second = restText ? cut(firstSentence(restText)) : '';
+  const both = second && `${first} ${second}`.length <= 180 ? `${first} ${second}` : first;
+  return countsAsWords(names(clip(both, 180)));
+}
+
+// ---------------------------------------------------------------------------
 // The portfolio
 // ---------------------------------------------------------------------------
 

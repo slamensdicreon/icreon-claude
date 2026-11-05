@@ -212,10 +212,19 @@
 .decisionTitle {
   margin: 0;
   color: var(--ink);
+  /* Bliss reads at a glance: a long title stops at three lines (Everything shows it whole). */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .body {
   margin: 0;
   color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .actions {
   display: flex;
