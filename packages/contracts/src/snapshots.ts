@@ -33,6 +33,7 @@ import {
   StatusCard,
   TaskContract,
 } from './events';
+import { Face, HandledItem, ReadTone, Recommendation, Voice } from './voice';
 
 /**
  * Every snapshot carries the `seq` it reflects. Fetch the snapshot, then open the SSE stream with
@@ -78,6 +79,10 @@ export const EscalationView = EscalationCard.extend({
       taskTitles: z.array(z.string()),
     })
     .optional(),
+  /** Cypher's verdict on the card, in its voice (Mission Control and the portfolio overview). */
+  recommendation: Recommendation.optional(),
+  /** Who raised it: the agent on the source task, or the Lead who forwarded it. */
+  raisedBy: Face.nullable().optional(),
 });
 export type EscalationView = z.infer<typeof EscalationView>;
 
@@ -133,6 +138,13 @@ export const LeadRow = z.object({
   blocked: z.number().int(),
   waiting: z.number().int(),
   done: z.number().int(),
+  /** The Lead as a face (persona name, initials, hue). */
+  face: Face.optional(),
+  /** Cypher's one line on the Lead's team ("Four building; Ryan is stuck on the token."). */
+  read: z.string().optional(),
+  readTone: ReadTone.optional(),
+  /** The specialists who report to the Lead, working or not. */
+  reports: z.array(Face).optional(),
 });
 export type LeadRow = z.infer<typeof LeadRow>;
 
@@ -188,6 +200,10 @@ export const MissionControlSnapshot = z.object({
   latest: z.array(ActivityItem).max(4),
   /** One line under the page title ("Phase 4, Components, runs with phase 5 in parallel."). */
   subtitle: z.string(),
+  /** Cypher's sentence for the project, at the top of Mission Control in Bliss. */
+  voice: Voice.optional(),
+  /** The last few things settled without the Director, newest first. */
+  handled: z.array(HandledItem).optional(),
 });
 export type MissionControlSnapshot = z.infer<typeof MissionControlSnapshot>;
 
@@ -1114,3 +1130,126 @@ export const FactsSnapshot = z.object({
   changed: z.array(FactChange),
 });
 export type FactsSnapshot = z.infer<typeof FactsSnapshot>;
+
+/* ---------- The portfolio overview: the Dashboard in both modes (GET /portfolio/overview) ---------- */
+
+/** One project on the Dashboard: a tile in Bliss, a table row in Everything. */
+export const PortfolioProject = z.object({
+  projectId: z.string(),
+  name: z.string(),
+  initials: z.string(),
+  status: ProjectStatus,
+  health: Health,
+  /** "Healthy", "Attention", "Blocked", "Accepted", "Paused". */
+  healthWord: z.string(),
+  /** Completed, cancelled or archived: listed under Archived. */
+  archived: z.boolean(),
+  demo: z.boolean(),
+  /** "Components, phase 4", "Blueprint, at Gate 1", "Accepted at UAT". */
+  phaseLabel: z.string(),
+  /** The current phase's name alone ("Components"), for the tile. */
+  phaseName: z.string().nullable(),
+  /** 0–100: the current phase's progress (100 when accepted). */
+  percent: z.number().min(0).max(100),
+  /** The ring and bar color: the team that owns the current phase, coral when blocked, done when accepted. */
+  hue: z.enum(['discovery', 'engineering', 'content', 'quality', 'blocked', 'done']),
+  /** The eye inside the ring: derived like the shell's (needs a word, watching, resting). */
+  eye: z.enum(['resting', 'watching', 'needs-a-word']),
+  /** Open cards that are the Director's. */
+  yours: z.number().int(),
+  spentUsd: z.number(),
+  budgetUsd: z.number(),
+  lastEvent: z.object({ at: z.iso.datetime(), text: z.string() }).nullable(),
+  /** Cypher's one line on the project, in its voice. */
+  read: z.string(),
+  readTone: ReadTone,
+  /** Faces on the tile: who's working, else the Leads. At most five. */
+  faces: z.array(Face),
+  /** "nine working", "waiting on you", "resting". */
+  workingWord: z.string(),
+});
+export type PortfolioProject = z.infer<typeof PortfolioProject>;
+
+/** A card that is the Director's, with the project it belongs to. */
+export const PortfolioYours = z.object({
+  projectId: z.string(),
+  project: z.string(),
+  projectInitials: z.string(),
+  escalation: EscalationView,
+});
+export type PortfolioYours = z.infer<typeof PortfolioYours>;
+
+export const PortfolioKpi = z.object({
+  key: z.enum(['yours', 'running', 'spend', 'events']),
+  /** "Yours", "Running", "Spend this week", "Events today". */
+  label: z.string(),
+  /** "5", "4", "$1,506", "212". */
+  value: z.string(),
+  /** "One has a clock: 2:24 PM", "17 of 61 agents working". */
+  note: z.string(),
+  /** yours: the number and note are set in coral-text. */
+  tone: z.enum(['yours', 'normal']),
+});
+export type PortfolioKpi = z.infer<typeof PortfolioKpi>;
+
+export const PortfolioOverview = z.object({
+  /** When this was computed. */
+  at: z.iso.datetime(),
+  /** The time zone the Dashboard's date line is written in (the running projects' zone). */
+  timezone: z.string(),
+  voice: Voice,
+  counts: z.object({
+    projects: z.number().int(),
+    running: z.number().int(),
+    archived: z.number().int(),
+    agents: z.number().int(),
+    working: z.number().int(),
+  }),
+  /** Exactly four, in board order: yours, running, spend, events. */
+  kpis: z.array(PortfolioKpi),
+  /** Every open card that is the Director's, by clock, then type (Blocker, Access, Gate, Decision…), then age. */
+  yours: z.array(PortfolioYours),
+  /** Projects sorted by what needs the Director, then health, then name; archived last. */
+  projects: z.array(PortfolioProject),
+  /** Settled without the Director in the last day, newest first; at most four. */
+  handled: z.array(HandledItem),
+  /** Hosting deploys in the last 24 hours, newest first; at most five. */
+  deploys: z.array(
+    z.object({
+      projectId: z.string(),
+      /** "AN-6". */
+      id: z.string(),
+      /** "ansell-website preview", "queued, token expired". */
+      what: z.string(),
+      at: z.iso.datetime(),
+      state: z.enum(['ok', 'waiting', 'failed']),
+    }),
+  ),
+  /** Agents doing the most right now, by tokens on their current task; at most five. */
+  load: z.array(
+    z.object({
+      agent: Face,
+      projectId: z.string(),
+      project: z.string(),
+      tokens: z.number().int(),
+    }),
+  ),
+  /** Spend by working day this week (Monday to Friday) across every project. */
+  spendByDay: z.object({
+    /** Spent this week. */
+    weekUsd: z.number(),
+    /** The running projects' budgets together. */
+    budgetUsd: z.number(),
+    /** Five days; `usd` is null for days still to come. */
+    days: z.array(z.object({ label: z.string(), date: z.string(), usd: z.number().nullable() })),
+  }),
+  /** Cards raised and cards the Leads settled on their own, over the last 24 hours, hour by hour (cumulative). */
+  escalations: z.object({
+    raised: z.number().int(),
+    settledByLeads: z.number().int(),
+    points: z.array(
+      z.object({ at: z.iso.datetime(), raised: z.number().int(), settled: z.number().int() }),
+    ),
+  }),
+});
+export type PortfolioOverview = z.infer<typeof PortfolioOverview>;

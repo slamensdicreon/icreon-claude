@@ -94,6 +94,8 @@ import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
+import { withVoice } from './enrich';
+import { portfolioOverview } from './overview';
 
 export interface AppDeps {
   store: EventStore;
@@ -367,6 +369,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .all()
       .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
       .map(portfolioItem);
+  });
+
+  /** The Dashboard in both modes: Cypher's line, what's yours, every project, and the week. */
+  app.get('/portfolio/overview', async () => {
+    await projections.catchUpAll();
+    return portfolioOverview(
+      projections.all(),
+      (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
+      now(),
+    );
   });
 
   app.get('/portfolio/diagnostics', async (): Promise<PortfolioDiagnostics> => {
@@ -1033,7 +1045,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<P>('/projects/:id/mission-control', async (req, reply) => {
     const s = project(req.params.id);
     if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
-    const mc = missionControl(s);
+    const mc = withVoice(missionControl(s), s, now());
     return { ...mc, project: { ...mc.project, platform: deps.intake?.platformOf(s) } };
   });
 
