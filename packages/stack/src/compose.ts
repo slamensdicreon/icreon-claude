@@ -539,8 +539,15 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
         list.map((i) => ({ collection, key: i.key, name: i.name, status: i.status })),
       );
       try {
-        const r = await opts.directives({ text: req.text, items, tasks: req.tasks ?? [] });
+        const r = await opts.directives({
+          text: req.text,
+          items,
+          tasks: req.tasks ?? [],
+          cards: req.cards ?? [],
+        });
         if (r.kind === 'status') return { kind: 'status' };
+        if (r.kind === 'answer')
+          return { kind: 'answer', interpretation: r.interpretation, answers: r.answers };
         if (r.kind === 'rerun')
           return {
             kind: 'rerun',

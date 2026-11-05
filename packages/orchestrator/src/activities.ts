@@ -3,6 +3,7 @@ import type { Blueprint, PlannedTask } from '@lw/plan';
 import type {
   AgentRequest,
   AgentResult,
+  DirectiveCard,
   DirectiveInterpretation,
   TriageOutcome,
   TriageRequest,
@@ -29,6 +30,8 @@ export interface Activities {
     blueprint: Blueprint | null;
     /** The plan's work tasks, for a re-run to name. */
     tasks?: { taskId: string; title: string; state: string }[];
+    /** The cards waiting on the Director (no gates), for "answer them" to name. */
+    cards?: DirectiveCard[];
   }): Promise<DirectiveInterpretation>;
   /**
    * A question an agent stopped on, seen by its Lead first: the category's autonomy level

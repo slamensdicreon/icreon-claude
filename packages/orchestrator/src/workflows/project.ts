@@ -1717,7 +1717,62 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       tasks: plan.tasks
         .filter((t) => t.kind === 'work')
         .map((t) => ({ taskId: t.taskId, title: t.title, state: stateOf(t.taskId) })),
+      // The cards waiting on the Director, for "answer them with your recommendation". Gates stay
+      // the Director's own: they are never offered.
+      cards: [...escalations.values()]
+        .filter(
+          (e) => unresolved(e) && e.status === 'open' && e.card.type !== 'gate' && !e.card.gate,
+        )
+        .map((e) => ({
+          escalationId: e.card.escalationId,
+          type: e.card.type,
+          title: e.card.title,
+          options: e.card.options.map((o) => ({
+            id: o.id,
+            label: o.label,
+            recommended: Boolean(o.recommended),
+          })),
+          defaultOptionId: e.card.defaultOptionId,
+        })),
     });
+    // Answering cards at the Director's word came later: a directive read before that replays as
+    // it ran (it can't have been read as "answer").
+    if (reading.kind === 'answer' && patched('directive-answers')) {
+      const done: string[] = [];
+      const left: string[] = [];
+      for (const a of reading.answers) {
+        const e = escalations.get(a.escalationId);
+        const option = e?.card.options.find((o) => o.id === a.optionId);
+        if (!e || !option || !unresolved(e) || e.card.type === 'gate' || e.card.gate) {
+          if (e) left.push(e.card.title);
+          continue;
+        }
+        await settle(
+          a.escalationId,
+          a.optionId,
+          `Answered through Cypher at the Director's request: ${reading.interpretation}.`,
+          'director',
+        );
+        done.push(`${e.card.title}: ${option.label}`);
+      }
+      await send(
+        ...say(
+          'directive_ack',
+          'Directive',
+          [
+            done.length
+              ? `Answered ${done.length} ${done.length === 1 ? 'card' : 'cards'} as you asked: ${done.slice(0, 6).join('; ')}${done.length > 6 ? `; and ${done.length - 6} more` : ''}. Each can be undone from Needs you for a short while.`
+              : 'Nothing answered.',
+            left.length
+              ? `Left with you: ${left.slice(0, 4).join('; ')}${left.length > 4 ? `; and ${left.length - 4} more` : ''} (answered meanwhile, or a gate).`
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        ),
+      );
+      return;
+    }
     if (reading.kind === 'status') {
       await send(...say('status', 'Status', statusLine(), { sections: statusSections() }));
       return;
@@ -1752,8 +1807,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       );
       return;
     }
-    if (reading.kind === 'note' || !blueprint) {
-      const interpretation = reading.kind === 'note' ? reading.interpretation : text;
+    if (reading.kind === 'note' || reading.kind === 'answer' || !blueprint) {
+      const interpretation =
+        reading.kind === 'note' || reading.kind === 'answer' ? reading.interpretation : text;
       await send(
         ...say(
           'directive_ack',

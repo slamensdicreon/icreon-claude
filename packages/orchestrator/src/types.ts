@@ -211,7 +211,22 @@ export type DirectiveInterpretation =
   | { kind: 'note'; interpretation: string }
   | { kind: 'replan'; interpretation: string; blueprint: Blueprint }
   /** Run these tasks again, with these instructions. */
-  | { kind: 'rerun'; interpretation: string; taskIds: string[]; notes: string };
+  | { kind: 'rerun'; interpretation: string; taskIds: string[]; notes: string }
+  /** Answer these cards as the Director asked (each with one of its own options). */
+  | {
+      kind: 'answer';
+      interpretation: string;
+      answers: { escalationId: string; optionId: string }[];
+    };
+
+/** A card waiting on the Director, as the Chief of Staff reads it to answer at their word. */
+export interface DirectiveCard {
+  escalationId: string;
+  type: string;
+  title: string;
+  options: { id: string; label: string; recommended: boolean }[];
+  defaultOptionId: string | null;
+}
 
 export interface TaskItem {
   task: PlannedTask;

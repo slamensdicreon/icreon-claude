@@ -129,7 +129,27 @@ export function createStubActivities(deps: StubDeps): Activities {
     async finishPastLimit() {
       return true;
     },
-    async interpretDirective({ text, blueprint }) {
+    async interpretDirective({ text, blueprint, cards }) {
+      // "Clear (all) the cards with your recommendation": each card's recommended option, else its
+      // default. Anything less explicit is a note.
+      if (
+        /\b(clear|answer|accept|decide|settle)\b/i.test(text) &&
+        /\brecommend/i.test(text) &&
+        cards?.length
+      ) {
+        const answers = cards.flatMap((c) => {
+          const o =
+            c.options.find((x) => x.recommended) ??
+            c.options.find((x) => x.id === c.defaultOptionId);
+          return o ? [{ escalationId: c.escalationId, optionId: o.id }] : [];
+        });
+        if (answers.length)
+          return {
+            kind: 'answer',
+            interpretation: 'answer the cards with your recommendation',
+            answers,
+          };
+      }
       if (/^\/?status\b/i.test(text) || /\b(status|where are we)\b/i.test(text))
         return { kind: 'status' };
       const m = /\b(?:skip|drop|remove|exclude)\s+(?:the\s+|all\s+)?(.+?)\.?$/i.exec(text);

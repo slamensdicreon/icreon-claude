@@ -206,6 +206,41 @@ describe('project workflow', () => {
     await p.handle.terminate();
   }, 60_000);
 
+  it('answers waiting cards with its recommendation when the Director says so, and leaves gates', async () => {
+    const p = await launch(h, { script: { rejectTimes: { 'port-header': 3 } } });
+    // Through the first gate, to the Lead's escalation on the header.
+    const gate1 = await until(() => openEscalations(p.state()).find((x) => x.type === 'gate'));
+    await p.commands.resolve(gate1.escalationId, 'approve');
+    const card = await until(
+      () =>
+        openEscalations(p.state()).find(
+          (x) => x.type === 'decision' && x.sourceTaskId === 'port-header',
+        ),
+      45_000,
+    );
+    await p.commands.postMessage('Clear all the cards with your recommendation');
+    const ack = await until(() =>
+      p
+        .state()!
+        .conversation.findLast((m) => m.kind === 'directive_ack' && /Answered/.test(m.body)),
+    );
+    expect(ack.body).toMatch(
+      /^Answered \d+ cards? as you asked: Port Header to Content SDK: needs a decision: Retry with the Lead feedback\./,
+    );
+    const settled = p.state()!.escalations[card.escalationId]!;
+    expect(settled.status).not.toBe('open');
+    expect(settled.resolution).toMatchObject({ optionId: 'retry', by: 'director' });
+    expect(settled.resolution!.notes).toMatch(/^Answered through Cypher at the Director's request/);
+    // No gate is open to answer here, and none was touched.
+    expect(
+      Object.values(p.state()!.escalations).filter(
+        (x) => x.type === 'gate' && x.resolution?.notes?.startsWith('Answered through Cypher'),
+      ),
+    ).toEqual([]);
+    assertLegalLog(await h.store.read(p.projectId));
+    await p.handle.terminate();
+  }, 90_000);
+
   it('holds new work at the soft budget limit until acknowledged', async () => {
     const p = await launch(h, {
       policy: { budgets: { tokens: 120_000, usd: 10_000, hours: 10_000 } },
