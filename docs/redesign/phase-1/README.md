@@ -55,8 +55,10 @@ Scorecard (§8). Needs you and Projects jump to their Dashboard sections; the ot
 - `artifact.versioned` carries the producing agent's `summary` and up to three `attention` pointers;
   the workspace `write` tool takes them (a malformed one is dropped, never a refused save), and the
   API writes Cypher's summary from the document where the agent wrote none.
-- `GET/PUT /me/preferences` keeps the Bliss/Everything choice per operator (the integrations key/value
-  table, `prefs:<login>`); localStorage stays the first store.
+- Bliss/Everything is one choice for the whole app (it was per screen, which made the mode change
+  under the Director as they moved between sections). `GET/PUT /me/preferences` keeps it per operator
+  under the key `app` (the integrations key/value table, `prefs:<login>`); localStorage stays the
+  first store. Settings, New project and the admin pages show Everything without changing it.
 - Operator email is on the Cypher brand.
 
 ## Cypher's words come from the API

@@ -1,12 +1,13 @@
 /*
- * Bliss or Everything, remembered per screen (design system §2, Dial guideline).
+ * Bliss or Everything: one choice for the whole app (design system §2, Dial guideline).
  *
- * Every screen has two faces. Bliss is the default for every new screen and every new user; the
- * Director's choice sticks to the screen it was made on, so Mission Control can live in Everything
- * while the Dashboard stays in Bliss. Choices live in localStorage first, so the dial answers at
- * once; `GET/PUT /me/preferences` keeps a copy per operator so they follow the Director to another
- * device (PLAN.md › Backend and contract changes). On load the server fills in screens this browser
- * has no choice for; this browser's own choices win. Every change is saved here and sent there.
+ * Every screen has two faces. Bliss is the default for a new user; once the Director picks a mode it
+ * holds on every section they go to until they switch again. (It was remembered per screen at
+ * first, which made the mode change under them as they moved; a browser with those older choices
+ * starts from the mode it used most.) The choice lives in localStorage first, so the dial answers at
+ * once; `GET/PUT /me/preferences` keeps a copy per operator, under the key "app", so it follows the
+ * Director to another device. On load the server's copy fills in when this browser has none; this
+ * browser's own choice wins. Every change is saved here and sent there.
  *
  * Settings, New project and the pages above any project are Everything only: a Bliss face would
  * hide what the person came to do, so the dial is hidden there and the mode is fixed.
@@ -42,7 +43,19 @@ function load(): Partial<Record<Screen, ModeName>> {
   }
 }
 
-let choices = load();
+/** The key the one choice is kept under, here and on the server. */
+const APP = 'app' as Screen;
+
+/** A browser with per-screen choices from before starts from the mode it used most. */
+function migrate(c: Partial<Record<Screen, ModeName>>): Partial<Record<Screen, ModeName>> {
+  if (c[APP]) return c;
+  const picks = Object.values(c);
+  if (!picks.length) return c;
+  const everything = picks.filter((m) => m === 'everything').length;
+  return { ...c, [APP]: everything > picks.length / 2 ? 'everything' : 'bliss' };
+}
+
+let choices = migrate(load());
 const listeners = new Set<() => void>();
 
 function save() {
@@ -84,7 +97,7 @@ function pull() {
       const server = Object.fromEntries(
         Object.entries(body.mode).filter(([, v]) => isMode(v)),
       ) as Partial<Record<Screen, ModeName>>;
-      const merged = { ...server, ...choices };
+      const merged = migrate({ ...server, ...choices });
       const added = Object.keys(merged).length !== Object.keys(choices).length;
       const behind = Object.keys(merged).some((k) => server[k as Screen] !== merged[k as Screen]);
       if (added) {
@@ -138,7 +151,8 @@ export function useMode(): ModeState {
   const screen = useScreen();
   const all = useSyncExternalStore(store.subscribe, store.get);
   const fixed = isEverythingOnly(screen);
-  const stored = all[screen];
+  // One choice everywhere; screens with one face show Everything without changing it.
+  const stored = all[APP];
   return {
     // Anything but a known mode (an old or hand-edited value) reads as the default.
     mode: fixed ? 'everything' : stored === 'everything' ? 'everything' : 'bliss',
@@ -149,7 +163,7 @@ export function useMode(): ModeState {
       const current = stored === 'everything' ? 'everything' : 'bliss';
       if (next === current) return;
       // The switch plays the eye's transition; the screen changes behind its blur.
-      changeMode(next, () => store.set(screen, next));
+      changeMode(next, () => store.set(APP, next));
     },
   };
 }
