@@ -10,7 +10,7 @@ import { shortDay } from '../../lib/fmt';
 import { useApp, useProjectResource, useTz } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Select } from '../../ui/cypher/forms';
-import { LessonsLearned } from '../Knowledge';
+import { LessonsLearned } from '../manage/LessonsLearned';
 import { ArtifactViewer } from './ArtifactViewer';
 import { Blueprint } from './Blueprint';
 import { DecisionLog } from './DecisionLog';

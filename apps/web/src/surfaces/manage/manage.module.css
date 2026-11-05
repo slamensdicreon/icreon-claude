@@ -1,0 +1,721 @@
+/*
+ * The admin pages, in Everything's lower half of the scale (design system §7): panels on surface
+ * with a mist border and radius-lg, padded space-4, sections space-4 to space-6 apart, rows on
+ * `row`. Every color, size and radius is a token; the only literals are 1px hairlines.
+ */
+
+.manage {
+  padding: 0 0 var(--space-8);
+}
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.lessons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---------- text ---------- */
+
+.lead {
+  margin: 0;
+  color: var(--text-2);
+  max-width: calc(var(--measure) * 0.62);
+}
+.body {
+  margin: 0;
+  color: var(--ink);
+}
+.quiet {
+  margin: 0;
+  color: var(--text-3);
+}
+.quietInline {
+  color: var(--text-3);
+}
+.muted {
+  color: var(--text-2);
+}
+.strong {
+  font-weight: 700;
+  color: var(--ink);
+}
+.value {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.under {
+  display: block;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--text-3);
+}
+.groupLabel {
+  margin: 0;
+  color: var(--text-3);
+}
+.subhead {
+  margin: 0;
+  color: var(--text-3);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.headRight {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+.panelFoot {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--mist-2);
+  color: var(--text-3);
+}
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--mist);
+  text-underline-offset: 3px;
+  min-height: var(--space-6);
+}
+.linkButton:hover {
+  text-decoration-color: var(--ink);
+}
+
+/* ---------- forms in a row ---------- */
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-4);
+}
+.inline > :not(:last-child) {
+  flex: 1 1 calc(var(--sidebar) + var(--space-6));
+}
+.well {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mist-2);
+  background: var(--surface-quiet);
+}
+
+/* ---------- a toolbar over a list ---------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.search {
+  flex: 0 1 calc(var(--sidebar) + var(--space-6));
+  min-width: calc(var(--sidebar) - var(--space-6));
+}
+.toolbarEnd {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-2);
+}
+.exportRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-1);
+  margin-top: calc(var(--space-3) * -1);
+}
+.exportLabel {
+  color: var(--text-3);
+  margin-right: var(--space-1);
+}
+
+/* ---------- tables ---------- */
+
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--ink);
+}
+.tableWrap .table thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--mist-2);
+  white-space: nowrap;
+  height: auto;
+  background: none;
+}
+.tableWrap .table td,
+.tableWrap .table tbody th {
+  padding: var(--space-2) var(--space-3);
+  height: var(--row);
+  border-bottom: 1px solid var(--mist-2);
+  vertical-align: middle;
+  text-align: left;
+  font-weight: 400;
+}
+.tableWrap .table th {
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+.tableWrap .table tbody th {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: normal;
+}
+.tableWrap .table tbody tr:last-child td,
+.tableWrap .table tbody tr:last-child th {
+  border-bottom: 0;
+}
+.tableWrap .table th:first-child,
+.tableWrap .table td:first-child {
+  padding-left: var(--space-4);
+}
+.tableWrap .table th:last-child,
+.tableWrap .table td:last-child {
+  padding-right: var(--space-4);
+}
+.tableWrap .table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.stateCell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+}
+.tableWrap .table .actionsCell {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+}
+.table tr[data-open] td,
+.table tr[data-open] th {
+  border-bottom-color: transparent;
+}
+.tableWrap .table .formRow td {
+  height: auto;
+  padding-top: 0;
+  padding-bottom: var(--space-4);
+}
+
+/* ---------- connections ---------- */
+
+.connBody {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--mist-2);
+}
+.connBody:empty {
+  display: none;
+}
+
+/* ---------- rows ---------- */
+
+.rows {
+  margin: 0;
+  padding: 0 var(--space-4);
+  list-style: none;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  min-height: var(--row);
+  padding: var(--space-2) 0;
+}
+.row + .row {
+  border-top: 1px solid var(--mist-2);
+}
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---------- an entry: a rule or a piece of knowledge ---------- */
+
+.entries {
+  display: flex;
+  flex-direction: column;
+}
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.entry + .entry {
+  border-top: 1px solid var(--mist-2);
+}
+.entry[data-status='retired'] .entryBody {
+  color: var(--text-2);
+}
+.entryHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.ref {
+  color: var(--ink);
+  letter-spacing: 0.04em;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-5);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface-quiet);
+  color: var(--text-2);
+  font-weight: 600;
+}
+.where {
+  color: var(--text-3);
+}
+.where + .where::before {
+  content: '·';
+  margin-right: var(--space-3);
+}
+.entryBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--ink);
+  max-width: calc(var(--measure) * 0.7);
+}
+.ruleText,
+.entryTitle,
+.entryText {
+  margin: 0;
+}
+.ruleText b,
+.entryTitle {
+  font-weight: 700;
+}
+.entryText {
+  color: var(--text-2);
+}
+.entryEdit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mist-2);
+  background: var(--surface-quiet);
+}
+.entryFacts {
+  margin: 0;
+  color: var(--text-3);
+}
+.eyeInline {
+  display: inline-flex;
+  vertical-align: middle;
+  margin: 0 var(--space-1) 0 0;
+  transform: translateY(calc(var(--space-1) * -0.25));
+}
+.history {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  list-style: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-quiet);
+  color: var(--text-2);
+}
+.history li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
+}
+.historyWhen {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.evidence summary,
+.disclosure summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-weight: 600;
+  min-height: var(--space-6);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+}
+.evidence summary::-webkit-details-marker,
+.disclosure summary::-webkit-details-marker,
+.foldHead::-webkit-details-marker {
+  display: none;
+}
+.evidence summary::before,
+.disclosure summary::before {
+  content: '';
+  width: var(--space-2);
+  height: var(--space-2);
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 200ms ease-out;
+}
+.evidence[open] summary::before,
+.disclosure[open] summary::before {
+  transform: rotate(45deg);
+}
+.evidence summary:hover,
+.disclosure summary:hover {
+  color: var(--ink);
+}
+.evidence .history {
+  margin-top: var(--space-2);
+}
+
+/* ---------- a panel that folds ---------- */
+
+.fold {
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+  overflow: hidden;
+}
+.foldHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  min-height: var(--row);
+  cursor: pointer;
+  list-style: none;
+  color: var(--ink);
+}
+.fold[open] > .foldHead {
+  border-bottom: 1px solid var(--mist);
+}
+.foldMeta {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.foldChev {
+  color: var(--text-3);
+  transition: transform 200ms ease-out;
+}
+.fold[open] .foldChev {
+  transform: rotate(180deg);
+}
+
+/* ---------- playbooks ---------- */
+
+.entity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.entity + .entity {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--mist);
+}
+.entityHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.entityTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.entityTitle h2 {
+  margin: 0;
+  color: var(--ink);
+}
+.entityMeta {
+  color: var(--text-3);
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-5);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  color: var(--text-3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.playbook {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  padding: var(--space-4);
+}
+.playbookMain,
+.playbookSide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.outcomes,
+.defs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.outcomes li,
+.defs li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--ink);
+}
+.outcomes b,
+.defs b {
+  font-weight: 700;
+}
+.phases {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+.phases li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--row) - var(--space-3));
+  color: var(--ink);
+}
+.phases li + li {
+  border-top: 1px solid var(--mist-2);
+}
+.phaseNo {
+  flex: none;
+  width: var(--space-6);
+  height: var(--space-6);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--surface-quiet);
+  border: 1px solid var(--mist);
+  color: var(--text-2);
+  font-weight: 600;
+}
+.phaseName {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+.gate {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-5);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+.compare {
+  border-top: 1px solid var(--mist-2);
+  padding-top: var(--space-3);
+}
+.compare > :global(p) {
+  margin: 0 var(--space-4) var(--space-3);
+}
+.compareHead {
+  padding: 0 var(--space-4) var(--space-1);
+}
+.disclosures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--mist-2);
+}
+.disclosure .defs {
+  padding: var(--space-2) 0 var(--space-3) var(--space-5);
+  max-width: calc(var(--measure) * 0.7);
+}
+
+/* The roadmap: readable tiles that do nothing (no button, no focus, no pointer). */
+.roadmap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tiles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--sidebar) + var(--space-7)), 1fr));
+  gap: var(--space-4);
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--mist);
+  background: var(--surface-quiet);
+  color: var(--text-2);
+  min-width: 0;
+}
+.tileTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.eyebrow {
+  color: var(--text-3);
+}
+.tileTitle {
+  color: var(--ink);
+}
+.tileBody {
+  color: var(--text-2);
+}
+.tileFoot {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  color: var(--text-3);
+}
+
+/* ---------- narrower ---------- */
+
+@media (max-width: 1100px) {
+  .columns,
+  .playbook {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    gap: var(--space-4);
+  }
+  .two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .search {
+    flex: 1 1 100%;
+  }
+  .toolbarEnd {
+    margin-left: 0;
+  }
+  .headRight {
+    justify-content: flex-start;
+  }
+  /* Tables of a few columns read as stacked rows on a phone. */
+  .stackOnPhone thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .stackOnPhone,
+  .stackOnPhone tbody,
+  .stackOnPhone tr,
+  .stackOnPhone td,
+  .stackOnPhone tbody th {
+    display: block;
+    width: auto;
+  }
+  .stackOnPhone tr {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--mist-2);
+  }
+  .stackOnPhone tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .tableWrap .stackOnPhone td,
+  .tableWrap .stackOnPhone tbody th {
+    height: auto;
+    padding: var(--space-1) 0;
+    border-bottom: 0;
+  }
+  .tableWrap .stackOnPhone td:first-child,
+  .tableWrap .stackOnPhone th:first-child,
+  .tableWrap .stackOnPhone td:last-child,
+  .tableWrap .stackOnPhone th:last-child {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .tableWrap .stackOnPhone .num,
+  .tableWrap .stackOnPhone .actionsCell {
+    text-align: left;
+    white-space: normal;
+    width: auto;
+  }
+  .tableWrap .stackOnPhone .actionsCell {
+    padding-top: var(--space-2);
+  }
+  .stackOnPhone tr[data-open] {
+    border-bottom: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foldChev,
+  .evidence summary::before,
+  .disclosure summary::before {
+    transition: none;
+  }
+}

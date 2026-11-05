@@ -21,11 +21,12 @@ the Dashboard and Mission Control in dark.
 | Workbench       | The documents, newest first; one opens in Everything                                                                      | Rebuilt: document rail with status tags, Blueprint with Filter Menu, completeness and Change Summary (affectUI), Decision Log with override, Project facts, Lessons, every document type, a scoped table of contents |
 | Settings        | (Everything only)                                                                                                         | Rebuilt in groups (the project, access, budgets, who decides, the record, danger zone), a sentence before each table               |
 | New project     | (Everything only)                                                                                                         | Rebuilt: one list of steps, a rail with checks, a live summary, radio tiles with arrow keys; validation and request bodies in typed modules shared with Settings |
-| Manage pages    | (Everything only)                                                                                                         | The existing pages, on Cypher's tokens; their old title is hidden under the top bar's                                              |
+| Manage pages    | (Everything only)                                                                                                         | Rebuilt: Global settings (GitHub App), Connections, Playbooks with comparison, Rules, Knowledge with export, Diagnostics; one shared card for rules, lessons and proposals |
 
-Every project surface and the intake wizard are now rebuilt. The pages above any project (Connections,
-Playbooks, Rules, Knowledge, Diagnostics, Global settings) still use the old components on Cypher's
-tokens; they are next, then the old stylesheet comes out (phase 5).
+Every page is now rebuilt on Cypher components. The old surface files are deleted; what still uses
+the old stylesheet is the shell's overlays (palette, menus, dialogs), the inspector drawer, the Cypher
+sheet's conversation (the old dock and the portfolio chat), Mission Control's intake and presentation
+modes, and the phone's bottom bar. Those go next, then `prototype.css` and `app.css` come out (phase 5).
 
 ## Cypher's words come from the API
 
