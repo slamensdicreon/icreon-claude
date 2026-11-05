@@ -465,7 +465,7 @@ button.tag:hover {
 .chev {
   flex: none;
   color: var(--text-3);
-  transition: transform 200ms ease-out;
+  transition: transform var(--dur-3) var(--ease-spring);
 }
 .row[data-open] .chev {
   transform: rotate(180deg);
@@ -719,6 +719,31 @@ button.tag:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .chev {
+    transition: none;
+  }
+}
+
+/* Opened rows and overrides unfold from their head. */
+.rowBody,
+.overrideOptions {
+  animation: unfold var(--dur-3) var(--ease-out) both;
+}
+@keyframes unfold {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(calc(var(--space-2) * -1));
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rowBody,
+  .overrideOptions {
+    animation: none;
+  }
   .chev {
     transition: none;
   }

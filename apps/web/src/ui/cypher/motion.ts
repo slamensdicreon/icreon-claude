@@ -22,6 +22,8 @@ export function useGlide(
   selector = '[aria-pressed="true"], [aria-current="page"]',
 ) {
   const placed = useRef(false);
+  // Until this time a glide is under way: a resize then re-aims it rather than snapping it.
+  const glidingUntil = useRef(0);
   useLayoutEffect(() => {
     const g = group.current;
     const i = indicator.current;
@@ -34,7 +36,9 @@ export function useGlide(
       }
       const gr = g.getBoundingClientRect();
       const er = el.getBoundingClientRect();
-      const instant = !animate || !placed.current || reducedMotion();
+      const instant =
+        (!animate && performance.now() > glidingUntil.current) || !placed.current || reducedMotion();
+      if (!instant && animate) glidingUntil.current = performance.now() + 600;
       if (instant) i.style.transition = 'none';
       i.style.opacity = '1';
       i.style.width = `${er.width}px`;

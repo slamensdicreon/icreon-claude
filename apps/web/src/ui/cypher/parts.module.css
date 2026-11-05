@@ -723,3 +723,20 @@
     transition: none;
   }
 }
+
+/* A project's ring draws to its percent on arrival and moves with it. */
+.ring circle + circle {
+  animation: draw var(--dur-4) var(--ease-out) both;
+  transition: stroke-dasharray var(--dur-4) var(--ease-out);
+}
+@keyframes draw {
+  from {
+    stroke-dasharray: 0 999;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring circle + circle {
+    animation: none;
+    transition: none;
+  }
+}

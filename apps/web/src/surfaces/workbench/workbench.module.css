@@ -93,7 +93,7 @@
 }
 .secChev {
   flex: none;
-  transition: transform 200ms ease-out;
+  transition: transform var(--dur-3) var(--ease-spring);
 }
 .secHead[aria-expanded='false'] .secChev {
   transform: rotate(-90deg);
@@ -265,6 +265,28 @@
 @media (prefers-reduced-motion: reduce) {
   .secChev,
   .item {
+    transition: none;
+  }
+}
+
+/* A section opened in the rail unfolds its items. */
+.items {
+  animation: unfoldItems var(--dur-3) var(--ease-out);
+}
+@keyframes unfoldItems {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .items {
+    animation: none;
+  }
+  .secChev {
     transition: none;
   }
 }

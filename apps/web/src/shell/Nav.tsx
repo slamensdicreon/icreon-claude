@@ -10,6 +10,7 @@ import { Icon } from '../theme/icons';
 import { Eye } from '../ui/Eye';
 import { useRef } from 'react';
 import { useGlide } from '../ui/cypher/motion';
+import { Ticker } from '../ui/cypher/parts';
 import { useEyeState } from '../voice/eye';
 import { PORTFOLIO_SECTIONS, PROJECT_SECTIONS } from './sections';
 import { ThemeSwitch } from './ThemeSwitch';
@@ -146,7 +147,7 @@ export function Sidebar() {
   const badge =
     eye.yours > 0 ? (
       <span className={`${styles.badge} type-label`}>
-        {eye.yours}
+        <Ticker value={eye.yours} />
         <span className="sr-only"> yours</span>
       </span>
     ) : null;

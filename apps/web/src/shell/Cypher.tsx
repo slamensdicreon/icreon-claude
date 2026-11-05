@@ -14,6 +14,7 @@ import { CypherHome } from '../surfaces/CypherHome';
 import { useApp } from '../state';
 import { Icon } from '../theme/icons';
 import { usePresence } from '../ui/cypher/motion';
+import { Ticker } from '../ui/cypher/parts';
 import { Eye } from '../ui/Eye';
 import { useEyeState } from '../voice/eye';
 import styles from './Shell.module.css';
@@ -35,7 +36,7 @@ export function CypherLauncher() {
       <Eye state={eye.state} blink={eye.blink} size={40} tone="onInk" decorative />
       {eye.yours > 0 && (
         <span className={`${styles.launcherBadge} type-label`} aria-hidden="true">
-          {eye.yours}
+          <Ticker value={eye.yours} />
         </span>
       )}
     </button>

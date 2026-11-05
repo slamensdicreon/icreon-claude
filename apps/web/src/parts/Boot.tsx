@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { live } from '../lib/live';
 import { useApp, useMission, useNow } from '../state';
 import { Button } from '../ui/cypher/parts';
-import { Eye } from '../ui/Eye';
+import { ease, lookRange, prefersReducedMotion } from '../ui/eye/geometry';
+import { EyeMotion } from '../ui/eye/motion';
 import b from './boot.module.css';
 
 /**
@@ -27,8 +28,9 @@ export interface BootState {
   home: () => void;
 }
 
-const MIN_SHOWN_MS = 500;
-const LEAVE_MS = 380;
+/** Long enough for the eye to wake on a fast load; the leave lets it open wide and dissolve. */
+const MIN_SHOWN_MS = 1100;
+const LEAVE_MS = 560;
 
 export function useBootState(): BootState {
   const { boot, projectId, projects, home } = useApp();
@@ -121,6 +123,8 @@ export function useBootState(): BootState {
 
 export function Boot({ state }: { state: BootState }) {
   const { leaving, phase, message, detail, steps, retry, home } = state;
+  const done = steps.filter((x) => x.state === 'done').length;
+  const progress = phase === 'done' || leaving ? 1 : steps.length ? done / steps.length : 0;
   return (
     <div
       className={b.boot}
@@ -130,17 +134,7 @@ export function Boot({ state }: { state: BootState }) {
       data-leaving={leaving || undefined}
     >
       <div className={b.card}>
-        <div className={b.mark} aria-hidden="true">
-          <svg className={b.ring} viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="56" />
-          </svg>
-          <Eye
-            state={phase === 'error' ? 'needs-a-word' : 'watching'}
-            size={56}
-            decorative
-            blink={phase !== 'error'}
-          />
-        </div>
+        <BootEye phase={phase} progress={progress} leaving={leaving} />
         <p className={`${b.title} type-heading`}>Cypher</p>
         <p className={`${b.line} type-body`}>{message}</p>
         {detail && <p className={`${b.detail} type-meta`}>{detail}</p>}
@@ -162,6 +156,105 @@ export function Boot({ state }: { state: BootState }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const RING = 2 * Math.PI * 56;
+
+/**
+ * The eye waking while the app loads: closed and breathing at first, the lids lifting as each step
+ * lands, the pupil reading side to side while it waits; wide and blinking when ready; coral and
+ * concerned, looking straight out, when something failed. The ring around it is the progress.
+ */
+function BootEye({
+  phase,
+  progress,
+  leaving,
+}: {
+  phase: string;
+  progress: number;
+  leaving: boolean;
+}) {
+  const lids = useRef<SVGPathElement>(null);
+  const pupil = useRef<SVGCircleElement>(null);
+  const motion = useRef<EyeMotion | null>(null);
+  if (!motion.current) motion.current = new EyeMotion({ open: 0, lookX: 0, lookY: 0, dilate: 0 });
+
+  useEffect(() => {
+    const m = motion.current!;
+    m.attach(lids.current && pupil.current ? { lids: lids.current, pupil: pupil.current } : null);
+    return () => {
+      m.cancel();
+      m.attach(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = motion.current!;
+    const still = prefersReducedMotion();
+    if (leaving || phase === 'done') {
+      const wide = { open: 1.3, lookX: 0, lookY: 0, dilate: 1.4 };
+      if (still) return m.set(wide);
+      void m.play([
+        { to: { open: 1, lookX: 0 }, ms: 160, ease: ease.out },
+        { to: { open: 0 }, ms: 80, ease: ease.in },
+        { to: wide, ms: 260, ease: ease.spring },
+      ]);
+      return;
+    }
+    if (phase === 'error') {
+      const concerned = { open: 0.72, lookX: 0, lookY: 0, dilate: 2 };
+      if (still) return m.set(concerned);
+      void m.play([{ to: concerned, ms: 380, ease: ease.out }]);
+      return;
+    }
+    // Waiting: the lids lift with progress, then the pupil reads side to side, with a blink now and then.
+    const open = 0.32 + 0.6 * progress;
+    if (still) return m.set({ open, lookX: 0, lookY: 0, dilate: 0 });
+    let alive = true;
+    const range = lookRange(open) * 0.8;
+    const loop = async () => {
+      await m.play([{ to: { open, lookY: 0 }, ms: 520, ease: ease.spring }]);
+      let side = 1;
+      while (alive) {
+        const ok = await m.play([
+          { to: { lookX: range * side }, ms: 700, ease: ease.inOut, hold: 120 },
+        ]);
+        if (!ok || !alive) return;
+        side = -side;
+        if (Math.random() < 0.25) {
+          await m.play([
+            { to: { open: 0 }, ms: 90, ease: ease.in },
+            { to: { open }, ms: 150, ease: ease.out },
+          ]);
+        }
+      }
+    };
+    void loop();
+    return () => {
+      alive = false;
+    };
+  }, [phase, progress, leaving]);
+
+  return (
+    <div className={b.mark} aria-hidden="true">
+      <span className={b.halo} />
+      <svg className={b.ring} viewBox="0 0 120 120">
+        <circle className={b.track} cx="60" cy="60" r="56" />
+        <circle
+          className={b.arc}
+          cx="60"
+          cy="60"
+          r="56"
+          style={{ strokeDasharray: RING, strokeDashoffset: RING * (1 - Math.max(0.06, progress)) }}
+        />
+      </svg>
+      <svg className={b.eye} viewBox="0 0 72 72" focusable="false">
+        <circle className={b.ball} cx="36" cy="36" r="31" />
+        <path ref={lids} className={b.lids} strokeLinecap="round" strokeLinejoin="round" />
+        <circle ref={pupil} className={b.pupil} cx="36" cy="36" r="0" />
+      </svg>
     </div>
   );
 }

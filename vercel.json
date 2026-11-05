@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "claude/bold-euler-i3qm3k": false
+    }
+  },
   "services": {
     "web": {
       "root": "apps/web/",

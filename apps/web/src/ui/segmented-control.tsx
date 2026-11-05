@@ -76,7 +76,7 @@ export type SegmentedControlProps<T extends string = string> = {
 };
 
 /** Where each remembered control's pill last stood: its left edge and width in the track. */
-const PILL_MEMORY = new Map<string, { x: number; w: number }>();
+const PILL_MEMORY = new Map<string, { x: number; w: number; at: number }>();
 
 export function SegmentedControl<T extends string = string>({
   options: rawOptions,
@@ -179,10 +179,12 @@ export function SegmentedControl<T extends string = string>({
       x += content.offsetLeft;
       w = content.offsetWidth;
     }
-    // First placement of a remembered control: start from where its pill last stood, then glide
-    const from = !p.dataset.ready && memory ? PILL_MEMORY.get(memory) : undefined;
-    if (memory) PILL_MEMORY.set(memory, { x, w });
+    // First placement of a remembered control: start from where its pill last stood (or where its
+    // last glide began, if the control was replaced mid-glide), then glide here
+    const mem = !p.dataset.ready && memory ? PILL_MEMORY.get(memory) : undefined;
+    const from = mem && (!mem.at || Date.now() - mem.at < 900) ? mem : undefined;
     if (from && (from.x !== x || from.w !== w) && !reducedMotion()) {
+      if (memory) PILL_MEMORY.set(memory, { x, w, at: 0 });
       p.style.transition = 'none';
       p.style.opacity = '1';
       p.style.left = `${from.x}px`;
@@ -197,6 +199,14 @@ export function SegmentedControl<T extends string = string>({
     }
     const instant = !p.dataset.ready || (!animate && !gliding.current);
     const prev = parseFloat(p.style.left) || 0;
+    if (memory) {
+      // A glide remembers where it began, so a replacement can replay it; a settled pill, where it is
+      const prevW = t.clientWidth - prev - (parseFloat(p.style.right) || 0);
+      const cur = PILL_MEMORY.get(memory);
+      if (!instant && x !== prev) PILL_MEMORY.set(memory, { x: prev, w: prevW, at: Date.now() });
+      // A re-measure during a glide must not erase where that glide began
+      else if (!cur?.at || Date.now() - cur.at > 900) PILL_MEMORY.set(memory, { x, w, at: 0 });
+    }
     // The edge facing the target leads, the other one trails – the stretch
     if (!instant && x !== prev) p.dataset.dir = x > prev ? 'right' : 'left';
     if (instant) p.style.transition = 'none';
