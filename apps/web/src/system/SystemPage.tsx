@@ -19,9 +19,18 @@ import styles from './SystemPage.module.css';
 
 interface Token {
   name: string;
-  value: string;
+  /** One value, or one per theme (color and shadow). */
+  value: string | Record<string, string>;
   usage: string;
 }
+
+/** One value, or "light <value> · dark <value>". */
+const shown = (v: Token['value']) =>
+  typeof v === 'string'
+    ? v
+    : Object.entries(v)
+        .map(([theme, x]) => `${theme} ${x}`)
+        .join(' · ');
 interface TypeStyle {
   name: string;
   fontSize: string;
@@ -87,7 +96,7 @@ function Swatches({ list }: { list: Token[] }) {
           <span className={styles.chip} style={{ background: `var(--${t.name})` }} />
           <span className={styles.tokenText}>
             <span className="type-nav">{t.name}</span>
-            <span className="type-meta">{t.value}</span>
+            <span className="type-meta">{shown(t.value)}</span>
             <span className="type-meta">{t.usage}</span>
           </span>
         </li>
@@ -104,7 +113,7 @@ function Scale({ list, render }: { list: Token[]; render: (t: Token) => React.Re
           {render(t)}
           <span className={styles.tokenText}>
             <span className="type-nav">
-              {t.name} <span className={styles.quiet}>{t.value}</span>
+              {t.name} <span className={styles.quiet}>{shown(t.value)}</span>
             </span>
             <span className="type-meta">{t.usage}</span>
           </span>
@@ -203,8 +212,8 @@ export function SystemPage() {
             <figcaption className="type-meta">eye-needs-a-word</figcaption>
           </figure>
           <figure className={styles.onInk}>
-            <Wordmark size={180} tone="onInk" />
-            <figcaption className="type-meta">wordmark, on ink</figcaption>
+            <Wordmark size={180} tone="onShell" />
+            <figcaption className="type-meta">wordmark, on the shell</figcaption>
           </figure>
         </div>
         <div className={styles.marks}>
@@ -223,10 +232,10 @@ export function SystemPage() {
           <figure className={styles.onInk}>
             <span className={styles.row}>
               {STATES.map((s) => (
-                <Eye key={s} state={s} size={44} tone="onInk" />
+                <Eye key={s} state={s} size={44} tone="onShell" />
               ))}
             </span>
-            <figcaption className="type-meta">in the shell, on ink</figcaption>
+            <figcaption className="type-meta">in the shell</figcaption>
           </figure>
         </div>
         <button className={`${styles.button} type-button`} onClick={() => setBlink((b) => b + 1)}>

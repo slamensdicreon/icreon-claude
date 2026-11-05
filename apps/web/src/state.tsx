@@ -163,8 +163,9 @@ interface AppValue {
   dismissToast: (id: number) => void;
   layout: Layout;
   setLayout: (patch: Partial<Layout>) => void;
+  /** The chosen theme; null follows the system's setting. */
   theme: 'light' | 'dark' | null;
-  setTheme: (t: 'light' | 'dark') => void;
+  setTheme: (t: 'light' | 'dark' | null) => void;
   composer: { text: string; about: string | null; focus: number };
   setComposer: (c: { text: string; about?: string | null; focus?: boolean }) => void;
   /** Runs a command; refusals become a toast in the API's own words. */
@@ -237,9 +238,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sideOpen: false,
     present: false,
   });
-  const [theme, setThemeState] = useState<'light' | 'dark' | null>(
-    (store.get('lw-theme') as 'light' | 'dark' | null) ?? null,
-  );
+  const [theme, setThemeState] = useState<'light' | 'dark' | null>(() => {
+    const t = store.get('lw-theme');
+    return t === 'light' || t === 'dark' ? t : null;
+  });
   const [composer, setComposerState] = useState({
     text: '',
     about: null as string | null,
@@ -312,11 +314,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  // Cypher has one theme (design system §5): the root stays light whatever the stored preference,
-  // so the old stylesheet's dark block never applies to the surfaces still on it.
+  // Light, dark, or the system's setting, resolved onto the root's data-theme, which tokens.css
+  // themes by (design system §5, §13). index.html sets it before first paint the same way.
   useEffect(() => {
-    document.documentElement.dataset.theme = 'light';
-  }, []);
+    const mq = matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      document.documentElement.dataset.theme = theme ?? (mq.matches ? 'dark' : 'light');
+    };
+    apply();
+    if (theme) return;
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [theme]);
 
   const ui = useMemo(
     () => (projectId ? (uis.current.get(projectId) ?? DEFAULT_UI) : DEFAULT_UI),
@@ -421,7 +430,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }),
     theme,
     setTheme: (t) => {
-      store.set('lw-theme', t);
+      store.set('lw-theme', t ?? 'system');
       setThemeState(t);
     },
     composer,

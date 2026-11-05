@@ -1,4 +1,4 @@
-import { EyeNeedsAWord, EyeResting, EyeWatching } from '../theme/marks';
+import { EyeNeedsAWord, EyeResting, EyeWatching, type MarkTone } from '../theme/marks';
 import { EYE_WORDS, type EyeState } from '../voice/eye';
 import styles from './Eye.module.css';
 
@@ -25,7 +25,8 @@ export function Eye({
 }: {
   state: EyeState;
   size?: number;
-  tone?: 'light' | 'onInk';
+  /** Where it sits: the page, an ink-filled control (the Cypher button), or the shell. */
+  tone?: MarkTone;
   blink?: boolean;
   halo?: boolean;
   decorative?: boolean;

@@ -1,29 +1,69 @@
 /* Cypher — generated from tokens.json in this package (regenerate from the design system's tokens.json when it changes). */
-:root {
+:root, [data-theme="light"] {
+  color-scheme: light;
   --bliss: #f6f5fc; /* The ground of every screen in both modes. Faintly lavender; never pure white at page level. */
   --surface: #ffffff; /* Cards, tables, the top bar, the Cypher panel. Sits on bliss. */
   --surface-quiet: #f6f5fc; /* A quieter well inside a surface: Cypher's inline recommendation, the status block, inputs. */
   --mist: #e3e0f2; /* Hairlines, card borders, dividers. Never text. */
   --mist-2: #eeedf7; /* Table row dividers, progress tracks, the quietest line. */
-  --ink: #141433; /* Headlines, body text, the shell, primary buttons, the resting and watching eye. */
-  --ink-2: #1d1d45; /* Raised surface inside the shell: the project switcher, the stream readout. */
+  --ink: #141433; /* Headlines, body text, primary buttons, the resting and watching eye on the page. In dark it turns light: it is the text color, so the shell has its own token (shell). */
+  --ink-2: #1d1d45; /* Raised surface inside the shell: the project switcher, hovered nav items, the stream readout. */
   --ink-3: #2c2c5a; /* Lines inside the shell and inactive icon squares. */
+  --shell: #141433; /* The shell's ground: the rail and the sidebar. Ink in light; deeper than the page in dark, so the shell stays dark when text turns light. Also the pupil of the eye that needs a word. */
+  --on-shell: #ffffff; /* Text, icons and the eye on the shell, in both themes. Also the white almond of the eye that needs a word. */
   --text-2: #3b3a5c; /* Secondary body text on surface or bliss. 9.9:1 on white. */
-  --text-3: #6a6889; /* Labels, metadata, timestamps, placeholders. 5.0:1 on white, 4.7:1 on bliss; never below 13px. */
-  --on-ink: #ffffff; /* Text and icons on ink, ink-2 and every team hue. */
-  --on-ink-muted: #b7a6ff; /* Inactive nav labels and secondary text on ink. 9.1:1 on ink. */
-  --on-ink-quiet: #8f86c4; /* The quietest text on ink: settings, the stream readout keys. 5.6:1 on ink. */
+  --text-3: #6a6889; /* Labels, metadata, timestamps, placeholders. 5.3:1 on white, 4.9:1 on bliss in light; 6.4:1 on surface in dark. Never below 13px. */
+  --on-ink: #ffffff; /* Text and icons on every filled control: ink buttons, team hues, coral-text badges. White in light; ink-dark in dark, where ink and the team hues turn light. */
+  --on-ink-muted: #b7a6ff; /* Inactive nav labels and secondary text on the shell. 8.4:1 on shell in light, 9.4:1 in dark. */
+  --on-ink-quiet: #8f86c4; /* The quietest text on the shell: settings, the stream readout keys. 5.4:1 on shell in light, 6.0:1 in dark. */
   --coral: #e8553d; /* The eye when it needs a word, the halo, dots. Graphic only: never text on white. */
   --coral-text: #c8402b; /* Coral as text or as a filled control with white text: Yours labels, clocks, blocked states, the Yours badge. 4.9:1 on white. */
   --coral-tint: #fdf1ee; /* A project tile or row that has something yours in it; the directive-applying well. */
   --coral-halo: #fbd9d1; /* The breathing halo behind the eye when something is yours. */
-  --green: #1e8e5a; /* Done, passed, handled, live. Checkmarks and pass chips. 4.6:1 on white. */
+  --green: #1e8e5a; /* Done, passed, handled, live. Checkmarks and pass chips, beside a word. 4.1:1 on white: under the bar for text, so never body copy in light; 8.6:1 on surface in dark. */
   --iris: #6b4ee6; /* Discovery: avatars, phase segments, pills raised by Discovery. Also the user avatar. White text passes at 5.1:1. */
   --blue: #2f5ee6; /* Engineering: avatars, phase segments, progress bars on Engineering work. White text passes at 4.9:1. */
   --teal: #0b7b7d; /* Content: avatars, phase segments, migration metrics. White text passes at 5.2:1. */
   --gold: #9a6b00; /* Quality: avatars, phase segments, QA metrics; also the waiting state. White text passes at 5.2:1. */
   --gold-tint: #fdf8ec; /* A warning row in a log or table. */
   --iris-tint: #eeeafd; /* Forecast bars in charts and quiet Discovery-tinted surfaces. */
+  --shadow-card: 0 1px 0 #e3e0f2, 0 18px 44px rgba(20, 20, 51, 0.07); /* A card that is yours in Bliss. Everything else uses a mist border and no shadow. */
+  --shadow-decision: 0 1px 0 #e3e0f2, 0 20px 48px rgba(20, 20, 51, 0.08); /* The one decision card on Mission Control. */
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bliss: #0f0f24;
+  --surface: #191936;
+  --surface-quiet: #121229;
+  --mist: #2e2d55;
+  --mist-2: #23224a;
+  --ink: #f2f1fb;
+  --ink-2: #1b1b3c;
+  --ink-3: #2c2b58;
+  --shell: #08081a;
+  --on-shell: #ffffff;
+  --text-2: #cbc9e6;
+  --text-3: #9d9bc2;
+  --on-ink: #141433;
+  --on-ink-muted: #b7a6ff;
+  --on-ink-quiet: #8f86c4;
+  --coral: #ff6b52;
+  --coral-text: #ff8f7a;
+  --coral-tint: #33192a;
+  --coral-halo: #4d2431;
+  --green: #4fcf8e;
+  --iris: #a690ff;
+  --blue: #7f9fff;
+  --teal: #3cc4c6;
+  --gold: #e3ab3d;
+  --gold-tint: #2a2414;
+  --iris-tint: #252050;
+  --shadow-card: 0 1px 0 #2e2d55, 0 18px 44px rgba(0, 0, 0, 0.45);
+  --shadow-decision: 0 1px 0 #2e2d55, 0 20px 48px rgba(0, 0, 0, 0.5);
+}
+
+:root {
   --font-sans: "Plus Jakarta Sans", "Helvetica Neue", Arial, sans-serif;
   --space-1: 4px; /* Gap between a label and its value; icon-to-text inside a pill. */
   --space-2: 8px; /* Gap between buttons; between a type pill and its text. */
@@ -46,8 +86,6 @@
   --radius-xl: 24px; /* Cards and project tiles in Bliss. */
   --radius-xxl: 28px; /* The one decision card on Mission Control. */
   --radius-pill: 999px; /* Buttons, pills, the dial, search, avatars. */
-  --shadow-card: 0 1px 0 #e3e0f2, 0 18px 44px rgba(20, 20, 51, 0.07); /* A card that is yours in Bliss. Everything else uses a mist border and no shadow. */
-  --shadow-decision: 0 1px 0 #e3e0f2, 0 20px 48px rgba(20, 20, 51, 0.08); /* The one decision card on Mission Control. */
 }
 
 /* Type styles: one class per style in tokens.json › type.groups */

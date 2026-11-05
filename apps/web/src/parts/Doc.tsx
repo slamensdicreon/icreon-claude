@@ -40,10 +40,7 @@ export function MarkdownDoc({ text, projectId }: { text: string; projectId: stri
     if (!blocks?.length) return;
     let stop = false;
     void import('mermaid').then(async ({ default: mermaid }) => {
-      const dark =
-        document.documentElement.dataset.theme === 'dark' ||
-        (!document.documentElement.dataset.theme &&
-          matchMedia('(prefers-color-scheme: dark)').matches);
+      const dark = document.documentElement.dataset.theme === 'dark';
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',

@@ -8,6 +8,7 @@ import { Icon, type IconName } from '../theme/icons';
 import { Eye } from '../ui/Eye';
 import { useEyeState } from '../voice/eye';
 import { PROJECT_SECTIONS } from './sections';
+import { ThemeSwitch } from './ThemeSwitch';
 import styles from './Shell.module.css';
 
 const MANAGE_ICON: Record<string, IconName> = {
@@ -40,7 +41,7 @@ export function Rail() {
           state={eye.state}
           blink={eye.blink}
           size={44}
-          tone="onInk"
+          tone="onShell"
           label={`Cypher: ${eye.yours ? `${eye.yours} yours` : eye.state === 'watching' ? 'watching' : 'nothing needs you'}`}
         />
       </button>
@@ -119,7 +120,7 @@ export function Sidebar() {
   return (
     <nav className={styles.sidebar} aria-label="Cypher">
       <button className={styles.brand} onClick={home} aria-label="Cypher, all projects">
-        <Eye state={eye.state} blink={eye.blink} size={34} tone="onInk" decorative />
+        <Eye state={eye.state} blink={eye.blink} size={34} tone="onShell" decorative />
         <span className={`${styles.wordmark} type-heading`} aria-hidden="true">
           cypher
         </span>
@@ -203,6 +204,9 @@ export function Sidebar() {
           <span className="type-nav">{me.name}</span>
           <span className="type-meta">Director</span>
         </span>
+      </div>
+      <div className={styles.theme}>
+        <ThemeSwitch onShell />
       </div>
     </nav>
   );

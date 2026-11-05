@@ -12,14 +12,12 @@
  * - The old blue accent becomes `ink`. In Cypher blue means Engineering, and primary controls are
  *   ink. Old link buttons get a quiet underline so they still read as links.
  * - Green is never a background, so the old `--success-bg` becomes the quiet `mist-2` well.
- * - Cypher has one theme. The shell keeps `data-theme="light"` on the root, so the old dark
- *   block never applies.
+ * - Light and dark both come from Cypher's tokens: the old sheet's own dark theme is gone, and
+ *   these mappings follow `data-theme` because the tokens they point at do.
  * - No monospace in Cypher: `--font-mono` becomes the sans, with tabular numerals from the root.
  */
 
 :root {
-  color-scheme: light;
-
   /* brand core */
   --icreon-black: var(--ink);
   --icreon-white: var(--on-ink);

@@ -5,25 +5,34 @@
  */
 import type { SVGProps } from 'react';
 
+export type MarkTone = 'light' | 'onInk' | 'onShell';
+
 export interface MarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
   /** Width in px; the height follows the mark's proportions. */
   size?: number;
-  /** "light" as drawn; "onInk" inverts the disc and lid (or word) for the ink shell. */
-  tone?: 'light' | 'onInk';
+  /** Where it sits: the page ("light"), an ink-filled control ("onInk"), or the shell ("onShell"). */
+  tone?: MarkTone;
 }
+
+/** The disc-and-word ink and the lid ink, per tone. */
+const INKS: Record<MarkTone, { ink: string; white: string }> = {
+  light: { ink: 'var(--ink)', white: 'var(--on-ink)' },
+  onInk: { ink: 'var(--on-ink)', white: 'var(--ink)' },
+  onShell: { ink: 'var(--on-shell)', white: 'var(--shell)' },
+};
 
 /** Generated from theme/marks/eye-resting.svg. */
 export function EyeResting({ size = 72, tone = 'light', ...rest }: MarkProps) {
-  const onInk = tone === 'onInk';
+  const inks = INKS[tone];
   return (
     <svg viewBox="0 0 72 72" width={size} height={(size * 72) / 72} {...rest}>
-      <circle cx="36" cy="36" r="31" style={{ fill: onInk ? 'var(--on-ink)' : 'var(--ink)' }} />
+      <circle cx="36" cy="36" r="31" style={{ fill: inks.ink }} />
       <path
         d="M20 36 Q36 50 52 36"
         fill="none"
         strokeWidth="4"
         strokeLinecap="round"
-        style={{ stroke: onInk ? 'var(--ink)' : 'var(--on-ink)' }}
+        style={{ stroke: inks.white }}
       />
     </svg>
   );
@@ -31,18 +40,18 @@ export function EyeResting({ size = 72, tone = 'light', ...rest }: MarkProps) {
 
 /** Generated from theme/marks/eye-watching.svg. */
 export function EyeWatching({ size = 72, tone = 'light', ...rest }: MarkProps) {
-  const onInk = tone === 'onInk';
+  const inks = INKS[tone];
   return (
     <svg viewBox="0 0 72 72" width={size} height={(size * 72) / 72} {...rest}>
-      <circle cx="36" cy="36" r="31" style={{ fill: onInk ? 'var(--on-ink)' : 'var(--ink)' }} />
+      <circle cx="36" cy="36" r="31" style={{ fill: inks.ink }} />
       <path
         d="M18 36 Q36 20 54 36 Q36 52 18 36 Z"
         fill="none"
         strokeWidth="3.5"
         strokeLinejoin="round"
-        style={{ stroke: onInk ? 'var(--ink)' : 'var(--on-ink)' }}
+        style={{ stroke: inks.white }}
       />
-      <circle cx="36" cy="36" r="5" style={{ fill: onInk ? 'var(--ink)' : 'var(--on-ink)' }} />
+      <circle cx="36" cy="36" r="5" style={{ fill: inks.white }} />
     </svg>
   );
 }
@@ -52,24 +61,24 @@ export function EyeNeedsAWord({ size = 72, tone: _sameOnAnyGround, ...rest }: Ma
   return (
     <svg viewBox="0 0 72 72" width={size} height={(size * 72) / 72} {...rest}>
       <circle cx="36" cy="36" r="31" style={{ fill: 'var(--coral)' }} />
-      <path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" style={{ fill: 'var(--on-ink)' }} />
-      <circle cx="36" cy="36" r="7" style={{ fill: 'var(--ink)' }} />
+      <path d="M18 36 Q36 20 54 36 Q36 52 18 36 Z" style={{ fill: 'var(--on-shell)' }} />
+      <circle cx="36" cy="36" r="7" style={{ fill: 'var(--shell)' }} />
     </svg>
   );
 }
 
 /** Generated from theme/marks/wordmark.svg. */
 export function Wordmark({ size = 360, tone = 'light', ...rest }: MarkProps) {
-  const onInk = tone === 'onInk';
+  const inks = INKS[tone];
   return (
     <svg viewBox="0 0 360 96" width={size} height={(size * 96) / 360} {...rest}>
-      <circle cx="40" cy="48" r="34" style={{ fill: onInk ? 'var(--on-ink)' : 'var(--ink)' }} />
+      <circle cx="40" cy="48" r="34" style={{ fill: inks.ink }} />
       <path
         d="M22 48 Q40 64 58 48"
         fill="none"
         strokeWidth="4.5"
         strokeLinecap="round"
-        style={{ stroke: onInk ? 'var(--ink)' : 'var(--on-ink)' }}
+        style={{ stroke: inks.white }}
       />
       <text
         x="92"
@@ -77,7 +86,7 @@ export function Wordmark({ size = 360, tone = 'light', ...rest }: MarkProps) {
         fontSize="72"
         fontWeight="800"
         letterSpacing="-3"
-        style={{ fontFamily: 'var(--font-sans)', fill: onInk ? 'var(--on-ink)' : 'var(--ink)' }}
+        style={{ fontFamily: 'var(--font-sans)', fill: inks.ink }}
       >
         cypher
       </text>

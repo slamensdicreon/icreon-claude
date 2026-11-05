@@ -2,11 +2,14 @@
 /**
  * Generates src/theme/marks.tsx from the SVGs in src/theme/marks/, which are copied unchanged from
  * the Cypher Design System's Assets › Marks. The marks are never redrawn: this script carries each
- * file's shapes over as they are and only swaps the three literal colors for the tokens they are
- * (#141433 → ink, #e8553d → coral, #ffffff → on-ink), so the app reads every color from tokens.css.
+ * file's shapes over as they are and only swaps the three literal colors for tokens, so the app
+ * reads every color from tokens.css and the marks follow the light and dark themes.
  *
- * Each mark takes a `tone`: "light" (as drawn, for light grounds) or "onInk" (for the ink shell:
- * the disc becomes on-ink and the lid or word ink, as the Marks README says to use it on ink).
+ * Each ink-disc mark takes a `tone` (Marks README):
+ *   "light"   on the page: disc and word in `ink`, lid in `on-ink` (inverts by itself in dark)
+ *   "onInk"   on an ink-filled control such as the Cypher button: `on-ink` disc, `ink` lid
+ *   "onShell" on the rail and sidebar: `on-shell` disc and word, `shell` lid, in both themes
+ * The eye that needs a word is the same everywhere: `coral` disc, `on-shell` almond, `shell` pupil.
  *
  *   node scripts/marks.mjs        regenerate after the design system's marks change
  *   node scripts/marks.mjs --check fail if marks.tsx is out of date (for review)
@@ -20,12 +23,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dir = join(here, '../src/theme/marks');
 const out = join(here, '../src/theme/marks.tsx');
 
-/** Literal color → [token on light, token on ink]. */
-const TOKENS = {
-  '#141433': ['var(--ink)', 'var(--on-ink)'],
-  '#ffffff': ['var(--on-ink)', 'var(--ink)'],
-  '#e8553d': ['var(--coral)', 'var(--coral)'],
-};
+/** Literal color → the ink role it plays (resolved per tone in the generated code). */
+const ROLE = { '#141433': 'ink', '#ffffff': 'white', '#e8553d': 'coral' };
+/** The coral eye's fixed tokens: it reads the same on any ground and in either theme. */
+const FIXED = { ink: 'var(--shell)', white: 'var(--on-shell)', coral: 'var(--coral)' };
 
 const NAMES = {
   'eye-resting.svg': 'EyeResting',
@@ -37,9 +38,9 @@ const NAMES = {
 const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
 function color(value, invert) {
-  const t = TOKENS[value.toLowerCase()];
-  if (!t) throw new Error(`Unmapped color ${value}: add it to TOKENS`);
-  return invert ? `onInk ? '${t[1]}' : '${t[0]}'` : `'${t[0]}'`;
+  const role = ROLE[value.toLowerCase()];
+  if (!role) throw new Error(`Unmapped color ${value}: add it to ROLE`);
+  return invert && role !== 'coral' ? `inks.${role}` : `'${FIXED[role]}'`;
 }
 
 /** One SVG element as JSX, with fill and stroke read from tokens. */
@@ -68,7 +69,7 @@ function component(file, svg) {
   const viewBox = /viewBox="([^"]+)"/.exec(svg)[1];
   const [, , w, h] = viewBox.split(/\s+/).map(Number);
   const body = svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-  // A coral disc reads the same on any ground: only the ink-disc marks invert on ink.
+  // A coral disc reads the same on any ground: only the ink-disc marks follow the tone.
   const invert = !/#e8553d/i.test(svg);
   const children = [];
   for (const m of body.matchAll(/<(\w+)([^>]*?)(?:\/>|>([^<]*)<\/\1>)/g)) {
@@ -76,7 +77,7 @@ function component(file, svg) {
   }
   const head = invert
     ? `{ size = ${w}, tone = 'light', ...rest }: MarkProps) {
-  const onInk = tone === 'onInk';`
+  const inks = INKS[tone];`
     : `{ size = ${w}, tone: _sameOnAnyGround, ...rest }: MarkProps) {`;
   return `/** Generated from theme/marks/${file}. */
 export function ${name}(${head}
@@ -99,12 +100,21 @@ const raw = `/*
  */
 import type { SVGProps } from 'react';
 
+export type MarkTone = 'light' | 'onInk' | 'onShell';
+
 export interface MarkProps extends Omit<SVGProps<SVGSVGElement>, 'width' | 'height'> {
   /** Width in px; the height follows the mark's proportions. */
   size?: number;
-  /** "light" as drawn; "onInk" inverts the disc and lid (or word) for the ink shell. */
-  tone?: 'light' | 'onInk';
+  /** Where it sits: the page ("light"), an ink-filled control ("onInk"), or the shell ("onShell"). */
+  tone?: MarkTone;
 }
+
+/** The disc-and-word ink and the lid ink, per tone. */
+const INKS: Record<MarkTone, { ink: string; white: string }> = {
+  light: { ink: 'var(--ink)', white: 'var(--on-ink)' },
+  onInk: { ink: 'var(--on-ink)', white: 'var(--ink)' },
+  onShell: { ink: 'var(--on-shell)', white: 'var(--shell)' },
+};
 
 ${files.map((f) => component(f, readFileSync(join(dir, f), 'utf8').trim())).join('\n')}`;
 const code = await prettier.format(raw, {

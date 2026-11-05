@@ -482,20 +482,20 @@ const css = /* css */ `
   color: var(--ui-segc-text);
   -webkit-font-smoothing: antialiased;
 }
-/* Inside the ink shell: a surface pill with ink text on an ink-2 track with an ink-3 line */
+/* Inside the shell (both themes): an on-shell pill with shell text on an ink-2 track with an ink-3 line */
 .ui-segc[data-tone="on-ink"] {
-  --ui-segc-ink: var(--on-ink);
+  --ui-segc-ink: var(--on-shell);
   --ui-segc-text: var(--on-ink-muted);
-  --ui-segc-hover-text: var(--on-ink);
+  --ui-segc-hover-text: var(--on-shell);
   --ui-segc-line: var(--ink-3);
   --ui-segc-wash: var(--ink-3);
-  --ui-segc-fill: var(--surface);
-  --ui-segc-on-fill: var(--ink);
+  --ui-segc-fill: var(--on-shell);
+  --ui-segc-on-fill: var(--shell);
   --ui-segc-track: var(--ink-2);
   --ui-segc-tag: var(--ink-3);
   --ui-segc-tag-text: var(--on-ink-muted);
-  --ui-segc-tag-on: var(--mist-2);
-  --ui-segc-tag-on-text: var(--ink);
+  --ui-segc-tag-on: var(--ink-3);
+  --ui-segc-tag-on-text: var(--on-shell);
 }
 .ui-segc[data-size="sm"] { --ui-segc-h: 36px; --ui-segc-px: var(--space-3); --ui-segc-fs: 13px; --ui-segc-lh: 18px; --ui-segc-icon: 16px; --ui-segc-gap: var(--space-1); }
 .ui-segc[data-size="lg"] { --ui-segc-h: 48px; --ui-segc-px: 20px; --ui-segc-fs: 16px; --ui-segc-icon: 20px; }

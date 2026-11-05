@@ -1,30 +1,10 @@
-@font-face {
-  font-family: 'Hero New';
-  src: url('/fonts/HeroNew-Light.otf') format('opentype');
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Hero New';
-  src: url('/fonts/HeroNew-Regular.otf') format('opentype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Hero New';
-  src: url('/fonts/HeroNew-Medium.otf') format('opentype');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
 /* ============================================================
    Cypher Control Center on the Icreon Design System
    Tokens copied verbatim from brand-core/colors_and_type.css and
    brand-core/web-foundations.css (Icreon Design System). App
    density follows ui_kits/web/app.css, compacted for a two-pane
-   control surface. Hero New is embedded below this block.
+   control surface. Its type and colors now come from Cypher's theme
+   (theme/tokens.css through theme/bridge.css); this sheet goes in phase 5.
    ============================================================ */
 :root {
   color-scheme: light;
@@ -49,7 +29,6 @@
   --neutral-200: #e6e6e6;
   --neutral-100: #f2f2f2;
   --neutral-50: #f8f8f7;
-  --font-sans: 'Hero New', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --fw-light: 300;
   --fw-regular: 400;
@@ -118,62 +97,8 @@
   --dock: 400px;
   --top: 64px;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --web-bg: #0a0a0a;
-    --web-surface: #161616;
-    --web-surface-2: #1e1e1e;
-    --web-surface-3: #262626;
-    --web-inverse: var(--icreon-white);
-    --web-fg: #f4f5f7;
-    --web-fg-2: rgba(244, 245, 247, 0.72);
-    --web-fg-3: rgba(244, 245, 247, 0.5);
-    --web-fg-on-inverse: var(--icreon-black);
-    --web-accent-hover: #5c84ff;
-    --web-accent-text: #7e9dff;
-    --web-border: rgba(255, 255, 255, 0.14);
-    --web-border-strong: rgba(255, 255, 255, 0.24);
-    --ring-focus: 0 0 0 3px rgba(56, 106, 255, 0.55);
-    --success: #4ecb8a;
-    --success-bg: rgba(78, 203, 138, 0.14);
-    --warning: #e0a042;
-    --warning-bg: rgba(224, 160, 66, 0.14);
-    --danger: #f0796e;
-    --danger-bg: rgba(240, 121, 110, 0.14);
-    --info-bg: rgba(56, 106, 255, 0.16);
-    --elev-3: 0 6px 16px rgba(0, 0, 0, 0.5);
-    --elev-4: 0 12px 28px rgba(0, 0, 0, 0.55);
-    --elev-5: 0 24px 48px rgba(0, 0, 0, 0.6);
-  }
-}
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --web-bg: #0a0a0a;
-  --web-surface: #161616;
-  --web-surface-2: #1e1e1e;
-  --web-surface-3: #262626;
-  --web-inverse: var(--icreon-white);
-  --web-fg: #f4f5f7;
-  --web-fg-2: rgba(244, 245, 247, 0.72);
-  --web-fg-3: rgba(244, 245, 247, 0.5);
-  --web-fg-on-inverse: var(--icreon-black);
-  --web-accent-hover: #5c84ff;
-  --web-accent-text: #7e9dff;
-  --web-border: rgba(255, 255, 255, 0.14);
-  --web-border-strong: rgba(255, 255, 255, 0.24);
-  --ring-focus: 0 0 0 3px rgba(56, 106, 255, 0.55);
-  --success: #4ecb8a;
-  --success-bg: rgba(78, 203, 138, 0.14);
-  --warning: #e0a042;
-  --warning-bg: rgba(224, 160, 66, 0.14);
-  --danger: #f0796e;
-  --danger-bg: rgba(240, 121, 110, 0.14);
-  --info-bg: rgba(56, 106, 255, 0.16);
-  --elev-3: 0 6px 16px rgba(0, 0, 0, 0.5);
-  --elev-4: 0 12px 28px rgba(0, 0, 0, 0.55);
-  --elev-5: 0 24px 48px rgba(0, 0, 0, 0.6);
-}
+/* The Icreon dark theme lived here. Cypher's dark theme is in theme/tokens.css; the bridge maps
+   this sheet's variables onto it. */
 
 /* ---------- base ---------- */
 html {
@@ -197,7 +122,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-/* Hero New's tnum feature also tabularizes spaces and punctuation: apply it to digit-only spans only */
+/* Tabular numerals on digit-only spans (Cypher's root sets them everywhere too). */
 .tnum {
   font-variant-numeric: tabular-nums;
 }
@@ -474,10 +399,6 @@ a:hover {
   font-size: 13px;
   font-weight: var(--fw-medium);
   flex: none;
-}
-:root[data-theme='dark'] .avatar {
-  background: var(--web-surface-3);
-  color: var(--web-fg);
 }
 .userchip .nm {
   font-size: 14px;
@@ -1063,7 +984,7 @@ button.top-item:hover {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: #fff;
+  background: var(--web-surface);
   transition: transform var(--motion-short-3) var(--ease-decisive);
 }
 .toggle[aria-checked='true'] {
@@ -2302,13 +2223,11 @@ tr.changed td:first-child {
 .toast button {
   border: 0;
   background: none;
-  color: var(--icreon-blue-soft);
+  color: inherit;
+  text-decoration: underline;
   font-weight: var(--fw-medium);
   margin-left: auto;
   padding: 0;
-}
-:root[data-theme='dark'] .toast button {
-  color: var(--icreon-blue-deep);
 }
 
 /* presentation */

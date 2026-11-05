@@ -1,6 +1,7 @@
 /*
  * The Cypher shell (design system §8). Every color, size and radius is a token; the only literals
  * are 1px hairlines and the phone breakpoint, which the old stylesheet's bottom bar shares (640).
+ * The rail and sidebar sit on `shell` (dark in both themes); everything on the page reads `ink`.
  */
 
 /* ---------- frame ---------- */
@@ -44,8 +45,10 @@
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-5) var(--space-2) var(--space-5);
-  background: var(--ink);
-  color: var(--on-ink);
+  background: var(--shell);
+  color: var(--on-shell);
+  /* The shell meets the page with a hairline: in dark the two grounds sit close. */
+  border-inline-end: 1px solid var(--ink-3);
   overflow-y: auto;
 }
 .railEye {
@@ -73,7 +76,7 @@
   text-align: center;
 }
 .railItem:hover {
-  color: var(--on-ink);
+  color: var(--on-shell);
 }
 .railItem[aria-current='page'] {
   background: var(--surface);
@@ -112,8 +115,10 @@
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-5) var(--space-3) var(--space-4);
-  background: var(--ink);
-  color: var(--on-ink);
+  background: var(--shell);
+  color: var(--on-shell);
+  /* The shell meets the page with a hairline: in dark the two grounds sit close. */
+  border-inline-end: 1px solid var(--ink-3);
   overflow-y: auto;
 }
 .brand {
@@ -123,7 +128,7 @@
   padding: 0 var(--space-2) var(--space-4);
   border: 0;
   background: transparent;
-  color: var(--on-ink);
+  color: var(--on-shell);
   cursor: pointer;
   text-align: left;
   border-radius: var(--radius-md);
@@ -150,7 +155,7 @@
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--on-ink);
+  color: var(--on-shell);
   cursor: pointer;
   text-align: left;
   flex: none;
@@ -186,6 +191,9 @@
   margin-top: var(--space-2);
   border-top: 1px solid var(--ink-3);
 }
+.theme {
+  padding: var(--space-3) 0 0;
+}
 .userText {
   display: flex;
   flex-direction: column;
@@ -210,7 +218,7 @@
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--ink-3);
   background: var(--ink-2);
-  color: var(--on-ink);
+  color: var(--on-shell);
   flex: none;
 }
 .switcher :global(.type-meta) {
