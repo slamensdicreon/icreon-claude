@@ -3,19 +3,29 @@
  *
  * Every screen has two faces. Bliss is the default for every new screen and every new user; the
  * Director's choice sticks to the screen it was made on, so Mission Control can live in Everything
- * while the Dashboard stays in Bliss. Choices live in localStorage for now; `GET/PUT
- * /me/preferences` takes over when the API has it (PLAN.md › Backend and contract changes).
+ * while the Dashboard stays in Bliss. Choices live in localStorage first, so the dial answers at
+ * once; `GET/PUT /me/preferences` keeps a copy per operator so they follow the Director to another
+ * device (PLAN.md › Backend and contract changes). On load the server fills in screens this browser
+ * has no choice for; this browser's own choices win. Every change is saved here and sent there.
  *
  * Settings, New project and the pages above any project are Everything only: a Bliss face would
  * hide what the person came to do, so the dial is hidden there and the mode is fixed.
  */
 import { useSyncExternalStore } from 'react';
-import { useApp, type ManagePage, type Surface } from '../state';
+import { API } from '../lib/api';
+import {
+  isPortfolioPage,
+  useApp,
+  type ManagePage,
+  type PortfolioPage,
+  type Surface,
+} from '../state';
 
 export type ModeName = 'bliss' | 'everything';
 
 /** A screen the dial remembers a choice for. */
-export type Screen = Surface | 'dashboard' | 'new' | `manage:${ManagePage}`;
+export type Screen =
+  Surface | 'dashboard' | 'new' | `portfolio:${PortfolioPage}` | `manage:${ManagePage}`;
 
 const KEY = 'cypher.mode';
 
@@ -34,20 +44,71 @@ function load(): Partial<Record<Screen, ModeName>> {
 let choices = load();
 const listeners = new Set<() => void>();
 
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(choices));
+  } catch {
+    // Private windows and blocked storage: the choice lasts for this visit.
+  }
+}
+
+const isMode = (v: unknown): v is ModeName => v === 'bliss' || v === 'everything';
+
+/*
+ * The server's copy. Plain fetch, not lib/api: a failure here (signed out, offline, an API without
+ * the route) must never redirect or warn; the browser's copy carries on alone.
+ */
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
+function push() {
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    pushTimer = null;
+    void fetch(`${API}/me/preferences`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: choices }),
+    }).catch(() => {});
+  }, 800);
+}
+
+let pulled = false;
+function pull() {
+  if (pulled || typeof fetch !== 'function') return;
+  pulled = true;
+  void fetch(`${API}/me/preferences`, { credentials: 'include' })
+    .then((r) => (r.ok ? (r.json() as Promise<{ mode?: Record<string, unknown> }>) : null))
+    .then((body) => {
+      if (!body || typeof body.mode !== 'object' || !body.mode) return;
+      const server = Object.fromEntries(
+        Object.entries(body.mode).filter(([, v]) => isMode(v)),
+      ) as Partial<Record<Screen, ModeName>>;
+      const merged = { ...server, ...choices };
+      const added = Object.keys(merged).length !== Object.keys(choices).length;
+      const behind = Object.keys(merged).some((k) => server[k as Screen] !== merged[k as Screen]);
+      if (added) {
+        choices = merged;
+        save();
+        listeners.forEach((fn) => fn());
+      }
+      // This browser knows screens the server doesn't: send it the whole map.
+      if (behind) push();
+    })
+    .catch(() => {});
+}
+
 const store = {
   subscribe(fn: () => void) {
     listeners.add(fn);
+    pull();
     return () => listeners.delete(fn);
   },
   get: () => choices,
   set(screen: Screen, mode: ModeName) {
     choices = { ...choices, [screen]: mode };
-    try {
-      localStorage.setItem(KEY, JSON.stringify(choices));
-    } catch {
-      // Private windows and blocked storage: the choice lasts for this visit.
-    }
+    save();
     listeners.forEach((fn) => fn());
+    push();
   },
 };
 
@@ -56,6 +117,7 @@ export function useScreen(): Screen {
   const { projectId, surface, view } = useApp();
   if (projectId) return surface;
   if (view === 'dashboard' || view === 'new') return view;
+  if (isPortfolioPage(view)) return `portfolio:${view}`;
   return `manage:${view}`;
 }
 

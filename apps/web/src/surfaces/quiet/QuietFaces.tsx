@@ -1,9 +1,10 @@
 /*
- * The Bliss faces of Plan and Workbench, and the switches that pick a face. Their Everything faces
+ * The Bliss face of Plan, and the switches that pick Plan's and Workbench's face (Workbench Bliss is
+ * in ./WorkbenchBliss). Their Everything faces
  * (surfaces/plan, surfaces/workbench) are the full consoles: the timelines with zoom, the document
  * rail and viewers. Bliss reduces each to the few lines a Director reads.
  */
-import type { ScheduleSnapshot, WorkbenchSnapshot } from '@lw/contracts';
+import type { ScheduleSnapshot } from '@lw/contracts';
 import { clock, localDate, shortDay } from '../../lib/fmt';
 import { useMode } from '../../mode/mode';
 import { Mode } from '../../mode/Mode';
@@ -12,6 +13,7 @@ import { Icon } from '../../theme/icons';
 import { Avatar, SectionHeading } from '../../ui/cypher/parts';
 import { PlanEverything as Plan } from '../plan/PlanEverything';
 import { WorkbenchEverything as Workbench } from '../workbench/WorkbenchEverything';
+import { WorkbenchBliss } from './WorkbenchBliss';
 import s from './quiet.module.css';
 
 export function PlanPage() {
@@ -103,54 +105,6 @@ function PlanBliss() {
         The whole plan, in Everything
         <Icon name="chevron" size={18} />
       </button>
-    </div>
-  );
-}
-
-/** Workbench in Bliss: the documents, newest first, each a line; opening one goes to Everything. */
-function WorkbenchBliss() {
-  const wb = useProjectResource<WorkbenchSnapshot>('/workbench').data;
-  const tz = useMission().data?.project.timezone ?? 'America/New_York';
-  const { setUi } = useApp();
-  const { setMode } = useMode();
-  if (!wb) return <p className="type-body">Reading the Workbench…</p>;
-  const docs = wb.artifacts
-    .map((a) => ({
-      a,
-      at: a.versions.find((v) => v.version === a.latest)?.ts ?? a.versions[0]?.ts ?? '',
-    }))
-    .sort((x, y) => y.at.localeCompare(x.at));
-  return (
-    <div className={s.bliss}>
-      <SectionHeading>The documents, newest first</SectionHeading>
-      <ul className={s.docs}>
-        {docs.map(({ a, at }) => {
-          const approved = a.approved[0];
-          return (
-            <li key={a.artifactId}>
-              <button
-                type="button"
-                className={s.doc}
-                onClick={() => {
-                  setUi({ wbArtifact: a.artifactId });
-                  setMode('everything');
-                }}
-              >
-                <Icon name="workbench" size={22} />
-                <span className={s.stepText}>
-                  <b>{a.title}</b>
-                  <span className="type-meta">
-                    Version {a.latest}
-                    {approved ? ` · version ${approved.version} approved at ${approved.gate}` : ''}
-                    {at ? ` · ${shortDay(at, tz)}` : ''}
-                  </span>
-                </span>
-                <Icon name="chevron" size={18} className={s.chev} />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }

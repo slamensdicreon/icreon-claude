@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ArtifactPointer } from './events';
 
 /**
  * Structured documents agents write and the Workbench renders: inventories, reports, Platform
@@ -49,6 +50,10 @@ export const ArtifactDocument = z.object({
   /** Right-aligned meta under the title ("Repo Analyst, Mon"). */
   meta: z.string().nullable().default(null),
   intro: z.string().nullable().default(null),
+  /** The document in plain words for the Director (Workbench Bliss); lifted onto the artifact at save. */
+  summary: z.string().nullable().optional(),
+  /** Up to three things worth the Director's look, lifted the same way. */
+  attention: z.array(ArtifactPointer).max(3).optional(),
   blocks: z.array(DocBlock),
 });
 export type ArtifactDocument = z.infer<typeof ArtifactDocument>;

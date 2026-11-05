@@ -14,7 +14,15 @@ import { Rail, Sidebar } from './shell/Nav';
 import styles from './shell/Shell.module.css';
 import { Button } from './ui/cypher/parts';
 import { Eye } from './ui/Eye';
-import { AppProvider, isManagePage, useApp, useMission, type Surface } from './state';
+import {
+  AppProvider,
+  isManagePage,
+  isPortfolioPage,
+  useApp,
+  useMission,
+  type Surface,
+} from './state';
+import { PortfolioPageView } from './surfaces/portfolio/PortfolioPages';
 import { ActivityPage } from './surfaces/activity/ActivityPage';
 import { GithubAppPanel } from './surfaces/manage/GithubApp';
 import { ManagePage as Manage } from './surfaces/manage/ManagePage';
@@ -97,12 +105,14 @@ function Frame() {
         {everything ? <Sidebar /> : <Rail />}
         <main className={styles.main}>
           {everything && !layout.present ? <TopBar /> : <BlissHeader />}
-          <div className={styles.surface} ref={surfaceRef} tabIndex={-1}>
+          <div className={styles.surface} ref={surfaceRef} tabIndex={-1} data-surface>
             <div className={styles.measure}>
               {projectId ? (
                 <Body key={projectId} />
               ) : view === 'new' ? (
                 <NewProject key={newProjectIntent.key} />
+              ) : isPortfolioPage(view) ? (
+                <PortfolioPageView key={view} page={view} />
               ) : isManagePage(view) ? (
                 <Manage key={view} page={view} />
               ) : projects.length ? (

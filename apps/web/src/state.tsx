@@ -130,8 +130,17 @@ export const MANAGE: [ManagePage, string, string][] = [
 const MANAGE_PAGES = new Set<string>(MANAGE.map(([page]) => page));
 export const isManagePage = (v: string): v is ManagePage => MANAGE_PAGES.has(v);
 
-/** What is open when no project is: the Dashboard, the New Project page, or a menu page. */
-export type View = 'dashboard' | 'new' | ManagePage;
+/** The portfolio's own sections beside the Dashboard (design system §8). */
+export type PortfolioPage = 'team' | 'workbench' | 'activity' | 'scorecard';
+export const PORTFOLIO_PAGES: PortfolioPage[] = ['team', 'workbench', 'activity', 'scorecard'];
+export const isPortfolioPage = (v: string): v is PortfolioPage =>
+  (PORTFOLIO_PAGES as string[]).includes(v);
+
+/**
+ * What is open when no project is: the Dashboard, one of the portfolio's sections, the New Project
+ * page, or a menu page.
+ */
+export type View = 'dashboard' | 'new' | PortfolioPage | ManagePage;
 
 interface AppValue {
   me: { name: string; login: string | null };
@@ -144,10 +153,19 @@ interface AppValue {
   /** Opens the New Project page (its own page, not a dialog). */
   newProject: (intent?: NewProjectIntent) => void;
   switchProject: (id: string) => void;
+  /** Opens a project at one of its pages, with that page's state (a document, a filter) set. */
+  openProject: (
+    id: string,
+    surface: Surface,
+    patch?: Partial<ProjectUi>,
+    inspect?: { kind: 'agent' | 'task'; id: string },
+  ) => void;
   /** The Dashboard: every project and where it stands, above any one project. */
   home: () => void;
   /** A page from the header menu (Global settings, Connections, Playbooks, Rules...). */
   manage: (page: ManagePage) => void;
+  /** One of the portfolio's sections: Team, Workbench, Activity or Scorecard across projects. */
+  portfolio: (page: PortfolioPage) => void;
   surface: Surface;
   go: (s: Surface, patch?: Partial<ProjectUi>) => void;
   ui: ProjectUi;
@@ -206,10 +224,18 @@ function parsePath(): { projectId: string | null; surface: Surface; view: View }
   const m = /^\/p\/([^/]+)(?:\/([a-z]+))?/.exec(location.pathname);
   const surface = (m?.[2] && SURFACES.includes(m[2] as Surface) ? m[2] : 'mission') as Surface;
   const page = /^\/manage\/([a-z]+)\/?$/.exec(location.pathname)?.[1];
+  const top = /^\/([a-z]+)\/?$/.exec(location.pathname)?.[1];
   return {
     projectId: m?.[1] ? decodeURIComponent(m[1]) : null,
     surface,
-    view: location.pathname === '/new' ? 'new' : page && isManagePage(page) ? page : 'dashboard',
+    view:
+      location.pathname === '/new'
+        ? 'new'
+        : page && isManagePage(page)
+          ? page
+          : top && isPortfolioPage(top)
+            ? top
+            : 'dashboard',
   };
 }
 
@@ -300,7 +326,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? '/new'
         : view === 'dashboard'
           ? '/'
-          : `/manage/${view}`;
+          : isPortfolioPage(view)
+            ? `/${view}`
+            : `/manage/${view}`;
     if (location.pathname !== path) history.pushState(null, '', path);
   }, [projectId, surface, view]);
   useEffect(() => {
@@ -379,6 +407,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const p = projects.find((x) => x.id === id);
       if (p) toast(`Switched to ${p.name}`);
     },
+    openProject: (id, s, patch, focus) => {
+      if (patch) {
+        uis.current.set(id, { ...(uis.current.get(id) ?? DEFAULT_UI), ...patch });
+        setUiVersion((v) => v + 1);
+      }
+      setOverlay(null);
+      setSurface(s);
+      setProjectId(id);
+      setInspector(focus ?? null);
+      setLayoutState((l) => ({ ...l, dockOpen: false }));
+    },
     home: () => {
       setInspector(null);
       setProjectId(null);
@@ -391,6 +430,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setProjectId(null);
       setView(page);
       setLayoutState((l) => ({ ...l, dockOpen: false }));
+    },
+    portfolio: (page) => {
+      setInspector(null);
+      setOverlay(null);
+      setProjectId(null);
+      setView(page);
     },
     view,
     newProjectIntent,

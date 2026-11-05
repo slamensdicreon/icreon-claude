@@ -1328,6 +1328,14 @@ export const ansell: DemoScenario = {
       producer: 'repo-analyst',
       at: when('Mon 3:00 PM'),
       doc: INV_COMPONENTS,
+      summary:
+        'The home page is built from eleven sections and four overlays, and every one of them becomes a rendering marketers can place. The 56 library primitives underneath stay as code; nobody edits them in Page builder.',
+      attention: [
+        {
+          label: 'The eleven sections, in the Blueprint',
+          target: { kind: 'artifact', ref: 'blueprint' },
+        },
+      ],
     },
     {
       id: 'invPages',
@@ -1337,6 +1345,9 @@ export const ansell: DemoScenario = {
       producer: 'content-analyst',
       at: when('Mon 2:00 PM'),
       doc: INV_PAGES,
+      summary:
+        'There is one route, the home page. Its words live in two data files today; they become content items so marketers can change them without a release.',
+      attention: [{ label: 'The home page in the preview', target: { kind: 'preview', ref: '' } }],
     },
     {
       id: 'invMedia',
@@ -1346,6 +1357,11 @@ export const ansell: DemoScenario = {
       producer: 'repo-analyst',
       at: when('Mon 3:00 PM'),
       doc: INV_MEDIA,
+      summary:
+        'Twenty-two files: seventeen are used and move across. Five are never referenced, so we leave them behind, as recorded in D-06.',
+      attention: [
+        { label: 'Why five files stay behind (D-06)', target: { kind: 'decision', ref: 'D-06' } },
+      ],
     },
     {
       id: 'notes',
@@ -1355,6 +1371,8 @@ export const ansell: DemoScenario = {
       producer: 'research-agent',
       at: when('Mon 1:00 PM'),
       doc: NOTES,
+      summary:
+        'How this site differs from a stock Sitecore build: it is a Vite app, not Next.js, so the team ports each section rather than lifting it. These facts are frozen; the rest of the work leans on them.',
     },
     {
       id: 'pilot',
@@ -1364,6 +1382,12 @@ export const ansell: DemoScenario = {
       producer: 'engineering-lead',
       at: when('1:40 PM'),
       doc: PILOT,
+      summary:
+        'The pilot slice works end to end: Hero, QuickActions and HazardRoute drop onto the home page in Page builder and edit inline. Hazards now come from content, so marketers can change them without a release. Approving it confirms the pattern for the remaining renderings.',
+      attention: [
+        { label: 'The pilot review that waits on you', target: { kind: 'surface', ref: 'inbox' } },
+        { label: 'The pilot pages in the preview', target: { kind: 'preview', ref: '' } },
+      ],
     },
     {
       id: 'conformance',
@@ -1373,6 +1397,11 @@ export const ansell: DemoScenario = {
       producer: 'structural-validator',
       at: when('2:00 PM'),
       doc: CONFORMANCE,
+      summary:
+        'Three renderings were checked against the SXA rules. Nothing critical; one warning, which the team is fixing in batch two.',
+      attention: [
+        { label: 'The checks as they ran', target: { kind: 'activity', ref: 'Validators' } },
+      ],
     },
     {
       id: 'pr11',
@@ -1382,6 +1411,8 @@ export const ansell: DemoScenario = {
       producer: 'component-engineer',
       at: when('1:38 PM'),
       doc: PR11,
+      summary:
+        'The pilot components are merged into main: the code behind the three renderings you can now place.',
     },
     {
       id: 'pr12',
@@ -1391,6 +1422,11 @@ export const ansell: DemoScenario = {
       producer: 'rendering-registrar',
       at: when('1:58 PM'),
       doc: PR12,
+      summary:
+        "Batch two's renderings, registered and waiting to merge once the conformance warning is fixed.",
+      attention: [
+        { label: 'The conformance report', target: { kind: 'artifact', ref: 'conformance' } },
+      ],
     },
   ],
   pages: [

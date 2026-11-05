@@ -77,7 +77,7 @@ it('flags a stall once: work left, nothing waiting on the Director, nothing happ
   const n = noticeFor(s, at('2026-11-04T11:45:00.000Z'))!;
   expect(n).toMatchObject({ kind: 'stalled', title: 'Nothing has moved' });
   expect(n.body).toContain(
-    '45 minutes, with 2 tasks left (1 waiting on other tasks, 1 not started)',
+    '45 minutes, with two tasks left (one waiting on other tasks, one not started)',
   );
   expect(n.body).toContain('open Diagnostics');
   s.conversation.push({

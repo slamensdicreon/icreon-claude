@@ -134,6 +134,18 @@
       }
     },
     {
+      "source": "/me",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/me/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/health",
       "destination": {
         "service": "api"

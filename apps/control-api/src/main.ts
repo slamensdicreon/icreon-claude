@@ -529,6 +529,7 @@ const app = await buildApp({
   },
   logger: true,
   heartbeat: integrations ? () => integrations.get<WorkerHeartbeat>('heartbeat:worker') : undefined,
+  preferences: integrations,
   triageReplay:
     integrations && process.env.ANTHROPIC_API_KEY
       ? triageReplayer({

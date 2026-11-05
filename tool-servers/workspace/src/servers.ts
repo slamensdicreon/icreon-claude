@@ -1,4 +1,4 @@
-import type { DecisionView } from '@lw/contracts';
+import { ArtifactPointer, type DecisionView } from '@lw/contracts';
 import { Blueprint } from '@lw/plan';
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
@@ -13,6 +13,16 @@ const WriteArgs = z.object({
   title: z.string().min(1).max(120),
   format: z.enum(['markdown', 'json']),
   content: z.string().min(1).max(2_000_000),
+  /** The document in plain words for the Director; shown in Workbench Bliss. */
+  summary: z.string().min(1).max(1_200).optional(),
+  /** Up to three things in it worth the Director's look. */
+  attention: z.array(ArtifactPointer).max(3).optional(),
+});
+
+/** A JSON document may carry its own summary and pointers (lw.document/1); they lift onto the save. */
+const DocVoice = z.object({
+  summary: z.string().min(1).max(1_200).nullable().optional(),
+  attention: z.array(ArtifactPointer).max(3).optional(),
 });
 
 const ReadArgs = z.object({
@@ -40,6 +50,29 @@ export class ArtifactsToolServer implements ToolServer {
           title: { type: 'string' },
           format: { type: 'string', enum: ['markdown', 'json'] },
           content: { type: 'string' },
+          summary: {
+            type: 'string',
+            description:
+              'Two or three plain sentences for the Director: what this document settles and what, if anything, needs their eye. No jargon, no process narration.',
+          },
+          attention: {
+            type: 'array',
+            maxItems: 3,
+            description:
+              'Up to three things in it worth the Director’s look, each { label, target: { kind, ref } } with kind one of artifact, agent, task, activity, preview, settings, surface, decision.',
+            items: {
+              type: 'object',
+              properties: {
+                label: { type: 'string' },
+                target: {
+                  type: 'object',
+                  properties: { kind: { type: 'string' }, ref: { type: 'string' } },
+                  required: ['kind', 'ref'],
+                },
+              },
+              required: ['label', 'target'],
+            },
+          },
         },
         required: ['artifactId', 'kind', 'title', 'format', 'content'],
         additionalProperties: false,
@@ -71,14 +104,23 @@ export class ArtifactsToolServer implements ToolServer {
       const a = WriteArgs.safeParse(args);
       if (!a.success)
         return rejected(a.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+      let lifted: z.infer<typeof DocVoice> = {};
       if (a.data.format === 'json') {
+        let parsed: unknown;
         try {
-          JSON.parse(a.data.content);
+          parsed = JSON.parse(a.data.content);
         } catch {
           return rejected('content is not valid JSON');
         }
+        const voice = DocVoice.safeParse(parsed);
+        if (voice.success) lifted = voice.data;
       }
-      const v = await this.library.write(ctx.projectId, { ...a.data, producer: ctx.role });
+      const v = await this.library.write(ctx.projectId, {
+        ...a.data,
+        summary: a.data.summary ?? lifted.summary ?? null,
+        attention: a.data.attention ?? lifted.attention ?? [],
+        producer: ctx.role,
+      });
       return {
         code: 200,
         body: { artifactId: v.artifactId, version: v.version },

@@ -5,14 +5,12 @@
   padding: var(--space-3) 0 var(--space-8);
   max-width: calc(var(--measure) * 0.8);
 }
-.timeline,
-.docs {
+.timeline {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.step,
-.doc {
+.step {
   display: flex;
   align-items: center;
   gap: var(--space-4);

@@ -1,4 +1,4 @@
-import type { LwEvent } from '@lw/contracts';
+import type { ArtifactPointer, LwEvent } from '@lw/contracts';
 import type { EventStore } from '@lw/events';
 import type { BlobStore } from '@lw/tool-gateway';
 
@@ -98,6 +98,9 @@ export class ArtifactLibrary {
       format: 'markdown' | 'json';
       content: string;
       producer: string;
+      /** What the producing agent wrote about this version, for the Director. */
+      summary?: string | null;
+      attention?: ArtifactPointer[];
     },
   ): Promise<StoredVersion> {
     const version = ((await this.latest(projectId, a.artifactId))?.version ?? 0) + 1;
@@ -121,6 +124,8 @@ export class ArtifactLibrary {
           version,
           ref,
           format: a.format,
+          summary: a.summary ?? null,
+          attention: a.attention ?? [],
         },
       },
     ]);

@@ -1,5 +1,6 @@
 import type {
   ArtifactDocument,
+  ArtifactPointer,
   Budgets,
   EscalationType,
   MetricKey,
@@ -92,6 +93,10 @@ export interface DemoArtifact {
   producer: string;
   at: When;
   doc: ArtifactDocument | PullRequestDocument;
+  /** What the producing agent says about it in plain words (Workbench Bliss). */
+  summary?: string;
+  /** Up to three things in it worth the Director's look. */
+  attention?: ArtifactPointer[];
 }
 
 export interface DemoPage {

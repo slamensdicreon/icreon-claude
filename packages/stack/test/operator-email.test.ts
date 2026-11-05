@@ -8,7 +8,7 @@ const attention: OperatorNotice = {
   projectId: 'prj-1',
   project: 'Ervin Cable',
   kind: 'attention',
-  title: '2 decisions wait on you',
+  title: 'Two decisions wait on you',
   body: 'Ervin Cable: Migrate About: team section?; Port <Footer> & links. The Leads couldn’t settle them; their work waits until you answer.',
   needs: [
     { escalationId: 'a', type: 'decision', title: 'Migrate About: team section?' },
@@ -21,19 +21,20 @@ const stalled: OperatorNotice = {
   project: 'Ervin Cable',
   kind: 'stalled',
   title: 'Nothing has moved',
-  body: 'Ervin Cable: nothing has happened for 45 minutes, with 2 tasks left. Open Diagnostics in the project to see which.',
+  body: 'Ervin Cable: nothing has happened for 45 minutes, with two tasks left. Open Diagnostics in the project to see which.',
 };
 
-it('brands an attention notice: lockup, project, title, the cards, a button to the Inbox', () => {
+it('brands an attention notice: wordmark, project, title, the cards, a button to the Inbox', () => {
   const m = operatorEmail(attention, `${APP}/`);
-  expect(m.subject).toBe('Ervin Cable: 2 decisions wait on you');
-  expect(m.html).toContain(`src="${APP}/email/icreon-lockup.png"`);
+  expect(m.subject).toBe('Ervin Cable: Two decisions wait on you');
+  expect(m.html).toContain(`src="${APP}/email/cypher-wordmark.png"`);
   expect(m.html).toContain('fonts.googleapis.com/css2?family=Plus+Jakarta+Sans');
   expect(m.html).toContain("'Plus Jakarta Sans', 'Helvetica Neue'");
-  expect(m.html).toContain('#386aff');
-  expect(m.html).toContain('Needs you');
+  expect(m.html).toContain('#e8553d'); // coral: it's the Director's
+  expect(m.html).toContain('>Yours<');
+  expect(m.html).toContain('Cypher&nbsp;&middot;&nbsp;Operator');
   expect(m.html).toContain(`href="${APP}/p/prj-1/inbox"`);
-  expect(m.html).toContain('Answer in Launchworks');
+  expect(m.html).toContain('Answer in Cypher');
   // The cards, escaped, each with its type.
   expect(m.html).toContain('Port &lt;Footer&gt; &amp; links');
   expect(m.html).not.toContain('<Footer>');
@@ -43,15 +44,17 @@ it('brands an attention notice: lockup, project, title, the cards, a button to t
     'The Leads couldn&#39;t settle these; their work waits until you answer.',
   );
   expect(m.text).toContain('- Decision: Migrate About: team section?');
-  expect(m.text).toContain(`Answer in Launchworks: ${APP}/p/prj-1/inbox`);
+  expect(m.text).toContain(`Answer in Cypher: ${APP}/p/prj-1/inbox`);
+  expect(m.html).not.toMatch(/Launchworks|Icreon/);
+  expect(m.text).not.toMatch(/Launchworks|Icreon/);
 });
 
 it('shows a stall without the project prefix, and links to the project', () => {
   const m = operatorEmail(stalled, APP);
   expect(m.html).toContain('Stalled');
-  expect(m.html).toContain('>Nothing has happened for 45 minutes, with 2 tasks left.');
+  expect(m.html).toContain('>Nothing has happened for 45 minutes, with two tasks left.');
   expect(m.html).toContain(`href="${APP}/p/prj-1"`);
-  expect(m.html).toContain('#b26a00');
+  expect(m.html).toContain('#9a6b00'); // gold: it waits
 });
 
 it('without an app URL: a text wordmark, no links, no web fonts', () => {
@@ -59,7 +62,8 @@ it('without an app URL: a text wordmark, no links, no web fonts', () => {
   expect(m.html).not.toContain('<img');
   expect(m.html).not.toContain('href=');
   expect(m.html).not.toContain('@font-face');
-  expect(m.html).toContain('ICREON');
+  expect(m.html).not.toContain('@import');
+  expect(m.html).toContain('>cypher<');
 });
 
 it('marks a test and shows its body as written', () => {
@@ -92,10 +96,10 @@ it('sends through Resend, and says why when Resend refuses', async () => {
   expect(sent).toMatchObject({
     from: 'Operator <ops@example.com>',
     to: ['director@example.com'],
-    subject: 'Ervin Cable: 2 decisions wait on you',
+    subject: 'Ervin Cable: Two decisions wait on you',
   });
   expect(sent.html).toContain('<!doctype html>');
-  expect(sent.text).toContain('Ervin Cable: 2 decisions wait on you');
+  expect(sent.text).toContain('Ervin Cable: Two decisions wait on you');
 
   const refused = resendNotifier({
     apiKey: 're_test',

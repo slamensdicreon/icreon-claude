@@ -1,14 +1,15 @@
 /*
  * The left of the shell (design system §8): the Rail in Bliss, the Sidebar in Everything.
  * Both read the same sections and the same eye. Above any project the sections are the
- * portfolio's (Home or Dashboard, Needs you, Projects); inside one, the project's.
+ * portfolio's (Home or Dashboard, Needs you, Projects, Team, Workbench, Activity, Scorecard); inside
+ * one, the project's.
  */
 import { DemoMenu, ManageMenu, ProjectMenu } from '../overlays/Menus';
 import { isManagePage, useApp, useProjectResource } from '../state';
 import { Icon } from '../theme/icons';
 import { Eye } from '../ui/Eye';
 import { useEyeState } from '../voice/eye';
-import { PROJECT_SECTIONS } from './sections';
+import { PORTFOLIO_SECTIONS, PROJECT_SECTIONS } from './sections';
 import { ThemeSwitch } from './ThemeSwitch';
 import styles from './Shell.module.css';
 
@@ -26,7 +27,7 @@ function useNavState() {
   const jump = (spot: Spot) => {
     if (!onDashboard) app.home();
     window.setTimeout(() => {
-      const surface = document.querySelector<HTMLElement>('.surface');
+      const surface = document.querySelector<HTMLElement>('[data-surface]');
       if (spot === 'top') return surface?.scrollTo({ top: 0, behavior: 'smooth' });
       document.getElementById(spot)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 60);
@@ -39,8 +40,21 @@ const eyeLabel = (yours: number, state: string) =>
 
 /** Bliss: a labelled icon rail on the shell, the eye at the top, a coral dot on Yours. */
 export function Rail() {
-  const { p, projectId, surface, go, home, openOverlay, me, scenarios, eye, onDashboard, jump } =
-    useNavState();
+  const {
+    p,
+    projectId,
+    surface,
+    go,
+    home,
+    openOverlay,
+    me,
+    scenarios,
+    eye,
+    onDashboard,
+    jump,
+    view,
+    portfolio,
+  } = useNavState();
   const current = (on: boolean) => (on ? 'page' : undefined);
   const item = (
     key: string,
@@ -84,6 +98,9 @@ export function Rail() {
             item('home', 'home', 'Home', onDashboard, () => jump('top')),
             item('yours', 'inbox', 'Yours', false, () => jump('yours'), eye.yours > 0),
             item('projects', 'projects', 'Projects', false, () => jump('projects')),
+            ...PORTFOLIO_SECTIONS.map((x) =>
+              item(x.page, x.icon, x.short, view === x.page, () => portfolio(x.page)),
+            ),
           ]}
       <span className={styles.grow} />
       {scenarios.length > 0 &&
@@ -114,6 +131,7 @@ export function Sidebar() {
     eye,
     onDashboard,
     jump,
+    portfolio,
   } = useNavState();
   const current = (on: boolean) => (on ? 'page' : undefined);
   const badge =
@@ -172,6 +190,9 @@ export function Sidebar() {
             item('dashboard', 'home', 'Dashboard', onDashboard, () => jump('top')),
             item('needs', 'inbox', 'Needs you', false, () => jump('needs'), badge),
             item('projects', 'projects', 'Projects', false, () => jump('projects')),
+            ...PORTFOLIO_SECTIONS.map((x) =>
+              item(x.page, x.icon, x.label, view === x.page, () => portfolio(x.page)),
+            ),
           ]}
       <span className={styles.grow} />
       {scenarios.length > 0 &&

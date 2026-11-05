@@ -791,3 +791,99 @@ export function yoursNote(deadlines: number[], now: number, tz: string): string 
 
 /** "$1,506". */
 export const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+
+// ---------------------------------------------------------------------------
+// Documents (Workbench Bliss): a document in plain words, when its agent wrote none
+// ---------------------------------------------------------------------------
+
+/** What each kind of document is, said to someone who won't open it. */
+const DOCUMENT_IS: Record<string, string> = {
+  blueprint:
+    'This is the plan of record: every component, template, page and media item the team will build, and how.',
+  platform_notes:
+    'These are the platform notes: what this platform does differently, and how the team works with it.',
+  inventory: 'This is an inventory: what the source site holds, item by item.',
+  report: 'This is a report: what the team checked, and what it found.',
+  handover_pack: "This is the handover: what the client's team needs to run the site without us.",
+  screenshot: 'These are screenshots of the work as it stands.',
+  video: 'This is a recording of the work as it stands.',
+  pull_request: 'This is a change to the code, with what it touches.',
+};
+
+export interface DocumentVoiceInput {
+  kind: string;
+  title: string;
+  latest: number;
+  /** The agent who wrote the latest version, by first name; "I" when it was Cypher. */
+  writer: string | null;
+  /** The newest approved version and the gate that approved it. */
+  approved: { version: number; gate: string } | null;
+  /** The gate waiting on the Director for this document now. */
+  awaiting: string | null;
+  /** Open cards (other than the gate) that point at this document. */
+  questions: number;
+}
+
+/** Two to four sentences: what the document is, who wrote which version, where it stands with you. */
+export function documentSummary(d: DocumentVoiceInput): string {
+  const out: string[] = [DOCUMENT_IS[d.kind] ?? `This is ${d.title}.`];
+  const v = countWord(d.latest);
+  if (d.writer === 'I') out.push(`I wrote version ${v}.`);
+  else if (d.writer) out.push(`${d.writer} wrote version ${v}.`);
+  else if (d.latest > 1) out.push(`Version ${v} is the latest.`);
+  if (d.awaiting) out.push(`It waits on your approval at ${d.awaiting}.`);
+  else if (d.approved && d.approved.version === d.latest)
+    out.push(`You approved it at ${d.approved.gate}; nothing has changed since.`);
+  else if (d.approved)
+    out.push(
+      `You approved version ${countWord(d.approved.version)} at ${d.approved.gate}; it has moved on since, so read what changed.`,
+    );
+  if (d.questions === 1) out.push('One question about it waits on you.');
+  else if (d.questions > 1) out.push(`${CountWord(d.questions)} questions about it wait on you.`);
+  return out.join(' ');
+}
+
+export interface DocumentPointerInput {
+  artifactId: string;
+  awaiting: boolean;
+  questions: number;
+  approvedVersion: number | null;
+  latest: number;
+  writer: { agentId: string; firstName: string } | null;
+  /** The site preview has pages to look at. */
+  preview: boolean;
+  kind: string;
+}
+
+/** Up to three "what to look at" pointers, in the order they matter. */
+export function documentPointers(
+  d: DocumentPointerInput,
+): {
+  label: string;
+  target: { kind: 'artifact' | 'agent' | 'preview' | 'surface'; ref: string };
+}[] {
+  const out: {
+    label: string;
+    target: { kind: 'artifact' | 'agent' | 'preview' | 'surface'; ref: string };
+  }[] = [];
+  if (d.awaiting)
+    out.push({ label: 'The review that waits on you', target: { kind: 'surface', ref: 'inbox' } });
+  else if (d.questions)
+    out.push({
+      label: d.questions === 1 ? 'The question about it' : 'The questions about it',
+      target: { kind: 'surface', ref: 'inbox' },
+    });
+  if (d.approvedVersion !== null && d.approvedVersion < d.latest)
+    out.push({
+      label: `What changed since version ${countWord(d.approvedVersion)}`,
+      target: { kind: 'artifact', ref: d.artifactId },
+    });
+  if (d.preview && (d.kind === 'blueprint' || d.kind === 'report'))
+    out.push({ label: 'The site as it stands', target: { kind: 'preview', ref: '' } });
+  if (d.writer)
+    out.push({
+      label: `${d.writer.firstName}, who wrote it`,
+      target: { kind: 'agent', ref: d.writer.agentId },
+    });
+  return out.slice(0, 3);
+}

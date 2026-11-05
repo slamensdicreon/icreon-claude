@@ -4,6 +4,7 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   AgentState,
+  ArtifactPointer,
   Control,
   EscalationCard,
   LinkTarget,
@@ -502,6 +503,7 @@ export class DemoProject {
         v1,
         'json',
         'solution-architect',
+        blueprintVoice(bp.v1, 1),
       ),
     );
     this.blueprintVersion = 1;
@@ -547,6 +549,7 @@ export class DemoProject {
           v2,
           'json',
           'solution-architect',
+          blueprintVoice(bp.v2, 2),
         ),
       );
       this.blueprintVersion = 2;
@@ -573,7 +576,13 @@ export class DemoProject {
         new TextEncoder().encode(JSON.stringify(doc)),
         'application/json',
       );
-      push(a.at, this.artifactEvent(a.id, a.kind, a.title, a.short, 1, ref, 'json', a.producer));
+      push(
+        a.at,
+        this.artifactEvent(a.id, a.kind, a.title, a.short, 1, ref, 'json', a.producer, {
+          summary: a.summary ?? null,
+          attention: a.attention ?? [],
+        }),
+      );
     }
 
     for (const p of d.pages)
@@ -774,10 +783,21 @@ export class DemoProject {
     ref: string,
     format: 'json' | 'markdown',
     producer: string,
+    voice: { summary?: string | null; attention?: ArtifactPointer[] } = {},
   ): NewEvent {
     return this.ev(
       'artifact.versioned',
-      { artifactId, kind, title, shortTitle, version, ref, format },
+      {
+        artifactId,
+        kind,
+        title,
+        shortTitle,
+        version,
+        ref,
+        format,
+        summary: voice.summary ?? null,
+        attention: voice.attention ?? [],
+      },
       producer,
       { kind: 'artifact', id: artifactId },
       'notable',
@@ -834,6 +854,7 @@ export class DemoProject {
         ref,
         'json',
         producer,
+        blueprintVoice(this.blueprintRows, version),
       ),
     ]);
     return version;
@@ -1815,3 +1836,57 @@ export function scenarioList(def: DemoScenario): { key: string; label: string }[
     { key: 'digest', label: 'Post the daily digest' },
   ];
 }
+
+/**
+ * What the Solution Architect says about a Blueprint version in plain words: how much carries over,
+ * merges and drops, and which items are the pilot. Written at save, as a real agent would.
+ */
+export function blueprintVoice(
+  rows: BlueprintRowDef[],
+  version: number,
+): { summary: string; attention: ArtifactPointer[] } {
+  const n = (k: number) => (k < 13 ? WORDS[k]! : String(k));
+  const N = (k: number) => n(k).charAt(0).toUpperCase() + n(k).slice(1);
+  const dropped = rows.filter((r) => r.status === 'dropped').length;
+  const merged = rows.filter((r) => r.status === 'merged').length;
+  const kept = rows.length - dropped - merged;
+  const pilot = rows.filter((r) => r.pilot).map((r) => r.target);
+  const parts = [`${N(kept)} components carry over`];
+  if (merged) parts.push(`${n(merged)} ${merged === 1 ? 'merges' : 'merge'} into another`);
+  if (dropped) parts.push(`${n(dropped)} ${dropped === 1 ? 'is' : 'are'} dropped`);
+  const last = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+  const sentences = [`${last}.`];
+  if (pilot.length)
+    sentences.push(
+      `${pilot.length > 1 ? `${pilot.slice(0, -1).join(', ')} and ${pilot.at(-1)} are` : `${pilot[0]} is`} the pilot slice, built first to prove the pattern.`,
+    );
+  if (version > 1) sentences.push('This version folds in what the pilot taught us.');
+  const attention: ArtifactPointer[] = [];
+  if (pilot.length)
+    attention.push({
+      label: 'The pilot slice in the preview',
+      target: { kind: 'preview', ref: '' },
+    });
+  if (dropped || merged)
+    attention.push({
+      label: 'Why items merge or drop',
+      target: { kind: 'decision', ref: '' },
+    });
+  return { summary: sentences.join(' '), attention };
+}
+
+const WORDS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+];

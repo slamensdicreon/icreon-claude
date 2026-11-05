@@ -4,7 +4,7 @@
  * under the icon ("Yours" for Needs you).
  */
 import type { IconName } from '../theme/icons';
-import type { Surface } from '../state';
+import type { PortfolioPage, Surface } from '../state';
 
 export interface Section {
   surface: Surface;
@@ -25,4 +25,17 @@ export const PROJECT_SECTIONS: Section[] = [
   { surface: 'preview', icon: 'site', label: 'Site preview', short: 'Site' },
   { surface: 'activity', icon: 'activity', label: 'Activity', short: 'Activity' },
   { surface: 'scorecard', icon: 'scorecard', label: 'Scorecard', short: 'Scorecard' },
+];
+
+/** The portfolio's own sections, after Dashboard, Needs you and Projects (design system §8). */
+export const PORTFOLIO_SECTIONS: {
+  page: PortfolioPage;
+  icon: IconName;
+  label: string;
+  short: string;
+}[] = [
+  { page: 'team', icon: 'team', label: 'Team', short: 'Team' },
+  { page: 'workbench', icon: 'workbench', label: 'Workbench', short: 'Workbench' },
+  { page: 'activity', icon: 'activity', label: 'Activity', short: 'Activity' },
+  { page: 'scorecard', icon: 'scorecard', label: 'Scorecard', short: 'Scorecard' },
 ];

@@ -22,6 +22,53 @@ beforeEach(async () => {
 });
 
 describe('artifacts', () => {
+  it('carries the agent’s summary and pointers onto the save, from the arguments or a JSON document', async () => {
+    const s = new ArtifactsToolServer(library);
+    const pointer = { label: 'The pilot pages', target: { kind: 'preview', ref: '' } };
+    await s.call(
+      'write',
+      {
+        artifactId: 'pilot',
+        kind: 'report',
+        title: 'Pilot slice report',
+        format: 'markdown',
+        content: '# Pilot',
+        summary: 'The pilot works end to end.',
+        attention: [pointer],
+      },
+      ctx('engineering-lead'),
+    );
+    await s.call(
+      'write',
+      {
+        artifactId: 'inv',
+        kind: 'inventory',
+        title: 'Media inventory',
+        format: 'json',
+        content: JSON.stringify({
+          doc: 'lw.document/1',
+          summary: 'Seventeen files move across.',
+          attention: [pointer],
+          blocks: [],
+        }),
+      },
+      ctx('repo-analyst'),
+    );
+    await s.call(
+      'write',
+      { artifactId: 'bare', kind: 'report', title: 'Bare', format: 'markdown', content: '# x' },
+      ctx(),
+    );
+    const saved = (await store.read('p1')).flatMap((e) =>
+      e.type === 'artifact.versioned' ? [e.data] : [],
+    );
+    expect(saved.map((d) => [d.artifactId, d.summary, d.attention])).toEqual([
+      ['pilot', 'The pilot works end to end.', [pointer]],
+      ['inv', 'Seventeen files move across.', [pointer]],
+      ['bare', null, []],
+    ]);
+  });
+
   it('versions each write, stores the content and announces it on the log', async () => {
     const s = new ArtifactsToolServer(library);
     const w = {

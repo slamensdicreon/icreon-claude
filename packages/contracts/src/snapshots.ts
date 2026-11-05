@@ -17,6 +17,7 @@ import {
   Workstream,
 } from './enums';
 import {
+  ArtifactPointer,
   Budgets,
   CosMessageKind,
   EscalationCard,
@@ -681,6 +682,9 @@ export const ArtifactVersionView = z.object({
   ref: z.string().nullable(),
   format: z.enum(['markdown', 'json', 'png', 'binary']).nullable(),
   producer: z.string(),
+  /** What the producing agent wrote about this version, when it wrote anything. */
+  summary: z.string().nullable().optional(),
+  attention: z.array(ArtifactPointer).max(3).optional(),
 });
 export type ArtifactVersionView = z.infer<typeof ArtifactVersionView>;
 
@@ -696,6 +700,17 @@ export const ArtifactView = z.object({
   ),
   latest: z.number().int().positive(),
   versions: z.array(ArtifactVersionView),
+  /**
+   * The latest version in plain words (Workbench Bliss): the producing agent's summary, or
+   * Cypher's from what the document carries when the agent wrote none. Set by the API.
+   */
+  summary: z.string().optional(),
+  /** Up to three "what to look at" pointers, the agent's or Cypher's. */
+  attention: z.array(ArtifactPointer).max(3).optional(),
+  /** Who wrote the summary: the producing agent, or Cypher as the fallback. */
+  summaryBy: z.enum(['agent', 'cypher']).optional(),
+  /** A Director gate waits on this document now. */
+  awaitingApproval: z.boolean().optional(),
 });
 export type ArtifactView = z.infer<typeof ArtifactView>;
 

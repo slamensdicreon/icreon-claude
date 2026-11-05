@@ -9,6 +9,7 @@ import type {
   LeadRow,
   MissionControlSnapshot,
   ReadTone,
+  WorkbenchSnapshot,
 } from '@lw/contracts';
 import {
   ACTIVE_TASK_STATES,
@@ -25,6 +26,8 @@ import {
 import {
   cardSubject,
   choiceWords,
+  documentPointers,
+  documentSummary,
   firstNameOf,
   handledLine,
   handledSummary,
@@ -348,3 +351,66 @@ export function withVoice(
 /** Tasks running now (running or validating). */
 export const runningTasks = (s: ProjectState) =>
   Object.values(s.tasks).filter((t) => ACTIVE_TASK_STATES.has(t.state));
+
+/**
+ * The Workbench with each document in plain words (Workbench Bliss): the producing agent's summary
+ * and pointers for the latest version when it wrote them, Cypher's from what the document carries
+ * otherwise, and whether a Director gate waits on it.
+ */
+export function withDocumentVoice(wb: WorkbenchSnapshot, s: ProjectState): WorkbenchSnapshot {
+  const open = Object.values(s.escalations).filter(
+    (x) => x.status === 'open' || x.status === 'deferred',
+  );
+  const preview = Object.keys(s.pages).length > 0;
+  return {
+    ...wb,
+    artifacts: wb.artifacts.map((a) => {
+      const gate = open.find((x) => x.type === 'gate' && x.gate?.artifactId === a.artifactId);
+      const latest = a.versions.find((v) => v.version === a.latest) ?? a.versions[0];
+      const agent = latest ? s.agents[latest.producer] : undefined;
+      const cypher = agent?.tier === 'chief_of_staff';
+      const writer =
+        agent && !cypher
+          ? { agentId: agent.agentId, firstName: firstNameOf(personOf(agent)) }
+          : null;
+      const questions = open.filter(
+        (x) =>
+          x.type !== 'gate' &&
+          x.evidence.some((l) => l.kind === 'artifact' && l.ref === a.artifactId),
+      ).length;
+      const approved = a.approved[0] ?? null;
+      const awaiting = gate ? (gate.typeLabel ?? gate.title) : null;
+      const agentSummary = latest?.summary?.trim();
+      const summary =
+        agentSummary ||
+        documentSummary({
+          kind: a.kind,
+          title: a.title,
+          latest: a.latest,
+          writer: cypher ? 'I' : (writer?.firstName ?? null),
+          approved: approved ? { version: approved.version, gate: approved.gate } : null,
+          awaiting,
+          questions,
+        });
+      const attention = latest?.attention?.length
+        ? latest.attention.slice(0, 3)
+        : documentPointers({
+            artifactId: a.artifactId,
+            awaiting: !!gate,
+            questions,
+            approvedVersion: approved?.version ?? null,
+            latest: a.latest,
+            writer,
+            preview,
+            kind: a.kind,
+          });
+      return {
+        ...a,
+        summary,
+        attention,
+        summaryBy: agentSummary ? ('agent' as const) : ('cypher' as const),
+        awaitingApproval: !!gate,
+      };
+    }),
+  };
+}

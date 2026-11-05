@@ -1,0 +1,158 @@
+/* Workbench in Bliss: one document in plain words, what to look at, then the others. */
+.bliss {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: var(--space-3) 0 var(--space-8);
+  max-width: calc(var(--measure) * 0.8);
+}
+.doc {
+  scroll-margin-top: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+}
+.eyebrow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  color: var(--text-3);
+}
+.yours {
+  color: var(--coral-text);
+}
+.when {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.title {
+  margin: 0;
+  color: var(--ink);
+}
+.voice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.who {
+  flex: none;
+  padding-top: var(--space-1);
+}
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.summary {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink);
+}
+.by {
+  color: var(--text-3);
+}
+.look {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.lookHead {
+  margin: 0;
+  color: var(--text-3);
+}
+.pointers,
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pointer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: calc(var(--row) - var(--space-2));
+  padding: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-md);
+  background: var(--surface-quiet);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.pointer span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pointer:hover {
+  border-color: var(--text-3);
+}
+.pointer svg,
+.line > svg:last-child {
+  flex: none;
+  color: var(--text-3);
+}
+.others {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: calc(var(--row) + var(--space-2));
+  padding: var(--space-3) 0;
+  border: 0;
+  border-top: 1px solid var(--mist);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.line > svg:first-child {
+  flex: none;
+  color: var(--text-2);
+}
+.lineText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.lineText b {
+  font-weight: 600;
+}
+.lineText :global(.type-meta) {
+  color: var(--text-3);
+}
+.lineText :global(.type-meta)[data-tone='yours'] {
+  color: var(--coral-text);
+}
+.quiet {
+  color: var(--text-3);
+}
+@media (max-width: 640px) {
+  .doc {
+    padding: var(--space-5) var(--space-4);
+  }
+}
+.doc:focus {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .doc {
+    scroll-behavior: auto;
+  }
+}

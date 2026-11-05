@@ -45,6 +45,8 @@ import {
   type RuleDraftView,
   type KnowledgeEntry,
   type ServiceHealth,
+  PortfolioActivityQuery,
+  MePreferences,
 } from '@lw/contracts';
 import {
   agentDetail,
@@ -94,8 +96,14 @@ import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
-import { withVoice } from './enrich';
+import { withDocumentVoice, withVoice } from './enrich';
 import { portfolioOverview, type LogCache } from './overview';
+import {
+  portfolioActivity,
+  portfolioScorecard,
+  portfolioTeam,
+  portfolioWorkbench,
+} from './portfolio';
 
 export interface AppDeps {
   store: EventStore;
@@ -176,6 +184,11 @@ export interface AppDeps {
   };
   /** Cypher on the Dashboard: the model (null where none is configured) and where it keeps the conversation. */
   cypher?: { model: ModelClient | null; store: IntegrationStore };
+  /**
+   * Where each operator's preferences are kept (`prefs:<login>` in the integrations table); without
+   * it they live in this process's memory, which is enough for a local run.
+   */
+  preferences?: IntegrationStore | null;
 }
 
 /** What the worker reports about itself. */
@@ -221,6 +234,27 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // Local development: no sign-in, one operator on this machine.
     app.get('/auth/me', async () => ({ login: 'local', name: 'Director', avatarUrl: null }));
   }
+
+  // The operator's preferences: the mode each screen was left in, so the Dial follows them to
+  // another device. Keyed by login; a local run has one operator.
+  const memoryPrefs = new Map<string, MePreferences>();
+  const prefsKey = (req: { operator?: { login: string } }) =>
+    `prefs:${req.operator?.login ?? 'local'}`;
+  const readPrefs = async (key: string): Promise<MePreferences> => {
+    const raw = deps.preferences ? await deps.preferences.get(key) : memoryPrefs.get(key);
+    const parsed = MePreferences.safeParse(raw ?? {});
+    return parsed.success ? parsed.data : { mode: {} };
+  };
+  app.get('/me/preferences', async (req): Promise<MePreferences> => readPrefs(prefsKey(req)));
+  app.put('/me/preferences', async (req): Promise<MePreferences> => {
+    const next = MePreferences.parse(req.body ?? {});
+    if (Object.keys(next.mode).length > 60)
+      throw new CommandError(400, 'too_many_screens', 'At most 60 screens are remembered.');
+    const key = prefsKey(req);
+    if (deps.preferences) await deps.preferences.put(key, next);
+    else memoryPrefs.set(key, next);
+    return next;
+  });
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof CommandError) return fail(reply, err.status, err.code, err.message);
@@ -380,6 +414,30 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
       now(),
       overviewLogs,
+    );
+  });
+
+  /** The portfolio's Team, Workbench, Activity and Scorecard: each project page, across projects. */
+  app.get('/portfolio/team', async () => {
+    await projections.catchUpAll();
+    return portfolioTeam(projections.all(), now());
+  });
+  app.get('/portfolio/workbench', async () => {
+    await projections.catchUpAll();
+    return portfolioWorkbench(projections.all(), now());
+  });
+  app.get('/portfolio/scorecard', async () => {
+    await projections.catchUpAll();
+    return portfolioScorecard(projections.all(), now());
+  });
+  app.get('/portfolio/activity', async (req) => {
+    await projections.catchUpAll();
+    const q = PortfolioActivityQuery.parse(req.query);
+    return portfolioActivity(
+      projections.all(),
+      (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
+      now(),
+      q,
     );
   });
 
@@ -1114,7 +1172,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get<P>('/projects/:id/workbench', async (req, reply) => {
     const s = project(req.params.id);
-    return s ? workbench(s) : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+    return s
+      ? withDocumentVoice(workbench(s), s)
+      : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
   });
 
   const artifact = (projectId: string, artifactId: string): ArtifactView => {

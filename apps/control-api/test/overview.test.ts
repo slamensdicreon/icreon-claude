@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { MissionControlSnapshot, PortfolioOverview } from '@lw/contracts';
+import { MissionControlSnapshot, PortfolioOverview, WorkbenchSnapshot } from '@lw/contracts';
 import { InMemoryEventStore, Projections } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
 import { Simulation, sitecoreScenario, startDemo, type DemoProject } from '@lw/simulator';
@@ -199,6 +199,25 @@ describe('GET /projects/:id/mission-control', () => {
       expect(h.text).toMatch(/^[A-Z].*\.$/);
     }
     for (const l of mc.teamNow) expect(l.read).toMatch(/^Done\./);
+  });
+});
+
+describe('GET /projects/:id/workbench', () => {
+  it('gives every document a plain-words summary and pointers: the agent’s, or Cypher’s', async () => {
+    const wb = WorkbenchSnapshot.parse(await get(`/projects/${demo.projectId}/workbench`));
+    const by = new Map(wb.artifacts.map((a) => [a.artifactId, a]));
+    // The demo's agents wrote these at save.
+    expect(by.get('pilot')).toMatchObject({
+      summaryBy: 'agent',
+      summary: expect.stringMatching(/^The pilot slice works end to end/),
+    });
+    expect(by.get('pilot')!.attention!.length).toBeGreaterThan(0);
+    expect(by.get('blueprint')!.summary).toMatch(/components carry over/);
+    for (const a of wb.artifacts) {
+      expect(a.summary!.length).toBeGreaterThan(0);
+      expect(a.attention!.length).toBeLessThanOrEqual(3);
+      expect(a.summary).not.toMatch(/sorry|apolog/i);
+    }
   });
 });
 

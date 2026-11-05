@@ -2,41 +2,45 @@ import type { EscalationType } from '@lw/contracts';
 import type { OperatorNotice } from './operator';
 
 /**
- * The Operator's notices as email: Icreon black and blue on the neutral ramp, the Icreon lockup
- * in a black header, set in Plus Jakarta Sans (the Control Center's face). Table layout with
- * inline styles, so Gmail and Outlook render it as Apple Mail does; the face loads from Google
- * Fonts where the client allows web fonts and falls back to Helvetica Neue elsewhere.
+ * The Operator's notices as email, on the Cypher Design System: the wordmark on the shell's ink
+ * header, a white card on the bliss ground, coral for what is the Director's, gold for what has
+ * stalled, green for what is back. Set in Plus Jakarta Sans. Table layout with inline styles, so
+ * Gmail and Outlook render it as Apple Mail does; the face loads from Google Fonts where the client
+ * allows web fonts and falls back to Helvetica Neue elsewhere.
  */
 
-/** Icreon Design System colors (brand core), kept as literals: email has no CSS variables. */
+/** Cypher's light-theme tokens (design-system/tokens.json), as literals: email has no CSS variables. */
 const T = {
-  black: '#000000',
-  white: '#ffffff',
-  blue: '#386aff',
-  blueDeep: '#2752e0',
-  blueTint: '#e7ecff',
-  n950: '#0a0a0a',
-  n700: '#474747',
-  n500: '#7a7a7a',
-  n400: '#a3a3a3',
-  n200: '#e6e6e6',
-  n50: '#f8f8f7',
-  warning: '#b26a00',
-  warningBg: '#fbf0dd',
-  danger: '#c8372d',
-  dangerBg: '#fbe9e7',
-  success: '#1e8e5a',
-  successBg: '#e7f5ee',
+  shell: '#141433',
+  onShell: '#ffffff',
+  onShellQuiet: '#8f86c4',
+  bliss: '#f6f5fc',
+  surface: '#ffffff',
+  mist: '#e3e0f2',
+  mist2: '#eeedf7',
+  ink: '#141433',
+  text2: '#3b3a5c',
+  text3: '#6a6889',
+  coral: '#e8553d',
+  coralText: '#c8402b',
+  coralTint: '#fdf1ee',
+  gold: '#9a6b00',
+  goldTint: '#fdf8ec',
+  green: '#1e8e5a',
+  iris: '#6b4ee6',
+  irisTint: '#eeeafd',
   font: "'Plus Jakarta Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif",
 } as const;
 
-const KIND: Record<OperatorNotice['kind'], { chip: string; fg: string; bg: string }> = {
-  attention: { chip: 'Needs you', fg: T.blueDeep, bg: T.blueTint },
-  stalled: { chip: 'Stalled', fg: T.warning, bg: T.warningBg },
-  review: { chip: 'To review', fg: T.blueDeep, bg: T.blueTint },
-  down: { chip: 'Worker down', fg: T.danger, bg: T.dangerBg },
-  up: { chip: 'Back up', fg: T.success, bg: T.successBg },
-};
+/** The chip and the band under the header: coral is the Director's, gold waits, green is done. */
+const KIND: Record<OperatorNotice['kind'], { chip: string; fg: string; bg: string; band: string }> =
+  {
+    attention: { chip: 'Yours', fg: T.coralText, bg: T.coralTint, band: T.coral },
+    stalled: { chip: 'Stalled', fg: T.gold, bg: T.goldTint, band: T.gold },
+    review: { chip: 'To review', fg: T.coralText, bg: T.coralTint, band: T.coral },
+    down: { chip: 'Worker down', fg: T.coralText, bg: T.coralTint, band: T.coral },
+    up: { chip: 'Back up', fg: T.green, bg: T.mist2, band: T.green },
+  };
 
 const TYPE_LABEL: Record<EscalationType, string> = {
   decision: 'Decision',
@@ -63,7 +67,7 @@ const esc = (s: string) =>
 function action(n: OperatorNotice, appUrl: string): { href: string; label: string } {
   if (!n.projectId) return { href: `${appUrl}/`, label: 'Open the Dashboard' };
   const project = `${appUrl}/p/${encodeURIComponent(n.projectId)}`;
-  if (n.kind === 'attention') return { href: `${project}/inbox`, label: 'Answer in Launchworks' };
+  if (n.kind === 'attention') return { href: `${project}/inbox`, label: 'Answer in Cypher' };
   if (n.kind === 'review') return { href: `${appUrl}/manage/rules`, label: 'Review proposals' };
   return { href: project, label: 'Open the project' };
 }
@@ -96,25 +100,25 @@ export function operatorEmail(
   const needs = n.needs ?? [];
 
   const faces = base
-    ? "@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500&display=swap');"
+    ? "@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap');"
     : '';
 
   const brand = base
-    ? `<img src="${esc(base)}/email/icreon-lockup.png" width="104" height="22" alt="Icreon" style="display:block;border:0;outline:none;width:104px;height:22px;">`
-    : `<span style="font-family:${T.font};font-size:18px;font-weight:500;letter-spacing:0.12em;color:${T.white};">ICREON</span>`;
+    ? `<img src="${esc(base)}/email/cypher-wordmark.png" width="120" height="32" alt="Cypher" style="display:block;border:0;outline:none;width:120px;height:32px;">`
+    : `<span style="font-family:${T.font};font-size:24px;line-height:32px;font-weight:800;letter-spacing:-0.03em;color:${T.onShell};">cypher</span>`;
 
   const cards = needs.length
     ? `<tr><td style="padding:8px 0 0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
           ${needs
             .map(
-              (c) => `<tr><td style="border-top:1px solid ${T.n200};padding:14px 0;">
-                <div style="font-family:${T.font};font-size:11px;line-height:16px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:${T.n500};">${esc(TYPE_LABEL[c.type] ?? c.type)}</div>
-                <div style="font-family:${T.font};font-size:15px;line-height:22px;font-weight:400;color:${T.n950};padding-top:2px;">${esc(c.title)}</div>
+              (c) => `<tr><td style="border-top:1px solid ${T.mist};padding:14px 0;">
+                <div style="font-family:${T.font};font-size:13px;line-height:18px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${T.text3};">${esc(TYPE_LABEL[c.type] ?? c.type)}</div>
+                <div style="font-family:${T.font};font-size:16px;line-height:24px;font-weight:600;color:${T.ink};padding-top:2px;">${esc(c.title)}</div>
               </td></tr>`,
             )
             .join('')}
-          <tr><td style="border-top:1px solid ${T.n200};font-size:0;line-height:0;">&nbsp;</td></tr>
+          <tr><td style="border-top:1px solid ${T.mist};font-size:0;line-height:0;">&nbsp;</td></tr>
         </table>
       </td></tr>`
     : '';
@@ -122,8 +126,8 @@ export function operatorEmail(
   const button = go
     ? `<tr><td style="padding:28px 0 0;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-          <td bgcolor="${T.blue}" style="background:${T.blue};border-radius:4px;">
-            <a href="${esc(go.href)}" style="display:inline-block;padding:13px 22px;font-family:${T.font};font-size:14px;line-height:20px;font-weight:500;color:${T.white};text-decoration:none;border-radius:4px;">${esc(go.label)}&nbsp;&rarr;</a>
+          <td bgcolor="${T.ink}" style="background:${T.ink};border-radius:999px;">
+            <a href="${esc(go.href)}" style="display:inline-block;padding:14px 26px;font-family:${T.font};font-size:15px;line-height:20px;font-weight:600;color:${T.onShell};text-decoration:none;border-radius:999px;">${esc(go.label)}&nbsp;&rarr;</a>
           </td>
         </tr></table>
       </td></tr>`
@@ -138,32 +142,32 @@ export function operatorEmail(
 <title>${esc(n.title)}</title>
 <style>${faces}@media (max-width:620px){.lw-card{width:100%!important}.lw-pad{padding-left:24px!important;padding-right:24px!important}}</style>
 </head>
-<body style="margin:0;padding:0;background:${T.n50};-webkit-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${T.n50};">${esc(text)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${T.n50}" style="background:${T.n50};">
+<body style="margin:0;padding:0;background:${T.bliss};-webkit-text-size-adjust:100%;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${T.bliss};">${esc(text)}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${T.bliss}" style="background:${T.bliss};">
 <tr><td align="center" style="padding:32px 12px;">
-  <table role="presentation" class="lw-card" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:${T.white};border:1px solid ${T.n200};border-collapse:separate;">
-    <tr><td class="lw-pad" bgcolor="${T.black}" style="background:${T.black};padding:22px 36px;">
+  <table role="presentation" class="lw-card" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:${T.surface};border:1px solid ${T.mist};border-radius:24px;border-collapse:separate;overflow:hidden;">
+    <tr><td class="lw-pad" bgcolor="${T.shell}" style="background:${T.shell};padding:22px 36px;border-radius:23px 23px 0 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
         <td valign="middle">${brand}</td>
-        <td valign="middle" align="right" style="font-family:${T.font};font-size:11px;line-height:16px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:${T.n400};">Launchworks&nbsp;&middot;&nbsp;Operator</td>
+        <td valign="middle" align="right" style="font-family:${T.font};font-size:13px;line-height:18px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${T.onShellQuiet};">Cypher&nbsp;&middot;&nbsp;Operator</td>
       </tr></table>
     </td></tr>
-    <tr><td bgcolor="${k.fg}" style="background:${k.fg};height:3px;font-size:0;line-height:0;">&nbsp;</td></tr>
+    <tr><td bgcolor="${k.band}" style="background:${k.band};height:3px;font-size:0;line-height:0;">&nbsp;</td></tr>
     <tr><td class="lw-pad" style="padding:36px 36px 40px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr><td>
-          <span style="display:inline-block;padding:4px 10px;border-radius:999px;background:${k.bg};font-family:${T.font};font-size:11px;line-height:16px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:${k.fg};">${k.chip}</span>
+          <span style="display:inline-block;padding:4px 12px;border-radius:999px;background:${k.bg};font-family:${T.font};font-size:13px;line-height:18px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${k.fg};">${k.chip}</span>
         </td></tr>
-        <tr><td style="padding:20px 0 0;font-family:${T.font};font-size:13px;line-height:18px;font-weight:500;color:${T.n500};">${esc(n.project)}</td></tr>
-        <tr><td style="padding:6px 0 0;font-family:${T.font};font-size:30px;line-height:36px;font-weight:300;letter-spacing:-0.01em;color:${T.black};">${esc(n.title)}</td></tr>
-        <tr><td style="padding:16px 0 ${needs.length ? '8px' : '0'};font-family:${T.font};font-size:15px;line-height:24px;font-weight:400;color:${T.n700};">${esc(text)}</td></tr>
+        <tr><td style="padding:20px 0 0;font-family:${T.font};font-size:14px;line-height:20px;font-weight:600;color:${T.text3};">${esc(n.project)}</td></tr>
+        <tr><td style="padding:6px 0 0;font-family:${T.font};font-size:30px;line-height:36px;font-weight:700;letter-spacing:-0.02em;color:${T.ink};">${esc(n.title)}</td></tr>
+        <tr><td style="padding:16px 0 ${needs.length ? '8px' : '0'};font-family:${T.font};font-size:17px;line-height:26px;font-weight:300;color:${T.text2};">${esc(text)}</td></tr>
         ${cards}
         ${button}
       </table>
     </td></tr>
-    <tr><td class="lw-pad" bgcolor="${T.n50}" style="background:${T.n50};border-top:1px solid ${T.n200};padding:20px 36px;font-family:${T.font};font-size:12px;line-height:18px;color:${T.n500};">
-      The Operator watches running projects in Launchworks and writes once per card or stall. Nothing is decided by email: answer in Launchworks.
+    <tr><td class="lw-pad" bgcolor="${T.bliss}" style="background:${T.bliss};border-top:1px solid ${T.mist};padding:20px 36px;font-family:${T.font};font-size:13px;line-height:20px;color:${T.text3};border-radius:0 0 23px 23px;">
+      I watch the running projects and write once per card or stall. Nothing is decided by email: answer in Cypher.
     </td></tr>
   </table>
 </td></tr>
@@ -180,7 +184,7 @@ export function operatorEmail(
     ...(go ? ['', `${go.label}: ${go.href}`] : []),
     '',
     '--',
-    'Launchworks Operator. It writes once per card or stall; nothing is decided by email.',
+    'Cypher, the Operator. I write once per card or stall; nothing is decided by email.',
   ].join('\n');
 
   return { subject: `${test ? '[Test] ' : ''}${n.project}: ${n.title}`, html, text: plain };
@@ -192,7 +196,7 @@ export interface ResendConfig {
   to: string[];
   /** A sender on a domain verified in Resend. */
   from: string;
-  /** The Control Center's public URL, for links and the lockup. */
+  /** The Control Center's public URL, for links and the wordmark. */
   appUrl?: string | null;
   fetchImpl?: typeof fetch;
 }

@@ -897,7 +897,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           actor: { kind: 'agent', id: t.role },
           subject: { kind: 'artifact', id: a.artifactId },
           severity: 'notable',
-          data: { artifactId: a.artifactId, kind: a.kind, title: a.title, version },
+          data: {
+            artifactId: a.artifactId,
+            kind: a.kind,
+            title: a.title,
+            version,
+            summary: a.summary ?? null,
+            attention: a.attention?.slice(0, 3) ?? [],
+          },
         });
       }
       if (t.metric)

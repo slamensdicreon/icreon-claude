@@ -21,6 +21,7 @@ const proxy = Object.fromEntries(
     '/health',
     '/intake',
     '/integrations',
+    '/me',
   ].map((p) => [p, { target: api, changeOrigin: true }]),
 );
 

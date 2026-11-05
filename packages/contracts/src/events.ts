@@ -122,6 +122,10 @@ export type LinkTarget = z.infer<typeof LinkTarget>;
 export const EvidenceLink = LinkTarget.extend({ label: z.string() });
 export type EvidenceLink = z.infer<typeof EvidenceLink>;
 
+/** A "what to look at" pointer on a document: a few words and where they go. */
+export const ArtifactPointer = z.object({ label: z.string(), target: LinkTarget });
+export type ArtifactPointer = z.infer<typeof ArtifactPointer>;
+
 /** Escalation card, as specified in design spec §5. Gate approvals are escalations of type `gate`. */
 /** What a Lead made of a card before it reached the Director. */
 export const LeadTriage = z.object({
@@ -656,6 +660,10 @@ export const EventBody = z.discriminatedUnion('type', [
       /** Workbench tab label ("Components", "PR 12"); derived from the title when absent. */
       shortTitle: z.string().nullable().default(null),
       format: z.enum(['markdown', 'json', 'png', 'binary']).nullable().default(null),
+      /** The document in plain words, written by the agent that saved it; null when it wrote none. */
+      summary: z.string().nullable().default(null),
+      /** Up to three things in it worth the Director's look, from the same agent. */
+      attention: z.array(ArtifactPointer).max(3).default([]),
     }),
   ),
   ev(

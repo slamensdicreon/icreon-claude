@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { EscalationType, NewEvent } from '@lw/contracts';
 import type { ProjectState } from '@lw/domain';
+
+/** Cypher's voice: counts under thirteen in words. */
+const WORDS = 'zero one two three four five six seven eight nine ten eleven twelve'.split(' ');
+const word = (n: number) => (n >= 0 && n < 13 ? WORDS[n]! : String(n));
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 import type { EventStore, Projections } from '@lw/events';
 
 /** What the operator told a Director, and why. */
@@ -104,7 +109,7 @@ export function noticeFor(
       projectId: s.projectId,
       project: s.name,
       kind: 'attention',
-      title: `${due.length === 1 ? 'A decision waits' : `${due.length} decisions wait`} on you`,
+      title: `${due.length === 1 ? 'A decision waits' : `${cap(word(due.length))} decisions wait`} on you`,
       body: `${s.name}: ${due.map((e) => e.title).join('; ')}. The Leads couldn't settle ${due.length === 1 ? 'it' : 'them'}; ${due.length === 1 ? 'its' : 'their'} work waits until you answer.`,
       needs: due.map((e) => ({ escalationId: e.escalationId, type: e.type, title: e.title })),
     };
@@ -127,14 +132,14 @@ export function noticeFor(
     ['not started', count('planned')],
   ]
     .filter(([, n]) => Number(n) > 0)
-    .map(([what, n]) => `${n} ${what}`);
+    .map(([what, n]) => `${word(Number(n))} ${what}`);
   const running = count('running') + count('validating');
   return {
     projectId: s.projectId,
     project: s.name,
     kind: 'stalled',
     title: STALLED,
-    body: `${s.name}: nothing has happened for ${Math.round(minutes(last, now))} minutes, with ${left.length} task${left.length === 1 ? '' : 's'} left (${parts.join(', ')}) and nothing waiting on you. ${stallCause(s, health, last, running)}`,
+    body: `${s.name}: nothing has happened for ${Math.round(minutes(last, now))} minutes, with ${word(left.length)} task${left.length === 1 ? '' : 's'} left (${parts.join(', ')}) and nothing waiting on you. ${stallCause(s, health, last, running)}`,
   };
 }
 

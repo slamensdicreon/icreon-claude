@@ -84,7 +84,7 @@ function ScoreEverything({ sc }: { sc: Scorecard }) {
         />
         <Kpi
           label="Sent back"
-          value={pct(t.rejectionRate === null ? null : t.rejectionRate * 100)}
+          value={pct(t.rejectionRate)}
           note={`${t.rejections} of ${t.reviews} reviews · ${tok(t.tokens)} tokens · ${usd(t.usd)}`}
         />
       </section>

@@ -78,13 +78,13 @@ const HEALTH_ORDER = { blocked: 0, attention: 1, healthy: 2 } as const;
 const HOSTING = /^(hosting|vercel|netlify)$/i;
 
 /** The open cards that are the Director's, clustered as Mission Control shows them. */
-const yoursOf = (s: ProjectState) => missionControl(s).waitingOnYou;
+export const yoursOf = (s: ProjectState) => missionControl(s).waitingOnYou;
 
 const deadlineOf = (x: EscalationView) =>
   x.status === 'open' && x.deadline ? Date.parse(x.deadline) : null;
 
 /** The zone most running projects keep (the Dashboard's date line), else the first project's. */
-function dashboardZone(states: ProjectState[]): string {
+export function dashboardZone(states: ProjectState[]): string {
   const pool = states.filter((s) => s.status === 'running');
   const count = new Map<string, number>();
   for (const s of pool.length ? pool : states)
@@ -166,7 +166,7 @@ function latestLine(s: ProjectState): string | null {
   return null;
 }
 
-function projectRow(s: ProjectState, yours: EscalationView[]): PortfolioProject {
+export function projectRow(s: ProjectState, yours: EscalationView[]): PortfolioProject {
   const summary = projectSummary(s);
   const accepted = acceptedOf(s);
   const archived = ARCHIVED.has(s.status);

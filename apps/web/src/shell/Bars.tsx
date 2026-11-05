@@ -8,7 +8,15 @@ import { count, useOverview } from '../lib/overview';
 import { useConn } from '../lib/live';
 import { Dial } from '../mode/Dial';
 import { Palette } from '../overlays/Palette';
-import { MANAGE, SURFACE_LABEL, useApp, useMission, useNow } from '../state';
+import {
+  isPortfolioPage,
+  MANAGE,
+  SURFACE_LABEL,
+  useApp,
+  useMission,
+  useNow,
+  type PortfolioPage,
+} from '../state';
 import { Icon } from '../theme/icons';
 import { Eye } from '../ui/Eye';
 import { EYE_WORDS, useEyeState } from '../voice/eye';
@@ -21,12 +29,20 @@ const HEALTH_WORD = {
   blocked: 'blocked',
 } as const;
 
+const PORTFOLIO_TITLE: Record<PortfolioPage, [string, string]> = {
+  team: ['Team', 'Everyone on every project, by Lead'],
+  workbench: ['Workbench', 'Every project’s documents, newest first'],
+  activity: ['Activity', 'What happened across the projects, newest first'],
+  scorecard: ['Scorecard', 'How the work went, every project together'],
+};
+
 /** The page's name, as the top bar titles it. */
 function usePageTitle(): [string, string | null] {
   const { projectId, surface, view } = useApp();
   if (projectId) return [SURFACE_LABEL[surface], null];
   if (view === 'dashboard') return ['Dashboard', 'Every project and where it stands'];
   if (view === 'new') return ['New project', 'Pick the platform and the playbook, then the source'];
+  if (isPortfolioPage(view)) return PORTFOLIO_TITLE[view];
   const page = MANAGE.find(([p]) => p === view);
   return page ? [page[1], page[2]] : ['Cypher', null];
 }

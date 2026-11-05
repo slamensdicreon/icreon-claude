@@ -6,6 +6,7 @@ import type {
   EscalationCard,
   EscalationStatus,
   EscalationType,
+  LinkTarget,
   MetricKey,
   NewEvent,
   TaskState,
@@ -177,7 +178,15 @@ export interface AgentResult {
   /** What the agent says it did; its Lead reviews it against the steps it took. */
   summary?: string;
   /** Artifacts the task produced; the orchestrator assigns versions. */
-  artifacts?: { artifactId: string; kind: ArtifactKind; title: string }[];
+  artifacts?: {
+    artifactId: string;
+    kind: ArtifactKind;
+    title: string;
+    /** The document in plain words for the Director, when the agent wrote one. */
+    summary?: string | null;
+    /** Up to three things in it worth the Director's look. */
+    attention?: { label: string; target: LinkTarget }[];
+  }[];
 }
 
 export type ArtifactKind = Extract<NewEvent, { type: 'artifact.versioned' }>['data']['kind'];

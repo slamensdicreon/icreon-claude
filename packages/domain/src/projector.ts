@@ -572,6 +572,9 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
           ref: e.data.ref,
           format: e.data.format,
           producer: e.actor.id,
+          // What the agent wrote about this version; absent on older events and on saves without.
+          ...(e.data.summary ? { summary: e.data.summary } : {}),
+          ...(e.data.attention?.length ? { attention: e.data.attention } : {}),
         },
         ...a.versions.filter((v) => v.version !== e.data.version),
       ].sort((x, y) => y.version - x.version);
