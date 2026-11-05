@@ -1,0 +1,365 @@
+/*
+ * New project: the step rail, the step, and the live summary, as Everything panels (surface, mist
+ * border, radius-lg). Every color, size and radius is a token.
+ */
+
+.page {
+  display: grid;
+  grid-template-columns:
+    calc(var(--sidebar) - var(--space-6)) minmax(0, 1fr)
+    calc(var(--sidebar) + var(--space-4));
+  gap: var(--space-4);
+  align-items: start;
+  padding: 0 0 var(--space-8);
+}
+
+/* ---------- the rail ---------- */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  min-height: calc(var(--row) - var(--space-3));
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-weight: 600;
+}
+.back:hover {
+  color: var(--ink);
+  background: var(--surface-quiet);
+}
+.backIcon {
+  transform: rotate(90deg);
+}
+.title {
+  margin: 0;
+  padding: 0 var(--space-2);
+  color: var(--ink);
+}
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.stepButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: calc(var(--row) - var(--space-3));
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.stepButton:hover:not(:disabled) {
+  background: var(--surface-quiet);
+  color: var(--ink);
+}
+.stepButton:disabled {
+  cursor: default;
+  color: var(--text-3);
+}
+.num {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--space-6) - var(--space-1));
+  height: calc(var(--space-6) - var(--space-1));
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  font-weight: 600;
+}
+.stepLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+.steps li[data-done] .num {
+  border-color: var(--green);
+  color: var(--green);
+}
+.steps li[aria-current='step'] .stepButton {
+  background: var(--surface-quiet);
+  color: var(--ink);
+}
+.steps li[aria-current='step'] .stepLabel {
+  font-weight: 700;
+}
+.steps li[aria-current='step'] .num {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+/* ---------- the step ---------- */
+
+.main {
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--mist);
+}
+.head h2 {
+  margin: 0;
+  color: var(--ink);
+}
+.head h2:focus {
+  outline: none;
+}
+.head h2:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.count {
+  color: var(--text-3);
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+.error {
+  padding: 0 var(--space-5) var(--space-4);
+}
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--mist);
+}
+
+.lead {
+  margin: 0;
+  color: var(--text-2);
+  max-width: calc(var(--measure) * 0.56);
+}
+.quiet {
+  margin: 0;
+  color: var(--text-3);
+}
+.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.legend {
+  padding: 0;
+  margin-bottom: var(--space-3);
+  color: var(--ink);
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.repoRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.credential {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mist-2);
+  background: var(--surface-quiet);
+}
+.credentialHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.credentialHead h3 {
+  margin: 0;
+  color: var(--ink);
+}
+.desc {
+  margin: 0;
+  color: var(--text-2);
+}
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.tileText {
+  display: block;
+}
+.outcomes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.outcome {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--text-2);
+}
+.outcome::before {
+  content: '';
+  flex: none;
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--text-3);
+  transform: translateY(calc(var(--space-1) * -0.5));
+}
+
+/* ---------- the summary ---------- */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+.sumTitle {
+  margin: 0 0 var(--space-2);
+  color: var(--ink);
+}
+.sumRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--mist-2);
+  overflow-wrap: anywhere;
+}
+.sumLabel {
+  color: var(--text-3);
+}
+.sumName {
+  color: var(--ink);
+  font-size: inherit;
+}
+.sumQuiet {
+  color: var(--text-2);
+}
+.sumList {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--text-2);
+}
+.sumNote {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-quiet);
+  color: var(--text-2);
+}
+
+/* ---------- narrower ---------- */
+
+@media (max-width: 1180px) {
+  .page {
+    grid-template-columns: calc(var(--sidebar) - var(--space-6)) minmax(0, 1fr);
+  }
+  .summary {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  .summary {
+    grid-column: auto;
+  }
+  .rail {
+    padding: var(--space-3);
+  }
+  .steps {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: var(--space-2);
+    padding-bottom: var(--space-1);
+  }
+  .steps li {
+    flex: none;
+  }
+  .stepButton {
+    width: auto;
+    border: 1px solid var(--mist);
+    border-radius: var(--radius-pill);
+    padding-inline: var(--space-1) var(--space-3);
+  }
+  .head,
+  .body,
+  .foot {
+    padding-inline: var(--space-4);
+  }
+  .error {
+    padding-inline: var(--space-4);
+  }
+  .two,
+  .three,
+  .fields,
+  .repoRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

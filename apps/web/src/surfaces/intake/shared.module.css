@@ -1,0 +1,130 @@
+/* The pieces New project and Project settings share. Every color, size and radius is a token. */
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: calc(var(--row) - var(--space-3));
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: center;
+  line-height: 1.25;
+  max-width: 100%;
+  transition:
+    border-color 200ms ease-out,
+    background 200ms ease-out;
+}
+.action:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+.action[data-kind='primary'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.action[data-kind='primary']:hover:not(:disabled) {
+  border-color: var(--ink-2);
+  background: var(--ink-2);
+  color: var(--on-shell);
+}
+.action[data-kind='danger'] {
+  color: var(--coral-text);
+  border-color: color-mix(in srgb, var(--coral-text) 45%, var(--mist));
+}
+.action[data-kind='danger']:hover:not(:disabled) {
+  border-color: var(--coral-text);
+  background: var(--coral-tint);
+}
+.action[data-kind='quiet'] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+  padding-inline: var(--space-3);
+}
+.action[data-kind='quiet']:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.actions[data-end] {
+  justify-content: flex-end;
+}
+
+.beside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.notice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.notice i {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  transform: translateY(calc(var(--space-1) * -0.25));
+}
+.notice[data-tone='ok'] {
+  color: var(--ink);
+}
+.notice[data-tone='ok'] i {
+  background: var(--green);
+}
+.notice[data-tone='waiting'] {
+  color: var(--gold);
+}
+.notice[data-tone='bad'] {
+  color: var(--coral-text);
+}
+.notice[data-tone='idle'] {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--sidebar) - var(--space-5)), 1fr));
+  gap: var(--space-4);
+}
+.test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action {
+    transition: none;
+  }
+}

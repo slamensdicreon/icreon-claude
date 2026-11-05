@@ -1,0 +1,420 @@
+/*
+ * Project settings, in Everything's lower half of the scale: panels on surface with a mist border
+ * and radius-lg, padded space-4, sections space-4 apart. Every color, size and radius is a token.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: 0 0 var(--space-8);
+}
+.loading {
+  color: var(--text-3);
+}
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.jumpPill {
+  min-height: calc(var(--row) - var(--space-3));
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+.jumpPill:hover {
+  border-color: var(--text-3);
+  color: var(--ink);
+}
+.jumpPill[data-danger] {
+  color: var(--coral-text);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  scroll-margin-top: var(--space-4);
+}
+.groupLabel {
+  margin: 0 0 calc(var(--space-1) * -1);
+  color: var(--text-3);
+}
+.columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* ---------- text ---------- */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.lead {
+  margin: 0;
+  color: var(--text-2);
+  font-size: inherit;
+}
+.sentence {
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+.body {
+  margin: 0;
+  color: var(--ink);
+}
+.quiet {
+  margin: 0;
+  color: var(--text-3);
+}
+.quietInline {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.muted {
+  color: var(--text-2);
+}
+.strong {
+  font-weight: 700;
+  color: var(--ink);
+}
+.value {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.link {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--mist);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.link:hover {
+  text-decoration-color: var(--ink);
+}
+.outcomes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.outcomes li {
+  display: flex;
+  flex-direction: column;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--mist);
+  color: var(--ink);
+}
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.lock {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-quiet);
+  color: var(--text-2);
+}
+
+/* ---------- forms ---------- */
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.inline > :first-child {
+  flex: 1 1 calc(var(--sidebar) + var(--space-6));
+}
+.editField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+/* ---------- tables ---------- */
+
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--ink);
+}
+.table thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--mist-2);
+  white-space: nowrap;
+}
+.table td,
+.table tbody th {
+  padding: var(--space-2) var(--space-3);
+  height: var(--row);
+  border-bottom: 1px solid var(--mist-2);
+  vertical-align: middle;
+  text-align: left;
+}
+.table tbody tr:last-child td,
+.table tbody tr:last-child th {
+  border-bottom: 0;
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--space-4);
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--space-4);
+}
+.rowHead {
+  font-weight: 600;
+  color: var(--ink);
+  width: 28%;
+}
+.scope {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  max-width: calc(var(--sidebar) + var(--space-8));
+}
+.under {
+  display: block;
+  color: var(--text-3);
+}
+.stateCell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: calc(var(--sidebar) - var(--space-7));
+}
+.actionsCell {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+}
+.table tr[data-open] td {
+  border-bottom-color: transparent;
+}
+.formRow td {
+  padding-top: 0;
+  padding-bottom: var(--space-4);
+}
+.credentialForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mist-2);
+  background: var(--surface-quiet);
+}
+
+/* ---------- rows of settings ---------- */
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+.rows > li + li {
+  border-top: 1px solid var(--mist-2);
+}
+.padRows {
+  padding: 0 var(--space-4) var(--space-2);
+}
+.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  min-height: var(--row);
+  padding: var(--space-1) 0;
+}
+.row > :global(*):only-child {
+  flex: 1 1 auto;
+}
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 calc(var(--sidebar) - var(--space-5));
+  min-width: 0;
+}
+.selectCell {
+  flex: 0 1 calc(var(--sidebar) - var(--space-5));
+  min-width: calc(var(--sidebar) - var(--space-7));
+}
+.gap {
+  padding: var(--space-2) 0;
+}
+.gap[data-closed] .strong {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.gapTasks {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-4);
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ---------- budgets ---------- */
+
+.budgets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.budget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-quiet);
+  min-width: 0;
+}
+.budgetLabel {
+  color: var(--text-3);
+}
+.budgetNumber {
+  color: var(--ink);
+  white-space: nowrap;
+}
+.unit {
+  color: var(--text-3);
+}
+.budgetForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mist-2);
+}
+
+/* ---------- danger zone ---------- */
+
+.danger > section {
+  border-color: color-mix(in srgb, var(--coral-text) 35%, var(--mist));
+}
+.danger h2 {
+  color: var(--coral-text);
+}
+.dangerRows {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+  list-style: none;
+}
+.dangerRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  min-height: var(--row);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--mist-2);
+}
+.dangerRow:first-child {
+  border-top: 0;
+}
+
+/* ---------- narrower ---------- */
+
+@media (max-width: 1100px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    gap: var(--space-5);
+  }
+  .budgets,
+  .three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Tables of a few columns read as stacked rows on a phone. */
+  .stackOnPhone thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .stackOnPhone,
+  .stackOnPhone tbody,
+  .stackOnPhone tr,
+  .stackOnPhone td,
+  .stackOnPhone tbody th {
+    display: block;
+    width: auto;
+    max-width: none;
+  }
+  .stackOnPhone tr {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--mist-2);
+  }
+  .stackOnPhone tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .table.stackOnPhone td,
+  .table.stackOnPhone tbody th {
+    height: auto;
+    padding: var(--space-1) 0;
+    border-bottom: 0;
+  }
+  .table.stackOnPhone .actionsCell {
+    text-align: left;
+    white-space: normal;
+    padding-top: var(--space-2);
+  }
+  .stackOnPhone .actionsCell > div {
+    justify-content: flex-start;
+  }
+  .stackOnPhone tr[data-open] {
+    border-bottom: 0;
+  }
+}
