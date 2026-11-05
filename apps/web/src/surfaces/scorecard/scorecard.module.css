@@ -1,0 +1,124 @@
+.bliss {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: var(--space-3) 0 var(--space-8);
+}
+.three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.big {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+}
+.bigValue {
+  font-size: calc(var(--space-8) + var(--space-3));
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  color: var(--ink);
+}
+.note {
+  color: var(--text-3);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.listRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--mist);
+}
+.listRow :global(.type-meta) {
+  color: var(--text-3);
+}
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.everything {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 0 var(--space-8);
+}
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  min-width: calc(var(--measure) * 0.6);
+  border-collapse: collapse;
+  color: var(--ink);
+}
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--mist-2);
+  white-space: nowrap;
+}
+.table td {
+  padding: var(--space-2) var(--space-3);
+  height: calc(var(--row) - var(--space-2));
+  border-bottom: 1px solid var(--mist-2);
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--space-4);
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--space-4);
+}
+.num {
+  text-align: right !important;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.quiet {
+  color: var(--text-3);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: calc(var(--row) - var(--space-2));
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--mist-2);
+  color: var(--ink);
+}
+.row:last-child {
+  border-bottom: 0;
+}
+@media (max-width: 1000px) {
+  .three,
+  .kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

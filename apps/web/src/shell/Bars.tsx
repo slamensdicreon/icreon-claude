@@ -4,6 +4,7 @@
  * switcher pill, the date and the dial floating on bliss.
  */
 import { clock, longDay, usd, zoneLabel } from '../lib/fmt';
+import { count, useOverview } from '../lib/overview';
 import { useConn } from '../lib/live';
 import { Dial } from '../mode/Dial';
 import { Palette } from '../overlays/Palette';
@@ -56,11 +57,25 @@ function useProjectLine(): string[] {
   return parts;
 }
 
+/** The Dashboard's line: "Tuesday, November 3 · 11:42 AM ET · four projects, 61 agents". */
+function useDashboardLine(on: boolean): string | null {
+  const now = useNow(15_000);
+  const o = useOverview().data;
+  if (!on || !o) return null;
+  const tz = o.timezone;
+  return [
+    longDay(now, tz),
+    `${clock(now, tz)} ${zoneLabel(tz)}`,
+    `${count(o.counts.running, 'project')}, ${count(o.counts.agents, 'agent')}`,
+  ].join(' · ');
+}
+
 export function TopBar() {
-  const { projectId, openOverlay } = useApp();
+  const { projectId, openOverlay, view } = useApp();
   const [title, hint] = usePageTitle();
   const line = useProjectLine();
-  const subtitle = projectId ? line.join(' · ') : hint;
+  const dash = useDashboardLine(!projectId && view === 'dashboard');
+  const subtitle = projectId ? line.join(' · ') : (dash ?? hint);
   const mac = /Mac|iPhone|iPad/.test(navigator.userAgent);
   return (
     <header className={styles.topbar}>
@@ -117,11 +132,17 @@ function Presence() {
 export function BlissHeader() {
   const { projects, projectId, layout, setLayout } = useApp();
   const mc = useMission().data;
+  const o = useOverview().data;
   const now = useNow(15_000);
   const p = projects.find((x) => x.id === projectId);
-  const tz = mc?.project.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Inside a project, its own time; above them all, the running projects' zone.
+  const tz =
+    (projectId ? mc?.project.timezone : o?.timezone) ??
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
   const where = p?.subtitle ?? p?.client ?? null;
-  const when = `${longDay(now, tz).split(',')[0]} ${clock(now, tz)}`;
+  const when = projectId
+    ? `${longDay(now, tz).split(',')[0]} ${clock(now, tz)}`
+    : `${longDay(now, tz)} · ${clock(now, tz)}`;
   return (
     <header className={styles.blissHeader}>
       <ProjectSwitcher />

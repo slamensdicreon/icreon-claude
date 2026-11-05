@@ -1,0 +1,227 @@
+/* Needs you in both modes. */
+
+.bliss {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: var(--space-3) 0 var(--space-8);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.clear {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+}
+.clear p {
+  margin: 0;
+}
+.stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stackRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--row);
+  padding: var(--space-2) 0;
+  border: 0;
+  border-top: 1px solid var(--mist);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.stackRow[data-static] {
+  cursor: default;
+}
+.stackLabel {
+  flex: none;
+  width: calc(var(--row) * 1.5);
+  color: var(--text-3);
+}
+.stackTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+.stackClock {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.stackClock[data-yours] {
+  color: var(--coral-text);
+}
+.stackChev {
+  transform: rotate(-90deg);
+  color: var(--text-3);
+  flex: none;
+}
+
+.everything {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 0 var(--space-8);
+}
+.headRight {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--mist);
+  text-underline-offset: 3px;
+}
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--text-3);
+}
+.fold {
+  border-bottom: 1px solid var(--mist-2);
+}
+.fold:last-child {
+  border-bottom: 0;
+}
+.fold[data-open] {
+  background: var(--surface-quiet);
+}
+.foldHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.pill {
+  flex: none;
+  width: calc(var(--row) * 1.6);
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-pill);
+  color: var(--on-ink);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+.foldText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.3;
+}
+.foldText :global(.type-meta) {
+  color: var(--text-3);
+}
+.foldTitle {
+  font-weight: 600;
+}
+.clock {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.clock[data-yours] {
+  color: var(--coral-text);
+}
+.chev {
+  flex: none;
+  color: var(--text-3);
+  transition: transform 200ms ease-out;
+}
+.fold[data-open] .chev {
+  transform: rotate(180deg);
+}
+.foldBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4) calc(var(--row) * 1.6 + var(--space-4) * 2);
+  color: var(--text-2);
+}
+.foldBody p {
+  margin: 0;
+  max-width: calc(var(--measure) * 0.6);
+}
+.foldBody > :global(span) {
+  background: var(--surface);
+}
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.foldFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-3);
+}
+.quiet {
+  color: var(--text-3);
+}
+.simpleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--mist-2);
+  color: var(--ink);
+}
+.simpleRow:last-child {
+  border-bottom: 0;
+}
+.simpleRow :global(.type-meta) {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.check {
+  display: inline-flex;
+  color: var(--green);
+}
+
+@media (max-width: 760px) {
+  .foldBody {
+    padding-left: var(--space-4);
+  }
+  .stackLabel {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chev {
+    transition: none;
+  }
+}

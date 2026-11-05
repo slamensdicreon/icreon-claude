@@ -246,6 +246,10 @@
   justify-content: center;
   letter-spacing: 0;
 }
+.tile[data-all] {
+  background: transparent;
+  color: inherit;
+}
 .switcherText {
   display: flex;
   flex-direction: column;
@@ -420,6 +424,13 @@
 .sheetClose:hover {
   background: var(--surface-quiet);
 }
+/* The portfolio chat, given the sheet's room. */
+.sheetHome {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-4) 0;
+}
 /* The old dock, made to fill the sheet: no border, no off-canvas slide, no collapse. */
 .sheet :global(.dock) {
   position: static;
@@ -471,5 +482,10 @@
 .shell[data-present] .topbar,
 .shell[data-present] .launcher,
 .shell[data-present] .sheet {
+  display: none;
+}
+
+/* Pages still on the old stylesheet carry their own title; in Everything the top bar already says it. */
+.shell[data-mode='everything'] :global(.page-head h1) {
   display: none;
 }

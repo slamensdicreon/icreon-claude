@@ -1,0 +1,230 @@
+/* The Dashboard in both modes. Bliss breathes on the top half of the scale; Everything on the lower. */
+
+.bliss {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: var(--space-3) 0 var(--space-8);
+}
+.three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.four {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.more {
+  margin: calc(var(--space-5) * -1) 0 0;
+  color: var(--text-3);
+}
+
+.everything {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 0 var(--space-8);
+}
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.two {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+.headRight {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  min-width: calc(var(--measure) * 0.62);
+  border-collapse: collapse;
+  color: var(--ink);
+}
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--mist-2);
+  white-space: nowrap;
+}
+.table td {
+  padding: var(--space-2) var(--space-3);
+  height: var(--row);
+  border-bottom: 1px solid var(--mist-2);
+  vertical-align: middle;
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--space-4);
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--space-4);
+}
+.progressCol {
+  width: calc(var(--sidebar) - var(--space-6));
+}
+.num {
+  text-align: right !important;
+  white-space: nowrap;
+}
+.num[data-yours] {
+  color: var(--coral-text);
+  font-weight: 700;
+}
+.secondary {
+  color: var(--text-2);
+}
+.last {
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(var(--sidebar) - var(--space-2));
+}
+.last b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.projectCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.tile {
+  flex: none;
+  width: calc(var(--space-6) + var(--space-1));
+  height: calc(var(--space-6) + var(--space-1));
+  border-radius: var(--radius-sm);
+  color: var(--on-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0;
+}
+.projectName {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.projectName :global(.type-meta) {
+  font-weight: 600;
+}
+.empty {
+  padding: var(--space-4);
+  margin: 0;
+  color: var(--text-3);
+}
+.listRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--row) - var(--space-2));
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--mist-2);
+  color: var(--ink);
+}
+.listRow:last-child {
+  border-bottom: 0;
+}
+.dot {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--green);
+}
+.dot[data-state='waiting'] {
+  background: var(--gold);
+}
+.dot[data-state='failed'] {
+  background: var(--coral-text);
+}
+.deployId {
+  font-weight: 600;
+  min-width: var(--space-8);
+}
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.when {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.loadText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.loadTop {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.loadTop b {
+  font-weight: 600;
+}
+.quiet {
+  color: var(--text-3);
+}
+.legend {
+  display: inline-flex;
+  gap: var(--space-4);
+}
+
+/* Loading and empty */
+.waiting {
+  padding: var(--space-8) 0;
+  color: var(--text-3);
+}
+
+@media (max-width: 1100px) {
+  .four,
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .two,
+  .four,
+  .kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

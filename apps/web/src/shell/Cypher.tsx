@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { Dock } from '../dock/Dock';
+import { CypherHome } from '../surfaces/CypherHome';
 import { useApp } from '../state';
 import { Icon } from '../theme/icons';
 import { Eye } from '../ui/Eye';
@@ -41,7 +42,7 @@ export function CypherLauncher() {
 }
 
 export function CypherSheet() {
-  const { layout, setLayout } = useApp();
+  const { layout, setLayout, projectId } = useApp();
   const ref = useRef<HTMLDivElement>(null);
   const open = layout.dockOpen;
   // Opening moves focus into the sheet; the composer takes it when Ctrl or Cmd / opened it.
@@ -64,7 +65,14 @@ export function CypherSheet() {
       >
         <Icon name="close" size={18} />
       </button>
-      <Dock />
+      {/* Inside a project, the Chief of Staff's conversation; above them all, the portfolio chat. */}
+      {projectId ? (
+        <Dock />
+      ) : (
+        <div className={styles.sheetHome}>
+          <CypherHome />
+        </div>
+      )}
     </div>
   );
 }

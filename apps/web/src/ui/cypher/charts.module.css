@@ -1,0 +1,65 @@
+.figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.svg {
+  width: 100%;
+  height: calc(var(--row) * 1.8);
+  display: block;
+  overflow: visible;
+}
+.axis {
+  stroke: var(--mist);
+  stroke-width: 1;
+}
+.past {
+  fill: var(--iris);
+}
+.future {
+  fill: var(--iris-tint);
+  stroke: color-mix(in srgb, var(--iris) 45%, transparent);
+  stroke-dasharray: 4 3;
+}
+.labels {
+  display: grid;
+  text-align: center;
+  color: var(--text-3);
+}
+.area {
+  fill: var(--coral-tint);
+}
+.raised,
+.settled {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.raised {
+  stroke: var(--coral-text);
+}
+.settled {
+  stroke: var(--green);
+}
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-3);
+}
+.swRaised,
+.swSettled {
+  display: inline-block;
+  width: var(--space-3);
+  height: 3px;
+  vertical-align: middle;
+  margin-right: var(--space-2);
+}
+.swRaised {
+  background: var(--coral-text);
+}
+.swSettled {
+  background: var(--green);
+}

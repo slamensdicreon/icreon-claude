@@ -14,27 +14,27 @@ import { CypherLauncher, CypherSheet } from './shell/Cypher';
 import { Rail, Sidebar } from './shell/Nav';
 import styles from './shell/Shell.module.css';
 import { AppProvider, isManagePage, useApp, useMission, type Surface } from './state';
-import { Activity } from './surfaces/Activity';
+import { ActivityPage } from './surfaces/activity/ActivityPage';
 import { GithubAppPanel } from './surfaces/GithubApp';
-import { Dashboard, Manage } from './surfaces/Dashboard';
-import { Inbox } from './surfaces/Inbox';
-import { Mission } from './surfaces/Mission';
-import { Plan } from './surfaces/Plan';
-import { Preview } from './surfaces/Preview';
-import { Scorecard } from './surfaces/Scorecard';
+import { Manage } from './surfaces/Dashboard';
+import { Dashboard } from './surfaces/dashboard/Dashboard';
+import { MissionControl } from './surfaces/mission/MissionControl';
+import { NeedsYou } from './surfaces/inbox/NeedsYou';
+import { PlanPage, WorkbenchPage } from './surfaces/quiet/QuietFaces';
+import { SitePreview } from './surfaces/preview/PreviewPage';
+import { ScorecardPage } from './surfaces/scorecard/ScorecardPage';
 import { Settings } from './surfaces/Settings';
-import { Team } from './surfaces/Team';
-import { Workbench } from './surfaces/Workbench';
+import { TeamPage } from './surfaces/team/TeamPage';
 
 const SURFACE: Record<Surface, () => React.JSX.Element> = {
-  mission: Mission,
-  inbox: Inbox,
-  team: Team,
-  plan: Plan,
-  workbench: Workbench,
-  preview: Preview,
-  activity: Activity,
-  scorecard: Scorecard,
+  mission: MissionControl,
+  inbox: NeedsYou,
+  team: TeamPage,
+  plan: PlanPage,
+  workbench: WorkbenchPage,
+  preview: SitePreview,
+  activity: ActivityPage,
+  scorecard: ScorecardPage,
   settings: Settings,
 };
 
@@ -120,7 +120,7 @@ function Frame() {
           <Inspector />
         </main>
         {/* Cypher chats only in Everything, from the eye button; nothing docks beside the page. */}
-        {everything && projectId && (
+        {everything && (
           <>
             <CypherSheet />
             <CypherLauncher />

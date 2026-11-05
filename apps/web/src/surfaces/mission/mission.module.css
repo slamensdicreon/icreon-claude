@@ -1,0 +1,251 @@
+/* Mission Control in both modes. */
+
+.bliss {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: var(--space-3) 0 var(--space-8);
+}
+.track {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.trackLine {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  color: var(--text-3);
+}
+.trackLine b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.trackRight {
+  margin-left: auto;
+}
+.two {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+.more {
+  margin: calc(var(--space-5) * -1) 0 0;
+  color: var(--text-3);
+}
+.teamAndHandled {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-7);
+  align-items: start;
+}
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.quiet {
+  margin: 0;
+  color: var(--text-3);
+}
+
+.everything {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 0 var(--space-8);
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+.metricHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-3);
+}
+.metric :global(.type-number-unit) {
+  color: var(--text-3);
+  margin-left: var(--space-1);
+}
+.teamActivity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: var(--space-4);
+}
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  min-width: calc(var(--measure) * 0.55);
+  border-collapse: collapse;
+  color: var(--ink);
+}
+.table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--mist-2);
+}
+.table td {
+  padding: var(--space-2) var(--space-3);
+  height: calc(var(--row) - var(--space-2));
+  border-bottom: 1px solid var(--mist-2);
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--space-4);
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--space-4);
+}
+.num {
+  text-align: right !important;
+  white-space: nowrap;
+}
+.secondary {
+  color: var(--text-2);
+}
+.quietText {
+  color: var(--text-3);
+}
+.rowLink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.state i {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  display: inline-block;
+}
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--mist);
+  text-underline-offset: 3px;
+}
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--text-3);
+}
+.listRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: calc(var(--row) - var(--space-2));
+  padding: var(--space-2) var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--mist-2);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.listRow:last-child {
+  border-bottom: 0;
+}
+.listText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.3;
+}
+.listText b {
+  font-weight: 600;
+}
+.listText :global(.type-meta) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.logRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--mist-2);
+  color: var(--ink);
+}
+.logRow:last-child {
+  border-bottom: 0;
+}
+.logRow[data-severity='warning'] {
+  background: var(--gold-tint);
+}
+.logRow[data-severity='failure'] {
+  background: var(--coral-tint);
+}
+.logTime {
+  flex: none;
+  width: var(--space-7);
+  color: var(--text-3);
+}
+.logOp {
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outcome {
+  flex: none;
+  white-space: nowrap;
+  color: var(--green);
+}
+.outcome[data-severity='warning'] {
+  color: var(--gold);
+}
+.outcome[data-severity='failure'] {
+  color: var(--coral-text);
+}
+
+@media (max-width: 1000px) {
+  .two,
+  .teamAndHandled,
+  .teamActivity,
+  .metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
