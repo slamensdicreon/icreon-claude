@@ -634,3 +634,15 @@
     transition: none;
   }
 }
+/* A link in a line of prose ("Needs you"), set like one: underlined, the line's own size. */
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

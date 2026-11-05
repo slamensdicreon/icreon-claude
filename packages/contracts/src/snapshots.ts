@@ -1066,7 +1066,15 @@ export const CypherMessage = z.object({
   projects: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
   /** Rules and lessons Cypher proposed in this answer, waiting for the Director's approval. */
   filed: z
-    .array(z.object({ kind: z.enum(['rule', 'lesson']), ref: z.string(), title: z.string() }))
+    // What Cypher did in the turn: a rule or lesson proposed (ref R-42, K-7), or cards it answered for
+    // the Director at their request (ref: the project's id).
+    .array(
+      z.object({
+        kind: z.enum(['rule', 'lesson', 'answered']),
+        ref: z.string(),
+        title: z.string(),
+      }),
+    )
     .default([]),
 });
 export type CypherMessage = z.infer<typeof CypherMessage>;

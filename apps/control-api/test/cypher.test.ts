@@ -230,6 +230,8 @@ it('drafts a remix on the saved connection from a conversation, and creates noth
     'propose_project',
     'propose_remix',
     'project_history',
+    'list_cards',
+    'answer_cards',
   ]);
 
   // Drafts only: still just the one project.

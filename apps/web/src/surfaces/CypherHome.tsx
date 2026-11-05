@@ -111,7 +111,7 @@ function Proposal({ p }: { p: CypherProposal }) {
 function Message({ m }: { m: CypherMessage }) {
   // Keeps the relative times ("12 min ago") current.
   useNow(15_000);
-  const { switchProject } = useApp();
+  const { switchProject, openProject } = useApp();
   if (m.role === 'director')
     return (
       <div className={s.me}>
@@ -137,9 +137,25 @@ function Message({ m }: { m: CypherMessage }) {
         {(m.filed ?? []).length > 0 && (
           <ul className={`${s.filed} type-meta`}>
             {m.filed.map((f) => (
-              <li key={f.ref}>
-                Proposed <span className={s.ref}>{f.ref}</span> {f.title}: waiting for you under
-                Menu → {f.kind === 'rule' ? 'Rules' : 'Knowledge'}.
+              <li key={`${f.kind}-${f.ref}`}>
+                {f.kind === 'answered' ? (
+                  <>
+                    {f.title}, as you asked. Each can be undone from{' '}
+                    <button
+                      type="button"
+                      className={s.linkish}
+                      onClick={() => openProject(f.ref, 'inbox')}
+                    >
+                      Needs you
+                    </button>{' '}
+                    for a short while.
+                  </>
+                ) : (
+                  <>
+                    Proposed <span className={s.ref}>{f.ref}</span> {f.title}: waiting for you under
+                    Menu → {f.kind === 'rule' ? 'Rules' : 'Knowledge'}.
+                  </>
+                )}
               </li>
             ))}
           </ul>

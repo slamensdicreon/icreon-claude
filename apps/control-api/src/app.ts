@@ -96,7 +96,7 @@ import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
-import { withDocumentVoice, withVoice } from './enrich';
+import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
 import { portfolioOverview, type LogCache } from './overview';
 import {
   portfolioActivity,
@@ -982,6 +982,35 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             const mc = missionControl(s);
             return { status: mc.subtitle, waitingOnYou: mc.waitingOnYou.map((w) => w.title) };
           },
+          // Every card waiting on the Director in one project, with Cypher's words and pick.
+          cards: async (id) => {
+            await projections.catchUp(id);
+            const s = project(id);
+            if (!s) return null;
+            return missionControl(s)
+              .waitingOnYou.filter((x) => x.status === 'open')
+              .map((x) => enrichEscalation(s, x))
+              .map((x) => ({
+                escalationId: x.escalationId,
+                type: x.type,
+                title: x.title,
+                gist: x.gist ?? null,
+                options: x.options.map((o) => ({
+                  id: o.id,
+                  label: o.label,
+                  recommended: Boolean(o.recommended),
+                })),
+                defaultOptionId: x.defaultOptionId,
+                recommendation: x.recommendation ?? null,
+                alike: x.group ? x.group.escalationIds.length : 1,
+                finalGate: Boolean(x.gate?.requiresConfirmation),
+              }));
+          },
+          // Answers one card as the Director, through the same path as their own click.
+          answer: async (id, escalationId, optionId, notes) => {
+            const { answered } = await resolveCard(id, escalationId, optionId, notes, true);
+            return { answered };
+          },
           remixDraft: async (id) => {
             await projections.catchUp(id);
             const s = project(id);
@@ -1817,42 +1846,59 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     command(req.params.id, (o) => supported(o, 'runScenario')(req.params.key)),
   );
 
+  /**
+   * Answers a card as the Director: the same path whether the Director clicked or asked Cypher to.
+   * A gate is refused (approve or send it back instead); with `all`, the rest of its group with the
+   * same cause is answered the same way. A shadowed card tells its rule how it did.
+   */
+  const resolveCard = async (
+    projectId: string,
+    escalationId: string,
+    optionId: string,
+    notes: string | null,
+    all: boolean,
+  ) => {
+    const s = project(projectId);
+    const x = s?.escalations[escalationId];
+    if (x?.type === 'gate')
+      throw new CommandError(422, 'use_gate_endpoint', 'This is a gate: use approve or send-back.');
+    // Read the group before answering: an answered card leaves it.
+    const group =
+      all && s ? cardGroups(Object.values(s.escalations), s.tasks).get(escalationId) : undefined;
+    const result = await command(projectId, (o) => o.resolve(escalationId, optionId, notes));
+    if (x?.triage?.mode === 'shadow' && x.triage.ruleIds.length)
+      await ruleOutcome(
+        x.triage.ruleIds,
+        projectId,
+        x.escalationId,
+        optionId === x.triage.optionId,
+      );
+    // The rest of its group, the same way; a card answered meanwhile is left as it is.
+    for (const id of group?.escalationIds ?? []) {
+      if (id === escalationId) continue;
+      await command(projectId, (o) => o.resolve(id, optionId, notes)).catch((e) => {
+        if (!(e instanceof CommandError && e.status === 409)) throw e;
+      });
+    }
+    return {
+      result,
+      answered: 1 + (group?.escalationIds.filter((id) => id !== escalationId).length ?? 0),
+    };
+  };
+
   app.post<{ Params: { id: string; escalationId: string } }>(
     '/projects/:id/escalations/:escalationId/resolve',
     async (req) => {
       const { optionId, notes, all } = ResolveEscalation.parse(req.body);
-      const s = project(req.params.id);
-      const x = s?.escalations[req.params.escalationId];
-      if (x?.type === 'gate')
-        throw new CommandError(
-          422,
-          'use_gate_endpoint',
-          'This is a gate: use approve or send-back.',
-        );
-      // Read the group before answering: an answered card leaves it.
-      const group =
-        all && s
-          ? cardGroups(Object.values(s.escalations), s.tasks).get(req.params.escalationId)
-          : undefined;
-      const result = await command(req.params.id, (o) =>
-        o.resolve(req.params.escalationId, optionId, notes || null),
-      );
-      // A shadowed card the Lead answered by a rule: the Director's choice tells the rule how it did.
-      if (x?.triage?.mode === 'shadow' && x.triage.ruleIds.length)
-        await ruleOutcome(
-          x.triage.ruleIds,
+      return (
+        await resolveCard(
           req.params.id,
-          x.escalationId,
-          optionId === x.triage.optionId,
-        );
-      // The rest of its group, the same way; a card answered meanwhile is left as it is.
-      for (const id of group?.escalationIds ?? []) {
-        if (id === req.params.escalationId) continue;
-        await command(req.params.id, (o) => o.resolve(id, optionId, notes || null)).catch((e) => {
-          if (!(e instanceof CommandError && e.status === 409)) throw e;
-        });
-      }
-      return result;
+          req.params.escalationId,
+          optionId,
+          notes || null,
+          Boolean(all),
+        )
+      ).result;
     },
   );
 
