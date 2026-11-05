@@ -9,7 +9,15 @@ import { useApp, useMission, useNow } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Eye } from '../../ui/Eye';
 import { kindOf, leftOf, picks, pillHue, pillOf, useYoursActions } from '../../ui/cypher/cards';
-import { Button, Closing, Hero, Panel, SectionHeading, Verdict } from '../../ui/cypher/parts';
+import {
+  Button,
+  Closing,
+  Hero,
+  Panel,
+  SectionHeading,
+  urgencyOf,
+  Verdict,
+} from '../../ui/cypher/parts';
 import { useEyeState } from '../../voice/eye';
 import { Decision } from '../mission/Decision';
 import { ago, openCards, voiceOf } from '../mission/model';
@@ -77,7 +85,17 @@ function NeedsBliss({ mc }: { mc: MissionControlSnapshot }) {
 
   return (
     <div className={s.bliss}>
-      <Hero eye={eye.state} blink={eye.blink} voice={voiceOf(mc)} small showClosing={false} />
+      <Hero
+        eye={eye.state}
+        blink={eye.blink}
+        voice={voiceOf(mc)}
+        small
+        showClosing={false}
+        urgency={urgencyOf(
+          cards.map((x) => x.deadline),
+          Date.now(),
+        )}
+      />
       {focus ? (
         <Decision x={focus} mc={mc} />
       ) : (

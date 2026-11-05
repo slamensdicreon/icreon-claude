@@ -19,6 +19,7 @@ export function Dial({ tone = 'light' }: { tone?: 'light' | 'onInk' }) {
       kind="toggle"
       tone={tone === 'onInk' ? 'onInk' : 'default'}
       aria-label="How much to show"
+      memory="dial"
       value={mode}
       onChange={setMode}
       options={OPTIONS}

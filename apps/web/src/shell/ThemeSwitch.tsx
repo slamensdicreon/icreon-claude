@@ -15,6 +15,7 @@ export function ThemeSwitch({ onShell = false }: { onShell?: boolean }) {
   return (
     <SegmentedControl
       aria-label="Theme"
+      memory={onShell ? 'theme-shell' : 'theme'}
       size="sm"
       fullWidth
       variant="tray"

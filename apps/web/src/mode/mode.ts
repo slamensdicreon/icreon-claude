@@ -13,6 +13,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { API } from '../lib/api';
+import { changeMode } from './transition';
 import {
   isPortfolioPage,
   useApp,
@@ -143,8 +144,12 @@ export function useMode(): ModeState {
     mode: fixed ? 'everything' : stored === 'everything' ? 'everything' : 'bliss',
     screen,
     fixed,
-    setMode: (mode) => {
-      if (!fixed) store.set(screen, mode);
+    setMode: (next) => {
+      if (fixed) return;
+      const current = stored === 'everything' ? 'everything' : 'bliss';
+      if (next === current) return;
+      // The switch plays the eye's transition; the screen changes behind its blur.
+      changeMode(next, () => store.set(screen, next));
     },
   };
 }

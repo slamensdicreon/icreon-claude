@@ -7,6 +7,7 @@ import { Palette } from './overlays/Palette';
 import { Boot, useBootState } from './parts/Boot';
 import { useCardActions } from './lib/escalation';
 import { useMode } from './mode/mode';
+import { ModeTransition } from './mode/ModeTransition';
 import { BlissHeader, TopBar } from './shell/Bars';
 import { MobileNav, Toasts, useAwayLine } from './shell/Chrome';
 import { CypherLauncher, CypherSheet } from './shell/Cypher';
@@ -135,6 +136,7 @@ function Frame() {
       <MobileNav />
       {overlay}
       <Toasts />
+      <ModeTransition />
       {boot.visible && <Boot state={boot} />}
     </>
   );

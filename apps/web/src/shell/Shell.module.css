@@ -599,3 +599,103 @@
     grid-row: 3;
   }
 }
+
+/* ---------- motion: the active section's pill travels to the next one chosen ---------- */
+.rail,
+.sidebar {
+  position: relative;
+  isolation: isolate;
+}
+.navGlide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dur-3) var(--ease-spring),
+    width var(--dur-3) var(--ease-spring),
+    height var(--dur-3) var(--ease-spring),
+    opacity var(--dur-1) var(--ease-out);
+}
+.railItem,
+.navItem {
+  transition:
+    color var(--dur-2) var(--ease-out) 60ms,
+    background-color var(--dur-1) var(--ease-out),
+    scale var(--dur-2) var(--ease-spring);
+}
+.railItem:active,
+.navItem:active {
+  scale: 0.96;
+  transition-duration: 80ms;
+}
+/* Once the glide stands under the active item, the item itself goes clear and lets it show. */
+.rail[data-glide] .railItem[aria-current='page'],
+.sidebar[data-glide] .navItem[aria-current='page'] {
+  background: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .navGlide,
+  .railItem,
+  .navItem {
+    transition: none;
+  }
+}
+
+/* The Cypher sheet springs up out of the eye button and sinks back into it. */
+.sheet {
+  transform-origin: calc(100% - var(--launcher) / 2) calc(100% + var(--launcher) / 2);
+  animation: sheetIn var(--dur-3) var(--ease-spring) both;
+}
+.sheet[data-closing] {
+  animation: sheetOut 180ms var(--ease-in) both;
+}
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-4)) scale(0.6);
+  }
+}
+@keyframes sheetOut {
+  to {
+    opacity: 0;
+    transform: translateY(var(--space-3)) scale(0.7);
+  }
+}
+.launcher {
+  transition:
+    scale var(--dur-2) var(--ease-spring),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+.launcher:hover {
+  scale: 1.05;
+}
+.launcher:active {
+  scale: 0.94;
+  transition-duration: 80ms;
+}
+.launcher[aria-expanded='true'] {
+  scale: 0.92;
+}
+.launcherBadge {
+  animation: badgeIn var(--dur-3) var(--ease-spring) both;
+}
+@keyframes badgeIn {
+  from {
+    transform: scale(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet[data-closing],
+  .launcherBadge {
+    animation: none;
+  }
+  .launcher {
+    transition: none;
+  }
+}

@@ -118,8 +118,18 @@
   line-height: 1.25;
   padding-block: var(--space-2);
   transition:
-    background 200ms ease-out,
-    border-color 200ms ease-out;
+    background var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    scale var(--dur-2) var(--ease-spring);
+}
+/* A press gives under the finger and springs back. */
+.button:not(:disabled):active {
+  scale: 0.97;
+  transition-duration: 80ms;
+}
+.large:not(:disabled):active {
+  scale: 0.985;
 }
 .large {
   min-height: var(--row);
@@ -422,9 +432,27 @@
   letter-spacing: 0;
 }
 .chips {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+/* The chosen chip's ink travels to the next one picked (ui/cypher/motion.ts). */
+.glide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dur-3) var(--ease-spring),
+    width var(--dur-3) var(--ease-spring),
+    height var(--dur-3) var(--ease-spring),
+    opacity var(--dur-1) var(--ease-out);
 }
 .chip {
   font: inherit;
@@ -438,11 +466,29 @@
   cursor: pointer;
   font-weight: 500;
 }
+.chip {
+  transition:
+    color var(--dur-2) var(--ease-out) 40ms,
+    background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out),
+    scale var(--dur-2) var(--ease-spring);
+}
+.chip:active {
+  scale: 0.96;
+  transition-duration: 80ms;
+}
 .chip[aria-pressed='true'] {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--on-ink);
   font-weight: 600;
+}
+/* Once the glide is placed it carries the ink; the chip itself turns clear. */
+.chips[data-glide] .chip[aria-pressed='true'] {
+  background: transparent;
+}
+.chips[data-glide] .chip:not([aria-pressed='true']) {
+  background: transparent;
 }
 .kpi {
   display: flex;
@@ -582,6 +628,98 @@
 
 @media (prefers-reduced-motion: reduce) {
   .button {
+    transition: none;
+  }
+}
+
+/* ---------- motion: arrivals, departures and changing values ---------- */
+
+/* Cards arrive rising, a beat apart, so the eye reads them in order. */
+.yours,
+.decision,
+.quietCard,
+.tile,
+.kpi,
+.panel {
+  animation: rise var(--dur-3) var(--ease-out) both;
+}
+:is(.yours, .quietCard, .tile, .kpi, .panel):nth-child(2) {
+  animation-delay: 50ms;
+}
+:is(.yours, .quietCard, .tile, .kpi, .panel):nth-child(3) {
+  animation-delay: 100ms;
+}
+:is(.yours, .quietCard, .tile, .kpi, .panel):nth-child(4) {
+  animation-delay: 150ms;
+}
+:is(.yours, .quietCard, .tile, .kpi, .panel):nth-child(n + 5) {
+  animation-delay: 200ms;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-3));
+  }
+}
+
+/* A settled card leaves: it fades, gives a little and lifts away while the answer goes in. */
+.yours[data-leaving],
+.decision[data-leaving],
+.quietCard[data-leaving] {
+  animation: leave var(--dur-2) var(--ease-in) forwards;
+  pointer-events: none;
+}
+@keyframes leave {
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--space-2) * -1)) scale(0.97);
+  }
+}
+
+/* Progress grows to its value on arrival and glides when the value moves. */
+.bar i,
+.stripTrack i {
+  transform-origin: left center;
+  animation: grow var(--dur-4) var(--ease-out) both;
+  transition:
+    width var(--dur-4) var(--ease-out),
+    background-color var(--dur-2) var(--ease-out);
+}
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* A number that changes rolls in from below (Ticker). */
+.ticker {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+.tick {
+  display: inline-block;
+  animation: tick var(--dur-2) var(--ease-spring) both;
+}
+@keyframes tick {
+  from {
+    opacity: 0;
+    transform: translateY(60%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yours,
+  .decision,
+  .quietCard,
+  .tile,
+  .kpi,
+  .panel,
+  .bar i,
+  .stripTrack i,
+  .tick,
+  .glide {
+    animation: none;
     transition: none;
   }
 }

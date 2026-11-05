@@ -4,6 +4,38 @@
  * so any module class wins over them.
  */
 
+/*
+ * Motion: functional only — it says where something went, what changed, what is chosen. Things that
+ * move use the spring (a small overshoot, then settle); things that appear ease out; things that
+ * leave ease in. Under reduced motion everything below is cut to a step.
+ */
+:root {
+  --ease-spring: linear(
+    0,
+    0.009,
+    0.035 2.1%,
+    0.141 4.4%,
+    0.723 12.9%,
+    0.938 16.7%,
+    1.017 19.4%,
+    1.067,
+    1.089 24.9%,
+    1.093 27.3%,
+    1.08 31.4%,
+    1.024 40.2%,
+    1.005 45.4%,
+    0.996 52.5%,
+    1.001 71.9%,
+    1
+  );
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --dur-1: 150ms;
+  --dur-2: 240ms;
+  --dur-3: 380ms;
+  --dur-4: 520ms;
+}
+
 html {
   height: 100%;
   scroll-padding-top: env(safe-area-inset-top, 0px);

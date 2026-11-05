@@ -11,7 +11,7 @@
   z-index: 40;
   display: grid;
   background: color-mix(in srgb, var(--shell) 40%, transparent);
-  animation: fade 160ms ease-out;
+  animation: fade var(--dur-1) var(--ease-out);
 }
 .scrim[data-place='center'] {
   place-items: start center;
@@ -47,6 +47,36 @@
     transform: translateY(var(--space-2));
   }
 }
+/* A floating card grows out of where it was asked for: the palette from above, a menu from the
+   nav item beside it, the phone's sheet up from the bottom bar. */
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--space-2) * -1)) scale(0.94);
+  }
+}
+@keyframes popSide {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--space-3) * -1)) scale(0.94);
+  }
+}
+@keyframes popUp {
+  from {
+    transform: translateY(100%);
+  }
+}
+.scrim[data-place='nav-top'] .float {
+  transform-origin: top left;
+  animation-name: popSide;
+}
+.scrim[data-place='nav-bottom'] .float {
+  transform-origin: bottom left;
+  animation-name: popSide;
+}
+.scrim[data-place='sheet'] .float {
+  animation: popUp var(--dur-3) var(--ease-out) both;
+}
 
 /* ---------- a card that floats ---------- */
 .float {
@@ -55,7 +85,8 @@
   border: 1px solid var(--mist);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-decision);
-  animation: rise 200ms ease-out;
+  animation: pop var(--dur-3) var(--ease-spring) both;
+  transform-origin: top center;
   max-height: calc(100vh - var(--space-8));
   overflow: auto;
 }

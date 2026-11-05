@@ -10,6 +10,7 @@ import {
   QuietCard,
   SectionHeading,
   TeamLine,
+  urgencyOf,
 } from '../../ui/cypher/parts';
 import { Decision } from './Decision';
 import { useEyeState } from '../../voice/eye';
@@ -72,7 +73,17 @@ export function MissionBliss({ mc }: { mc: MissionControlSnapshot }) {
         </div>
       </div>
 
-      <Hero eye={eye.state} blink={eye.blink} voice={voiceOf(mc)} small showClosing={false} />
+      <Hero
+        eye={eye.state}
+        blink={eye.blink}
+        voice={voiceOf(mc)}
+        small
+        showClosing={false}
+        urgency={urgencyOf(
+          mc.waitingOnYou.filter((x) => x.status === 'open').map((x) => x.deadline),
+          now,
+        )}
+      />
 
       {first && <Decision x={first} mc={mc} />}
 

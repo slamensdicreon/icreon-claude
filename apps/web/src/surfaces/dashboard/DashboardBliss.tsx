@@ -8,6 +8,7 @@ import {
   hueOf,
   ProjectTile,
   SectionHeading,
+  urgencyOf,
   YoursCard,
 } from '../../ui/cypher/parts';
 import { useEyeState } from '../../voice/eye';
@@ -28,7 +29,15 @@ export function DashboardBliss({ o, refresh }: { o: PortfolioOverview; refresh: 
   const shown = o.yours.slice(0, 3);
   return (
     <div className={s.bliss}>
-      <Hero eye={eye.state} blink={eye.blink} voice={o.voice} />
+      <Hero
+        eye={eye.state}
+        blink={eye.blink}
+        voice={o.voice}
+        urgency={urgencyOf(
+          o.yours.map((y) => y.escalation.deadline),
+          now,
+        )}
+      />
 
       {shown.length > 0 && (
         <section className={s.three} aria-label="Yours" id="yours">

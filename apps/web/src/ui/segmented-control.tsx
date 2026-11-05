@@ -67,7 +67,16 @@ export type SegmentedControlProps<T extends string = string> = {
   'aria-label'?: string;
   'aria-labelledby'?: string;
   className?: string;
+  /**
+   * Remembers where the pill last stood under this name, so a control that is remounted (the Dial,
+   * when the shell swaps Bliss's header for Everything's top bar) glides from there instead of
+   * appearing in place.
+   */
+  memory?: string;
 };
+
+/** Where each remembered control's pill last stood: its left edge and width in the track. */
+const PILL_MEMORY = new Map<string, { x: number; w: number }>();
 
 export function SegmentedControl<T extends string = string>({
   options: rawOptions,
@@ -83,6 +92,7 @@ export function SegmentedControl<T extends string = string>({
   'aria-label': ariaLabel,
   'aria-labelledby': ariaLabelledby,
   className,
+  memory,
 }: SegmentedControlProps<T>) {
   // Gaps and repeated values are dropped – one value, one option
   const options = useMemo(() => {
@@ -169,6 +179,22 @@ export function SegmentedControl<T extends string = string>({
       x += content.offsetLeft;
       w = content.offsetWidth;
     }
+    // First placement of a remembered control: start from where its pill last stood, then glide
+    const from = !p.dataset.ready && memory ? PILL_MEMORY.get(memory) : undefined;
+    if (memory) PILL_MEMORY.set(memory, { x, w });
+    if (from && (from.x !== x || from.w !== w) && !reducedMotion()) {
+      p.style.transition = 'none';
+      p.style.opacity = '1';
+      p.style.left = `${from.x}px`;
+      p.style.right = `${t.clientWidth - from.x - from.w}px`;
+      p.dataset.ready = '1';
+      void p.offsetWidth;
+      p.style.transition = '';
+      p.dataset.dir = x > from.x ? 'right' : 'left';
+      p.style.left = `${x}px`;
+      p.style.right = `${t.clientWidth - x - w}px`;
+      return;
+    }
     const instant = !p.dataset.ready || (!animate && !gliding.current);
     const prev = parseFloat(p.style.left) || 0;
     // The edge facing the target leads, the other one trails – the stretch
@@ -245,7 +271,7 @@ export function SegmentedControl<T extends string = string>({
     if (!first) {
       gliding.current = true;
       clearTimeout(glideTimer.current);
-      glideTimer.current = window.setTimeout(() => (gliding.current = false), 240);
+      glideTimer.current = window.setTimeout(() => (gliding.current = false), 460);
     }
     place(!first);
     reveal(!first);
@@ -458,7 +484,7 @@ const css = /* css */ `
   --ui-segc-tag-on: color-mix(in srgb, var(--on-ink) 20%, transparent);
   --ui-segc-tag-on-text: var(--on-ink);
   --ui-segc-focus: color-mix(in srgb, var(--blue) 40%, transparent);
-  --ui-segc-ease: ease-out;
+  --ui-segc-ease: var(--ease-spring, ease-out);
   /* Size: md – 44px, the Dial; labels in the button style (15px / 700) */
   --ui-segc-h: 44px;
   --ui-segc-px: var(--space-4);
@@ -553,9 +579,9 @@ const css = /* css */ `
   overflow: clip;
   border-radius: var(--radius-pill);
   white-space: nowrap;
-  transition: color 200ms ease-out, background-color 200ms ease-out;
+  transition: color 300ms var(--ease-out, ease-out) 60ms, background-color 200ms ease-out;
 }
-.ui-segc[data-ready]:not([data-full]) .ui-segc__opt { transition: color 200ms ease-out, background-color 200ms ease-out, width 200ms var(--ui-segc-ease); }
+.ui-segc[data-ready]:not([data-full]) .ui-segc__opt { transition: color 300ms var(--ease-out, ease-out) 60ms, background-color 200ms ease-out, width 240ms var(--ui-segc-ease); }
 .ui-segc__opt[data-active] { color: var(--ui-segc-on-fill); }
 .ui-segc__opt:disabled { opacity: 0.4; cursor: not-allowed; }
 /* Focus: 3px of blue at 40%, outside the control */
@@ -618,10 +644,11 @@ const css = /* css */ `
   background: var(--ui-segc-fill);
   opacity: 0;
   pointer-events: none;
-  transition: left 200ms var(--ui-segc-ease), right 200ms var(--ui-segc-ease), scale 120ms var(--ui-segc-ease), opacity 120ms ease-out;
+  transition: left 380ms var(--ui-segc-ease), right 380ms var(--ui-segc-ease), scale 240ms var(--ui-segc-ease), opacity 120ms ease-out;
 }
-.ui-segc__pill[data-dir="right"] { transition-duration: 220ms, 180ms, 120ms, 120ms; }
-.ui-segc__pill[data-dir="left"] { transition-duration: 180ms, 220ms, 120ms, 120ms; }
+/* The edge facing the target leads and the far edge follows, so the pill stretches as it travels, then settles */
+.ui-segc__pill[data-dir="right"] { transition-duration: 440ms, 340ms, 240ms, 120ms; }
+.ui-segc__pill[data-dir="left"] { transition-duration: 340ms, 440ms, 240ms, 120ms; }
 /* Press feedback: the indicator gives a little while held or dragged */
 .ui-segc[data-pressed]:not([data-variant="underline"]) .ui-segc__pill { scale: 0.97; }
 

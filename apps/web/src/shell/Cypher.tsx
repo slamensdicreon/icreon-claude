@@ -13,6 +13,7 @@ import { Dock } from '../dock/Dock';
 import { CypherHome } from '../surfaces/CypherHome';
 import { useApp } from '../state';
 import { Icon } from '../theme/icons';
+import { usePresence } from '../ui/cypher/motion';
 import { Eye } from '../ui/Eye';
 import { useEyeState } from '../voice/eye';
 import styles from './Shell.module.css';
@@ -55,9 +56,19 @@ export function CypherSheet() {
     }, 50);
     return () => window.clearTimeout(t);
   }, [open]);
-  if (!open) return null;
+  // It springs up out of the eye button and sinks back into it when closed.
+  const { mounted, closing } = usePresence(open, 180);
+  if (!mounted) return null;
   return (
-    <div id="cypher-sheet" ref={ref} className={styles.sheet} role="dialog" aria-label="Cypher">
+    <div
+      id={closing ? undefined : 'cypher-sheet'}
+      ref={ref}
+      className={styles.sheet}
+      role="dialog"
+      aria-label="Cypher"
+      data-closing={closing || undefined}
+      inert={closing || undefined}
+    >
       <button
         className={styles.sheetClose}
         aria-label="Close Cypher"

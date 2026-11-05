@@ -90,7 +90,7 @@
   border: 0;
   background: var(--mist);
   cursor: pointer;
-  transition: background 200ms ease-out;
+  transition: background var(--dur-2) var(--ease-out);
 }
 .switch i {
   position: absolute;
@@ -100,7 +100,13 @@
   height: var(--space-5);
   border-radius: var(--radius-pill);
   background: var(--surface);
-  transition: transform 200ms ease-out;
+  transition:
+    transform var(--dur-3) var(--ease-spring),
+    scale var(--dur-2) var(--ease-spring);
+}
+/* Held, the thumb swells a touch; released, it springs across. */
+.switch:active:not(:disabled) i {
+  scale: 1.12;
 }
 .switch[aria-checked='true'] {
   background: var(--ink);
@@ -143,9 +149,28 @@
   justify-content: center;
   color: var(--on-ink);
 }
+.box {
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    scale var(--dur-2) var(--ease-spring);
+}
+.check:active .box {
+  scale: 0.9;
+}
 .check input:checked + .box {
   background: var(--ink);
   border-color: var(--ink);
+}
+/* The tick pops in with the spring when checked. */
+.box :global(svg) {
+  animation: tickIn var(--dur-3) var(--ease-spring) both;
+}
+@keyframes tickIn {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-12deg);
+  }
 }
 .check input:focus-visible + .box {
   outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent);
@@ -179,8 +204,18 @@
   font: inherit;
   min-width: 0;
 }
+.tile {
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-spring),
+    scale var(--dur-2) var(--ease-spring);
+}
 .tile:hover {
   border-color: var(--text-3);
+}
+.tile:active:not([aria-disabled='true']) {
+  scale: 0.985;
+  transition-duration: 80ms;
 }
 .tile[aria-checked='true'] {
   border-color: var(--ink);
@@ -276,7 +311,12 @@
 @media (prefers-reduced-motion: reduce) {
   .switch,
   .switch i,
-  .input {
+  .input,
+  .box,
+  .tile {
     transition: none;
+  }
+  .box :global(svg) {
+    animation: none;
   }
 }

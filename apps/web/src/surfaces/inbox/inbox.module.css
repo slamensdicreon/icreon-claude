@@ -101,6 +101,7 @@
 }
 .fold {
   border-bottom: 1px solid var(--mist-2);
+  transition: background-color var(--dur-2) var(--ease-out);
 }
 .fold:last-child {
   border-bottom: 0;
@@ -153,12 +154,13 @@
 .chev {
   flex: none;
   color: var(--text-3);
-  transition: transform 200ms ease-out;
+  transition: transform var(--dur-3) var(--ease-spring);
 }
 .fold[data-open] .chev {
   transform: rotate(180deg);
 }
 .foldBody {
+  animation: unfold var(--dur-3) var(--ease-out) both;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -221,6 +223,27 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .chev {
+    transition: none;
+  }
+}
+
+/* An opened row unfolds downward from its head, its contents a beat behind. */
+@keyframes unfold {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(calc(var(--space-2) * -1));
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .foldBody {
+    animation: none;
+  }
+  .fold,
   .chev {
     transition: none;
   }

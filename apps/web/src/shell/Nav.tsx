@@ -8,6 +8,8 @@ import { DemoMenu, ManageMenu, ProjectMenu } from '../overlays/Menus';
 import { isManagePage, useApp, useProjectResource } from '../state';
 import { Icon } from '../theme/icons';
 import { Eye } from '../ui/Eye';
+import { useRef } from 'react';
+import { useGlide } from '../ui/cypher/motion';
 import { useEyeState } from '../voice/eye';
 import { PORTFOLIO_SECTIONS, PROJECT_SECTIONS } from './sections';
 import { ThemeSwitch } from './ThemeSwitch';
@@ -55,6 +57,9 @@ export function Rail() {
     view,
     portfolio,
   } = useNavState();
+  const navRef = useRef<HTMLElement>(null);
+  const glideRef = useRef<HTMLSpanElement>(null);
+  useGlide(navRef, glideRef, `${projectId}:${surface}:${view}`, '[aria-current="page"]');
   const current = (on: boolean) => (on ? 'page' : undefined);
   const item = (
     key: string,
@@ -75,7 +80,8 @@ export function Rail() {
     </button>
   );
   return (
-    <nav className={styles.rail} aria-label="Cypher">
+    <nav ref={navRef} className={styles.rail} aria-label="Cypher">
+      <span ref={glideRef} className={styles.navGlide} aria-hidden="true" />
       <button
         className={styles.railEye}
         onClick={home}
@@ -133,6 +139,9 @@ export function Sidebar() {
     jump,
     portfolio,
   } = useNavState();
+  const navRef = useRef<HTMLElement>(null);
+  const glideRef = useRef<HTMLSpanElement>(null);
+  useGlide(navRef, glideRef, `${projectId}:${surface}:${view}`, '[aria-current="page"]');
   const current = (on: boolean) => (on ? 'page' : undefined);
   const badge =
     eye.yours > 0 ? (
@@ -162,7 +171,8 @@ export function Sidebar() {
     </button>
   );
   return (
-    <nav className={styles.sidebar} aria-label="Cypher">
+    <nav ref={navRef} className={styles.sidebar} aria-label="Cypher">
+      <span ref={glideRef} className={styles.navGlide} aria-hidden="true" />
       <button
         className={styles.brand}
         onClick={home}

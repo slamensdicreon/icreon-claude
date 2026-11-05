@@ -142,10 +142,18 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
       return where === 'portfolio'
         ? {
             primary: { label: 'Read it', run: () => open('workbench') },
-            secondary: { label: 'Approve now', run: () => approve(x) },
+            secondary: {
+              label: 'Approve now',
+              run: () => approve(x),
+              leaves: !x.gate?.requiresConfirmation,
+            },
           }
         : {
-            primary: { label: 'Approve', run: () => approve(x) },
+            primary: {
+              label: 'Approve',
+              run: () => approve(x),
+              leaves: !x.gate?.requiresConfirmation,
+            },
             secondary: {
               label: 'Send back',
               run: () => open('inbox', { expanded: x.escalationId }),
@@ -158,10 +166,10 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
         secondary: null,
       };
     return {
-      primary: { label: pick.label, run: () => resolve(x, pick.id) },
+      primary: { label: pick.label, run: () => resolve(x, pick.id), leaves: true },
       secondary: other
-        ? { label: other.label, run: () => resolve(x, other.id) }
-        : { label: 'Later', run: () => defer(x) },
+        ? { label: other.label, run: () => resolve(x, other.id), leaves: true }
+        : { label: 'Later', run: () => defer(x), leaves: true },
     };
   };
 

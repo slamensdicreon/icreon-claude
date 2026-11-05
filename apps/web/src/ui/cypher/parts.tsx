@@ -4,10 +4,12 @@
  * strings from the API and are never composed here. Every color, size and radius is a token.
  */
 import type { Face, HandledItem, ReadTone, Recommendation, Voice, Workstream } from '@lw/contracts';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from '../../theme/icons';
 import { Eye } from '../Eye';
+import { LiveEye, type Urgency } from '../eye/LiveEye';
 import type { EyeState } from '../../voice/eye';
+import { reducedMotion, useGlide } from './motion';
 import s from './parts.module.css';
 
 /* ---------- color by meaning ---------- */
@@ -97,6 +99,16 @@ export function VoiceLine({ voice, small }: { voice: Voice; small?: boolean }) {
   );
 }
 
+/** How soon the nearest clock runs out: under fifteen minutes is now, any clock soon, none calm. */
+export function urgencyOf(deadlines: (string | null | undefined)[], now: number): Urgency {
+  const left = deadlines
+    .filter((d): d is string => !!d)
+    .map((d) => Date.parse(d) - now)
+    .filter((ms) => ms > 0);
+  if (!left.length) return 'calm';
+  return Math.min(...left) < 15 * 60_000 ? 'now' : 'soon';
+}
+
 /** The hero of a Bliss page: the eye in its halo, the sentence, the closing line. */
 export function Hero({
   eye,
@@ -104,16 +116,19 @@ export function Hero({
   voice,
   small,
   showClosing = true,
+  urgency = 'calm',
 }: {
   eye: EyeState;
   blink?: boolean;
   voice: Voice;
   small?: boolean;
   showClosing?: boolean;
+  /** How soon the first clock runs out, for the eye's pulse. */
+  urgency?: Urgency;
 }) {
   return (
     <section className={s.hero} aria-label="Today">
-      <Eye state={eye} blink={blink} size={small ? 110 : 130} halo />
+      <LiveEye state={eye} blink={blink} size={small ? 110 : 130} urgency={urgency} />
       <span className={s.heroText}>
         <VoiceLine voice={voice} small={small} />
         {showClosing && voice.closing && <Closing text={voice.closing} />}
@@ -178,6 +193,26 @@ export function Button({
 export interface CardAction {
   label: string;
   run: () => void;
+  /** Settles the card (answer, defer, approve): it collapses away while the answer goes in. */
+  leaves?: boolean;
+}
+
+/**
+ * A card that is being settled plays its exit (data-leaving) while the request runs; the refresh
+ * then removes it. If it is still there a few seconds later (the request failed), it comes back.
+ */
+function useLeaving() {
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (!leaving) return;
+    const t = window.setTimeout(() => setLeaving(false), 6000);
+    return () => window.clearTimeout(t);
+  }, [leaving]);
+  const wrap = (a: CardAction) => () => {
+    if (a.leaves && !reducedMotion()) setLeaving(true);
+    a.run();
+  };
+  return { leaving, wrap };
 }
 
 /** A thing that is the Director's (Yours card guideline): label, question, context, verdict, two buttons, who. */
@@ -206,8 +241,9 @@ export function YoursCard({
   raiser: Face | null;
   meta: string;
 }) {
+  const { leaving, wrap } = useLeaving();
   return (
-    <article className={s.yours}>
+    <article className={s.yours} data-leaving={leaving || undefined}>
       <span className={`${s.cardLabel} type-label`}>
         <Eye state="needs-a-word" size={20} decorative />
         <span className={s.labelText}>
@@ -222,9 +258,9 @@ export function YoursCard({
       <p className={`${s.body} type-body-small`}>{body}</p>
       {rec && <Verdict rec={rec} />}
       <span className={s.actions}>
-        <Button onClick={primary.run}>{primary.label}</Button>
+        <Button onClick={wrap(primary)}>{primary.label}</Button>
         {secondary && (
-          <Button kind="secondary" onClick={secondary.run}>
+          <Button kind="secondary" onClick={wrap(secondary)}>
             {secondary.label}
           </Button>
         )}
@@ -261,8 +297,9 @@ export function DecisionCard({
   quiet: CardAction[];
   fallback: string | null;
 }) {
+  const { leaving, wrap } = useLeaving();
   return (
-    <section className={s.decision} aria-label="Yours now">
+    <section className={s.decision} aria-label="Yours now" data-leaving={leaving || undefined}>
       <div className={s.decisionLeft}>
         <span className={`${s.cardLabel} type-label`}>
           <Eye state="needs-a-word" size={20} decorative />
@@ -277,17 +314,17 @@ export function DecisionCard({
       </div>
       <div className={s.decisionRight}>
         {rec && <Verdict rec={rec} />}
-        <Button large onClick={pick.run} trailing={rec ? "Cypher's pick" : undefined}>
+        <Button large onClick={wrap(pick)} trailing={rec ? "Cypher's pick" : undefined}>
           {pick.label}
         </Button>
         {other && (
-          <Button large kind="secondary" onClick={other.run}>
+          <Button large kind="secondary" onClick={wrap(other)}>
             {other.label}
           </Button>
         )}
         <span className={`${s.decisionFoot} type-meta`}>
           {quiet.map((q) => (
-            <button key={q.label} type="button" className={s.link} onClick={q.run}>
+            <button key={q.label} type="button" className={s.link} onClick={wrap(q)}>
               {q.label}
             </button>
           ))}
@@ -312,15 +349,16 @@ export function QuietCard({
   primary: CardAction;
   secondary: CardAction | null;
 }) {
+  const { leaving, wrap } = useLeaving();
   return (
-    <article className={s.quietCard}>
+    <article className={s.quietCard} data-leaving={leaving || undefined}>
       <span className={`${s.quietLabel} type-label`}>{label}</span>
       <span className="type-card-title">{title}</span>
       {rec && <Verdict rec={rec} plain />}
       <span className={s.actions}>
-        <Button onClick={primary.run}>{primary.label}</Button>
+        <Button onClick={wrap(primary)}>{primary.label}</Button>
         {secondary && (
-          <Button kind="secondary" onClick={secondary.run}>
+          <Button kind="secondary" onClick={wrap(secondary)}>
             {secondary.label}
           </Button>
         )}
@@ -528,8 +566,12 @@ export function Chips<T extends string>({
   onChange: (v: T) => void;
   label: string;
 }) {
+  const group = useRef<HTMLSpanElement>(null);
+  const glide = useRef<HTMLSpanElement>(null);
+  useGlide(group, glide, value);
   return (
-    <span className={s.chips} role="group" aria-label={label}>
+    <span ref={group} className={s.chips} role="group" aria-label={label}>
+      <span ref={glide} className={s.glide} aria-hidden="true" />
       {options.map((o) => (
         <button
           key={o.value}
@@ -542,6 +584,27 @@ export function Chips<T extends string>({
           {o.count !== undefined && <span> {o.count}</span>}
         </button>
       ))}
+    </span>
+  );
+}
+
+/**
+ * A value that rolls in from below when it changes (not on first show), so a moved number is seen
+ * moving. Its text stays readable to assistive technology as plain text.
+ */
+export function Ticker({ value, className }: { value: string | number; className?: string }) {
+  const first = useRef(true);
+  const shown = useRef(value);
+  const changed = shown.current !== value;
+  shown.current = value;
+  useEffect(() => {
+    first.current = false;
+  }, []);
+  return (
+    <span className={`${s.ticker} ${className ?? ''}`}>
+      <span key={String(value)} className={!first.current && changed ? s.tick : undefined}>
+        {value}
+      </span>
     </span>
   );
 }
@@ -560,7 +623,7 @@ export function Kpi({
   return (
     <div className={s.kpi} data-yours={yours || undefined}>
       <span className={`${s.kpiLabel} type-label`}>{label}</span>
-      <span className={`${s.kpiValue} type-number`}>{value}</span>
+      <Ticker value={value} className={`${s.kpiValue} type-number`} />
       <span className={`${s.kpiNote} type-meta`}>{note}</span>
     </div>
   );

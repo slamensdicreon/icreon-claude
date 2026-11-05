@@ -1,0 +1,145 @@
+/*
+ * The living hero eye: the mark on a surface disc inside a breathing halo, and, when something is
+ * the Director's, coral rings that pulse out at the tempo of the nearest clock.
+ */
+.live {
+  --scale: var(--eye-scale, 1);
+  --size: calc(var(--eye) * var(--scale));
+  --breath: 5.5s;
+  --pulse: 2.8s;
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: calc(var(--size) * 1.36);
+  height: calc(var(--size) * 1.36);
+}
+.live[data-state='watching'] {
+  --breath: 4s;
+}
+.live[data-urgency='soon'] {
+  --pulse: 1.8s;
+}
+.live[data-urgency='now'] {
+  --pulse: 1.1s;
+}
+
+.halo,
+.disc,
+.ring {
+  position: absolute;
+  border-radius: var(--radius-pill);
+}
+.halo {
+  inset: 0;
+  background: var(--mist-2);
+  animation: breathe var(--breath) ease-in-out infinite;
+  transition: background 600ms ease-out;
+}
+.live[data-state='needs-a-word'] .halo {
+  background: var(--coral-halo);
+  animation-duration: var(--pulse);
+}
+.disc {
+  inset: 12%;
+  background: var(--surface);
+}
+.ring {
+  inset: 6%;
+  border: 2px solid var(--coral);
+  opacity: 0;
+}
+.live[data-state='needs-a-word'] .ring {
+  animation: ripple var(--pulse) cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+}
+.live[data-state='needs-a-word'] .ringLate {
+  animation-delay: calc(var(--pulse) / 2);
+}
+
+.mark {
+  position: relative;
+  width: var(--size);
+  height: var(--size);
+  overflow: visible;
+}
+.live[data-state='needs-a-word'] .mark {
+  animation: beat var(--pulse) ease-out infinite;
+}
+.ball {
+  fill: var(--ink);
+  transition: fill 500ms ease-out;
+}
+.lids {
+  fill: transparent;
+  stroke: var(--on-ink);
+  transition:
+    fill 400ms ease-out,
+    stroke 400ms ease-out;
+}
+.pupil {
+  fill: var(--on-ink);
+  transition: fill 400ms ease-out;
+}
+/* Needs a word: the needs-a-word mark's colours — coral ball, white almond, shell pupil. */
+.live[data-state='needs-a-word'] .ball {
+  fill: var(--coral);
+}
+.live[data-state='needs-a-word'] .lids {
+  fill: var(--on-shell);
+  stroke: var(--on-shell);
+}
+.live[data-state='needs-a-word'] .pupil {
+  fill: var(--shell);
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.07);
+  }
+}
+@keyframes ripple {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.38);
+  }
+}
+/* A heartbeat: two beats, then quiet, once per pulse. */
+@keyframes beat {
+  0%,
+  42%,
+  100% {
+    transform: scale(1);
+  }
+  12% {
+    transform: scale(1.045);
+  }
+  24% {
+    transform: scale(0.99);
+  }
+  32% {
+    transform: scale(1.025);
+  }
+}
+
+@media (max-width: 640px) {
+  .live {
+    --scale: 0.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .halo,
+  .ring,
+  .mark {
+    animation: none !important;
+  }
+}
