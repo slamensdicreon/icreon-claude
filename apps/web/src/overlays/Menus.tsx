@@ -181,7 +181,6 @@ export function MoreSheet() {
   const { surface, go, closeOverlay, openOverlay, projects, projectId, theme, setTheme } = useApp();
   const items: [Surface, IconName, string][] = [
     ['workbench', 'workbench', 'Workbench'],
-    ['preview', 'site', 'Site preview'],
     ['activity', 'activity', 'Activity'],
     ['scorecard', 'scorecard', 'Scorecard'],
     ['settings', 'settings', 'Settings'],

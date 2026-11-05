@@ -1258,7 +1258,7 @@ export const ansell: DemoScenario = {
       text: 'Pilot slice is done. Hero, QuickActions and HazardRoute are registered and the home page builds in Page builder on preview deploy 6. The review card is above. Batch 2 continues meanwhile under the Blueprint.',
       links: [
         ['Pilot report', 'wb:pilot'],
-        ['Site preview', 'preview'],
+        ['The build log', 'activity'],
       ],
     },
     {
@@ -1347,7 +1347,9 @@ export const ansell: DemoScenario = {
       doc: INV_PAGES,
       summary:
         'There is one route, the home page. Its words live in two data files today; they become content items so marketers can change them without a release.',
-      attention: [{ label: 'The home page in the preview', target: { kind: 'preview', ref: '' } }],
+      attention: [
+        { label: 'The home page as it was built', target: { kind: 'activity', ref: '' } },
+      ],
     },
     {
       id: 'invMedia',
@@ -1386,7 +1388,7 @@ export const ansell: DemoScenario = {
         'The pilot slice works end to end: Hero, QuickActions and HazardRoute drop onto the home page in Page builder and edit inline. Hazards now come from content, so marketers can change them without a release. Approving it confirms the pattern for the remaining renderings.',
       attention: [
         { label: 'The pilot review that waits on you', target: { kind: 'surface', ref: 'inbox' } },
-        { label: 'The pilot pages in the preview', target: { kind: 'preview', ref: '' } },
+        { label: 'The pilot pages as they were built', target: { kind: 'activity', ref: '' } },
       ],
     },
     {

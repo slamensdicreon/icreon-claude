@@ -1,0 +1,238 @@
+/* Toasts: raised cards in the corner, each with its icon, words, action and countdown. */
+.stack {
+  position: fixed;
+  right: var(--space-5);
+  bottom: calc(var(--space-5) + var(--row) + var(--space-4));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+.toast {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(calc(var(--space-8) * 8.5), calc(100vw - var(--space-6)));
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  box-shadow: var(--shadow-decision);
+  color: var(--ink);
+  overflow: hidden;
+  pointer-events: auto;
+  transform-origin: 100% 100%;
+  animation: enter 520ms var(--ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1)) both;
+}
+.toast[data-leaving] {
+  animation: leave 240ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.icon {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-6) - var(--space-1));
+  height: calc(var(--space-6) - var(--space-1));
+}
+.check {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.checkDisc {
+  fill: var(--green);
+  transform-origin: 12px 12px;
+  animation: pop 460ms var(--ease-spring, cubic-bezier(0.34, 1.6, 0.64, 1)) 80ms both;
+}
+.checkMark {
+  fill: none;
+  stroke: var(--on-ink);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  animation: draw 340ms ease-out 260ms forwards;
+}
+[data-theme='dark'] .checkMark {
+  stroke: var(--surface);
+}
+.errorDisc {
+  fill: var(--coral);
+  transform-origin: 12px 12px;
+  animation: pop 420ms var(--ease-spring, cubic-bezier(0.34, 1.6, 0.64, 1)) 60ms both;
+}
+.errorMark {
+  fill: none;
+  stroke: var(--on-shell);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+.toast[data-tone='error'] .errorDisc {
+  animation:
+    pop 420ms var(--ease-spring, cubic-bezier(0.34, 1.6, 0.64, 1)) 60ms both,
+    nudge 420ms ease-in-out 480ms;
+}
+/* A ring bursts out from the check as it lands. */
+.burst {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--green);
+  opacity: 0;
+  animation: burst 700ms ease-out 200ms;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.text b {
+  font-weight: 700;
+}
+.detail {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.action {
+  flex: none;
+  min-height: calc(var(--row) - var(--space-4));
+  padding: 0 var(--space-4);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-pill);
+  background: var(--surface-quiet);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 150ms ease-out,
+    transform 150ms ease-out;
+}
+.action:hover {
+  background: var(--mist-2);
+}
+.action:active {
+  transform: scale(0.96);
+}
+.close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--space-6) + var(--space-1));
+  height: calc(var(--space-6) + var(--space-1));
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.close:hover {
+  background: var(--mist-2);
+  color: var(--ink);
+}
+
+/* The countdown: a hairline along the bottom, in the toast's colour; it waits while hovered. */
+.life {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--text-3);
+  transform-origin: 0 50%;
+  animation: life var(--life) linear forwards;
+  opacity: 0.5;
+}
+.toast[data-tone='done'] .life {
+  background: var(--green);
+}
+.toast[data-tone='error'] .life {
+  background: var(--coral);
+}
+.toast[data-held] .life {
+  animation-play-state: paused;
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-4)) scale(0.92) rotate(-1.5deg);
+  }
+}
+@keyframes leave {
+  to {
+    opacity: 0;
+    transform: translateX(calc(var(--space-8) * 2)) scale(0.96);
+  }
+}
+@keyframes pop {
+  from {
+    transform: scale(0);
+  }
+}
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes burst {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+@keyframes nudge {
+  25% {
+    transform: translateX(-2px);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+  75% {
+    transform: translateX(-1px);
+  }
+}
+@keyframes life {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .stack {
+    left: var(--space-3);
+    right: var(--space-3);
+    bottom: calc(var(--row) + var(--space-3) + env(safe-area-inset-bottom, 0px));
+    align-items: stretch;
+  }
+  .toast {
+    width: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast[data-leaving],
+  .checkDisc,
+  .errorDisc,
+  .burst {
+    animation: none !important;
+  }
+  .checkMark {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

@@ -1864,8 +1864,8 @@ export function blueprintVoice(
   const attention: ArtifactPointer[] = [];
   if (pilot.length)
     attention.push({
-      label: 'The pilot slice in the preview',
-      target: { kind: 'preview', ref: '' },
+      label: 'The pilot slice as it was built',
+      target: { kind: 'activity', ref: '' },
     });
   if (dropped || merged)
     attention.push({

@@ -16,7 +16,6 @@ the Dashboard and Mission Control in dark.
 | Team            | Team lines in Cypher's words, with faces                                                                                  | The team as a tree: Chief of Staff (the eye), then each Lead with their people; tokens roll up; filter; inspector                   |
 | Activity        | The Floor, with the last beat as a Tool Call Card (affectUI)                                                              | The log with filters, agent picker, live tail, CSV and paging; the Floor as a tab                                                   |
 | Scorecard       | Three numbers, and what kept coming back                                                                                  | KPI tiles, by category, by phase, repeats                                                                                          |
-| Site preview    | One page: source beside target, parity as a word, next and previous                                                       | Page list with parity, three breakpoints, open in Page builder or on preview                                                        |
 | Plan            | What happens next: the next five activities and what each waits on                                                        | Rebuilt: Today lanes, Engagement weeks, activity list with groups and re-run, zoom (Ctrl+wheel, saved), up next, phone agenda; bars are buttons, states carry a glyph and a word |
 | Workbench       | The document in plain words (the agent's summary, or Cypher's from the document), up to three "what to look at" pointers, the other documents below                                                                      | Rebuilt: document rail with status tags, Blueprint with Filter Menu, completeness and Change Summary (affectUI), Decision Log with override, Project facts, Lessons, every document type, a scoped table of contents |
 | Settings        | (Everything only)                                                                                                         | Rebuilt in groups (the project, access, budgets, who decides, the record, danger zone), a sentence before each table               |
@@ -49,6 +48,12 @@ Scorecard (§8). Needs you and Projects jump to their Dashboard sections; the ot
 `/team`, `/workbench`, `/activity` and `/scorecard`, each with both faces, fed by
 `GET /portfolio/team`, `/portfolio/workbench`, `/portfolio/activity` and `/portfolio/scorecard`
 (`apps/control-api/src/portfolio.ts`). A row opens the project at that page.
+
+## Removed
+
+- **Site preview** is gone from the app (navigation, phone menu, the S shortcut, presentation mode).
+  Old addresses open Mission Control; preview links from Cypher or agents open Activity, where the
+  deploys are. The API's `/preview` route stays for the orchestrator.
 
 ## Also from the plan
 

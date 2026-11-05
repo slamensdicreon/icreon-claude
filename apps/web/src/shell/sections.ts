@@ -22,7 +22,6 @@ export const PROJECT_SECTIONS: Section[] = [
   { surface: 'team', icon: 'team', label: 'Team', short: 'Team' },
   { surface: 'plan', icon: 'plan', label: 'Plan', short: 'Plan' },
   { surface: 'workbench', icon: 'workbench', label: 'Workbench', short: 'Workbench' },
-  { surface: 'preview', icon: 'site', label: 'Site preview', short: 'Site' },
   { surface: 'activity', icon: 'activity', label: 'Activity', short: 'Activity' },
   { surface: 'scorecard', icon: 'scorecard', label: 'Scorecard', short: 'Scorecard' },
 ];

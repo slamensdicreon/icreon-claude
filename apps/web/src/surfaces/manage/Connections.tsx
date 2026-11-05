@@ -116,7 +116,11 @@ export function Connections({ projects }: { projects: PortfolioItem[] }) {
                     spec={specOf(x.credentialId)}
                     onDone={() => {
                       void reload();
-                      toast(`${x.system} replaced for every project on ${c.name}.`);
+                      toast({
+                        title: `${x.system} replaced`,
+                        detail: `For every project on ${c.name}.`,
+                        tone: 'done',
+                      });
                     }}
                   />
                 ))}
@@ -261,7 +265,11 @@ function SaveConnection({
           setBusy(true);
           try {
             await post('/connections', { name: name.trim(), fromProject: from });
-            toast(`${name.trim()} saved. New projects on that tenant can use it.`);
+            toast({
+              title: `${name.trim()} saved`,
+              detail: 'New projects on that tenant can use it.',
+              tone: 'done',
+            });
             setName('');
             setFrom('');
             onSaved();

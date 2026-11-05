@@ -297,7 +297,13 @@ export function GithubAppPanel() {
   const copy = (url: string) =>
     navigator.clipboard
       .writeText(url)
-      .then(() => toast('Install link copied. Send it to the client’s repository owner.'))
+      .then(() =>
+        toast({
+          title: 'Install link copied',
+          detail: 'Send it to the client’s repository owner.',
+          tone: 'done',
+        }),
+      )
       .catch(() => toast(url));
 
   return (

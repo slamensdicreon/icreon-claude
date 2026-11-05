@@ -112,8 +112,9 @@ export function useJump() {
         return inspect('task', t.ref);
       case 'activity':
         return go('activity', { activity: { sev: 'all', agent: 'all' } });
+      // Site preview is gone; the deploys it would show are in Activity.
       case 'preview':
-        return go('preview', t.ref ? { previewPage: t.ref } : undefined);
+        return go('activity');
       case 'settings':
         return go('settings');
       case 'surface':

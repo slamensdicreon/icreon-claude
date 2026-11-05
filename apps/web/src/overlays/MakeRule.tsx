@@ -46,7 +46,11 @@ export function MakeRule({ projectId, escalationId }: { projectId: string; escal
         sources: draft.sources,
         status: 'active',
       });
-      toast(`Rule ${rule.ref} saved. Leads apply it from the next card like this one.`);
+      toast({
+        title: `Rule ${rule.ref} saved`,
+        detail: 'Leads apply it from the next card like this one.',
+        tone: 'done',
+      });
       closeOverlay();
     } catch (e) {
       setError(messageOf(e, 'The rule could not be saved.'));

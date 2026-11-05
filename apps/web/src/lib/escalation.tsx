@@ -24,19 +24,36 @@ export function useCardActions(x: EscalationView) {
     /** Opens the card in Needs you, where decisions are made one at a time. */
     expand: () => go('inbox', { expanded: x.escalationId }),
     choose: (optionId: string, notes?: string) =>
-      run(() =>
-        post(`${base}/escalations/${x.escalationId}/resolve`, {
-          optionId,
-          ...(notes?.trim() ? { notes: notes.trim() } : {}),
-          // A grouped card stands for its siblings: one answer for all of them.
-          ...(x.group ? { all: true } : {}),
-        }),
+      run(
+        () =>
+          post(`${base}/escalations/${x.escalationId}/resolve`, {
+            optionId,
+            ...(notes?.trim() ? { notes: notes.trim() } : {}),
+            // A grouped card stands for its siblings: one answer for all of them.
+            ...(x.group ? { all: true } : {}),
+          }),
+        {
+          title: 'Answered',
+          detail: x.options.find((o) => o.id === optionId)?.label
+            ? `${x.title}: ${x.options.find((o) => o.id === optionId)!.label}`
+            : x.title,
+          action: {
+            label: 'Undo',
+            run: () =>
+              void run(() => post(`${base}/escalations/${x.escalationId}/undo`), {
+                title: 'Undone',
+                detail: `${x.title} is back with you.`,
+              }),
+          },
+        },
       ),
     defer: () =>
-      run(() =>
-        post(`${base}/escalations/${x.escalationId}/defer`, {
-          until: new Date(Date.now() + 30 * 60_000).toISOString(),
-        }),
+      run(
+        () =>
+          post(`${base}/escalations/${x.escalationId}/defer`, {
+            until: new Date(Date.now() + 30 * 60_000).toISOString(),
+          }),
+        { title: 'Deferred for half an hour', detail: x.title, tone: 'info' },
       ),
     resume: () => run(() => post(`${base}/escalations/${x.escalationId}/resume`)),
     undo: () => run(() => post(`${base}/escalations/${x.escalationId}/undo`)),

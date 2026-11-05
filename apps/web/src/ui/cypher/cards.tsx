@@ -90,22 +90,37 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
     if (current !== projectId) switchProject(projectId);
     go(surface, current === projectId ? patch : undefined);
   };
-  const resolve = (x: EscalationView, optionId: string) =>
+  // Undo, from a toast: the server keeps a short window in which a settled card can be taken back.
+  const undoAction = (x: EscalationView) => ({
+    label: 'Undo',
+    run: () =>
+      void run(() => post(`${base}/escalations/${x.escalationId}/undo`), {
+        title: 'Undone',
+        detail: `${x.title} is back with you.`,
+      }).then(done),
+  });
+  const resolve = (x: EscalationView, optionId: string) => {
+    const chose = x.options.find((o) => o.id === optionId)?.label;
     void run(
       () =>
         post(`${base}/escalations/${x.escalationId}/resolve`, {
           optionId,
           ...(x.group ? { all: true } : {}),
         }),
-      'Answered.',
+      {
+        title: x.group ? `Answered for ${x.group.taskIds.length}` : 'Answered',
+        detail: chose ? `${x.title}: ${chose}` : x.title,
+        action: undoAction(x),
+      },
     ).then(done);
+  };
   const defer = (x: EscalationView) =>
     void run(
       () =>
         post(`${base}/escalations/${x.escalationId}/defer`, {
           until: new Date(Date.now() + 30 * 60_000).toISOString(),
         }),
-      'Deferred for half an hour.',
+      { title: 'Deferred for half an hour', detail: x.title, tone: 'info' },
     ).then(done);
   const approve = (x: EscalationView) => {
     if (x.gate?.requiresConfirmation) {
@@ -120,14 +135,17 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
             closeOverlay();
             void run(
               () => post(`${base}/gates/${x.escalationId}/approve`, { confirmation: projectName }),
-              'Approved.',
+              { title: 'Approved', detail: x.title },
             ).then(done);
           }}
         />,
       );
       return;
     }
-    void run(() => post(`${base}/gates/${x.escalationId}/approve`, {}), 'Approved.').then(done);
+    void run(() => post(`${base}/gates/${x.escalationId}/approve`, {}), {
+      title: 'Approved',
+      detail: `${x.title}. The team carries on.`,
+    }).then(done);
   };
 
   /**
@@ -180,15 +198,21 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
   });
 
   const resume = (x: EscalationView) =>
-    void run(() => post(`${base}/escalations/${x.escalationId}/resume`), 'Back in the queue.').then(
-      done,
-    );
+    void run(() => post(`${base}/escalations/${x.escalationId}/resume`), {
+      title: 'Back in the queue',
+      detail: x.title,
+      tone: 'info',
+    }).then(done);
   const undo = (x: EscalationView) =>
-    void run(() => post(`${base}/escalations/${x.escalationId}/undo`), 'Undone.').then(done);
+    void run(() => post(`${base}/escalations/${x.escalationId}/undo`), {
+      title: 'Undone',
+      detail: `${x.title} is back with you.`,
+    }).then(done);
   const sendBack = (x: EscalationView, notes: string) =>
-    void run(() => post(`${base}/gates/${x.escalationId}/send-back`, { notes }), 'Sent back.').then(
-      done,
-    );
+    void run(() => post(`${base}/gates/${x.escalationId}/send-back`, { notes }), {
+      title: 'Sent back',
+      detail: `${x.title}, with your notes.`,
+    }).then(done);
 
   return { cardActions, rowAction, resolve, defer, approve, open, resume, undo, sendBack };
 }

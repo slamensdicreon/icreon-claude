@@ -21,22 +21,13 @@ import { get, messageOf } from './lib/api';
 import { live, useResource } from './lib/live';
 
 export type Surface =
-  | 'mission'
-  | 'inbox'
-  | 'team'
-  | 'plan'
-  | 'workbench'
-  | 'preview'
-  | 'activity'
-  | 'scorecard'
-  | 'settings';
+  'mission' | 'inbox' | 'team' | 'plan' | 'workbench' | 'activity' | 'scorecard' | 'settings';
 export const SURFACES: Surface[] = [
   'mission',
   'inbox',
   'team',
   'plan',
   'workbench',
-  'preview',
   'activity',
   'scorecard',
   'settings',
@@ -47,7 +38,6 @@ export const SURFACE_LABEL: Record<Surface, string> = {
   team: 'Team',
   plan: 'Plan',
   workbench: 'Workbench',
-  preview: 'Site preview',
   activity: 'Activity',
   scorecard: 'Scorecard',
   settings: 'Settings',
@@ -60,7 +50,6 @@ export interface ProjectUi {
   planView: 'today' | 'engagement' | 'list';
   planFilter: string;
   teamFilter: 'all' | 'working' | 'idle';
-  previewPage: string | null;
   breakpoint: 'desktop' | 'tablet' | 'phone';
   activity: { sev: 'all' | 'warn' | 'bad'; agent: string };
   /** The Activity surface as a list of rows, or as the floor: agents moving as the feed moves. */
@@ -78,7 +67,6 @@ const DEFAULT_UI: ProjectUi = {
   planView: 'today',
   planFilter: 'all',
   teamFilter: 'all',
-  previewPage: null,
   breakpoint: 'desktop',
   activity: { sev: 'all', agent: 'all' },
   activityView: 'list',
@@ -96,10 +84,26 @@ export interface Layout {
   present: boolean;
 }
 
-export interface Toast {
-  id: number;
-  text: string;
+/** What happened, for the toast's icon and colour: done (a green check), wrong (coral), news (the eye). */
+export type ToastTone = 'done' | 'error' | 'info';
+
+export interface ToastInput {
+  /** The headline: "Answered", "Approved", "That didn't go through". */
+  title: string;
+  /** A line under it: what was chosen, on which card, or what went wrong. */
+  detail?: string | null;
+  tone?: ToastTone;
   action?: { label: string; run: () => void };
+}
+
+export interface Toast extends Required<Pick<ToastInput, 'title' | 'tone'>> {
+  id: number;
+  detail: string | null;
+  action?: ToastInput['action'];
+  /** How long it stays, in ms, while not hovered. */
+  duration: number;
+  /** Set while it plays its exit, just before it is removed. */
+  leaving?: boolean;
 }
 
 /**
@@ -177,7 +181,8 @@ interface AppValue {
   openOverlay: (node: ReactNode) => void;
   closeOverlay: () => void;
   toasts: Toast[];
-  toast: (text: string, action?: Toast['action']) => void;
+  /** A plain line, or a title with a detail, a tone and an action. */
+  toast: (text: string | ToastInput, action?: Toast['action']) => void;
   dismissToast: (id: number) => void;
   layout: Layout;
   setLayout: (patch: Partial<Layout>) => void;
@@ -187,7 +192,7 @@ interface AppValue {
   composer: { text: string; about: string | null; focus: number };
   setComposer: (c: { text: string; about?: string | null; focus?: boolean }) => void;
   /** Runs a command; refusals become a toast in the API's own words. */
-  run: (fn: () => Promise<unknown>, done?: string) => Promise<boolean>;
+  run: (fn: () => Promise<unknown>, done?: string | ToastInput) => Promise<boolean>;
   /**
    * The first load: whether the project list has arrived, and why not when it hasn't. The boot
    * overlay reads it; background refreshes never touch it once the list is in.
@@ -369,13 +374,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [projectId],
   );
 
-  const toast = useCallback((text: string, action?: Toast['action']) => {
+  // Each toast keeps its own time (shell/Chrome pauses it while hovered) and plays an exit first.
+  const toast = useCallback((text: string | ToastInput, action?: Toast['action']) => {
     const id = Date.now() + Math.random();
-    setToasts((ts) => [...ts, { id, text, action }]);
-    window.setTimeout(
-      () => setToasts((ts) => ts.filter((t) => t.id !== id)),
-      action ? 10_000 : 4000,
-    );
+    const input: ToastInput = typeof text === 'string' ? { title: text, action } : text;
+    const act = input.action ?? action;
+    setToasts((ts) => [
+      ...ts.slice(-3),
+      {
+        id,
+        title: input.title,
+        detail: input.detail ?? null,
+        tone: input.tone ?? 'info',
+        action: act,
+        duration: act ? 9000 : 4500,
+      },
+    ]);
+  }, []);
+  const dismissToast = useCallback((id: number) => {
+    setToasts((ts) => ts.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+    window.setTimeout(() => setToasts((ts) => ts.filter((t) => t.id !== id)), 260);
   }, []);
 
   // Back from GitHub after creating the app: say how it went, on Settings, where the app lives.
@@ -464,7 +482,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     closeOverlay: () => setOverlay(null),
     toasts,
     toast,
-    dismissToast: (id) => setToasts((ts) => ts.filter((t) => t.id !== id)),
+    dismissToast,
     layout,
     setLayout: (patch) =>
       setLayoutState((l) => {
@@ -487,10 +505,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await fn();
         if (projectId) live.refresh(projectId);
         void loadProjects();
-        if (done) toast(done);
+        if (done)
+          toast(
+            typeof done === 'string' ? { title: done, tone: 'done' } : { tone: 'done', ...done },
+          );
         return true;
       } catch (err) {
-        toast(messageOf(err, 'The Control API could not be reached. Check your connection.'));
+        toast({
+          title: 'That didn’t go through',
+          detail: messageOf(err, 'The Control API could not be reached. Check your connection.'),
+          tone: 'error',
+        });
         return false;
       }
     },

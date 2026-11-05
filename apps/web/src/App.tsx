@@ -9,7 +9,9 @@ import { useCardActions } from './lib/escalation';
 import { useMode } from './mode/mode';
 import { ModeTransition } from './mode/ModeTransition';
 import { BlissHeader, TopBar } from './shell/Bars';
-import { MobileNav, Toasts, useAwayLine } from './shell/Chrome';
+import { MobileNav, useAwayLine } from './shell/Chrome';
+import { LiveFavicon } from './shell/LiveFavicon';
+import { Toasts } from './shell/Toasts';
 import { CypherLauncher, CypherSheet } from './shell/Cypher';
 import { Rail, Sidebar } from './shell/Nav';
 import styles from './shell/Shell.module.css';
@@ -31,7 +33,6 @@ import { Dashboard } from './surfaces/dashboard/Dashboard';
 import { MissionControl } from './surfaces/mission/MissionControl';
 import { NeedsYou } from './surfaces/inbox/NeedsYou';
 import { PlanPage, WorkbenchPage } from './surfaces/quiet/QuietFaces';
-import { SitePreview } from './surfaces/preview/PreviewPage';
 import { ScorecardPage } from './surfaces/scorecard/ScorecardPage';
 import { SettingsPage as Settings } from './surfaces/settings/SettingsPage';
 import { TeamPage } from './surfaces/team/TeamPage';
@@ -42,7 +43,6 @@ const SURFACE: Record<Surface, () => React.JSX.Element> = {
   team: TeamPage,
   plan: PlanPage,
   workbench: WorkbenchPage,
-  preview: SitePreview,
   activity: ActivityPage,
   scorecard: ScorecardPage,
   settings: Settings,
@@ -54,7 +54,6 @@ const CHORD: Record<string, Surface> = {
   t: 'team',
   p: 'plan',
   w: 'workbench',
-  s: 'preview',
   a: 'activity',
   c: 'scorecard',
 };
@@ -137,6 +136,7 @@ function Frame() {
       {overlay}
       <Toasts />
       <ModeTransition />
+      <LiveFavicon />
       {boot.visible && <Boot state={boot} />}
     </>
   );
@@ -216,7 +216,7 @@ function useKeys() {
       }
       if (e.key === '?') {
         a.toast(
-          'Shortcuts: Ctrl or Cmd K opens the palette. G then M, N, T, P, W, S, A or C changes surface. In Needs you, J and K move between items; 1 to 4 chooses, D defers, A approves a gate. Esc closes.',
+          'Shortcuts: Ctrl or Cmd K opens the palette. G then M, N, T, P, W, A or C changes surface. In Needs you, J and K move between items; 1 to 4 chooses, D defers, A approves a gate. Esc closes.',
         );
         return;
       }

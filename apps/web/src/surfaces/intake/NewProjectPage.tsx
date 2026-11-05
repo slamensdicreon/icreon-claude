@@ -273,7 +273,11 @@ export function NewProjectPage() {
         '/projects',
         intakeBody(pb, answers, { draft, origin }),
       );
-      toast(`${answers.f.name.trim()} is set up. Its credentials are verified and sealed.`);
+      toast({
+        title: `${answers.f.name.trim()} is set up`,
+        detail: 'Its credentials are verified and sealed.',
+        tone: 'done',
+      });
       switchProject(r.projectId);
     } catch (err) {
       setError(messageOf(err, 'The project could not be created.'));

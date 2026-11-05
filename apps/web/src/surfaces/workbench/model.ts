@@ -9,7 +9,7 @@ export const DECISIONS = 'decisions';
 export const FACTS = 'facts';
 export const LESSONS = 'lessons';
 
-/** Screenshots and videos live in Site preview, not in the Workbench. */
+/** Screenshots and videos aren't documents: the Workbench lists documents only. */
 export const isDocument = (a: ArtifactView) => !['screenshot', 'video'].includes(a.kind);
 
 /** Rail sections, in order: which artifact kinds each holds (null: whatever is left). */

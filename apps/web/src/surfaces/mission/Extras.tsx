@@ -7,7 +7,6 @@ import type {
   ActivityPage,
   MissionControlSnapshot,
   PlanSnapshot,
-  PreviewSnapshot,
   SettingsSnapshot,
 } from '@lw/contracts';
 import { post } from '../../lib/api';
@@ -22,14 +21,14 @@ import s from './extras.module.css';
 /** Presentation mode: the name and phase large, the phases, the Floor live, three numbers. */
 export function Present({ mc }: { mc: MissionControlSnapshot }) {
   const plan = useProjectResource<PlanSnapshot>('/plan').data ?? null;
-  const preview = useProjectResource<PreviewSnapshot>('/preview').data;
   const act = useProjectResource<ActivityPage>('/activity?view=log&limit=150').data;
   const p = mc.project;
   const lead = mc.phases.find((x) => x.status === 'current');
   const parity = mc.metrics.find((m) => m.key === 'parity');
   const running = mc.phases.reduce((n, x) => n + x.tasksRunning, 0);
   const queued = mc.phases.reduce((n, x) => n + x.tasksQueued, 0);
-  const built = preview ? preview.pages.filter((x) => x.migrated).length : null;
+  const done = mc.phases.reduce((n, x) => n + x.tasksDone, 0);
+  const total = mc.phases.reduce((n, x) => n + x.tasksTotal, 0);
   return (
     <div className={s.present}>
       <h1 className={`${s.presentTitle} type-display`}>
@@ -54,12 +53,12 @@ export function Present({ mc }: { mc: MissionControlSnapshot }) {
         />
         <Kpi label="Tasks running" value={String(running)} note={`${queued} queued`} />
         <Kpi
-          label="Site preview"
-          value={built === null || !preview ? '–' : `${built} of ${preview.pages.length}`}
+          label="Tasks done"
+          value={`${done} of ${total}`}
           note={
-            preview?.target
-              ? `pages built on ${preview.target.label}`
-              : `The ${p.platform?.name ?? 'new'} build shows here once the first preview deploys`
+            total
+              ? `${Math.round((done / total) * 100)} percent of the plan`
+              : 'Nothing planned yet'
           }
         />
       </div>

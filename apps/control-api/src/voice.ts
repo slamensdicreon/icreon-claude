@@ -876,8 +876,6 @@ export function documentPointers(d: DocumentPointerInput): {
       label: `What changed since version ${countWord(d.approvedVersion)}`,
       target: { kind: 'artifact', ref: d.artifactId },
     });
-  if (d.preview && (d.kind === 'blueprint' || d.kind === 'report'))
-    out.push({ label: 'The site as it stands', target: { kind: 'preview', ref: '' } });
   if (d.writer)
     out.push({
       label: `${d.writer.firstName}, who wrote it`,

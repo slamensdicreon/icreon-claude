@@ -1,5 +1,5 @@
 /*
- * The shell's phone bar and toasts, and the "since you were away" summary. On a phone the rail and
+ * The shell's phone bar and the "since you were away" summary (toasts are in shell/Toasts). On a phone the rail and
  * sidebar give way to a bottom bar: Mission, Team, Plan, then what is the Director's (Bliss) or
  * Cypher (Everything), then More.
  */
@@ -66,31 +66,6 @@ export function MobileNav() {
         <span className="type-rail-label">More</span>
       </button>
     </nav>
-  );
-}
-
-export function Toasts() {
-  const { toasts, dismissToast } = useApp();
-  return (
-    <div className={c.toasts} aria-live="polite">
-      {toasts.map((t) => (
-        <div className={`${c.toast} type-body-small`} key={t.id}>
-          <span>{t.text}</span>
-          {t.action && (
-            <button
-              type="button"
-              className="type-button"
-              onClick={() => {
-                t.action!.run();
-                dismissToast(t.id);
-              }}
-            >
-              {t.action.label}
-            </button>
-          )}
-        </div>
-      ))}
-    </div>
   );
 }
 

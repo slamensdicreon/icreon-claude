@@ -343,7 +343,7 @@ function NewLesson({
           .map((r) => r.trim())
           .filter(Boolean),
       });
-      toast('Saved: briefs it fits carry it now.');
+      toast({ title: 'Saved', detail: 'Briefs it fits carry it now.', tone: 'done' });
       onDone();
     } catch (err) {
       toast(messageOf(err, 'It was not saved.'));

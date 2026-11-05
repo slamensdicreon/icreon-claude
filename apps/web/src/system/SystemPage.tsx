@@ -72,7 +72,7 @@ const SAMPLE: Record<string, string> = {
   'number-unit': 'of 1,200',
   button: 'One',
   'button-large': 'Approve the pilot slice',
-  nav: 'Site preview',
+  nav: 'Workbench',
 };
 
 function Section({

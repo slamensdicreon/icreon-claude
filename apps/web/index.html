@@ -4,9 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Cypher</title>
-    <link rel="icon" href="/favicon.ico" sizes="48x48" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- The eye. Versioned so browsers drop an older cached icon; the SVG one goes live in the app. -->
+    <link rel="icon" href="/favicon.ico?v=eye2" sizes="48x48" />
+    <link rel="icon" href="/favicon.svg?v=eye2" type="image/svg+xml" id="favicon" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=eye2" />
     <!-- The theme before first paint: the stored choice, or the system's (state.tsx keeps it live). -->
     <script>
       try {
