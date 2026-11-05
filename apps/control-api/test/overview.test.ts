@@ -81,7 +81,7 @@ describe('GET /portfolio/overview', () => {
     const o = PortfolioOverview.parse(await get('/portfolio/overview'));
     inVoice(o.voice);
     expect(o.timezone).toBe('America/New_York');
-    expect(o.kpis.map((k) => k.key)).toEqual(['yours', 'running', 'spend', 'events']);
+    expect(o.kpis.map((k) => k.key)).toEqual(['yours', 'running', 'done', 'events']);
     expect(o.counts).toMatchObject({ projects: 2, running: 1, archived: 1 });
     expect(o.counts.agents).toBeGreaterThan(10);
 
@@ -237,6 +237,14 @@ describe('the week and the deploys, from the log', () => {
       toolLabels: { hosting: 'Vercel' },
       hosting: { provider: 'vercel', project: 'px-web', url: null },
     });
+    // Three work tasks: one finished last week, one this week (and again after a re-run), one today.
+    for (const id of ['old', 'mon', 'wed'])
+      s.tasks[id] = { taskId: id, kind: 'work', state: 'done' } as (typeof s.tasks)[string];
+    s.tasks['open'] = {
+      taskId: 'open',
+      kind: 'work',
+      state: 'running',
+    } as (typeof s.tasks)[string];
     // Wednesday, November 4, 2026, noon in New York.
     const now = Date.parse('2026-11-04T17:00:00Z');
     let seq = 0;
@@ -270,12 +278,20 @@ describe('the week and the deploys, from the log', () => {
         note: resultCode >= 400 ? 'Token expired. Rotate it.' : null,
       },
     });
+    const done = (taskId: string) => ({
+      type: 'task.state',
+      data: { taskId, from: 'validating', to: 'done', attempt: 1 },
+    });
     const log = [
+      ev('2026-10-30T14:00:00Z', done('old')), // last week: not counted
       ev('2026-10-30T15:00:00Z', spent(40)), // last week: the baseline
+      ev('2026-11-02T16:00:00Z', done('mon')),
+      ev('2026-11-03T16:00:00Z', done('mon')), // the same task again after a re-run: once
       ev('2026-11-02T15:00:00Z', spent(100)), // Monday
       ev('2026-11-03T15:00:00Z', spent(120)), // Tuesday
       ev('2026-11-04T13:00:00Z', step('deploy preview 3', 200, 'ready')),
       ev('2026-11-04T14:00:00Z', spent(160)), // Wednesday
+      ev('2026-11-04T15:00:00Z', done('wed')),
       ev('2026-11-04T16:00:00Z', step('deploy preview 4', 500), 'failure'),
     ];
     const read = async (_id: string, before: number | undefined, limit: number) =>
@@ -292,7 +308,6 @@ describe('the week and the deploys, from the log', () => {
       { label: 'Fri', date: '2026-11-06', usd: null },
     ]);
     expect(o.spendByDay).toMatchObject({ weekUsd: 120, budgetUsd: 1_000 });
-    expect(o.kpis[2]).toMatchObject({ value: '$120', note: '$160 of $1,000 overall' });
     expect(o.deploys).toEqual([
       {
         projectId: 'px',
@@ -309,7 +324,13 @@ describe('the week and the deploys, from the log', () => {
         state: 'ok',
       },
     ]);
-    expect(o.kpis[3]).toMatchObject({ value: '2', note: '0 running · 1 failure' });
+    expect(o.kpis[2]).toMatchObject({
+      key: 'done',
+      label: 'Done this week',
+      value: '2',
+      note: '1 today · 1 task left',
+    });
+    expect(o.kpis[3]).toMatchObject({ value: '2', note: '1 running · 1 failure' });
     expect(o.voice).toEqual({
       text: 'Nothing needs you.',
       emphasis: null,

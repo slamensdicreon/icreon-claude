@@ -73,6 +73,18 @@ td {
   vertical-align: top;
 }
 
+/*
+ * On touch screens a text field under 16px makes iOS zoom the page when it takes focus. Fields
+ * there read at least at the body size, whatever style their component gives them.
+ */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: max(var(--type-body-size), 1em) !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -582,7 +582,7 @@ const css = /* css */ `
   padding: 0 6px;
   border-radius: var(--radius-pill);
   background: var(--ui-segc-tag);
-  font-size: 13px;
+  font-size: var(--type-label-size);
   line-height: 20px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -596,7 +596,7 @@ const css = /* css */ `
   padding: 0 var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--ui-segc-tag);
-  font-size: 13px;
+  font-size: var(--type-label-size);
   line-height: 18px;
   font-weight: 600;
   color: var(--ui-segc-tag-text);

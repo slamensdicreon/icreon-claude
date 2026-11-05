@@ -37,7 +37,7 @@ function ScoreBliss({ sc }: { sc: Scorecard }) {
       <section className={s.three} aria-label="Three numbers">
         {numbers.map(([value, label, note]) => (
           <div key={label} className={s.big}>
-            <span className={s.bigValue}>{value}</span>
+            <span className={`${s.bigValue} type-number-large`}>{value}</span>
             <span className="type-card-title">{label}</span>
             <span className={`${s.note} type-meta`}>{note}</span>
           </div>

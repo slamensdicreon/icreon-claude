@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Compiles src/theme/tokens.json (the Cypher Design System's tokens.json, copied unchanged) into
+ * Compiles src/theme/tokens.json (the Cypher Design System's tokens.json, with the type scale's
+ * phone sizes and the boards' card sizes added) into
  * src/theme/tokens.css. The design system's page compiles the same file in the browser but
  * doesn't publish the result, so this script is how the app regenerates it. With one theme it
  * writes exactly the file the handoff shipped; with several it follows the design system's
@@ -75,15 +76,38 @@ if (themes.length === 1) {
   blocks.push([':root {', ...fonts, ...spacing, ...radius, '}'].join('\n'));
 }
 
-const typeClasses = (t.type?.groups ?? []).flatMap((g) =>
-  g.styles.map((s) => {
-    const props = [`font-family: var(--font-${s.family ?? g.family})`];
-    for (const k of ['fontSize', 'lineHeight', 'fontWeight', 'letterSpacing', 'fontStyle']) {
-      if (s[k] !== undefined) props.push(`${css(k)}: ${s[k]}`);
-    }
-    return `.type-${s.name} { ${props.join('; ')}; }`;
-  }),
-);
+/*
+ * Type sizes in rem (16px = 1rem), so the reader's text-size setting scales them. A style with
+ * `minFontSize` is fluid: that size on a narrow screen (type.fluid.from), growing with the viewport
+ * to `fontSize` (at type.fluid.to). Every style's size is also a variable, --type-<name>-size, for
+ * a module that needs the size without the rest of the style.
+ */
+const px = (v) => Number(String(v).replace(/px$/, ''));
+const rem = (n) => `${+(n / 16).toFixed(4)}rem`;
+const fluid = t.type?.fluid ?? { from: '390px', to: '1280px' };
+function sizeOf(s) {
+  const max = px(s.fontSize);
+  if (s.minFontSize === undefined) return rem(max);
+  const min = px(s.minFontSize);
+  const [lo, hi] = [px(fluid.from), px(fluid.to)];
+  const slope = (max - min) / (hi - lo);
+  const base = min - slope * lo;
+  return `clamp(${rem(min)}, ${rem(base)} + ${+(slope * 100).toFixed(4)}vw, ${rem(max)})`;
+}
+const styles = (t.type?.groups ?? []).flatMap((g) => g.styles.map((s) => ({ g, s })));
+const sizeVars = styles.map(({ s }) => `  --type-${s.name}-size: ${sizeOf(s)};`);
+blocks.push([':root {', ...sizeVars, '}'].join('\n'));
+
+const typeClasses = styles.map(({ g, s }) => {
+  const props = [
+    `font-family: var(--font-${s.family ?? g.family})`,
+    `font-size: var(--type-${s.name}-size)`,
+  ];
+  for (const k of ['lineHeight', 'fontWeight', 'letterSpacing', 'fontStyle']) {
+    if (s[k] !== undefined) props.push(`${css(k)}: ${s[k]}`);
+  }
+  return `.type-${s.name} { ${props.join('; ')}; }`;
+});
 
 const out = `/* Cypher — generated from tokens.json in this package (regenerate from the design system's tokens.json when it changes). */
 ${blocks.join('\n\n')}

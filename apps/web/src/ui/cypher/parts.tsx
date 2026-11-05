@@ -218,7 +218,7 @@ export function YoursCard({
           {clock}
         </span>
       </span>
-      <h3 className={`${s.yoursTitle} type-title`}>{title}</h3>
+      <h3 className={`${s.yoursTitle} type-card-title-large`}>{title}</h3>
       <p className={`${s.body} type-body-small`}>{body}</p>
       {rec && <Verdict rec={rec} />}
       <span className={s.actions}>
@@ -268,7 +268,7 @@ export function DecisionCard({
           <Eye state="needs-a-word" size={20} decorative />
           {label}
         </span>
-        <h2 className={s.decisionTitle}>{title}</h2>
+        <h2 className={`${s.decisionTitle} type-decision-title`}>{title}</h2>
         <p className={`${s.body} type-body`}>{context}</p>
         <span className={`${s.who} type-meta`}>
           {raiser && <Avatar face={{ ...raiser, working: true }} size="xs" />}
@@ -409,7 +409,7 @@ export function ProjectTile({
           {phase} · {percent}%
         </span>
       </span>
-      <span className={s.tileRead} style={{ color: TONE[tone] }}>
+      <span className={`${s.tileRead} type-read`} style={{ color: TONE[tone] }}>
         {read}
       </span>
       <span className={s.tileFoot}>
@@ -441,7 +441,7 @@ export function TeamLine({
         <span className={s.teamName}>
           <b>{face.name}</b> <span>{team}</span>
         </span>
-        <span className={s.teamRead} style={{ color: TONE[tone] }}>
+        <span className={`${s.teamRead} type-read`} style={{ color: TONE[tone] }}>
           {read}
         </span>
       </span>
@@ -471,7 +471,7 @@ export function Handled({
           <span className={s.check}>
             <Icon name="check" size={18} />
           </span>
-          <span className={s.handledText}>{h.text}</span>
+          <span className={`${s.handledText} type-read`}>{h.text}</span>
           <span className="type-meta">{h.at ? timeOf(h.at) : (h.when ?? '')}</span>
         </li>
       ))}

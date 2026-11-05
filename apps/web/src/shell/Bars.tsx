@@ -102,6 +102,7 @@ export function TopBar() {
       <button
         className={`${styles.search} type-body-small`}
         onClick={() => openOverlay(<Palette />)}
+        aria-label="Search, or a command"
         aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}
       >
         <Icon name="search" size={18} />
@@ -162,7 +163,9 @@ export function BlissHeader() {
   return (
     <header className={styles.blissHeader}>
       <ProjectSwitcher />
-      <span className="type-body-small">{where ? `${where} · ${when}` : when}</span>
+      <span className={`${styles.blissWhen} type-body-small`}>
+        {where ? `${where} · ${when}` : when}
+      </span>
       {layout.present ? (
         <button
           className={`${styles.exitPresent} type-button`}

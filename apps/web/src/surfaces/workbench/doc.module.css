@@ -213,7 +213,7 @@ button.tag:hover {
   background: var(--surface);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   font-weight: 700;
   text-decoration: none;
 }
@@ -593,17 +593,17 @@ button.tag:hover {
 .lessons > :global(p.muted) {
   margin: 0 0 var(--space-4);
   max-width: calc(var(--measure) * 0.6);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   color: var(--text-2);
 }
 .lessons :global(table) {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: var(--space-5);
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
 }
 .lessons :global(th) {
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
   font-weight: 600;
   color: var(--text-3);
   padding: var(--space-2) var(--space-3);
@@ -616,12 +616,12 @@ button.tag:hover {
   vertical-align: middle;
 }
 .lessons :global(.rules h3) {
-  font-size: 17px;
+  font-size: var(--type-section-size);
   font-weight: 700;
   margin: var(--space-4) 0 var(--space-3);
 }
 .lessons :global(.rules h3 small) {
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   font-weight: 400;
   color: var(--text-3);
 }
@@ -631,7 +631,7 @@ button.tag:hover {
 }
 .lessons :global(.rule-text),
 .lessons :global(.rule-facts) {
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
 }
 
 /* Narrow: the filters above the rows, completeness and what changed after them. */

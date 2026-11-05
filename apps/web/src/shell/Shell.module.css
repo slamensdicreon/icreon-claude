@@ -228,6 +228,7 @@
   text-overflow: ellipsis;
 }
 .switcherPill {
+  max-width: 100%;
   padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
   border: 1px solid var(--mist);
   border-radius: var(--radius-pill);
@@ -431,6 +432,44 @@
   overflow-y: auto;
   padding: var(--space-4) var(--space-4) 0;
 }
+/* ---------- tablet: the top bar keeps the title and the dial whole ---------- */
+@media (max-width: 1100px) {
+  .search {
+    flex: none;
+    width: calc(var(--row) - var(--space-3));
+    padding: 0;
+    justify-content: center;
+  }
+  .search > span {
+    display: none;
+  }
+  .presence {
+    padding: var(--space-1);
+  }
+  .presence > span {
+    display: none;
+  }
+  .topbar > :global(*):not(.titles) {
+    flex: none;
+  }
+  .titles {
+    flex: 1 1 0;
+  }
+}
+/* Below a tablet's width the Bliss header is two rows: the switcher and the dial, then the date. */
+@media (max-width: 900px) {
+  .blissHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-2);
+  }
+  .blissWhen {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+  }
+}
+
 /* ---------- phone: the bottom bar (shell/Chrome) takes over ---------- */
 @media (max-width: 640px) {
   .rail,
@@ -520,4 +559,43 @@
 .empty h1 {
   margin: 0;
   color: var(--ink);
+}
+
+/* The switcher's name stays on one line; on a narrow screen it gives way with an ellipsis. */
+.switcherPill .switcherText :global(.type-nav) {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* On the narrowest phones the dial's options sit closer, so the page title keeps its word. */
+@media (max-width: 400px) {
+  .topbar :global(.ui-segc),
+  .blissHeader :global(.ui-segc) {
+    --ui-segc-px: var(--space-3);
+  }
+  .blissHeader {
+    column-gap: var(--space-2);
+  }
+  .switcherPill {
+    gap: var(--space-2);
+    padding-left: var(--space-1);
+    padding-right: var(--space-3);
+  }
+}
+/* Under 360px the switcher needs the whole first row: the dial goes under it, then the date. */
+@media (max-width: 360px) {
+  .blissHeader {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .blissHeader > .dialSlot,
+  .blissHeader > .exitPresent {
+    grid-row: 2;
+    margin-left: 0;
+    justify-self: start;
+  }
+  .blissWhen {
+    grid-row: 3;
+  }
 }

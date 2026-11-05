@@ -43,7 +43,7 @@
 .body {
   min-width: 0;
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   line-height: 1.6;
   color: var(--ink);
 }
@@ -59,13 +59,13 @@
   scroll-margin-top: var(--space-4);
 }
 .body h1 {
-  font-size: 22px;
+  font-size: var(--type-title-size);
   line-height: 1.22;
   letter-spacing: -0.02em;
   margin: 0 0 var(--space-3);
 }
 .body h2 {
-  font-size: 17px;
+  font-size: var(--type-section-size);
   line-height: 1.3;
   letter-spacing: -0.01em;
   margin: var(--space-7) 0 var(--space-3);
@@ -73,11 +73,11 @@
   border-bottom: 1px solid var(--mist);
 }
 .body h3 {
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   margin: var(--space-6) 0 var(--space-2);
 }
 .body h4 {
-  font-size: 13px;
+  font-size: var(--type-label-size);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-3);
@@ -119,7 +119,7 @@
 }
 .body code {
   font-family: var(--font-sans);
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   background: var(--surface-quiet);
   border: 1px solid var(--mist);
   border-radius: var(--radius-sm);
@@ -132,7 +132,7 @@
   color: var(--text-2);
 }
 .lede {
-  font-size: 16px;
+  font-size: var(--type-body-size);
   color: var(--ink);
 }
 
@@ -150,7 +150,7 @@
   border: 1px solid var(--mist);
   border-radius: var(--radius-md);
   font-family: var(--font-sans);
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   line-height: 1.55;
   color: var(--ink);
 }
@@ -164,7 +164,7 @@
   position: absolute;
   top: var(--space-2);
   right: var(--space-3);
-  font-size: 13px;
+  font-size: var(--type-label-size);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -199,7 +199,7 @@
   width: 100%;
   margin: 0;
   border-collapse: collapse;
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
   line-height: 1.45;
 }
 .table th {
@@ -238,7 +238,7 @@
 }
 .figure figcaption {
   margin-top: var(--space-2);
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   color: var(--text-2);
 }
 
@@ -268,7 +268,7 @@
   background: var(--coral-tint);
 }
 .calloutTitle {
-  font-size: 13px;
+  font-size: var(--type-label-size);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -293,13 +293,13 @@
 }
 .stat b {
   display: block;
-  font-size: 32px;
+  font-size: var(--type-number-size);
   font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.03em;
 }
 .stat span {
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   color: var(--text-3);
 }
 .tags {
@@ -308,7 +308,7 @@
   gap: var(--space-1);
 }
 .tag {
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   padding: 0 var(--space-2);
   border: 1px solid var(--mist);
   border-radius: var(--radius-pill);
@@ -320,10 +320,10 @@
   color: var(--text-3);
 }
 .small {
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
 }
 .miss {
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   font-weight: 600;
   color: var(--coral-text);
 }
@@ -342,7 +342,7 @@
   background: var(--surface);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   font-weight: 700;
   cursor: pointer;
 }

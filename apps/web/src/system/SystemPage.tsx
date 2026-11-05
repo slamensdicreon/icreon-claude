@@ -34,6 +34,8 @@ const shown = (v: Token['value']) =>
 interface TypeStyle {
   name: string;
   fontSize: string;
+  /** The size on a 390px screen, growing to fontSize at 1280px. */
+  minFontSize?: string;
   lineHeight: number | string;
   fontWeight: number;
   letterSpacing?: string;
@@ -54,7 +56,10 @@ const SAMPLE: Record<string, string> = {
   display: 'cypher',
   heading: 'Everyone else is fine.',
   title: 'Mission Control',
+  'decision-title': 'One campaign slot, or three?',
+  'card-title-large': 'Approve the Implementation Blueprint',
   'card-title': 'One rendering with three layouts, or three renderings?',
+  read: 'Four building, one waiting on a review.',
   section: 'Needs you',
   body: 'Emily is waiting on you. Everything else is on pace.',
   'body-small': "I'd pick one. Say the word.",
@@ -62,6 +67,7 @@ const SAMPLE: Record<string, string> = {
   meta: 'Aisha Johnson · Discovery · 4 min ago',
   label: 'Decide · Ansell',
   'rail-label': 'Workbench',
+  'number-large': '64%',
   number: '286',
   'number-unit': 'of 1,200',
   button: 'One',
@@ -156,7 +162,8 @@ export function SystemPage() {
               <div key={s.name} className={styles.typeRow}>
                 <span className={`type-${s.name}`}>{SAMPLE[s.name] ?? s.name}</span>
                 <span className="type-meta">
-                  {s.name} · {s.fontSize} / {s.lineHeight} / {s.fontWeight}
+                  {s.name} · {s.minFontSize ? `${s.minFontSize} → ${s.fontSize}` : s.fontSize} /{' '}
+                  {s.lineHeight} / {s.fontWeight}
                   {s.letterSpacing ? `, ${s.letterSpacing}` : ''}
                 </span>
               </div>

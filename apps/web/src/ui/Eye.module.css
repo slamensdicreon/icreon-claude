@@ -27,8 +27,18 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: calc(var(--eye) * 1.36);
-  height: calc(var(--eye) * 1.36);
+  width: calc(var(--eye) * var(--eye-scale, 1) * 1.36);
+  height: calc(var(--eye) * var(--eye-scale, 1) * 1.36);
+}
+/* On a phone the hero eye is three-fifths its size, so Cypher's sentence starts near the top. */
+.hero svg {
+  width: calc(var(--eye) * var(--eye-scale, 1));
+  height: calc(var(--eye) * var(--eye-scale, 1));
+}
+@media (max-width: 640px) {
+  .hero {
+    --eye-scale: 0.6;
+  }
 }
 .halo {
   position: absolute;

@@ -338,7 +338,7 @@ const css = /* css */ `
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 13px;
+  font-size: var(--type-label-size);
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: 0.06em;
@@ -350,7 +350,7 @@ const css = /* css */ `
   padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--ui-sr-pill);
-  font-size: 13px;
+  font-size: var(--type-label-size);
   font-weight: 600;
   line-height: 18px;
   color: var(--ui-sr-pill-text);
@@ -369,7 +369,7 @@ const css = /* css */ `
   overflow: hidden;
   margin: 0;
   padding: 0 var(--space-3);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   line-height: 1.5;
   color: var(--ui-sr-text);
   text-align: start;
@@ -394,7 +394,7 @@ const css = /* css */ `
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   line-height: 1.4;
   white-space: nowrap;
   color: var(--ui-sr-muted);
@@ -426,7 +426,7 @@ const css = /* css */ `
   border: 1px solid var(--ui-sr-border);
   border-radius: var(--radius-pill);
   background: var(--ui-sr-btn);
-  font-size: 15px !important;
+  font-size: var(--type-body-small-size) !important;
   font-weight: 700;
   line-height: 1.2;
   min-width: 0;
@@ -451,7 +451,7 @@ const css = /* css */ `
   gap: 6px;
   min-width: 0;
   padding-right: var(--space-1);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   font-weight: 700;
   color: var(--ui-sr-ok);
   animation: ui-sr-swap 200ms var(--ui-sr-ease);
@@ -495,7 +495,7 @@ const css = /* css */ `
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  font-size: 15px !important;
+  font-size: var(--type-body-small-size) !important;
   text-align: left;
 }
 .ui-sr__option:hover { background: var(--ui-sr-option-hover); }
@@ -503,7 +503,7 @@ const css = /* css */ `
 .ui-sr__option-label { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; }
 .ui-sr__option-name, .ui-sr__done-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .ui-sr__tag, .ui-sr__mini { flex: none; }
-.ui-sr__tag { padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--ui-sr-tag); font-size: 13px; font-weight: 600; line-height: 20px; color: var(--ui-sr-tag-text); }
+.ui-sr__tag { padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--ui-sr-tag); font-size: var(--type-label-size); font-weight: 600; line-height: 20px; color: var(--ui-sr-tag-text); }
 
 @keyframes ui-sr-swap { from { opacity: 0; transform: translateY(2px); } }
 @keyframes ui-sr-drop { from { opacity: 0; transform: translateY(4px) scale(0.98); } }

@@ -203,12 +203,6 @@
   margin: 0;
   color: var(--ink);
 }
-.decisionTitle {
-  font-size: calc(var(--space-6) - var(--space-1) / 2);
-  font-weight: 700;
-  line-height: 1.18;
-  letter-spacing: -0.025em;
-}
 .body {
   margin: 0;
   color: var(--text-2);

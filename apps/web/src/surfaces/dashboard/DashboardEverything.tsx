@@ -33,7 +33,7 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
   return (
     <div className={s.everything}>
       <section className={s.kpis} aria-label="Key numbers">
-        {(['yours', 'running', 'spend', 'events'] as const).map((k) => {
+        {(['yours', 'running', 'done', 'events'] as const).map((k) => {
           const x = kpi(k);
           return x ? (
             <Kpi key={k} label={x.label} value={x.value} note={x.note} yours={x.tone === 'yours'} />
@@ -161,7 +161,7 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
       </section>
 
       <section className={s.two} aria-label="Charts">
-        <Panel title="Spend by day" meta={`${usd(o.spendByDay.weekUsd)} this week`} padded>
+        <Panel title="Spend by day" meta="Each working day, from the projects’ ledgers" padded>
           <SpendBars days={o.spendByDay.days} />
         </Panel>
         <Panel

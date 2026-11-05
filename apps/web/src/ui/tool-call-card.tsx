@@ -579,7 +579,7 @@ const css = /* css */ `
   min-width: 0;
   color: var(--ui-tc-text);
   font-family: var(--font-sans);
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -660,7 +660,7 @@ const css = /* css */ `
   overflow: hidden;
   color: var(--ui-tc-ink);
   font-family: var(--ui-tc-mono);
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -681,7 +681,7 @@ const css = /* css */ `
   gap: 6px;
   flex: none;
   color: var(--ui-tc-muted);
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   animation: ui-tc-in 200ms var(--ui-tc-ease) both;
@@ -738,8 +738,8 @@ const css = /* css */ `
   min-height: 32px;
 }
 /* Section labels in the label style */
-.ui-tc__label { color: var(--ui-tc-muted); font-size: 13px; font-weight: 700; line-height: 1.3; letter-spacing: 0.06em; text-transform: uppercase; }
-.ui-tc__pending { margin: 0; color: var(--ui-tc-muted); font-size: 13.5px; }
+.ui-tc__label { color: var(--ui-tc-muted); font-size: var(--type-label-size); font-weight: 700; line-height: 1.3; letter-spacing: 0.06em; text-transform: uppercase; }
+.ui-tc__pending { margin: 0; color: var(--ui-tc-muted); font-size: var(--type-meta-size); }
 
 .ui-tc__copy {
   all: unset;
@@ -779,7 +779,7 @@ const css = /* css */ `
   background: var(--ui-tc-code);
   color: var(--ui-tc-muted);
   font-family: var(--ui-tc-mono);
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
   white-space: pre-wrap;
@@ -815,7 +815,7 @@ const css = /* css */ `
   margin-left: calc(var(--space-1) * -1);
   border-radius: var(--radius-sm);
   color: var(--ui-tc-text);
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   font-weight: 700;
   cursor: pointer;
   transition: color 200ms ease-out;
@@ -841,7 +841,7 @@ const css = /* css */ `
   overscroll-behavior: contain;
   white-space: pre-line;
   color: var(--ui-tc-red);
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -859,7 +859,7 @@ const css = /* css */ `
   border-radius: var(--radius-pill);
   background: var(--ui-tc-bg);
   color: var(--ui-tc-ink);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   font-weight: 700;
   cursor: pointer;
   transition: background-color 200ms ease-out;

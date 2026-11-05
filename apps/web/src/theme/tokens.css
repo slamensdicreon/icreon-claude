@@ -88,23 +88,53 @@
   --radius-pill: 999px; /* Buttons, pills, the dial, search, avatars. */
 }
 
+:root {
+  --type-voice-size: clamp(1.875rem, 1.4916rem + 1.573vw, 2.75rem);
+  --type-voice-emphasis-size: clamp(1.875rem, 1.4916rem + 1.573vw, 2.75rem);
+  --type-voice-small-size: clamp(1.75rem, 1.3666rem + 1.573vw, 2.625rem);
+  --type-display-size: clamp(2.5rem, 1.8427rem + 2.6966vw, 4rem);
+  --type-heading-size: clamp(1.3125rem, 1.2303rem + 0.3371vw, 1.5rem);
+  --type-decision-title-size: clamp(1.4375rem, 1.2732rem + 0.6742vw, 1.8125rem);
+  --type-title-size: clamp(1.1875rem, 1.1053rem + 0.3371vw, 1.375rem);
+  --type-card-title-large-size: clamp(1.25rem, 1.1678rem + 0.3371vw, 1.4375rem);
+  --type-card-title-size: clamp(1.125rem, 1.0702rem + 0.2247vw, 1.25rem);
+  --type-section-size: clamp(1rem, 0.9726rem + 0.1124vw, 1.0625rem);
+  --type-body-size: 1rem;
+  --type-read-size: 0.9688rem;
+  --type-body-small-size: 0.9375rem;
+  --type-table-size: 0.9063rem;
+  --type-meta-size: 0.8438rem;
+  --type-label-size: 0.8125rem;
+  --type-rail-label-size: 0.7188rem;
+  --type-number-large-size: clamp(2.5rem, 1.9522rem + 2.2472vw, 3.75rem);
+  --type-number-size: clamp(1.625rem, 1.4607rem + 0.6742vw, 2rem);
+  --type-number-unit-size: 1rem;
+  --type-button-size: 0.9375rem;
+  --type-button-large-size: 1rem;
+  --type-nav-size: 0.9375rem;
+}
+
 /* Type styles: one class per style in tokens.json › type.groups */
-.type-voice { font-family: var(--font-sans); font-size: 44px; line-height: 1.12; font-weight: 300; letter-spacing: -0.025em; }
-.type-voice-emphasis { font-family: var(--font-sans); font-size: 44px; line-height: 1.12; font-weight: 600; letter-spacing: -0.025em; }
-.type-voice-small { font-family: var(--font-sans); font-size: 42px; line-height: 1.12; font-weight: 300; letter-spacing: -0.025em; }
-.type-display { font-family: var(--font-sans); font-size: 64px; line-height: 1; font-weight: 800; letter-spacing: -0.045em; }
-.type-heading { font-family: var(--font-sans); font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.025em; }
-.type-title { font-family: var(--font-sans); font-size: 22px; line-height: 1.22; font-weight: 700; letter-spacing: -0.02em; }
-.type-card-title { font-family: var(--font-sans); font-size: 20px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; }
-.type-section { font-family: var(--font-sans); font-size: 17px; line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; }
-.type-body { font-family: var(--font-sans); font-size: 16px; line-height: 1.5; font-weight: 400; }
-.type-body-small { font-family: var(--font-sans); font-size: 15px; line-height: 1.5; font-weight: 400; }
-.type-table { font-family: var(--font-sans); font-size: 14.5px; line-height: 1.45; font-weight: 400; }
-.type-meta { font-family: var(--font-sans); font-size: 13.5px; line-height: 1.4; font-weight: 400; }
-.type-label { font-family: var(--font-sans); font-size: 13px; line-height: 1.3; font-weight: 700; letter-spacing: 0.06em; }
-.type-rail-label { font-family: var(--font-sans); font-size: 11.5px; line-height: 1.2; font-weight: 600; letter-spacing: 0.01em; }
-.type-number { font-family: var(--font-sans); font-size: 32px; line-height: 1.05; font-weight: 600; letter-spacing: -0.03em; }
-.type-number-unit { font-family: var(--font-sans); font-size: 16px; line-height: 1.05; font-weight: 500; }
-.type-button { font-family: var(--font-sans); font-size: 15px; line-height: 1.2; font-weight: 700; }
-.type-button-large { font-family: var(--font-sans); font-size: 16px; line-height: 1.2; font-weight: 700; }
-.type-nav { font-family: var(--font-sans); font-size: 15px; line-height: 1.2; font-weight: 600; }
+.type-voice { font-family: var(--font-sans); font-size: var(--type-voice-size); line-height: 1.12; font-weight: 300; letter-spacing: -0.025em; }
+.type-voice-emphasis { font-family: var(--font-sans); font-size: var(--type-voice-emphasis-size); line-height: 1.12; font-weight: 600; letter-spacing: -0.025em; }
+.type-voice-small { font-family: var(--font-sans); font-size: var(--type-voice-small-size); line-height: 1.12; font-weight: 300; letter-spacing: -0.025em; }
+.type-display { font-family: var(--font-sans); font-size: var(--type-display-size); line-height: 1; font-weight: 800; letter-spacing: -0.045em; }
+.type-heading { font-family: var(--font-sans); font-size: var(--type-heading-size); line-height: 1.2; font-weight: 700; letter-spacing: -0.025em; }
+.type-decision-title { font-family: var(--font-sans); font-size: var(--type-decision-title-size); line-height: 1.18; font-weight: 700; letter-spacing: -0.025em; }
+.type-title { font-family: var(--font-sans); font-size: var(--type-title-size); line-height: 1.22; font-weight: 700; letter-spacing: -0.02em; }
+.type-card-title-large { font-family: var(--font-sans); font-size: var(--type-card-title-large-size); line-height: 1.22; font-weight: 700; letter-spacing: -0.02em; }
+.type-card-title { font-family: var(--font-sans); font-size: var(--type-card-title-size); line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; }
+.type-section { font-family: var(--font-sans); font-size: var(--type-section-size); line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; }
+.type-body { font-family: var(--font-sans); font-size: var(--type-body-size); line-height: 1.5; font-weight: 400; }
+.type-read { font-family: var(--font-sans); font-size: var(--type-read-size); line-height: 1.4; font-weight: 400; }
+.type-body-small { font-family: var(--font-sans); font-size: var(--type-body-small-size); line-height: 1.5; font-weight: 400; }
+.type-table { font-family: var(--font-sans); font-size: var(--type-table-size); line-height: 1.45; font-weight: 400; }
+.type-meta { font-family: var(--font-sans); font-size: var(--type-meta-size); line-height: 1.4; font-weight: 400; }
+.type-label { font-family: var(--font-sans); font-size: var(--type-label-size); line-height: 1.3; font-weight: 700; letter-spacing: 0.06em; }
+.type-rail-label { font-family: var(--font-sans); font-size: var(--type-rail-label-size); line-height: 1.2; font-weight: 600; letter-spacing: 0.01em; }
+.type-number-large { font-family: var(--font-sans); font-size: var(--type-number-large-size); line-height: 1; font-weight: 300; letter-spacing: -0.035em; }
+.type-number { font-family: var(--font-sans); font-size: var(--type-number-size); line-height: 1.05; font-weight: 600; letter-spacing: -0.03em; }
+.type-number-unit { font-family: var(--font-sans); font-size: var(--type-number-unit-size); line-height: 1.05; font-weight: 500; }
+.type-button { font-family: var(--font-sans); font-size: var(--type-button-size); line-height: 1.2; font-weight: 700; }
+.type-button-large { font-family: var(--font-sans); font-size: var(--type-button-large-size); line-height: 1.2; font-weight: 700; }
+.type-nav { font-family: var(--font-sans); font-size: var(--type-nav-size); line-height: 1.2; font-weight: 600; }

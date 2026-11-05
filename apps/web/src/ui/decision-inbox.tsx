@@ -241,7 +241,7 @@ const css = /* css */ `
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   font-weight: 700;
   line-height: 20px;
   color: var(--ui-di-alert);
@@ -275,7 +275,7 @@ const css = /* css */ `
   padding: 0;
   border: 0;
   background: none;
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   font-weight: 700;
   line-height: 1.4;
   text-align: start;
@@ -309,7 +309,7 @@ const css = /* css */ `
 /* The meta line: who, when, where */
 .ui-di__detail {
   margin: var(--space-1) 0 0;
-  font-size: 13.5px;
+  font-size: var(--type-meta-size);
   line-height: 1.4;
   color: var(--ui-di-muted);
   white-space: pre-line;
@@ -333,7 +333,7 @@ const css = /* css */ `
   border: 1px solid var(--ui-di-border);
   border-radius: var(--radius-pill);
   background: var(--ui-di-btn);
-  font-size: 15px !important;
+  font-size: var(--type-body-small-size) !important;
   font-weight: 700;
   line-height: 1.2;
   color: var(--ui-di-ink);
@@ -353,7 +353,7 @@ const css = /* css */ `
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   font-weight: 700;
   line-height: 20px;
   max-width: 100%;
@@ -367,7 +367,7 @@ const css = /* css */ `
   display: none;
   margin: 0;
   padding: var(--space-4);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   line-height: 1.5;
   color: var(--ui-di-muted);
 }

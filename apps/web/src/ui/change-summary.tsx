@@ -182,7 +182,7 @@ const css = /* css */ `
   gap: var(--space-3);
   min-height: calc(var(--row) - var(--space-3));
   padding: var(--space-2) var(--space-4);
-  font-size: 15px;
+  font-size: var(--type-body-small-size);
   line-height: 1.3;
 }
 .ui-cs__title {
@@ -198,7 +198,7 @@ const css = /* css */ `
 .ui-cs__icon > :is(img, svg) { display: block; width: calc(var(--space-5) - var(--space-1)); height: calc(var(--space-5) - var(--space-1)); object-fit: contain; }
 .ui-cs__title-text { min-width: 0; overflow-wrap: anywhere; }
 /* The period shortens before it squeezes the title */
-.ui-cs__period { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden; font-size: 13.5px; font-weight: 400; white-space: nowrap; text-overflow: ellipsis; color: var(--ui-cs-muted); }
+.ui-cs__period { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden; font-size: var(--type-meta-size); font-weight: 400; white-space: nowrap; text-overflow: ellipsis; color: var(--ui-cs-muted); }
 
 .ui-cs__card {
   margin: 0;
@@ -221,7 +221,7 @@ const css = /* css */ `
 .ui-cs__row:hover { background: var(--ui-cs-hover); }
 .ui-cs__label {
   overflow: hidden;
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
   font-weight: 600;
   line-height: 1.4;
   white-space: nowrap;
@@ -235,7 +235,7 @@ const css = /* css */ `
   gap: var(--space-2);
   min-width: 0;
   margin: 0;
-  font-size: 14.5px;
+  font-size: var(--type-table-size);
   line-height: 1.4;
   color: var(--ui-cs-text);
 }

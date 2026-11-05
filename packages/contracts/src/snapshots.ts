@@ -1195,8 +1195,8 @@ export const PortfolioYours = z.object({
 export type PortfolioYours = z.infer<typeof PortfolioYours>;
 
 export const PortfolioKpi = z.object({
-  key: z.enum(['yours', 'running', 'spend', 'events']),
-  /** "Yours", "Running", "Spend this week", "Events today". */
+  key: z.enum(['yours', 'running', 'done', 'events']),
+  /** "Yours", "Running", "Done this week" (tasks finished since Monday), "Events today". */
   label: z.string(),
   /** "5", "4", "$1,506", "212". */
   value: z.string(),

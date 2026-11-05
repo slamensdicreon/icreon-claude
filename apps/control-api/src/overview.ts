@@ -268,7 +268,10 @@ interface LogFacts {
   /** Log events since local midnight, and how many were failures. */
   eventsToday: number;
   failuresToday: number;
-  /** The read stopped (at its cap) before local midnight: today's count is a floor. */
+  /** Tasks finished (moved to done) since the week began and since local midnight, once each. */
+  doneWeek: Set<string>;
+  doneToday: Set<string>;
+  /** The read stopped (at its cap) before the week began: these counts are floors. */
   partialToday: boolean;
   deploys: PortfolioOverview['deploys'];
 }
@@ -284,6 +287,8 @@ async function readLog(
     baseline: null,
     eventsToday: 0,
     failuresToday: 0,
+    doneWeek: new Set(),
+    doneToday: new Set(),
     partialToday: true,
     deploys: [],
   };
@@ -305,6 +310,15 @@ async function readLog(
       if (e.type === 'budget.updated') {
         if (t >= bounds.week) facts.spend.push({ t, usd: e.data.spent.usd });
         else if (facts.baseline === null) facts.baseline = e.data.spent.usd;
+      }
+      if (
+        e.type === 'task.state' &&
+        e.data.to === 'done' &&
+        t >= bounds.week &&
+        s.tasks[e.data.taskId]?.kind === 'work'
+      ) {
+        facts.doneWeek.add(e.data.taskId);
+        if (t >= bounds.today) facts.doneToday.add(e.data.taskId);
       }
       if (t >= bounds.today && isLogEvent(e)) {
         facts.eventsToday++;
@@ -549,6 +563,20 @@ export async function portfolioOverview(
   const failures = logs.reduce((n, f) => n + f.failuresToday, 0);
   const partial = logs.some((f) => f.partialToday);
   const tasksRunning = running.reduce((n, r) => n + runningTasks(r.s).length, 0);
+  const doneWeek = logs.reduce((n, f) => n + f.doneWeek.size, 0);
+  const doneToday = logs.reduce((n, f) => n + f.doneToday.size, 0);
+  const left = running.reduce(
+    (n, r) =>
+      n +
+      Object.values(r.s.tasks).filter(
+        (t) =>
+          t.kind === 'work' &&
+          t.state !== 'done' &&
+          t.state !== 'cancelled' &&
+          t.state !== 'rolled_back',
+      ).length,
+    0,
+  );
   const kpis: PortfolioKpi[] = [
     {
       key: 'yours',
@@ -565,12 +593,10 @@ export async function portfolioOverview(
       tone: 'normal',
     },
     {
-      key: 'spend',
-      label: 'Spend this week',
-      value: usd(weekUsd),
-      note: running.length
-        ? `${usd(runningSpent)} of ${usd(runningBudget)} overall`
-        : 'Nothing is running',
+      key: 'done',
+      label: 'Done this week',
+      value: `${doneWeek}${partial ? '+' : ''}`,
+      note: `${doneToday} today · ${left} ${left === 1 ? 'task' : 'tasks'} left`,
       tone: 'normal',
     },
     {

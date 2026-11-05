@@ -31,6 +31,17 @@ the bridge and the Carbon icon sprite are deleted. The app loads `theme/tokens.c
 (resets on tokens) and `theme/type.css`; every component styles itself in a CSS Module. The favicon is
 the eye, and operator email is set in Plus Jakarta Sans.
 
+## Type that fits every screen
+
+`tokens.json` gains the boards' missing styles (`decision-title` 29px, `card-title-large` 23px,
+`read` 15.5px, `number-large` 60px) and a phone size (`minFontSize`) on every large style. The
+generator writes sizes in rem and makes those styles fluid: the phone size at 390px wide, growing to
+the desktop size at 1280px (Cypher's sentence: 30px on a phone, 44px on a desktop). Every style's size
+is a variable, `--type-<name>-size`, which the document type and the affectUI items now use instead of
+pixel values. On touch screens text fields read at 16px so iOS doesn't zoom. The shell adapts too:
+below 1100px the top bar's search is an icon; below 900px the Bliss header is two rows; under 360px it
+stacks.
+
 ## The portfolio's sections
 
 Above any project the nav reads Dashboard, Needs you, Projects, Team, Workbench, Activity and
@@ -60,7 +71,8 @@ over later without the UI changing. The UI renders these strings. A sentence the
 stands in where the API has no field yet, such as a Lead line on a snapshot without `read`.
 
 What the API couldn't fill truthfully, and does instead:
-- **Spend this week:** there is no weekly budget, so the note reads "$X of $Y overall".
+- **Done this week** replaced Spend this week: work tasks moved to done since Monday, each once, from the
+  log ("+" when the capped read stops short of Monday), with today's count and the tasks left.
 - **"On pace":** this means healthy (no open blocker, no repeated retries, spend under 80%), not measured
   against the forecast.
 - **Raiser:** a card with neither a source task nor a triage Lead has no `raisedBy`, so its card says
@@ -71,6 +83,3 @@ What the API couldn't fill truthfully, and does instead:
 
 ## Open for design
 
-- The boards' 23px and 29px card titles, 15.5px body and 9px initials in faces have no type token. The
-  build uses the nearest token, or a size derived from the spacing tokens; adding type tokens for them
-  would settle it.
