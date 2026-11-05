@@ -1,4 +1,5 @@
 import type { EscalationType } from '@lw/contracts';
+import { EYE_CID, EYE_PNG_BASE64 } from './operator-email-eye';
 import type { OperatorNotice } from './operator';
 
 /**
@@ -55,6 +56,8 @@ export interface OperatorEmail {
   subject: string;
   html: string;
   text: string;
+  /** Images the HTML embeds by content id (the header's eye), sent as inline attachments. */
+  inline: { filename: string; content: string; content_id: string }[];
 }
 
 const esc = (s: string) =>
@@ -103,9 +106,11 @@ export function operatorEmail(
     ? "@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap');"
     : '';
 
-  const brand = base
-    ? `<img src="${esc(base)}/email/cypher-wordmark.png" width="120" height="32" alt="Cypher" style="display:block;border:0;outline:none;width:120px;height:32px;">`
-    : `<span style="font-family:${T.font};font-size:24px;line-height:32px;font-weight:800;letter-spacing:-0.03em;color:${T.onShell};">cypher</span>`;
+  // The lockup as text beside the embedded eye: legible with images blocked, never a broken image.
+  const brand = `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td valign="middle" style="padding:0 9px 0 0;line-height:0;"><img src="cid:${EYE_CID}" width="30" height="30" alt="" style="display:block;border:0;outline:none;width:30px;height:30px;"></td>
+          <td valign="middle" style="font-family:${T.font};font-size:26px;line-height:30px;font-weight:800;letter-spacing:-0.04em;color:${T.onShell};mso-line-height-rule:exactly;">cypher</td>
+        </tr></table>`;
 
   const cards = needs.length
     ? `<tr><td style="padding:8px 0 0;">
@@ -187,7 +192,12 @@ export function operatorEmail(
     'Cypher, the Operator. I write once per card or stall; nothing is decided by email.',
   ].join('\n');
 
-  return { subject: `${test ? '[Test] ' : ''}${n.project}: ${n.title}`, html, text: plain };
+  return {
+    subject: `${test ? '[Test] ' : ''}${n.project}: ${n.title}`,
+    html,
+    text: plain,
+    inline: [{ filename: 'cypher-eye.png', content: EYE_PNG_BASE64, content_id: EYE_CID }],
+  };
 }
 
 export interface ResendConfig {
@@ -218,6 +228,8 @@ export function resendNotifier(cfg: ResendConfig) {
         subject: mail.subject,
         html: mail.html,
         text: mail.text,
+        // The header's eye travels with the message (cid:cypher-eye).
+        attachments: mail.inline,
       }),
       signal: AbortSignal.timeout(15_000),
     });

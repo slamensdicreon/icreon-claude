@@ -27,7 +27,13 @@ const stalled: OperatorNotice = {
 it('brands an attention notice: wordmark, project, title, the cards, a button to the Inbox', () => {
   const m = operatorEmail(attention, `${APP}/`);
   expect(m.subject).toBe('Ervin Cable: Two decisions wait on you');
-  expect(m.html).toContain(`src="${APP}/email/cypher-wordmark.png"`);
+  // The eye is embedded, not fetched; the word is text, legible with images blocked.
+  expect(m.html).toContain('src="cid:cypher-eye"');
+  expect(m.html).not.toContain('/email/cypher-wordmark.png');
+  expect(m.html).toContain('>cypher<');
+  expect(m.inline).toEqual([
+    expect.objectContaining({ content_id: 'cypher-eye', filename: 'cypher-eye.png' }),
+  ]);
   expect(m.html).toContain('fonts.googleapis.com/css2?family=Plus+Jakarta+Sans');
   expect(m.html).toContain("'Plus Jakarta Sans', 'Helvetica Neue'");
   expect(m.html).toContain('#e8553d'); // coral: it's the Director's
@@ -57,9 +63,10 @@ it('shows a stall without the project prefix, and links to the project', () => {
   expect(m.html).toContain('#9a6b00'); // gold: it waits
 });
 
-it('without an app URL: a text wordmark, no links, no web fonts', () => {
+it('without an app URL: the lockup still (embedded eye, text word), no links, no web fonts', () => {
   const m = operatorEmail(stalled, null);
-  expect(m.html).not.toContain('<img');
+  expect(m.html).not.toMatch(/<img[^>]+src="https?:/);
+  expect(m.html).toContain('src="cid:cypher-eye"');
   expect(m.html).not.toContain('href=');
   expect(m.html).not.toContain('@font-face');
   expect(m.html).not.toContain('@import');
