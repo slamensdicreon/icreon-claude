@@ -719,3 +719,9 @@
     transition: none;
   }
 }
+
+/* Diagnostics: the Operator row's test send, under its line. */
+.testEmail {
+  display: block;
+  padding-top: var(--space-2);
+}

@@ -30,11 +30,16 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     throw new ApiProblem(401, 'unauthenticated', 'Signing you in…');
   }
   if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as ApiError | null;
+    // The API's shape is { error: { code, message } }; a few routes answer { error, message }.
+    const err = (await res.json().catch(() => null)) as
+      ApiError | { error?: string; message?: string } | null;
+    const nested = err && typeof err.error === 'object' ? (err as ApiError).error : null;
+    const flat =
+      err && typeof err.error !== 'object' ? (err as { error?: string; message?: string }) : null;
     throw new ApiProblem(
       res.status,
-      err?.error.code ?? 'http_' + res.status,
-      err?.error.message ?? `The Control API answered ${res.status}.`,
+      nested?.code ?? flat?.error ?? 'http_' + res.status,
+      nested?.message ?? flat?.message ?? `The Control API answered ${res.status}.`,
     );
   }
   if (res.status === 204) return undefined as T;

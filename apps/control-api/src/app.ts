@@ -1267,11 +1267,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post<P>('/projects/:id/operator/test-email', async (req, reply) => {
     const s = known(req.params.id);
     if (!deps.operatorTestEmail)
-      return reply.status(409).send({
-        error: 'email_not_configured',
-        message:
-          "Set RESEND and OPERATOR_EMAIL_TO on the deployment to email the Operator's notices.",
-      });
+      return fail(
+        reply,
+        409,
+        'email_not_configured',
+        "Set RESEND and OPERATOR_EMAIL_TO on the deployment to email the Operator's notices.",
+      );
     const open = Object.values(s.escalations)
       .filter((e) => e.status === 'open')
       .slice(0, 5);
@@ -1286,7 +1287,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     try {
       return { sent: true, ...(await deps.operatorTestEmail(notice, { test: true })) };
     } catch (err) {
-      return reply.status(502).send({ error: 'email_failed', message: (err as Error).message });
+      return fail(reply, 502, 'email_failed', (err as Error).message);
     }
   });
 

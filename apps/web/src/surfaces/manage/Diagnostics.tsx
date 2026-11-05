@@ -4,9 +4,11 @@
  * state carried by a word beside its dot.
  */
 import type { PortfolioDiagnostics, ProjectStatus } from '@lw/contracts';
+import { useState } from 'react';
+import { messageOf, postFor } from '../../lib/api';
 import { useApp } from '../../state';
 import { Status } from '../../ui/cypher/forms';
-import { Panel } from '../../ui/cypher/parts';
+import { Button, Panel } from '../../ui/cypher/parts';
 import { Notice } from '../intake/shared';
 import { count, Pending, useResource } from './shared';
 import s from './manage.module.css';
@@ -60,11 +62,23 @@ export function Diagnostics() {
                   <span className={s.rowText}>
                     <span className={s.strong}>{x.label}</span>
                     <span className={`${s.muted} type-meta`}>{x.detail}</span>
+                    {x.key === 'operator' && <TestEmail />}
                   </span>
                   <Status tone={tone}>{word}</Status>
                 </li>
               );
             })}
+            {!data.services.some((x) => x.key === 'operator') && (
+              <li className={s.row}>
+                <span className={s.rowText}>
+                  <span className={s.strong}>Operator email</span>
+                  <span className={`${s.muted} type-meta`}>
+                    Check that the Operator&rsquo;s email reaches you.
+                  </span>
+                  <TestEmail />
+                </span>
+              </li>
+            )}
           </ul>
         </Panel>
         <Panel
@@ -135,5 +149,49 @@ export function Diagnostics() {
         </div>
       </Panel>
     </div>
+  );
+}
+
+/**
+ * Sends the Operator's test email (POST /projects/:id/operator/test-email) to the configured
+ * recipients, with a live project's open cards as the example, and says what happened: sent, or
+ * Resend's own reason for refusing (an unverified sender domain, a key from another account).
+ */
+function TestEmail() {
+  const { projects, toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const project =
+    projects.find((p) => p.status === 'running') ??
+    projects.find((p) => p.status !== 'archived' && p.status !== 'cancelled') ??
+    projects[0];
+  if (!project) return null;
+  const send = async () => {
+    setBusy(true);
+    try {
+      await postFor<{ sent: boolean; id: string }>(
+        `/projects/${encodeURIComponent(project.id)}/operator/test-email`,
+        {},
+      );
+      toast({
+        title: 'Test email sent',
+        detail: `The Operator wrote to your recipients, with ${project.name}'s open cards as the example.`,
+        tone: 'done',
+      });
+    } catch (err) {
+      toast({
+        title: 'The test email didn’t go out',
+        detail: messageOf(err, 'The Control API could not send it.'),
+        tone: 'error',
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span className={s.testEmail}>
+      <Button kind="secondary" onClick={() => void send()} disabled={busy}>
+        {busy ? 'Sending…' : 'Send a test email'}
+      </Button>
+    </span>
   );
 }
