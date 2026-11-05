@@ -158,7 +158,7 @@ export function ArtifactViewer({ a }: { a: ArtifactView }) {
       {head(byline)}
       <div className={`${s.body} ${s.host}`}>
         {typeof body === 'string' ? (
-          <MarkdownDoc text={body} projectId={projectId!} />
+          <MarkdownDoc text={body} projectId={projectId!} contents={false} />
         ) : (
           <DataDoc value={body} />
         )}

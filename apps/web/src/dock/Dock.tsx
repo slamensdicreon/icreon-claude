@@ -2,10 +2,13 @@ import type { ConversationItem } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
 import { post } from '../lib/api';
 import { clock, localDate, longDay, zoneLabel } from '../lib/fmt';
-import { Icon } from '../lib/icons';
+import { TYPE_LABEL } from '../lib/escalation';
 import { Chip, useJump, Who } from '../parts/bits';
-import { TYPE_LABEL } from '../parts/Card';
 import { useApp, useConversation, useNow, useRoster, useTz } from '../state';
+import { Icon } from '../theme/icons';
+import { Eye } from '../ui/Eye';
+import { useEyeState } from '../voice/eye';
+import s from './dock.module.css';
 
 const ORDER: Record<string, number> = {
   blocker: 0,
@@ -16,9 +19,18 @@ const ORDER: Record<string, number> = {
   risk: 5,
 };
 
+/** Escalation kinds the Director has to act on before work moves: coral; a gate is ink. */
+const toneOf = (type: string) =>
+  type === 'blocker' || type === 'access' ? 'yours' : type === 'gate' ? 'gate' : undefined;
+
+/**
+ * The Chief of Staff's conversation for the project on screen, inside the Cypher sheet: the eye
+ * and its presence, what needs the Director (pointing to Needs you), the thread and the composer.
+ */
 export function Dock() {
-  const { layout, setLayout, go } = useApp();
+  const { go } = useApp();
   const conv = useConversation().data;
+  const eye = useEyeState();
   const thinking = conv?.presence === 'thinking';
   // Decisions are made in Needs you; the chat only points there, so it stays a conversation.
   const open = (conv?.queue ?? [])
@@ -29,58 +41,34 @@ export function Dock() {
   const waiting = open.length;
 
   return (
-    <aside className="dock" aria-label="Cypher">
-      <div className="dock-head">
-        <h2>
-          <span className="dk-n">
-            Cypher<small>Chief of Staff</small>
-          </span>{' '}
-          <span className={`presence ${thinking ? 'thinking' : ''}`}>
-            <i />
-            <span>{thinking ? 'Thinking' : 'Listening'}</span>
-          </span>
-        </h2>
-        {waiting > 0 && <span className="badge">{waiting}</span>}
-        <button
-          className="iconbtn sl"
-          data-action="collapse-dock"
-          title="Collapse"
-          aria-label="Collapse Cypher"
-          onClick={() =>
-            matchMedia('(max-width: 900px)').matches
-              ? setLayout({ dockOpen: false })
-              : setLayout({ dockCollapsed: !layout.dockCollapsed })
-          }
-        >
-          <Icon name="chevron--right" />
-        </button>
+    <aside className={s.dock} aria-label="Cypher">
+      <div className={s.head}>
+        <Eye state={thinking ? 'watching' : eye.state} blink={eye.blink} size={34} decorative />
+        <div className={s.who}>
+          <h2 className={`${s.name} type-section`}>Cypher</h2>
+          <p className={`${s.role} type-meta`}>Chief of Staff</p>
+        </div>
+        <span className={`${s.presence} type-meta`} data-thinking={thinking || undefined}>
+          <i aria-hidden="true" />
+          <span>{thinking ? 'Thinking' : 'Listening'}</span>
+        </span>
       </div>
       {waiting > 0 && (
         <button
-          className={`needs-strip ${open[0]!.type}`}
+          type="button"
+          className={s.needs}
           onClick={() => go('inbox', { expanded: open[0]!.escalationId })}
         >
-          <span className="ns-count">{waiting}</span>
-          <span className="ns-text">
+          <span className={`${s.needsCount} type-label`}>{waiting}</span>
+          <span className={`${s.needsText} type-meta`}>
             <b>{waiting === 1 ? 'Needs you' : `${waiting} need you`}</b>
             <span>{open[0]!.title}</span>
           </span>
-          <span className="ns-go">Review</span>
+          <span className={`${s.needsGo} type-button`}>Review</span>
         </button>
       )}
       <Conversation items={conv?.items ?? []} />
       <Composer />
-      <div className="dock-mini">
-        <button
-          className="iconbtn sl"
-          title="Open Cypher"
-          aria-label="Open Cypher"
-          onClick={() => setLayout({ dockCollapsed: false })}
-        >
-          <Icon name="chat" />
-        </button>
-        {waiting > 0 && <span className="badge">{waiting}</span>}
-      </div>
     </aside>
   );
 }
@@ -88,7 +76,7 @@ export function Dock() {
 function DayLabel({ t, tz, now }: { t: string; tz: string; now: number }) {
   const today = localDate(t, tz) === localDate(now, tz);
   return (
-    <div className="daysep">
+    <div className={`${s.day} type-label`}>
       <span>{today ? `Today, ${longDay(t, tz)}` : longDay(t, tz)}</span>
     </div>
   );
@@ -120,7 +108,7 @@ function Conversation({ items }: { items: ConversationItem[] }) {
     prev = m;
   }
   return (
-    <div className="convo" ref={ref} aria-live="polite">
+    <div className={s.convo} ref={ref} aria-live="polite">
       {out}
     </div>
   );
@@ -136,7 +124,8 @@ function Linked({ text }: { text: string }) {
         /^D-\d{2}$/.test(p) ? (
           <button
             key={i}
-            className="dchip"
+            type="button"
+            className={`${s.dref} type-meta`}
             onClick={() => go('workbench', { wbArtifact: 'decisions' })}
           >
             {p}
@@ -153,9 +142,14 @@ function Actions({ links }: { links: ConversationItem['links'] }) {
   const jump = useJump();
   if (!links.length) return null;
   return (
-    <div className="em-act">
+    <div className={s.actions}>
       {links.map((l) => (
-        <button key={l.label} className="btn sm" onClick={() => jump(l.target)}>
+        <button
+          key={l.label}
+          type="button"
+          className={`${s.btn} type-button`}
+          onClick={() => jump(l.target)}
+        >
           {l.label}
         </button>
       ))}
@@ -170,11 +164,9 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
   const t = `${clock(m.ts, tz)} ${zoneLabel(tz)}`;
   if (m.from === 'director')
     return (
-      <div className="m me">
-        <div className="m-meta">
-          <span>{t}</span>
-        </div>
-        <div className="m-bubble">{m.body}</div>
+      <div className={s.me}>
+        <span className={`${s.meta} type-meta`}>{t}</span>
+        <div className={`${s.bubble} type-body-small`}>{m.body}</div>
       </div>
     );
 
@@ -186,30 +178,30 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
     m.kind === 'phase_brief_exit'
   ) {
     body = (
-      <div className="embed">
-        <div className="em-h">
-          <span className="em-k">
+      <div className={s.embed}>
+        <div className={s.embedHead}>
+          <span className={`${s.kind} type-label`}>
             {m.label ?? (m.kind === 'digest' ? 'Daily digest' : 'Brief')}
           </span>
           <b>{m.title}</b>
         </div>
-        <div className="em-body">
+        <div className={`${s.rows} type-body-small`}>
           {m.rows.map((r) => (
-            <div className="em-row" key={r.label}>
+            <div className={s.row} key={r.label}>
               <span>{r.label}</span>
               <div>
                 <Linked text={r.value} />
               </div>
             </div>
           ))}
-          {m.sections.map((s) => (
-            <div className="em-row" key={s.heading}>
-              <span>{s.heading}</span>
-              <div>{s.lines.join(' ')}</div>
+          {m.sections.map((sec) => (
+            <div className={s.row} key={sec.heading}>
+              <span>{sec.heading}</span>
+              <div>{sec.lines.join(' ')}</div>
             </div>
           ))}
           {m.bullets.length > 0 && (
-            <ul className="em-list">
+            <ul className={s.list}>
               {m.bullets.map((b, i) => (
                 <li key={i}>
                   <span>
@@ -219,15 +211,11 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
               ))}
             </ul>
           )}
-          {m.body && !m.rows.length && !m.bullets.length && (
-            <p className="m-text" style={{ margin: 0 }}>
-              {m.body}
-            </p>
-          )}
+          {m.body && !m.rows.length && !m.bullets.length && <p className={s.text}>{m.body}</p>}
         </div>
         {m.note && (
-          <div className="em-note">
-            <Icon name="information" sm />
+          <div className={`${s.note} type-meta`}>
+            <Icon name="info" size={16} />
             <span>
               <Who text={m.note} />
             </span>
@@ -237,41 +225,41 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
       </div>
     );
   } else if (m.kind === 'status' && m.status) {
-    const s = m.status;
+    const st = m.status;
     body = (
-      <div className="embed">
-        <div className="em-h">
-          <span className="em-k">Status</span>
+      <div className={s.embed}>
+        <div className={s.embedHead}>
+          <span className={`${s.kind} type-label`}>Status</span>
           <b>
-            {s.phase}, {s.percent}% done
+            {st.phase}, {st.percent}% done
           </b>
         </div>
-        <div className="em-grid">
+        <div className={`${s.grid} type-body-small`}>
           <div>
             <span>Blockers</span>
-            <b className={s.blockers.length ? 'bad' : ''}>{s.blockers.length || 'None'}</b>
-            {s.blockers.length > 0 && <small>{s.blockers.join(', ')}</small>}
+            <b data-bad={st.blockers.length > 0 || undefined}>{st.blockers.length || 'None'}</b>
+            {st.blockers.length > 0 && <small>{st.blockers.join(', ')}</small>}
           </div>
           <div>
             <span>Needs you</span>
-            <b>{s.waiting}</b>
+            <b>{st.waiting}</b>
           </div>
           <div>
-            <span>{s.headline.label}</span>
-            <b>{s.headline.value}</b>
-            {s.headline.sub && <small>{s.headline.sub}</small>}
+            <span>{st.headline.label}</span>
+            <b>{st.headline.value}</b>
+            {st.headline.sub && <small>{st.headline.sub}</small>}
           </div>
           <div>
             <span>Next gate</span>
-            <b>{s.nextGate}</b>
+            <b>{st.nextGate}</b>
           </div>
           <div>
             <span>Cost</span>
-            <b>{s.cost}</b>
+            <b>{st.cost}</b>
           </div>
           <div>
             <span>Elapsed</span>
-            <b>{s.elapsed}</b>
+            <b>{st.elapsed}</b>
           </div>
         </div>
         <Actions
@@ -284,19 +272,25 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
     );
   } else if (m.kind === 'needs') {
     body = m.needs.length ? (
-      <div className="embed">
-        <div className="em-h">
-          <span className="em-k">Needs you</span>
+      <div className={s.embed}>
+        <div className={s.embedHead}>
+          <span className={`${s.kind} type-label`}>Needs you</span>
           <b>
             {m.needs.length} {m.needs.length === 1 ? 'item' : 'items'} waiting on your call
           </b>
         </div>
-        <div className="em-body">
+        <div className={`${s.rows} type-body-small`}>
           {m.needs.map((n) => (
-            <div className="em-item" key={n.escalationId}>
-              <span className={`type ${n.type}`}>{TYPE_LABEL[n.type]}</span>
-              <span className="em-it">{n.title}</span>
-              <button className="btn sm" onClick={() => go('inbox', { expanded: n.escalationId })}>
+            <div className={s.item} key={n.escalationId}>
+              <span className={`${s.type} type-label`} data-tone={toneOf(n.type)}>
+                {TYPE_LABEL[n.type]}
+              </span>
+              <span className={s.itemText}>{n.title}</span>
+              <button
+                type="button"
+                className={`${s.btn} type-button`}
+                onClick={() => go('inbox', { expanded: n.escalationId })}
+              >
                 Open
               </button>
             </div>
@@ -304,22 +298,22 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
         </div>
       </div>
     ) : (
-      <div className="m-text">Nothing is waiting on you.</div>
+      <p className={`${s.text} type-body-small`}>Nothing is waiting on you.</p>
     );
   } else if (m.kind === 'next') {
     body = (
-      <div className="embed">
-        <div className="em-h">
-          <span className="em-k">Up next</span>
+      <div className={s.embed}>
+        <div className={s.embedHead}>
+          <span className={`${s.kind} type-label`}>Up next</span>
           <b>The next {m.upNext.length} activities</b>
         </div>
-        <div className="em-body">
+        <div className={`${s.rows} type-body-small`}>
           {m.upNext.map((x) => {
             const a = byId(x.agentId);
             return (
-              <div className="em-item" key={x.taskId}>
-                <span className="em-time">{clock(x.start, tz)}</span>
-                <span className="em-it">
+              <div className={s.item} key={x.taskId}>
+                <span className={`${s.time} type-meta`}>{clock(x.start, tz)}</span>
+                <span className={s.itemText}>
                   {x.title}
                   <small>
                     {a?.persona ?? x.agentId}, {a?.name ?? ''}
@@ -338,13 +332,18 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
   } else {
     body = (
       <>
-        <div className="m-text">
+        <p className={`${s.text} type-body-small`}>
           <Linked text={m.body} />
-        </div>
+        </p>
         {m.links.length > 0 && (
-          <div className="m-links">
+          <div className={s.links}>
             {m.links.map((l) => (
-              <button key={l.label} className="link-btn" onClick={() => jump(l.target)}>
+              <button
+                key={l.label}
+                type="button"
+                className={`${s.link} type-body-small`}
+                onClick={() => jump(l.target)}
+              >
                 {l.label}
               </button>
             ))}
@@ -355,15 +354,20 @@ function Message({ m, grouped, tz }: { m: ConversationItem; grouped: boolean; tz
   }
 
   return (
-    <div className={`m cos ${grouped ? 'grp' : ''}`}>
-      <div className="m-av" aria-hidden="true">
-        C
-      </div>
-      <div className="m-main">
-        <div className="m-meta">
-          <b>Cypher</b>
-          <span>{t}</span>
-        </div>
+    <div className={s.m} data-grouped={grouped || undefined}>
+      {/* Cypher is the eye; a run of plain messages shows it once. */}
+      <span className={s.mark} aria-hidden="true">
+        {!grouped && <Eye state="resting" size={22} decorative />}
+      </span>
+      <div className={s.main}>
+        {grouped ? (
+          <span className="sr-only">Cypher, {t}</span>
+        ) : (
+          <div className={`${s.meta} type-meta`}>
+            <b>Cypher</b>
+            <span>{t}</span>
+          </div>
+        )}
         {body}
       </div>
     </div>
@@ -379,9 +383,9 @@ function Directive({ m }: { m: ConversationItem }) {
   const left = Math.max(0, Math.ceil((end - now) / 1000));
   const settled = m.settled;
   return (
-    <div className="embed dir">
-      <div className="em-h">
-        <span className="em-k">Directive</span>
+    <div className={s.embed}>
+      <div className={s.embedHead}>
+        <span className={`${s.kind} type-label`}>Directive</span>
         <b>
           {settled
             ? settled.outcome === 'applied'
@@ -392,24 +396,25 @@ function Directive({ m }: { m: ConversationItem }) {
               : 'Applying'}
         </b>
       </div>
-      <div className="em-body">
-        <p className="m-text" style={{ margin: 0 }}>
+      <div className={`${s.rows} type-body-small`}>
+        <p className={s.text}>
           <Who text={m.body} />
         </p>
         {settled ? (
-          <div className="em-done">
-            <Icon name="checkmark" sm />
+          <div className={s.done}>
+            <Icon name="check" size={16} />
             <span>
               <Linked text={settled.summary} />
             </span>
           </div>
         ) : (
-          <div className="ack">
-            <span className="bar">
+          <div className={s.ack}>
+            <span className={s.bar}>
               <i style={{ width: `${Math.min(100, ((total - (end - now)) / total) * 100)}%` }} />
             </span>
             <button
-              className="btn sm"
+              type="button"
+              className={`${s.btn} type-button`}
               disabled={left === 0}
               onClick={() =>
                 void run(() => post(`/projects/${projectId}/directives/${m.directiveId}/stop`))
@@ -448,18 +453,24 @@ function Composer() {
     await run(() => post(`/projects/${projectId}/messages`, { body, ...(about ? { about } : {}) }));
   };
   return (
-    <div className="composer">
-      <div className="qp" role="group" aria-label="Quick prompts">
+    <div className={s.composer}>
+      <div className={s.prompts} role="group" aria-label="Quick prompts">
         {['Status', 'What needs me?', 'What is next?'].map((q) => (
-          <button key={q} onClick={() => void send(q, null)}>
+          <button
+            key={q}
+            type="button"
+            className={`${s.prompt} type-meta`}
+            onClick={() => void send(q, null)}
+          >
             {q}
           </button>
         ))}
       </div>
-      <div className="composer-box">
+      <div className={s.box}>
         <textarea
           ref={ref}
           id="composer"
+          className={`${s.input} type-body-small`}
           rows={1}
           placeholder="Message Cypher"
           aria-label="Message to Cypher"
@@ -472,11 +483,17 @@ function Composer() {
             }
           }}
         />
-        <button className="send" aria-label="Send" onClick={() => void send(composer.text)}>
-          <Icon name="send" sm />
+        <button
+          type="button"
+          className={s.send}
+          aria-label="Send"
+          disabled={!composer.text.trim()}
+          onClick={() => void send(composer.text)}
+        >
+          <Icon name="send" size={18} />
         </button>
       </div>
-      <div className="hint">
+      <div className={`${s.hint} type-meta`}>
         <span>Enter sends</span>
         <span>/status · /pause · /resume · /approve</span>
       </div>

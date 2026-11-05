@@ -6,13 +6,15 @@ import { live } from './lib/live';
 import { NewProjectPage as NewProject } from './surfaces/intake/NewProjectPage';
 import { Palette } from './overlays/Palette';
 import { Boot, useBootState } from './parts/Boot';
-import { useCardActions } from './parts/Card';
-import { MobileNav, Toasts, useAwayLine } from './Shell';
+import { useCardActions } from './lib/escalation';
 import { useMode } from './mode/mode';
 import { BlissHeader, TopBar } from './shell/Bars';
+import { MobileNav, Toasts, useAwayLine } from './shell/Chrome';
 import { CypherLauncher, CypherSheet } from './shell/Cypher';
 import { Rail, Sidebar } from './shell/Nav';
 import styles from './shell/Shell.module.css';
+import { Button } from './ui/cypher/parts';
+import { Eye } from './ui/Eye';
 import { AppProvider, isManagePage, useApp, useMission, type Surface } from './state';
 import { ActivityPage } from './surfaces/activity/ActivityPage';
 import { GithubAppPanel } from './surfaces/manage/GithubApp';
@@ -81,11 +83,6 @@ function Frame() {
 
   const { mode } = useMode();
   const everything = mode === 'everything';
-  // `app` and its modifiers stay for the old stylesheet's presentation-mode and home rules; the
-  // shell's own module lays the frame out.
-  const cls = ['app', styles.shell, layout.present && 'present', !projectId && 'home']
-    .filter(Boolean)
-    .join(' ');
 
   const Body = SURFACE[surface];
   return (
@@ -93,16 +90,16 @@ function Frame() {
       {/* While the first load runs, the shell renders underneath the boot overlay (blurred) and
           takes no focus or clicks. */}
       <div
-        className={cls}
+        className={styles.shell}
         data-mode={mode}
         data-present={layout.present || undefined}
         inert={boot.visible || undefined}
         aria-busy={boot.visible || undefined}
       >
         {everything ? <Sidebar /> : <Rail />}
-        <main className={`canvas ${styles.main}`}>
-          {everything ? <TopBar /> : <BlissHeader />}
-          <div className="surface" ref={surfaceRef} tabIndex={-1}>
+        <main className={styles.main}>
+          {everything && !layout.present ? <TopBar /> : <BlissHeader />}
+          <div className={styles.surface} ref={surfaceRef} tabIndex={-1}>
             <div className={styles.measure}>
               {projectId ? (
                 <Body key={projectId} />
@@ -138,23 +135,20 @@ function Frame() {
 function Empty() {
   const { newProject } = useApp();
   return (
-    <>
-      <div className="page-head">
-        <div>
-          <h1>No projects yet</h1>
-          <p>
-            Start one from the catalog: pick the platform and the playbook, then the client&rsquo;s
-            source, their environment and its credentials, and budgets.
-          </p>
-        </div>
-        <button className="btn primary" onClick={() => newProject()}>
+    <div className={styles.empty}>
+      <Eye state="resting" size={72} decorative />
+      <h1 className="type-heading">No projects yet</h1>
+      <p className="type-body">
+        Start one from the catalog: pick the platform and the playbook, then the client&rsquo;s
+        source, their environment and its credentials, and budgets.
+      </p>
+      <div>
+        <Button kind="primary" onClick={() => newProject()}>
           New project
-        </button>
+        </Button>
       </div>
-      <div className="settings">
-        <GithubAppPanel />
-      </div>
-    </>
+      <GithubAppPanel />
+    </div>
   );
 }
 

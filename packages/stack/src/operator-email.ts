@@ -2,13 +2,13 @@ import type { EscalationType } from '@lw/contracts';
 import type { OperatorNotice } from './operator';
 
 /**
- * The Operator's notices as email, on the Icreon Design System: Hero New, Icreon black and blue
- * on the neutral ramp, the Icreon lockup in a black header. Table layout with inline styles, so
- * Gmail and Outlook render it as Apple Mail does; Hero New loads where the client allows web
- * fonts and falls back to Helvetica Neue elsewhere.
+ * The Operator's notices as email: Icreon black and blue on the neutral ramp, the Icreon lockup
+ * in a black header, set in Plus Jakarta Sans (the Control Center's face). Table layout with
+ * inline styles, so Gmail and Outlook render it as Apple Mail does; the face loads from Google
+ * Fonts where the client allows web fonts and falls back to Helvetica Neue elsewhere.
  */
 
-/** Icreon Design System tokens (apps/web/src/styles/prototype.css, brand core). */
+/** Icreon Design System colors (brand core), kept as literals: email has no CSS variables. */
 const T = {
   black: '#000000',
   white: '#ffffff',
@@ -27,7 +27,7 @@ const T = {
   dangerBg: '#fbe9e7',
   success: '#1e8e5a',
   successBg: '#e7f5ee',
-  font: "'Hero New', 'Helvetica Neue', Helvetica, Arial, sans-serif",
+  font: "'Plus Jakarta Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif",
 } as const;
 
 const KIND: Record<OperatorNotice['kind'], { chip: string; fg: string; bg: string }> = {
@@ -96,18 +96,7 @@ export function operatorEmail(
   const needs = n.needs ?? [];
 
   const faces = base
-    ? (
-        [
-          ['Light', 300],
-          ['Regular', 400],
-          ['Medium', 500],
-        ] as const
-      )
-        .map(
-          ([file, weight]) =>
-            `@font-face{font-family:'Hero New';src:url('${base}/fonts/HeroNew-${file}.otf') format('opentype');font-weight:${weight};font-style:normal;}`,
-        )
-        .join('')
+    ? "@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500&display=swap');"
     : '';
 
   const brand = base
@@ -203,7 +192,7 @@ export interface ResendConfig {
   to: string[];
   /** A sender on a domain verified in Resend. */
   from: string;
-  /** The Control Center's public URL, for links, the lockup and Hero New. */
+  /** The Control Center's public URL, for links and the lockup. */
   appUrl?: string | null;
   fetchImpl?: typeof fetch;
 }

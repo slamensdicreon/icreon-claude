@@ -1,0 +1,636 @@
+/*
+ * The Cypher sheet's conversation (dock/Dock.tsx in a project, surfaces/CypherHome.tsx above the
+ * portfolio). It fills the sheet shell/Cypher.tsx opens: a header with the eye, the thread, and the
+ * composer at the foot. Cypher speaks in plain text beside the eye; the Director's words sit on ink
+ * at the right; briefs and status are quiet cards in the thread. Every color, size and radius is a
+ * token; nothing tappable is under 44px; nothing is under 13px.
+ */
+
+/* ---------- frame ---------- */
+.dock {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--ink);
+}
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row);
+  /* Room on the right for the sheet's close button. */
+  padding: var(--space-3) calc(var(--row) + var(--space-2)) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--mist-2);
+}
+.who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.name {
+  margin: 0;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role {
+  margin: 0;
+  color: var(--text-3);
+}
+.presence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-3);
+}
+.presence i {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--text-3);
+}
+.presence[data-thinking] {
+  color: var(--ink);
+}
+.presence[data-thinking] i {
+  background: var(--green);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------- what needs the Director, above the thread ---------- */
+.needs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row);
+  margin: var(--space-3) var(--space-4) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--coral-tint);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.needs:hover {
+  box-shadow: inset 0 0 0 1px var(--coral-text);
+}
+.needsCount {
+  flex: none;
+  min-width: calc(var(--space-6) - var(--space-1));
+  height: calc(var(--space-6) - var(--space-1));
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--coral-text);
+  color: var(--on-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.needsText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.needsText b {
+  color: var(--coral-text);
+}
+.needsText span {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.needsGo {
+  flex: none;
+  color: var(--ink);
+}
+
+/* ---------- the thread ---------- */
+.convo {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.day {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-3);
+}
+.day::before,
+.day::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--mist-2);
+}
+
+.m {
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.m[data-grouped] {
+  margin-top: calc(var(--space-2) - var(--space-4));
+}
+.mark {
+  flex: none;
+  width: calc(var(--space-6) - var(--space-1));
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-1);
+}
+.main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--text-3);
+}
+.meta b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.text {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* The Director's words: on ink, at the right. */
+.me {
+  align-self: flex-end;
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+.bubble {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--on-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+.link {
+  min-height: calc(var(--row) - var(--space-4));
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--mist);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.link:hover {
+  text-decoration-color: var(--ink);
+}
+
+/* A Decision Log reference ("D-07") in Cypher's words. */
+.dref {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  margin: 0 var(--space-1);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-pill);
+  background: var(--surface-quiet);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dref:hover {
+  border-color: var(--text-3);
+}
+
+/* ---------- cards in the thread: briefs, status, needs, up next, directives ---------- */
+.embed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--mist);
+  background: var(--surface-quiet);
+  min-width: 0;
+}
+.embedHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.kind {
+  color: var(--text-3);
+}
+.embedHead b {
+  color: var(--ink);
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.38fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--mist-2);
+}
+.row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.row > span {
+  color: var(--text-3);
+}
+.row > div {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.list {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--ink);
+}
+.note {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--text-2);
+}
+.note svg {
+  flex: none;
+  margin-top: var(--space-1);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.grid > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.grid span {
+  color: var(--text-3);
+}
+.grid b {
+  color: var(--ink);
+}
+.grid b[data-bad] {
+  color: var(--coral-text);
+}
+.grid small {
+  color: var(--text-2);
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--row) - var(--space-3));
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--mist-2);
+}
+.item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.itemText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+}
+.itemText small {
+  color: var(--text-3);
+}
+.time {
+  flex: none;
+  color: var(--text-2);
+}
+/* The kind of escalation: coral when it blocks or is the Director's to grant, ink for a gate. */
+.type {
+  flex: none;
+  color: var(--text-2);
+}
+.type[data-tone='yours'] {
+  color: var(--coral-text);
+}
+.type[data-tone='gate'] {
+  color: var(--ink);
+}
+.done {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--ink);
+}
+.done svg {
+  flex: none;
+  color: var(--green);
+  margin-top: var(--space-1);
+}
+.ack {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.bar {
+  flex: 1 1 auto;
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--mist);
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transition: width 250ms linear;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: calc(var(--row) - var(--space-3));
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 200ms ease-out,
+    background 200ms ease-out;
+}
+.btn:hover {
+  border-color: var(--text-3);
+}
+.btn[data-primary] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.btn[data-primary]:hover {
+  background: var(--ink-2);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- composer ---------- */
+.composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--mist-2);
+  background: var(--surface);
+}
+.prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.prompt {
+  min-height: calc(var(--row) - var(--space-4));
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface-quiet);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.prompt:hover {
+  border-color: var(--text-3);
+}
+.box {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--mist);
+  background: var(--surface-quiet);
+  transition: border-color 200ms ease-out;
+}
+.box:focus-within {
+  border-color: var(--ink);
+}
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: calc(var(--row) - var(--space-3));
+  padding: var(--space-2) 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  resize: none;
+}
+.input::placeholder {
+  color: var(--text-3);
+}
+/* The box carries the focus line. */
+.input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.send {
+  flex: none;
+  width: calc(var(--row) - var(--space-3));
+  height: calc(var(--row) - var(--space-3));
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--on-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.send:hover {
+  background: var(--ink-2);
+}
+.send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hint {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--text-3);
+}
+
+/* ---------- the portfolio chat (CypherHome) ---------- */
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 100%;
+  padding-bottom: var(--space-4);
+}
+.homeHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row);
+  /* Room on the right for the sheet's close button. */
+  padding-right: calc(var(--row) - var(--space-2));
+}
+.quiet {
+  margin: 0;
+  color: var(--text-2);
+}
+.thinking {
+  color: var(--text-3);
+}
+.prose p,
+.prose ul {
+  margin: 0;
+}
+.prose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.prose ul {
+  padding-left: var(--space-5);
+}
+.prose strong {
+  font-weight: 700;
+}
+.homeConvo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.starters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.compose {
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  background: var(--surface);
+}
+.compose .box {
+  align-items: flex-end;
+}
+.proposal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--mist);
+  background: var(--surface-quiet);
+}
+.facts {
+  margin: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 0.38fr) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+}
+.facts dt {
+  color: var(--text-3);
+}
+.facts dd {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.gap {
+  margin: 0;
+  color: var(--coral-text);
+}
+.filed {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-2);
+}
+.ref {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presence[data-thinking] i {
+    animation: none;
+  }
+  .bar i,
+  .btn,
+  .box {
+    transition: none;
+  }
+}

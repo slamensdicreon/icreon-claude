@@ -1,12 +1,17 @@
 import type { AgentDetail, ScheduleSnapshot, TaskView } from '@lw/contracts';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { post } from './lib/api';
 import { clock, initials, shortDay, tokens } from './lib/fmt';
-import { Icon } from './lib/icons';
 import { useResource } from './lib/live';
-import { TextForm, TypedConfirm } from './overlays/Dialogs';
+import { overlayStyles as o, TextForm, TypedConfirm } from './overlays/Dialogs';
 import { Chip, Who, personOf } from './parts/bits';
 import { useApp, useProjectResource, useRoster, useTz } from './state';
+import { Icon } from './theme/icons';
+import { Facts } from './ui/cypher/forms';
+import { Avatar } from './ui/cypher/parts';
+import { Eye } from './ui/Eye';
+import { useEyeState } from './voice/eye';
+import s from './inspector.module.css';
 
 const RERUNNABLE = new Set([
   'done',
@@ -36,16 +41,18 @@ export function Inspector() {
   useEffect(() => {
     if (inspector)
       window.setTimeout(
-        () => ref.current?.querySelector<HTMLButtonElement>('.icon-btn')?.focus(),
+        () => ref.current?.querySelector<HTMLButtonElement>('[data-close]')?.focus(),
         50,
       );
   }, [inspector]);
   return (
     <aside
       ref={ref}
-      className={`inspector ${inspector ? 'open' : ''}`}
+      className={s.drawer}
+      data-open={inspector ? true : undefined}
       aria-label="Inspector"
       aria-hidden={!inspector}
+      inert={!inspector || undefined}
     >
       {inspector?.kind === 'agent' && <AgentPanel id={inspector.id} close={closeInspector} />}
       {inspector?.kind === 'task' && <TaskPanel id={inspector.id} close={closeInspector} />}
@@ -55,7 +62,7 @@ export function Inspector() {
 
 function Close({ close }: { close: () => void }) {
   return (
-    <button className="icon-btn" aria-label="Close" onClick={close}>
+    <button type="button" className={s.close} aria-label="Close" data-close onClick={close}>
       <Icon name="close" />
     </button>
   );
@@ -64,9 +71,10 @@ function Close({ close }: { close: () => void }) {
 function AgentPanel({ id, close }: { id: string; close: () => void }) {
   const { projectId, run, go, ui, inspect } = useApp();
   const { byId } = useRoster();
+  const eye = useEyeState();
   const tz = useTz();
   const a = useProjectResource<AgentDetail>(`/agents/${encodeURIComponent(id)}`).data;
-  if (!a) return <div className="insp-body quiet-line">Loading…</div>;
+  if (!a) return <div className={`${s.loading} type-body-small`}>Loading…</div>;
   const cos = a.tier === 'chief_of_staff';
   const lead = byId(a.reportsTo);
   const canPause = a.state === 'active' || a.state === 'waiting' || a.state === 'paused';
@@ -74,54 +82,69 @@ function AgentPanel({ id, close }: { id: string; close: () => void }) {
     run(() =>
       post(`/projects/${projectId}/control`, { verb, scope: { kind: 'agent', id: a.agentId } }),
     );
+  const name = personOf(a);
   return (
     <>
-      <div className="insp-head">
-        <span className={`av8 lg ${cos ? 'cy' : ''}`}>{initials(a)}</span>
-        <h2>
-          {personOf(a)}
-          <small>{cos ? 'Chief of Staff' : a.name}</small>
+      <div className={s.head}>
+        {cos ? (
+          <Eye state={eye.state} size={40} decorative />
+        ) : (
+          <Avatar
+            face={{
+              agentId: a.agentId,
+              name,
+              firstName: name.split(' ')[0] ?? name,
+              initials: initials(a),
+              workstream: a.workstream,
+              working: a.state === 'active',
+            }}
+            size="lg"
+          />
+        )}
+        <h2 className={s.title}>
+          <span className="type-title">{name}</span>
+          <small className="type-meta">{cos ? 'Chief of Staff' : a.name}</small>
         </h2>
         <Chip state={a.state} />
         <Close close={close} />
       </div>
-      <div className="insp-body">
+      <div className={s.body}>
         <div>
-          <h3>Role</h3>
-          <p style={{ margin: 0, fontSize: 14 }}>{a.description || a.name}</p>
+          <h3 className="type-label">Role</h3>
+          <p className="type-body-small">{a.description || a.name}</p>
           {a.projectNote && (
             <>
-              <h3 style={{ marginTop: 14 }}>On this project</h3>
-              <p style={{ margin: 0, fontSize: 14 }}>
+              <h3 className={`${s.later} type-label`}>On this project</h3>
+              <p className="type-body-small">
                 <Who text={a.projectNote} />
               </p>
             </>
           )}
         </div>
-        <div className="kv">
-          <span className="muted">Model</span>
-          <span className="v">{a.modelClass}</span>
-          <span className="muted">Reports to</span>
-          <span className="v">
-            {cos
-              ? 'You, Implementation Director'
-              : lead
-                ? `${personOf(lead)}, ${lead.tier === 'chief_of_staff' ? 'Chief of Staff' : lead.name}`
-                : 'Cypher, Chief of Staff'}
-          </span>
-          <span className="muted">Active in phases</span>
-          <span className="v">
-            {a.activePhases.length >= 10 ? 'all' : a.activePhases.join(', ') || '–'}
-          </span>
-          <span className="muted">Tokens this project</span>
-          <span className="v">{tokens(a.tokensProject)}</span>
-        </div>
+        <Facts
+          rows={[
+            ['Model', a.modelClass],
+            [
+              'Reports to',
+              cos
+                ? 'You, Implementation Director'
+                : lead
+                  ? `${personOf(lead)}, ${lead.tier === 'chief_of_staff' ? 'Chief of Staff' : lead.name}`
+                  : 'Cypher, Chief of Staff',
+            ],
+            [
+              'Active in phases',
+              a.activePhases.length >= 10 ? 'all' : a.activePhases.join(', ') || '–',
+            ],
+            ['Tokens this project', tokens(a.tokensProject)],
+          ]}
+        />
         <div>
-          <h3>Now</h3>
-          <p style={{ margin: 0, fontSize: 13.5 }}>
+          <h3 className="type-label">Now</h3>
+          <p className="type-body-small">
             {a.now ?? '–'}
             {a.step && (
-              <span className="muted">
+              <span className={s.quiet}>
                 {' '}
                 (step {a.step.n} of {a.step.of})
               </span>
@@ -129,8 +152,8 @@ function AgentPanel({ id, close }: { id: string; close: () => void }) {
           </p>
           {a.taskId && (
             <button
-              className="link-btn"
-              style={{ marginTop: 4, fontSize: 12.5 }}
+              type="button"
+              className={`${o.link} type-meta`}
               onClick={() => inspect('task', a.taskId!)}
             >
               Open the task
@@ -138,63 +161,67 @@ function AgentPanel({ id, close }: { id: string; close: () => void }) {
           )}
         </div>
         <div>
-          <h3>Next</h3>
-          <p style={{ margin: 0, fontSize: 14.5 }}>{a.next ? <Who text={a.next.title} /> : '–'}</p>
-          {a.next && (
-            <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>
-              {a.next.when}
-            </p>
-          )}
+          <h3 className="type-label">Next</h3>
+          <p className="type-body-small">{a.next ? <Who text={a.next.title} /> : '–'}</p>
+          {a.next && <p className={`${s.quiet} type-meta`}>{a.next.when}</p>}
         </div>
         <div>
-          <h3>Last tool calls</h3>
-          <div className="calls">
-            {a.lastSteps.length ? (
-              a.lastSteps.map((c) => (
-                <div key={c.stepId} className={`call ${c.resultCode >= 400 ? 'bad' : ''}`}>
-                  <span className="mono muted">{clock(c.ts, tz)}</span>
-                  <span>
-                    <span className="op">
-                      {c.toolServer} · {c.operation}
-                    </span>
+          <h3 className="type-label">Last tool calls</h3>
+          {a.lastSteps.length ? (
+            <div className={s.calls}>
+              {a.lastSteps.map((c) => (
+                <div
+                  key={c.stepId}
+                  className={`${s.call} type-meta`}
+                  data-bad={c.resultCode >= 400 || undefined}
+                >
+                  <span>{clock(c.ts, tz)}</span>
+                  <span className={s.op}>
+                    {c.toolServer} · {c.operation}
                   </span>
-                  <span className="code">
+                  <span className={s.code}>
                     {c.outcome ?? c.resultCode} ·{' '}
                     {c.durationMs < 1000
                       ? `${c.durationMs} ms`
                       : `${(c.durationMs / 1000).toFixed(1)} s`}
                   </span>
                 </div>
-              ))
-            ) : (
-              <p className="quiet-line" style={{ margin: 0 }}>
-                No tool calls yet.
-              </p>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className={`${s.quiet} type-body-small`}>No tool calls yet.</p>
+          )}
         </div>
         {!cos && (
-          <div className="btn-row">
+          <div className={s.actions}>
             {a.state === 'paused' ? (
-              <button className="btn primary" onClick={() => void control('resume')}>
+              <button
+                type="button"
+                className={`${o.btn} ${o.primary} type-button`}
+                onClick={() => void control('resume')}
+              >
                 Resume
               </button>
             ) : (
-              <button className="btn" disabled={!canPause} onClick={() => void control('pause')}>
+              <button
+                type="button"
+                className={`${o.btn} type-button`}
+                disabled={!canPause}
+                onClick={() => void control('pause')}
+              >
                 Pause this agent
               </button>
             )}
             <button
-              className="btn"
+              type="button"
+              className={`${o.btn} type-button`}
               onClick={() => go('activity', { activity: { ...ui.activity, agent: a.agentId } })}
             >
               Open in Activity
             </button>
           </div>
         )}
-        <p className="quiet-line" style={{ margin: 0 }}>
-          Read-only. Direct the team through Cypher.
-        </p>
+        <p className={`${s.quiet} type-meta`}>Read-only. Direct the team through Cypher.</p>
       </div>
     </>
   );
@@ -209,7 +236,7 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
     projectId,
     projectId ? `/projects/${projectId}/schedule` : null,
   ).data;
-  if (!t) return <div className="insp-body quiet-line">Loading…</div>;
+  if (!t) return <div className={`${s.loading} type-body-small`}>Loading…</div>;
   const ag = byId(t.agentId);
   const win = sched?.tasks.find((x) => x.taskId === t.taskId);
   const title = (tid: string) => sched?.tasks.find((x) => x.taskId === tid)?.title ?? tid;
@@ -227,79 +254,59 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
       : true;
     return today ? clock(iso, tz) : `${shortDay(iso, tz)} ${clock(iso, tz)}`;
   };
+  const facts: [ReactNode, ReactNode][] = [
+    [
+      'Agent',
+      ag ? (
+        <button type="button" className={o.link} onClick={() => inspect('agent', ag.agentId)}>
+          {personOf(ag)}, {ag.name}
+        </button>
+      ) : (
+        t.role
+      ),
+    ],
+    [
+      'Window',
+      win ? (
+        <>
+          {when(win.start)} to {when(win.end)}
+          {win.basis !== 'actual' && <span className={s.quiet}> ({win.basis})</span>}
+        </>
+      ) : (
+        '–'
+      ),
+    ],
+    ['Depends on', t.dependsOn.length ? t.dependsOn.map(title).join(', ') : 'nothing'],
+    ...(t.itemKeys.length ? ([['Items', t.itemKeys.join(', ')]] as [ReactNode, ReactNode][]) : []),
+    ...(t.contract
+      ? ([
+          ['Inputs', t.contract.inputs],
+          ['Outputs', t.contract.outputs],
+          ['Acceptance', t.contract.acceptance],
+        ] as [ReactNode, ReactNode][])
+      : []),
+    ['Attempts', attempts],
+    ...(t.lastReason
+      ? ([['Last result', <Who key="r" text={t.lastReason} />]] as [ReactNode, ReactNode][])
+      : []),
+    ...(t.contract ? ([['Rollback recipe', t.contract.rollback]] as [ReactNode, ReactNode][]) : []),
+  ];
   return (
     <>
-      <div className="insp-head">
-        <h2>
-          {t.title}
-          {t.groupTitle && <small>{t.groupTitle}</small>}
+      <div className={s.head}>
+        <h2 className={s.title}>
+          <span className="type-title">{t.title}</span>
+          {t.groupTitle && <small className="type-meta">{t.groupTitle}</small>}
         </h2>
         <Chip state={t.state} />
         <Close close={close} />
       </div>
-      <div className="insp-body">
-        <dl className="contract" style={{ margin: 0 }}>
-          <dt>Agent</dt>
-          <dd>
-            {ag ? (
-              <button className="link-btn" onClick={() => inspect('agent', ag.agentId)}>
-                {personOf(ag)}, {ag.name}
-              </button>
-            ) : (
-              t.role
-            )}
-          </dd>
-          <dt>Window</dt>
-          <dd>
-            {win ? (
-              <>
-                {when(win.start)} to {when(win.end)}
-                {win.basis !== 'actual' && <span className="muted"> ({win.basis})</span>}
-              </>
-            ) : (
-              '–'
-            )}
-          </dd>
-          <dt>Depends on</dt>
-          <dd>{t.dependsOn.length ? t.dependsOn.map(title).join(', ') : 'nothing'}</dd>
-          {t.itemKeys.length > 0 && (
-            <>
-              <dt>Items</dt>
-              <dd className="mono" style={{ fontSize: 12.5 }}>
-                {t.itemKeys.join(', ')}
-              </dd>
-            </>
-          )}
-          {t.contract && (
-            <>
-              <dt>Inputs</dt>
-              <dd>{t.contract.inputs}</dd>
-              <dt>Outputs</dt>
-              <dd>{t.contract.outputs}</dd>
-              <dt>Acceptance</dt>
-              <dd>{t.contract.acceptance}</dd>
-            </>
-          )}
-          <dt>Attempts</dt>
-          <dd>{attempts}</dd>
-          {t.lastReason && (
-            <>
-              <dt>Last result</dt>
-              <dd>
-                <Who text={t.lastReason} />
-              </dd>
-            </>
-          )}
-          {t.contract && (
-            <>
-              <dt>Rollback recipe</dt>
-              <dd>{t.contract.rollback}</dd>
-            </>
-          )}
-        </dl>
-        <div className="btn-row">
+      <div className={s.body}>
+        <Facts rows={facts} />
+        <div className={s.actions}>
           <button
-            className="btn"
+            type="button"
+            className={`${o.btn} type-button`}
             // Anything that ran and isn't running now: finished, or stuck (blocked, rejected, waiting).
             disabled={!RERUNNABLE.has(t.state) || t.kind !== 'work'}
             title={RERUNNABLE.has(t.state) ? undefined : `Can't re-run while ${t.state}`}
@@ -325,7 +332,8 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
             Re-run with instructions
           </button>
           <button
-            className="btn"
+            type="button"
+            className={`${o.btn} type-button`}
             disabled={!COMPLETABLE.has(t.state) || t.kind !== 'work'}
             title={
               COMPLETABLE.has(t.state)
@@ -358,7 +366,8 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
             Mark done
           </button>
           <button
-            className="btn danger"
+            type="button"
+            className={`${o.btn} ${o.danger} type-button`}
             disabled={t.state !== 'done'}
             onClick={() =>
               openOverlay(
@@ -381,7 +390,8 @@ function TaskPanel({ id, close }: { id: string; close: () => void }) {
             Roll back
           </button>
           <button
-            className="btn danger"
+            type="button"
+            className={`${o.btn} ${o.danger} type-button`}
             disabled={['done', 'cancelled', 'rolled_back'].includes(t.state) || t.kind !== 'work'}
             onClick={() =>
               openOverlay(

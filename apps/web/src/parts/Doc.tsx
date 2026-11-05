@@ -3,6 +3,7 @@ import { Marked, type Tokens } from 'marked';
 import { useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import { blobUrl } from '../lib/api';
 import { useApp } from '../state';
+import ds from './doc.module.css';
 
 const CALLOUTS: Record<string, string> = {
   NOTE: 'Note',
@@ -29,14 +30,23 @@ const slug = (s: string) =>
  * (blob://…), links between documents (artifact://<id>), and a contents list for long documents.
  * Everything is sanitised: an agent's document can't run script in the Control Center.
  */
-export function MarkdownDoc({ text, projectId }: { text: string; projectId: string }) {
+export function MarkdownDoc({
+  text,
+  projectId,
+  contents = true,
+}: {
+  text: string;
+  projectId: string;
+  /** Show the document's own contents list; off where the page beside it already lists the headings. */
+  contents?: boolean;
+}) {
   const { setUi } = useApp();
   const ref = useRef<HTMLDivElement>(null);
   const { html, toc } = useMemo(() => render(text, projectId), [text, projectId]);
 
   // Diagrams render after the HTML is in place; mermaid is loaded only when a document has one.
   useEffect(() => {
-    const blocks = ref.current?.querySelectorAll<HTMLElement>('.doc-mermaid[data-src]');
+    const blocks = ref.current?.querySelectorAll<HTMLElement>('[data-mermaid][data-src]');
     if (!blocks?.length) return;
     let stop = false;
     void import('mermaid').then(async ({ default: mermaid }) => {
@@ -59,7 +69,7 @@ export function MarkdownDoc({ text, projectId }: { text: string; projectId: stri
           });
           el.removeAttribute('data-src');
         } catch {
-          el.innerHTML = `<pre class="mono">${escape(src)}</pre><p class="faint">This diagram could not be drawn.</p>`;
+          el.innerHTML = `<pre class="${ds.pre}">${escape(src)}</pre><p class="${ds.quiet}">This diagram could not be drawn.</p>`;
         }
       }
     });
@@ -77,11 +87,12 @@ export function MarkdownDoc({ text, projectId }: { text: string; projectId: stri
     }
   };
 
+  const withToc = contents && toc.length >= 3;
   return (
-    <div className={`doc ${toc.length >= 3 ? 'has-toc' : ''}`}>
-      {toc.length >= 3 && (
-        <nav className="doc-toc" aria-label="Contents">
-          <span className="eyebrow">Contents</span>
+    <div className={ds.doc} data-toc={withToc || undefined}>
+      {withToc && (
+        <nav className={`${ds.toc} type-meta`} aria-label="Contents">
+          <span className={`${ds.tocLabel} type-label`}>Contents</span>
           {toc.map((t) => (
             <a key={t.id} href={`#${t.id}`}>
               {t.text}
@@ -91,7 +102,7 @@ export function MarkdownDoc({ text, projectId }: { text: string; projectId: stri
       )}
       <article
         ref={ref}
-        className="doc-body"
+        className={ds.body}
         onClick={onClick}
         dangerouslySetInnerHTML={{ __html: html }}
       />
@@ -116,10 +127,10 @@ function render(text: string, projectId: string) {
       },
       code(t: Tokens.Code) {
         if (t.lang === 'mermaid') {
-          return `<figure class="doc-mermaid" data-src="${encodeURIComponent(t.text)}"><pre class="mono">${escape(t.text)}</pre></figure>`;
+          return `<figure class="${ds.mermaid}" data-mermaid="" data-src="${encodeURIComponent(t.text)}"><pre class="${ds.pre}">${escape(t.text)}</pre></figure>`;
         }
-        const lang = t.lang ? `<span class="doc-code-lang">${escape(t.lang)}</span>` : '';
-        return `<div class="doc-code">${lang}<pre><code>${escape(t.text)}</code></pre></div>`;
+        const lang = t.lang ? `<span class="${ds.codeLang}">${escape(t.lang)}</span>` : '';
+        return `<div class="${ds.code}">${lang}<pre><code>${escape(t.text)}</code></pre></div>`;
       },
       table(this: { parser: { parseInline(t: Tokens.Generic[]): string } }, t: Tokens.Table) {
         const cell = (c: Tokens.TableCell, tag: 'th' | 'td', i: number) => {
@@ -130,17 +141,17 @@ function render(text: string, projectId: string) {
         const body = t.rows
           .map((r) => `<tr>${r.map((c, i) => cell(c, 'td', i)).join('')}</tr>`)
           .join('');
-        return `<div class="doc-table"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+        return `<div class="${ds.table}"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
       },
       image(t: Tokens.Image) {
         const src = t.href.startsWith('blob://') ? blobUrl(projectId, t.href) : t.href;
         const caption = t.text ? `<figcaption>${escape(t.text)}</figcaption>` : '';
-        return `<figure class="doc-figure"><img src="${escape(src)}" alt="${escape(t.text)}" loading="lazy" />${caption}</figure>`;
+        return `<figure class="${ds.figure}"><img src="${escape(src)}" alt="${escape(t.text)}" loading="lazy" />${caption}</figure>`;
       },
       link(this: { parser: { parseInline(t: Tokens.Generic[]): string } }, t: Tokens.Link) {
         const inner = this.parser.parseInline(t.tokens);
         const m = /^artifact:\/\/([a-z0-9][a-z0-9-]*)/.exec(t.href);
-        if (m) return `<a href="#" class="doc-xref" data-artifact="${m[1]}">${inner}</a>`;
+        if (m) return `<a href="#" data-artifact="${m[1]}">${inner}</a>`;
         if (t.href.startsWith('blob://'))
           return `<a href="${escape(blobUrl(projectId, t.href))}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
         const external = /^https?:\/\//.test(t.href);
@@ -153,10 +164,10 @@ function render(text: string, projectId: string) {
   html = html.replace(
     /<blockquote>\s*<p>\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(?:<br\s*\/?>)?\s*/g,
     (_, kind: string) =>
-      `<blockquote class="callout callout-${kind.toLowerCase()}"><p class="callout-title">${CALLOUTS[kind]}</p><p>`,
+      `<blockquote class="${ds.callout}" data-kind="${kind.toLowerCase()}"><p class="${ds.calloutTitle}">${CALLOUTS[kind]}</p><p>`,
   );
   html = DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'data-artifact', 'data-src', 'loading'],
+    ADD_ATTR: ['target', 'data-artifact', 'data-src', 'data-mermaid', 'data-kind', 'loading'],
   });
   return { html, toc };
 }

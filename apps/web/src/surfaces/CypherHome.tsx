@@ -3,7 +3,10 @@ import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from
 import { ApiProblem, messageOf } from '../lib/api';
 import { cypher, useCypher } from '../lib/cypher';
 import { age, ago } from '../lib/fmt';
+import s from '../dock/dock.module.css';
 import { useApp, useNow } from '../state';
+import { Icon } from '../theme/icons';
+import { Eye } from '../ui/Eye';
 
 const STARTERS = [
   'What needs me today?',
@@ -60,14 +63,14 @@ function Proposal({ p }: { p: CypherProposal }) {
   const d = p.draft;
   const source = [d.sourceUrl, d.repo].filter(Boolean).join(' · ') || 'No source yet';
   return (
-    <div className="cy-proposal">
-      <div className="cy-p-head">
-        <span className="cy-p-kind">
+    <div className={s.proposal}>
+      <div className={s.embedHead}>
+        <span className={`${s.kind} type-label`}>
           {p.kind === 'remix' ? `Remix of ${d.from?.name}` : 'New project'}
         </span>
-        <strong>{d.name}</strong>
+        <b className="type-section">{d.name}</b>
       </div>
-      <dl>
+      <dl className={`${s.facts} type-body-small`}>
         <dt>Client</dt>
         <dd>{d.client}</dd>
         <dt>Playbook</dt>
@@ -81,14 +84,16 @@ function Proposal({ p }: { p: CypherProposal }) {
             : 'Entered in the wizard'}
         </dd>
       </dl>
-      {p.reason && <p className="cy-p-why">{p.reason}</p>}
+      {p.reason && <p className={`${s.text} type-body-small`}>{p.reason}</p>}
       {p.notCovered.length > 0 && (
-        <p className="cy-p-gap">
+        <p className={`${s.gap} type-body-small`}>
           <strong>Not covered:</strong> {p.notCovered.join('; ')}
         </p>
       )}
       <button
-        className="btn primary sm"
+        type="button"
+        className={`${s.btn} type-button`}
+        data-primary
         onClick={() =>
           newProject({
             remix: { draft: d, connectionName: null },
@@ -108,40 +113,51 @@ function Message({ m }: { m: CypherMessage }) {
   const { switchProject } = useApp();
   if (m.role === 'director')
     return (
-      <div className="cy-m me">
-        <div className="cy-bubble">{m.body}</div>
+      <div className={s.me}>
+        <div className={`${s.bubble} type-body-small`}>{m.body}</div>
       </div>
     );
   return (
-    <div className="cy-m">
-      <div className="cy-who">
-        Cypher <span>{age(m.at)}</span>
-      </div>
-      <div className="cy-text">
-        <Prose text={m.body} />
-      </div>
-      {m.proposals.map((p, i) => (
-        <Proposal key={i} p={p} />
-      ))}
-      {(m.filed ?? []).length > 0 && (
-        <ul className="cy-filed">
-          {m.filed.map((f) => (
-            <li key={f.ref}>
-              Proposed <span className="mono">{f.ref}</span> {f.title}: waiting for you under Menu →{' '}
-              {f.kind === 'rule' ? 'Rules' : 'Knowledge'}.
-            </li>
-          ))}
-        </ul>
-      )}
-      {m.projects.length > 0 && (
-        <div className="cy-links">
-          {m.projects.map((p) => (
-            <button key={p.id} className="dash-chip" onClick={() => switchProject(p.id)}>
-              Open {p.name}
-            </button>
-          ))}
+    <div className={s.m}>
+      <span className={s.mark} aria-hidden="true">
+        <Eye state="resting" size={22} decorative />
+      </span>
+      <div className={s.main}>
+        <div className={`${s.meta} type-meta`}>
+          <b>Cypher</b>
+          <span>{age(m.at)}</span>
         </div>
-      )}
+        <div className={`${s.prose} type-body-small`}>
+          <Prose text={m.body} />
+        </div>
+        {m.proposals.map((p, i) => (
+          <Proposal key={i} p={p} />
+        ))}
+        {(m.filed ?? []).length > 0 && (
+          <ul className={`${s.filed} type-meta`}>
+            {m.filed.map((f) => (
+              <li key={f.ref}>
+                Proposed <span className={s.ref}>{f.ref}</span> {f.title}: waiting for you under
+                Menu → {f.kind === 'rule' ? 'Rules' : 'Knowledge'}.
+              </li>
+            ))}
+          </ul>
+        )}
+        {m.projects.length > 0 && (
+          <div className={s.actions}>
+            {m.projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`${s.btn} type-button`}
+                onClick={() => switchProject(p.id)}
+              >
+                Open {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -160,22 +176,21 @@ class CypherBoundary extends Component<{ children: ReactNode }, { error: Error |
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <section className="cy-home">
-        <header className="cy-head">
-          <span className="cy-avatar" aria-hidden="true">
-            C
-          </span>
-          <div>
-            <h2>Cypher</h2>
-            <p>Chief of Staff</p>
+      <section className={s.home}>
+        <header className={s.homeHead}>
+          <Eye state="resting" size={34} decorative />
+          <div className={s.who}>
+            <h2 className={`${s.name} type-section`}>Cypher</h2>
+            <p className={`${s.role} type-meta`}>Chief of Staff</p>
           </div>
         </header>
-        <p className="quiet-line" style={{ marginTop: 14 }}>
+        <p className={`${s.quiet} type-body-small`}>
           This conversation could not be shown ({this.state.error.message}).
         </p>
         <div>
           <button
-            className="btn sm"
+            type="button"
+            className={`${s.btn} type-button`}
             onClick={() => {
               cypher.fresh();
               this.setState({ error: null });
@@ -201,20 +216,20 @@ function CypherPanel() {
   // Keeps the relative times ("12 min ago") current.
   useNow(15_000);
   const { toast } = useApp();
-  const s = useCypher();
+  const st = useCypher();
   const [text, setText] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (!s.loaded) void cypher.load();
+    if (!st.loaded) void cypher.load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     // Scrolls the conversation, never the page around it.
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [s.active?.messages.length, pending]);
+  }, [st.active?.messages.length, pending]);
 
   const send = async () => {
     const body = text.trim();
@@ -242,98 +257,121 @@ function CypherPanel() {
     input.current?.focus();
   };
 
-  const active = s.active;
+  const active = st.active;
   const messages = active?.messages ?? [];
   const inChat = messages.length > 0 || pending !== null;
   return (
-    <section className="cy-home">
-      <header className="cy-head">
-        <span className="cy-avatar" aria-hidden="true">
-          C
-        </span>
-        <div>
-          <h2>{active?.title ?? 'Cypher'}</h2>
-          <p>{active ? `Chief of Staff · ${ago(active.updatedAt)}` : 'Chief of Staff'}</p>
+    <section className={s.home}>
+      <header className={s.homeHead}>
+        <Eye state={pending ? 'watching' : 'resting'} size={34} decorative />
+        <div className={s.who}>
+          <h2 className={`${s.name} type-section`}>{active?.title ?? 'Cypher'}</h2>
+          <p className={`${s.role} type-meta`}>
+            {active ? `Chief of Staff · ${ago(active.updatedAt)}` : 'Chief of Staff'}
+          </p>
         </div>
-        <div className="cy-actions">
-          {(s.activeId || inChat) && (
-            <button className="btn sm" onClick={fresh} disabled={Boolean(pending)}>
-              New chat
-            </button>
-          )}
-        </div>
+        {(st.activeId || inChat) && (
+          <button
+            type="button"
+            className={`${s.btn} type-button`}
+            onClick={fresh}
+            disabled={Boolean(pending)}
+          >
+            <Icon name="plus" size={18} />
+            New chat
+          </button>
+        )}
       </header>
-      {s.loaded && !s.available ? (
-        <p className="quiet-line">Cypher needs the model, which isn’t configured on this server.</p>
+      {st.loaded && !st.available ? (
+        <p className={`${s.quiet} type-body-small`}>
+          Cypher needs the model, which isn’t configured on this server.
+        </p>
       ) : (
         <>
           {inChat && (
-            <div className="cy-convo" aria-live="polite" ref={box}>
+            <div className={s.homeConvo} aria-live="polite" ref={box}>
               {messages.map((m) => (
                 <Message key={m.id} m={m} />
               ))}
               {pending && (
                 <>
-                  <div className="cy-m me">
-                    <div className="cy-bubble">{pending}</div>
+                  <div className={s.me}>
+                    <div className={`${s.bubble} type-body-small`}>{pending}</div>
                   </div>
-                  <div className="cy-m">
-                    <div className="cy-who">Cypher</div>
-                    <div className="cy-thinking">Reading the portfolio…</div>
+                  <div className={s.m}>
+                    <span className={s.mark} aria-hidden="true">
+                      <Eye state="watching" size={22} decorative />
+                    </span>
+                    <div className={s.main}>
+                      <div className={`${s.meta} type-meta`}>
+                        <b>Cypher</b>
+                      </div>
+                      <p className={`${s.thinking} type-body-small`}>Reading the portfolio…</p>
+                    </div>
                   </div>
                 </>
               )}
             </div>
           )}
-          {!inChat && s.opening && <p className="quiet-line">Opening the conversation…</p>}
-          {!inChat && !s.opening && (
-            <div className="cy-starters">
-              {STARTERS.map((st) => (
+          {!inChat && st.opening && (
+            <p className={`${s.quiet} type-body-small`}>Opening the conversation…</p>
+          )}
+          {!inChat && !st.opening && (
+            <div className={s.starters} role="group" aria-label="Ways to start">
+              {STARTERS.map((q) => (
                 <button
-                  key={st}
-                  className="dash-chip"
+                  key={q}
+                  type="button"
+                  className={`${s.prompt} type-meta`}
                   onClick={() => {
-                    setText(st.replace(/…$/, ''));
+                    setText(q.replace(/…$/, ''));
                     input.current?.focus();
                   }}
                 >
-                  {st}
+                  {q}
                 </button>
               ))}
             </div>
           )}
           <form
-            className="cy-compose"
+            className={s.compose}
             onSubmit={(e) => {
               e.preventDefault();
               void send();
             }}
           >
-            <textarea
-              ref={input}
-              value={text}
-              rows={3}
-              placeholder={
-                active
-                  ? 'Continue this conversation…'
-                  : 'Ask about a project, give a brief, or ask for “a site like Ansco for …”'
-              }
-              aria-label="Message Cypher"
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
+            <div className={s.box}>
+              <textarea
+                ref={input}
+                className={`${s.input} type-body-small`}
+                value={text}
+                rows={3}
+                placeholder={
+                  active
+                    ? 'Continue this conversation…'
+                    : 'Ask about a project, give a brief, or ask for “a site like Ansco for …”'
                 }
-              }}
-            />
-            <button
-              className="btn primary"
-              type="submit"
-              disabled={!text.trim() || Boolean(pending)}
-            >
-              Send
-            </button>
+                aria-label="Message Cypher"
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <button
+                className={s.send}
+                type="submit"
+                aria-label="Send"
+                disabled={!text.trim() || Boolean(pending)}
+              >
+                <Icon name="send" size={18} />
+              </button>
+            </div>
+            <span className={`${s.hint} type-meta`}>
+              <span>Enter sends · Shift Enter for a new line</span>
+            </span>
           </form>
         </>
       )}

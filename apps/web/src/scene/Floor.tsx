@@ -1,6 +1,8 @@
 import type { ActivityItem, PlanSnapshot, TaskView } from '@lw/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Icon } from '../lib/icons';
+import { Icon } from '../theme/icons';
+import { EyeResting } from '../theme/marks';
+import fl from './floor.module.css';
 import { zoneLabel } from '../lib/fmt';
 import { useApp, useMission, useProjectResource, useTeam, useTz } from '../state';
 import {
@@ -383,8 +385,8 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
             ? 'Live'
             : 'Idle';
   return (
-    <div className={hero ? 'floor floor-hero' : 'floor'}>
-      <div className="floor-canvas" ref={wrapRef}>
+    <div className={fl.floor} data-hero={hero || undefined}>
+      <div className={fl.canvas} ref={wrapRef}>
         <canvas
           ref={canvasRef}
           role="img"
@@ -397,28 +399,28 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
             if (id) inspect('agent', id);
           }}
         />
-        {!team && <div className="floor-empty">Loading the team…</div>}
+        {!team && <div className={`${fl.empty} type-body-small`}>Loading the team…</div>}
         <div
-          className="floor-state"
+          className={`${fl.state} type-meta`}
           data-live={mode === 'live' && live}
           data-replay={mode === 'replay'}
         >
           <i />
           {pill}
         </div>
-        <div className="floor-legend" aria-hidden="true">
-          {WORKSTREAMS.map((ws) => (
-            <span key={ws}>
-              <i style={{ background: theme.ws[ws] }} />
-              {WORKSTREAM_LABEL[ws]}
-            </span>
-          ))}
-          <span>
-            <i style={{ background: theme.accent }} />
-            Cypher
+      </div>
+      <div className={`${fl.legend} type-meta`} aria-hidden="true">
+        {WORKSTREAMS.map((ws) => (
+          <span key={ws}>
+            <i style={{ background: theme.ws[ws] }} />
+            {WORKSTREAM_LABEL[ws]}
           </span>
-          <span>Click an agent for details</span>
-        </div>
+        ))}
+        <span>
+          <EyeResting size={14} />
+          Cypher
+        </span>
+        <span>Click an agent for details</span>
       </div>
       <ReplayBar
         mode={mode}
@@ -521,8 +523,8 @@ function ReplayBar({
   };
 
   return (
-    <div className="replay" data-mode={mode}>
-      <div className="act-view" role="group" aria-label="Floor time">
+    <div className={fl.replay} data-mode={mode}>
+      <div className={`${fl.seg} type-meta`} role="group" aria-label="Floor time">
         <button aria-pressed={mode === 'live'} onClick={onLive}>
           Live
         </button>
@@ -533,7 +535,7 @@ function ReplayBar({
       {mode === 'replay' && (
         <>
           <select
-            className="select rp-window"
+            className={`${fl.window} type-meta`}
             aria-label="Replay window"
             value={preset}
             onChange={(e) => onPreset(e.target.value as ReplayPreset)}
@@ -545,31 +547,32 @@ function ReplayBar({
             ))}
           </select>
           <button
-            className="rp-play"
+            type="button"
+            className={fl.play}
             aria-label={replay?.playing ? 'Pause' : 'Play'}
             disabled={!replay || loading !== null}
             onClick={onToggle}
           >
             {replay?.playing ? <PauseGlyph /> : <PlayGlyph />}
           </button>
-          <div className="act-view rp-speed" role="group" aria-label="Speed">
+          <div className={`${fl.seg} type-meta`} role="group" aria-label="Speed">
             {SPEEDS.map((s) => (
               <button key={s} aria-pressed={speed === s} onClick={() => onSpeed(s)}>
                 {s}×
               </button>
             ))}
           </div>
-          <div className="rp-track">
+          <div className={fl.track}>
             {loading !== null ? (
-              <div className="rp-loading">
+              <div className={`${fl.loading} type-meta`}>
                 Loading history… {loading.toLocaleString('en-US')} rows
               </div>
             ) : replay && !replay.rows.length ? (
-              <div className="rp-loading">Nothing happened in this window.</div>
+              <div className={`${fl.loading} type-meta`}>Nothing happened in this window.</div>
             ) : (
               <canvas
                 ref={stripRef}
-                className="rp-strip"
+                className={fl.strip}
                 role="slider"
                 aria-label="Replay position"
                 aria-valuemin={replay?.window.since}
@@ -592,11 +595,11 @@ function ReplayBar({
               />
             )}
           </div>
-          <div className="rp-clock">
+          <div className={`${fl.clock} type-meta`}>
             {replay && loading === null ? (
               <>
-                <span className="rp-time">{projectClock(replay.vt, tz)}</span>
-                <span className="rp-sub">
+                <span className={fl.time}>{projectClock(replay.vt, tz)}</span>
+                <span className={fl.sub}>
                   {skipped
                     ? 'Quiet stretch skipped'
                     : phase !== null
@@ -609,8 +612,8 @@ function ReplayBar({
         </>
       )}
       {mode === 'live' && (
-        <span className="rp-hint">
-          <Icon name="time" sm /> Replay a window of the project's history at 10× or 60×
+        <span className={`${fl.hint} type-meta`}>
+          <Icon name="clock" size={18} /> Replay a window of the project's history at 10× or 60×
         </span>
       )}
     </div>
@@ -960,9 +963,14 @@ function draw(
       ctx.arc(f.pos.x, f.pos.y, r + 3, 0, Math.PI * 2);
       ctx.stroke();
     }
-    ctx.fillStyle = f.spec.tier === 'lead' ? col : th.onAccent;
-    ctx.font = `600 ${(f.spec.tier === 'chief_of_staff' ? 13 : 10.5) * k}px ${th.font}`;
-    ctx.fillText(f.spec.initials, f.pos.x, f.pos.y + 0.5);
+    if (f.spec.tier === 'chief_of_staff') {
+      // Cypher is only ever the eye (design system §3): the mark's lid over its ink disc.
+      drawEye(ctx, f.pos.x, f.pos.y, r, f.working && !s.paused, th.onAccent);
+    } else {
+      ctx.fillStyle = f.spec.tier === 'lead' ? col : th.onAccent;
+      ctx.font = `600 ${10.5 * k}px ${th.font}`;
+      ctx.fillText(f.spec.initials, f.pos.x, f.pos.y + 0.5);
+    }
     // Names: Cypher and Leads always, others on hover.
     if (f.spec.tier !== 'specialist' || hover === f.spec.id) {
       ctx.fillStyle = th.fg2;
@@ -982,6 +990,43 @@ function draw(
     ctx.font = `12px ${th.font}`;
     ctx.fillText('Paused: everyone is at their desk', W / 2, H - 14);
   }
+}
+
+/*
+ * The eye's lid, from theme/marks/eye-resting.svg and eye-watching.svg (a 72 grid, disc radius
+ * 31), scaled to the figure's disc. The disc itself is drawn with the other figures.
+ */
+const LID_RESTING = typeof Path2D === 'undefined' ? null : new Path2D('M20 36 Q36 50 52 36');
+const LID_WATCHING =
+  typeof Path2D === 'undefined' ? null : new Path2D('M18 36 Q36 20 54 36 Q36 52 18 36 Z');
+function drawEye(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  watching: boolean,
+  lid: string,
+) {
+  if (!LID_RESTING || !LID_WATCHING) return;
+  const sc = r / 31;
+  ctx.save();
+  ctx.translate(x - 36 * sc, y - 36 * sc);
+  ctx.scale(sc, sc);
+  ctx.strokeStyle = lid;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if (watching) {
+    ctx.lineWidth = 3.5;
+    ctx.stroke(LID_WATCHING);
+    ctx.fillStyle = lid;
+    ctx.beginPath();
+    ctx.arc(36, 36, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.lineWidth = 4;
+    ctx.stroke(LID_RESTING);
+  }
+  ctx.restore();
 }
 
 function rank(t: string): number {

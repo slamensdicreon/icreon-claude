@@ -431,26 +431,7 @@
   overflow-y: auto;
   padding: var(--space-4) var(--space-4) 0;
 }
-/* The old dock, made to fill the sheet: no border, no off-canvas slide, no collapse. */
-.sheet :global(.dock) {
-  position: static;
-  transform: none;
-  width: auto;
-  flex: 1 1 auto;
-  min-height: 0;
-  border: 0;
-  box-shadow: none;
-  background: transparent;
-}
-.sheet :global(.dock-head) {
-  padding-right: calc(var(--row) + var(--space-2));
-}
-.sheet :global([data-action='collapse-dock']),
-.sheet :global(.dock-mini) {
-  display: none;
-}
-
-/* ---------- phone: the old bottom bar takes over (phase 5 redraws it) ---------- */
+/* ---------- phone: the bottom bar (shell/Chrome) takes over ---------- */
 @media (max-width: 640px) {
   .rail,
   .sidebar,
@@ -498,7 +479,45 @@
   display: none;
 }
 
-/* Pages still on the old stylesheet carry their own title; in Everything the top bar already says it. */
-.shell[data-mode='everything'] :global(.page-head h1) {
-  display: none;
+
+/* ---------- the scrolling page ---------- */
+.surface {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-6) var(--space-6) var(--space-8);
+}
+.surface:focus {
+  outline: none;
+}
+@media (max-width: 1100px) {
+  .surface {
+    padding: var(--space-5) var(--space-5) var(--space-8);
+  }
+}
+@media (max-width: 640px) {
+  .surface {
+    padding: var(--space-4) var(--space-4) calc(var(--row) + var(--space-6) + env(safe-area-inset-bottom, 0px));
+  }
+}
+/* The Workbench lays itself out by the page's width, not the window's. */
+.main {
+  container-type: inline-size;
+  container-name: canvas;
+  overflow: clip;
+}
+
+/* ---------- no projects yet ---------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  max-width: calc(var(--space-8) * 16);
+  padding-top: var(--space-6);
+  color: var(--text-2);
+}
+.empty h1 {
+  margin: 0;
+  color: var(--ink);
 }

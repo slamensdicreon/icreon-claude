@@ -1,0 +1,191 @@
+/*
+ * The Floor's chrome: the frame the canvas fills, the live or replay pill, the legend, and the
+ * replay bar under it (Live or Replay, the window, play, speed, the density strip, the clock).
+ * Colors, spaces and radii are tokens; type comes from the type-* classes on the elements.
+ */
+.floor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--space-8) * 6.5);
+  min-height: calc(var(--space-8) * 11.5);
+}
+.floor[data-hero] {
+  height: calc(100vh - var(--space-8) * 6.5);
+  min-height: calc(var(--space-8) * 10);
+}
+.canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+.state {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  color: var(--text-2);
+  pointer-events: none;
+}
+.state i {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--text-3);
+}
+.state[data-live='true'] i {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 20%, transparent);
+}
+.state[data-replay='true'] i {
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--mist-2);
+}
+.legend {
+  display: flex;
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  color: var(--text-3);
+  pointer-events: none;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.legend i {
+  display: inline-block;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+}
+.legend svg {
+  color: var(--ink);
+}
+
+/* ---------- the replay bar ---------- */
+.replay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--mist);
+  min-height: var(--row);
+}
+.floor[data-hero] .replay {
+  border-top: 0;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface);
+}
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: calc(var(--row) - var(--space-3));
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+.seg button:hover {
+  color: var(--ink);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.window {
+  min-height: calc(var(--row) - var(--space-3));
+  padding: 0 var(--space-6) 0 var(--space-3);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+.play {
+  display: inline-grid;
+  place-items: center;
+  width: calc(var(--row) - var(--space-3));
+  height: calc(var(--row) - var(--space-3));
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.play:hover:not(:disabled) {
+  border-color: var(--text-3);
+}
+.play:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* The strip takes a full row of its own under the controls. */
+.track {
+  flex: 1 0 100%;
+  order: 9;
+  height: var(--space-7);
+  display: flex;
+  align-items: center;
+}
+.strip {
+  display: block;
+  width: 100%;
+  height: var(--space-7);
+  cursor: ew-resize;
+  border-radius: var(--radius-sm);
+  outline-offset: 2px;
+}
+.loading {
+  color: var(--text-3);
+}
+.clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+}
+.time {
+  color: var(--ink);
+}
+.sub {
+  color: var(--text-3);
+}
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-3);
+}

@@ -1,6 +1,7 @@
 import type { AgentView, LinkTarget } from '@lw/contracts';
 import { whoize } from '../lib/fmt';
 import { useApp, useRoster, type Surface } from '../state';
+import s from './bits.module.css';
 
 const STATE_LABEL: Record<string, string> = {
   idle: 'Idle',
@@ -21,17 +22,27 @@ const STATE_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-/** Chip class for a state (task states map onto the prototype's chip set). */
-const CHIP_CLASS: Record<string, string> = {
-  validating: 'running',
+/** The meaning a state's color carries: working ink, done green, waiting gold, bad coral. */
+const TONE: Record<string, 'working' | 'done' | 'waiting' | 'bad' | 'quiet' | 'idle'> = {
+  active: 'working',
+  running: 'working',
+  validating: 'working',
+  done: 'done',
+  waiting: 'waiting',
+  paused: 'waiting',
   rejected: 'waiting',
-  rolled_back: 'rolledback',
-  cancelled: 'inactive',
+  blocked: 'bad',
+  failed: 'bad',
+  inactive: 'quiet',
+  cancelled: 'quiet',
+  rolled_back: 'quiet',
+  rolledback: 'quiet',
 };
 
 export function Chip({ state, label }: { state: string; label?: string }) {
   return (
-    <span className={`chip ${CHIP_CLASS[state] ?? state}`}>
+    <span className={`${s.chip} type-meta`} data-tone={TONE[state] ?? 'idle'}>
+      <i aria-hidden="true" />
       {label ?? STATE_LABEL[state] ?? state}
     </span>
   );
@@ -44,7 +55,7 @@ export function Who({ text }: { text: string }) {
     <>
       {whoize(text, agents).map((m, i) =>
         m.title ? (
-          <span key={i} className="pref" title={m.title}>
+          <span key={i} className={s.pref} title={m.title}>
             {m.text}
           </span>
         ) : (
@@ -62,10 +73,10 @@ export function AgentCell({ agentId, actorId }: { agentId: string | null; actorI
   if (a)
     return (
       <>
-        <b style={{ fontWeight: 500 }}>{a.persona ?? a.name}</b>
-        <div className="muted" style={{ fontSize: 12 }}>
+        <span className={s.agentName}>{a.persona ?? a.name}</span>
+        <span className={`${s.agentRole} type-meta`}>
           {a.tier === 'chief_of_staff' ? 'Chief of Staff' : a.name}
-        </div>
+        </span>
       </>
     );
   const who = actorId ?? agentId;

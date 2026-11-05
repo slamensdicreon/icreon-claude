@@ -1,0 +1,115 @@
+/* The first load: the eye watching inside a turning ring, over the blurred shell. */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: color-mix(in srgb, var(--bliss) 70%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  transition:
+    opacity 380ms ease-in,
+    backdrop-filter 380ms ease-in;
+}
+.boot[data-leaving] {
+  opacity: 0;
+  backdrop-filter: blur(0);
+  pointer-events: none;
+}
+.card {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  max-width: calc(var(--space-8) * 9);
+}
+.mark {
+  position: relative;
+  width: calc(var(--space-8) * 2.5);
+  height: calc(var(--space-8) * 2.5);
+  display: grid;
+  place-items: center;
+}
+.ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: spin 1.5s linear infinite;
+}
+.ring circle {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 96 256;
+}
+.boot[data-phase='error'] .ring {
+  animation: none;
+}
+.boot[data-phase='error'] .ring circle {
+  stroke: var(--coral);
+  stroke-dasharray: none;
+  opacity: 0.45;
+}
+.title {
+  margin: 0;
+  color: var(--ink);
+}
+.line {
+  margin: 0;
+  color: var(--text-2);
+  min-height: var(--space-5);
+}
+.detail {
+  margin: 0;
+  color: var(--text-3);
+}
+.steps {
+  display: flex;
+  gap: var(--space-2);
+}
+.step {
+  position: relative;
+  width: var(--space-6);
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--mist);
+  overflow: hidden;
+}
+.step[data-state='done'] {
+  background: var(--ink);
+}
+.step[data-state='active']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--ink), transparent);
+  animation: sweep 1.1s ease-in-out infinite;
+}
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .step[data-state='active']::after {
+    animation: none;
+  }
+}

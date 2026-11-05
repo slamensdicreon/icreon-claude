@@ -95,7 +95,7 @@ import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
 import { withVoice } from './enrich';
-import { portfolioOverview } from './overview';
+import { portfolioOverview, type LogCache } from './overview';
 
 export interface AppDeps {
   store: EventStore;
@@ -372,12 +372,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   /** The Dashboard in both modes: Cypher's line, what's yours, every project, and the week. */
+  const overviewLogs: LogCache = new Map();
   app.get('/portfolio/overview', async () => {
     await projections.catchUpAll();
     return portfolioOverview(
       projections.all(),
       (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
       now(),
+      overviewLogs,
     );
   });
 

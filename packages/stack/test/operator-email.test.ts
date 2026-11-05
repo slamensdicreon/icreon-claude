@@ -28,8 +28,8 @@ it('brands an attention notice: lockup, project, title, the cards, a button to t
   const m = operatorEmail(attention, `${APP}/`);
   expect(m.subject).toBe('Ervin Cable: 2 decisions wait on you');
   expect(m.html).toContain(`src="${APP}/email/icreon-lockup.png"`);
-  expect(m.html).toContain(`url('${APP}/fonts/HeroNew-Light.otf')`);
-  expect(m.html).toContain("'Hero New', 'Helvetica Neue'");
+  expect(m.html).toContain('fonts.googleapis.com/css2?family=Plus+Jakarta+Sans');
+  expect(m.html).toContain("'Plus Jakarta Sans', 'Helvetica Neue'");
   expect(m.html).toContain('#386aff');
   expect(m.html).toContain('Needs you');
   expect(m.html).toContain(`href="${APP}/p/prj-1/inbox"`);

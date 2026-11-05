@@ -386,10 +386,43 @@ function spendAt(facts: LogFacts, t: number): number {
   return v;
 }
 
+/**
+ * Reading a project's log is the overview's one expensive step (up to MAX_PAGES pages), and the
+ * Dashboard polls. A project whose log hasn't moved, read for the same day and week, gives the
+ * same facts, so the API keeps them per project for a minute (the 24-hour deploy window drifts).
+ */
+export type LogCache = Map<
+  string,
+  { seq: number; week: number; today: number; at: number; facts: LogFacts }
+>;
+const CACHE_MS = 60_000;
+
+async function cachedLog(
+  s: ProjectState,
+  read: ReadNewest,
+  bounds: { week: number; today: number; dayAgo: number },
+  now: number,
+  cache: LogCache | undefined,
+): Promise<LogFacts> {
+  const hit = cache?.get(s.projectId);
+  if (
+    hit &&
+    hit.seq === s.seq &&
+    hit.week === bounds.week &&
+    hit.today === bounds.today &&
+    now - hit.at < CACHE_MS
+  )
+    return hit.facts;
+  const facts = await readLog(s, read, bounds);
+  cache?.set(s.projectId, { seq: s.seq, week: bounds.week, today: bounds.today, at: now, facts });
+  return facts;
+}
+
 export async function portfolioOverview(
   states: ProjectState[],
   read: ReadNewest,
   now: number,
+  cache?: LogCache,
 ): Promise<PortfolioOverview> {
   const tz = dashboardZone(states);
   const week = weekStart(now, tz);
@@ -401,7 +434,9 @@ export async function portfolioOverview(
     return { s, yours, row: projectRow(s, yours) };
   });
   const running = rows.filter((r) => r.s.status === 'running');
-  const logs = await Promise.all(states.map((s) => readLog(s, read, { week, today, dayAgo })));
+  const logs = await Promise.all(
+    states.map((s) => cachedLog(s, read, { week, today, dayAgo }, now, cache)),
+  );
 
   // ---- Yours, in clock order, then type, then age.
   const yours: PortfolioYours[] = rows

@@ -147,19 +147,6 @@
     }
   ],
   "daemons": {
-    "demo": {
-      "root": "./",
-      "entrypoint": "Dockerfile.api",
-      "command": ["node", "--import", "tsx", "src/demo-runner.ts"],
-      "instances": {
-        "iad1": 0
-      },
-      "resources": {
-        "requests": {
-          "memory": "1Gi"
-        }
-      }
-    },
     "worker": {
       "root": "./",
       "entrypoint": "Dockerfile.worker",

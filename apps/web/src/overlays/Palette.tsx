@@ -1,7 +1,7 @@
 import type { WorkbenchSnapshot } from '@lw/contracts';
 import { useMemo, useState } from 'react';
 import { post } from '../lib/api';
-import { Icon } from '../lib/icons';
+import { Icon } from '../theme/icons';
 import {
   SURFACE_LABEL,
   SURFACES,
@@ -11,6 +11,7 @@ import {
   useRoster,
 } from '../state';
 import { Scrim } from './Dialogs';
+import s from './overlays.module.css';
 
 interface Item {
   label: string;
@@ -44,10 +45,10 @@ export function Palette() {
 
   const items: Item[] = useMemo(
     () => [
-      ...SURFACES.map((s) => ({
-        label: `Go to ${SURFACE_LABEL[s]}`,
-        k: `G ${s[0]!.toUpperCase()}`,
-        run: () => go(s),
+      ...SURFACES.map((x) => ({
+        label: `Go to ${SURFACE_LABEL[x]}`,
+        k: `G ${x[0]!.toUpperCase()}`,
+        run: () => go(x),
       })),
       ...agents
         .filter((a) => a.tier !== 'chief_of_staff')
@@ -125,11 +126,22 @@ export function Palette() {
   };
   return (
     <Scrim>
-      <div className="palette" role="dialog" aria-label="Command palette">
-        <div className="pal-in">
+      <div
+        className={`${s.float} ${s.palette}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+      >
+        <div className={s.palIn}>
           <Icon name="search" />
           <input
+            className="type-body"
             autoFocus
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="palette-list"
+            aria-activedescendant={list[sel] ? `pal-${sel}` : undefined}
+            aria-label="Search or run a command"
             placeholder="Search surfaces, agents and artifacts, or run a command"
             autoComplete="off"
             value={q}
@@ -139,31 +151,35 @@ export function Palette() {
             }}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') {
-                setSel((s) => Math.min(list.length - 1, s + 1));
+                setSel((v) => Math.min(list.length - 1, v + 1));
                 e.preventDefault();
               } else if (e.key === 'ArrowUp') {
-                setSel((s) => Math.max(0, s - 1));
+                setSel((v) => Math.max(0, v - 1));
                 e.preventDefault();
               } else if (e.key === 'Enter') pick(list[sel]);
               else if (e.key === 'Escape') closeOverlay();
             }}
           />
         </div>
-        <ul role="listbox">
+        <ul role="listbox" id="palette-list" aria-label="Results" className={s.palList}>
           {list.length ? (
             list.map((i, idx) => (
               <li
                 key={i.label}
+                id={`pal-${idx}`}
+                role="option"
+                className={`${s.palItem} type-body-small`}
                 aria-selected={idx === sel}
+                ref={idx === sel ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                 onMouseEnter={() => setSel(idx)}
                 onClick={() => pick(i)}
               >
                 {i.label}
-                <span className="k">{i.k}</span>
+                <span className={`${s.palKind} type-label`}>{i.k}</span>
               </li>
             ))
           ) : (
-            <li className="muted">No matches</li>
+            <li className={`${s.palEmpty} type-body-small`}>No matches</li>
           )}
         </ul>
       </div>

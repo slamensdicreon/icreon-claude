@@ -1,0 +1,74 @@
+/* Presentation mode, Ready to start and the away line. */
+
+.present {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-4) 0 var(--space-8);
+}
+.presentTitle {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--ink);
+}
+.presentTitle span {
+  color: var(--text-2);
+}
+.floor {
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.ready {
+  margin-bottom: var(--space-6);
+}
+.readyBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--text-2);
+}
+
+.away {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-quiet);
+  border: 1px solid var(--mist);
+  color: var(--text-2);
+}
+.away > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dismiss {
+  flex: none;
+  min-height: calc(var(--row) - var(--space-3));
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.dismiss:hover {
+  background: var(--mist-2);
+}
+
+@media (max-width: 760px) {
+  .kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

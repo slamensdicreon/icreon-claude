@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import mark from '../assets/mark.svg?raw';
 import { live } from '../lib/live';
 import { useApp, useMission, useNow } from '../state';
+import { Button } from '../ui/cypher/parts';
+import { Eye } from '../ui/Eye';
+import b from './boot.module.css';
 
 /**
  * The first load. The Control API runs on paused, short-lived instances, so the first answer can
@@ -121,39 +123,41 @@ export function Boot({ state }: { state: BootState }) {
   const { leaving, phase, message, detail, steps, retry, home } = state;
   return (
     <div
-      className="boot"
+      className={b.boot}
       role="status"
       aria-live="polite"
       data-phase={phase}
       data-leaving={leaving || undefined}
     >
-      <div className="boot-card">
-        <div className="boot-mark" aria-hidden="true">
-          <svg className="boot-ring" viewBox="0 0 120 120">
+      <div className={b.card}>
+        <div className={b.mark} aria-hidden="true">
+          <svg className={b.ring} viewBox="0 0 120 120">
             <circle cx="60" cy="60" r="56" />
           </svg>
-          <svg className="boot-ring two" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="46" />
-          </svg>
-          <span style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: mark }} />
+          <Eye
+            state={phase === 'error' ? 'needs-a-word' : 'watching'}
+            size={56}
+            decorative
+            blink={phase !== 'error'}
+          />
         </div>
-        <div className="boot-title">Cypher Control Center</div>
-        <div className="boot-line">{message}</div>
-        {detail && <div className="boot-detail">{detail}</div>}
-        <div className="boot-steps" aria-hidden="true">
+        <p className={`${b.title} type-heading`}>Cypher</p>
+        <p className={`${b.line} type-body`}>{message}</p>
+        {detail && <p className={`${b.detail} type-meta`}>{detail}</p>}
+        <div className={b.steps} aria-hidden="true">
           {steps.map((s) => (
-            <span key={s.label} className="boot-step" data-state={s.state} title={s.label} />
+            <span key={s.label} className={b.step} data-state={s.state} title={s.label} />
           ))}
         </div>
         {phase === 'error' && (
-          <div className="boot-actions">
-            <button className="btn primary" onClick={retry}>
+          <div className={b.actions}>
+            <Button kind="primary" onClick={retry}>
               Try again
-            </button>
+            </Button>
             {steps.length > 1 && (
-              <button className="btn" onClick={home}>
+              <Button kind="secondary" onClick={home}>
                 Dashboard
-              </button>
+              </Button>
             )}
           </div>
         )}

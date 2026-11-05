@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import ds from './doc.module.css';
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 type Obj = { [k: string]: Json };
@@ -26,9 +27,13 @@ export function DataDoc({ value }: { value: unknown }) {
       <Outline v={v} depth={0} />
     );
   return (
-    <div className="doc data-doc">
-      {raw ? <pre className="mono">{JSON.stringify(value, null, 2)}</pre> : view}
-      <button className="btn sm" style={{ marginTop: 16 }} onClick={() => setRaw((r) => !r)}>
+    <div className={ds.doc}>
+      {raw ? (
+        <pre className={`${ds.pre} ${ds.rawPre}`}>{JSON.stringify(value, null, 2)}</pre>
+      ) : (
+        view
+      )}
+      <button type="button" className={ds.toggle} onClick={() => setRaw((r) => !r)}>
         {raw ? 'Show the formatted view' : 'Show raw JSON'}
       </button>
     </div>
@@ -37,9 +42,9 @@ export function DataDoc({ value }: { value: unknown }) {
 
 function Stats({ items }: { items: [string, ReactNode][] }) {
   return (
-    <div className="doc-stats">
+    <div className={ds.stats}>
       {items.map(([label, value]) => (
-        <div key={label} className="doc-stat">
+        <div key={label} className={ds.stat}>
           <b>{value}</b>
           <span>{label}</span>
         </div>
@@ -50,9 +55,9 @@ function Stats({ items }: { items: [string, ReactNode][] }) {
 
 function Tags({ items }: { items: string[] }) {
   return (
-    <span className="doc-tags">
+    <span className={ds.tags}>
       {items.map((t, i) => (
-        <span key={`${t}-${i}`} className="doc-tag">
+        <span key={`${t}-${i}`} className={ds.tag}>
           {t}
         </span>
       ))}
@@ -63,8 +68,8 @@ function Tags({ items }: { items: string[] }) {
 function Notes({ items, kind = 'note' }: { items: string[]; kind?: 'note' | 'warning' }) {
   if (!items.length) return null;
   return (
-    <blockquote className={`callout callout-${kind}`}>
-      <p className="callout-title">{kind === 'warning' ? 'Warning' : 'Notes'}</p>
+    <blockquote className={ds.callout} data-kind={kind}>
+      <p className={ds.calloutTitle}>{kind === 'warning' ? 'Warning' : 'Notes'}</p>
       <ul>
         {items.map((n, i) => (
           <li key={i}>{n}</li>
@@ -88,8 +93,8 @@ function PageInventory({ d }: { d: Obj }) {
   const excluded = arr(d.excluded).filter(isObj);
   const regions = arr(d.repeatedRegions).filter(isObj);
   return (
-    <div className="doc-body">
-      <p className="doc-lede">
+    <div className={ds.body}>
+      <p className={ds.lede}>
         {fmt(pages.length)} pages crawled from{' '}
         {origin ? (
           <a href={origin} target="_blank" rel="noopener noreferrer">
@@ -110,12 +115,12 @@ function PageInventory({ d }: { d: Obj }) {
       />
       <Notes items={arr(d.notes).map(String)} />
       <h2>Layout groups</h2>
-      <div className="doc-table">
+      <div className={ds.table}>
         <table>
           <thead>
             <tr>
               <th>Group</th>
-              <th style={{ textAlign: 'right' }}>Pages</th>
+              <th className={ds.num}>Pages</th>
             </tr>
           </thead>
           <tbody>
@@ -124,22 +129,22 @@ function PageInventory({ d }: { d: Obj }) {
               .map(([t, n]) => (
                 <tr key={t}>
                   <td>{t}</td>
-                  <td style={{ textAlign: 'right' }}>{n}</td>
+                  <td className={ds.num}>{n}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
       <h2>Pages</h2>
-      <div className="doc-table">
+      <div className={ds.table}>
         <table>
           <thead>
             <tr>
               <th>Page</th>
               <th>Group</th>
               <th>Content blocks</th>
-              <th style={{ textAlign: 'right' }}>Words</th>
-              <th style={{ textAlign: 'right' }}>Images</th>
+              <th className={ds.num}>Words</th>
+              <th className={ds.num}>Images</th>
             </tr>
           </thead>
           <tbody>
@@ -149,7 +154,7 @@ function PageInventory({ d }: { d: Obj }) {
                 <tr key={path}>
                   <td>
                     <b>{str(p.title) || str(p.h1) || path}</b>
-                    <div className="mono faint">
+                    <div className={`${ds.quiet} ${ds.small}`}>
                       {origin ? (
                         <a href={`${origin}${path}`} target="_blank" rel="noopener noreferrer">
                           {path}
@@ -163,13 +168,11 @@ function PageInventory({ d }: { d: Obj }) {
                   <td>
                     <Tags items={arr(p.blocks).map(String)} />
                   </td>
-                  <td style={{ textAlign: 'right' }}>{fmt(num(p.words))}</td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td className={ds.num}>{fmt(num(p.words))}</td>
+                  <td className={ds.num}>
                     {fmt(num(p.images))}
                     {num(p.imagesMissingAlt) > 0 && (
-                      <div className="cred-miss" style={{ fontSize: 12 }}>
-                        {num(p.imagesMissingAlt)} without alt
-                      </div>
+                      <div className={ds.miss}>{num(p.imagesMissingAlt)} without alt</div>
                     )}
                   </td>
                 </tr>
@@ -198,8 +201,7 @@ function PageInventory({ d }: { d: Obj }) {
           <ul>
             {excluded.map((x, i) => (
               <li key={i}>
-                <span className="mono">{str(x.url)}</span>{' '}
-                <span className="muted">({str(x.reason)})</span>
+                <span>{str(x.url)}</span> <span className={ds.quiet}>({str(x.reason)})</span>
               </li>
             ))}
           </ul>
@@ -219,8 +221,8 @@ function RepoInventory({ d }: { d: Obj }) {
   const assets = arr(d.assets).filter(isObj);
   const repo = str(d.repository);
   return (
-    <div className="doc-body">
-      <p className="doc-lede">
+    <div className={ds.body}>
+      <p className={ds.lede}>
         {repo ? (
           <a href={`https://github.com/${repo}`} target="_blank" rel="noopener noreferrer">
             {repo}
@@ -243,19 +245,19 @@ function RepoInventory({ d }: { d: Obj }) {
       />
       {risks.length > 0 && <h2>Risks</h2>}
       {risks.map((r, i) => (
-        <blockquote key={i} className={`callout callout-${SEVERITY[str(r.severity)] ?? 'note'}`}>
-          <p className="callout-title">
+        <blockquote key={i} className={ds.callout} data-kind={SEVERITY[str(r.severity)] ?? 'note'}>
+          <p className={ds.calloutTitle}>
             {str(r.severity)
               ? `${str(r.severity)[0]!.toUpperCase()}${str(r.severity).slice(1)} risk`
               : 'Risk'}
-            {str(r.file) && <span className="mono"> · {str(r.file)}</span>}
+            {str(r.file) && <span> · {str(r.file)}</span>}
           </p>
           <p>{str(r.issue)}</p>
-          {str(r.recommendation) && <p className="muted">{str(r.recommendation)}</p>}
+          {str(r.recommendation) && <p className={ds.quiet}>{str(r.recommendation)}</p>}
         </blockquote>
       ))}
       <h2>Components</h2>
-      <div className="doc-table">
+      <div className={ds.table}>
         <table>
           <thead>
             <tr>
@@ -270,16 +272,16 @@ function RepoInventory({ d }: { d: Obj }) {
               <tr key={`${str(c.name)}-${i}`}>
                 <td>
                   <b>{str(c.name)}</b>
-                  <div className="mono faint">{str(c.file)}</div>
+                  <div className={`${ds.quiet} ${ds.small}`}>{str(c.file)}</div>
                 </td>
                 <td>
                   <Tags items={arr(c.props).map(String)} />
                 </td>
-                <td className="mono">{arr(c.usedOn).map(String).join(', ')}</td>
+                <td>{arr(c.usedOn).map(String).join(', ')}</td>
                 <td>
                   {str(c.notes)}
                   {str(c.dataFetching) && str(c.dataFetching) !== 'none' && (
-                    <div className="muted">Data: {str(c.dataFetching)}</div>
+                    <div className={ds.quiet}>Data: {str(c.dataFetching)}</div>
                   )}
                 </td>
               </tr>
@@ -302,7 +304,7 @@ function RepoInventory({ d }: { d: Obj }) {
       {assets.length > 0 && (
         <>
           <h2>Assets</h2>
-          <p className="muted">{fmt(assets.length)} files.</p>
+          <p className={ds.quiet}>{fmt(assets.length)} files.</p>
           <Outline v={assets.slice(0, 200)} depth={1} />
         </>
       )}
@@ -317,11 +319,11 @@ const label = (k: string) =>
     .replace(/^./, (c) => c.toUpperCase());
 
 function Cell({ v }: { v: Json | undefined }) {
-  if (v === null || v === undefined) return <span className="faint">–</span>;
+  if (v === null || v === undefined) return <span className={ds.quiet}>–</span>;
   if (Array.isArray(v) && v.every((x) => typeof x !== 'object'))
     return <Tags items={v.map(String)} />;
   if (typeof v === 'object')
-    return <span className="mono faint">{JSON.stringify(v).slice(0, 120)}</span>;
+    return <span className={`${ds.quiet} ${ds.small}`}>{JSON.stringify(v).slice(0, 120)}</span>;
   if (typeof v === 'string' && /^https?:\/\//.test(v))
     return (
       <a href={v} target="_blank" rel="noopener noreferrer">
@@ -338,7 +340,7 @@ function Outline({ v, depth }: { v: Json; depth: number }): ReactNode {
     if (records.length && records.length === v.length) {
       const keys = [...new Set(records.flatMap((r) => Object.keys(r)))].slice(0, 8);
       return (
-        <div className="doc-table">
+        <div className={ds.table}>
           <table>
             <thead>
               <tr>
@@ -375,7 +377,7 @@ function Outline({ v, depth }: { v: Json; depth: number }): ReactNode {
   if (isObj(v)) {
     const H = depth === 0 ? 'h2' : 'h3';
     return (
-      <div className="doc-body">
+      <div className={ds.body}>
         {Object.entries(v).map(([k, x]) =>
           x !== null && typeof x === 'object' ? (
             <section key={k}>

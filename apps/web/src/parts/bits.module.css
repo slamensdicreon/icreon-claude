@@ -1,0 +1,62 @@
+/*
+ * Small shared pieces: the state chip (a dot and a word, colored by meaning), names shown as people,
+ * and the agent cell. Tokens only.
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  min-height: calc(var(--space-5) + var(--space-1));
+  border-radius: var(--radius-pill);
+  background: var(--mist-2);
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chip i {
+  flex: none;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--text-3);
+}
+.chip[data-tone='working'] i {
+  background: var(--ink);
+}
+.chip[data-tone='done'] {
+  color: var(--green);
+}
+.chip[data-tone='done'] i {
+  background: var(--green);
+}
+.chip[data-tone='waiting'] {
+  background: var(--gold-tint);
+}
+.chip[data-tone='waiting'] i {
+  background: var(--gold);
+}
+.chip[data-tone='bad'] {
+  background: var(--coral-tint);
+  color: var(--coral-text);
+}
+.chip[data-tone='bad'] i {
+  background: var(--coral-text);
+}
+.chip[data-tone='quiet'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--mist);
+  color: var(--text-2);
+}
+.pref {
+  text-decoration: underline dotted var(--text-3);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.agentName {
+  font-weight: 600;
+}
+.agentRole {
+  display: block;
+  color: var(--text-3);
+}

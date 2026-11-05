@@ -296,5 +296,21 @@ describe('the week and the deploys, from the log', () => {
       emphasis: null,
       closing: "Everyone is on pace. I'll say nothing until five.",
     });
+
+    // With a cache, a project whose log hasn't moved isn't read again; a new event reads it.
+    let reads = 0;
+    const counted: typeof read = (...a) => {
+      reads++;
+      return read(...a);
+    };
+    const cache = new Map() as Parameters<typeof portfolioOverview>[3] & object;
+    await portfolioOverview([s], counted, now, cache);
+    const first = reads;
+    expect(first).toBeGreaterThan(0);
+    await portfolioOverview([s], counted, now + 10_000, cache);
+    expect(reads).toBe(first);
+    s.seq = 99;
+    await portfolioOverview([s], counted, now + 20_000, cache);
+    expect(reads).toBeGreaterThan(first);
   });
 });

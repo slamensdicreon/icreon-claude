@@ -1,63 +1,97 @@
 import { post } from '../lib/api';
-import { Icon } from '../lib/icons';
 import { live } from '../lib/live';
 import { MANAGE, useApp, useProjectResource, type Surface } from '../state';
+import { Icon, type IconName } from '../theme/icons';
 import { Scrim } from './Dialogs';
+import s from './overlays.module.css';
 
-const DOT = { healthy: 'good', attention: 'warn', blocked: 'bad' } as const;
+const HEALTH = { healthy: 'Healthy', attention: 'Needs attention', blocked: 'Blocked' } as const;
 
 export function ProjectMenu() {
   const { projects, projectId, switchProject, home, closeOverlay, newProject } = useApp();
   return (
-    <Scrim style={{ placeItems: 'start start', padding: '120px 0 0 12px' }}>
-      <div className="menu pmenu">
+    <Scrim place="nav-top">
+      <div className={`${s.float} ${s.menu}`} role="menu" aria-label="Projects">
         <button
-          className={`pm-row ${!projectId ? 'on' : ''}`}
+          role="menuitem"
+          className={s.row}
+          aria-current={!projectId || undefined}
           onClick={() => {
             closeOverlay();
             home();
           }}
         >
-          <span className="ini">
-            <Icon name="dashboard" sm />
+          <span className={s.tile} aria-hidden="true">
+            <Icon name="home" size={18} />
           </span>
-          <span className="pm-t">
-            <b>Dashboard</b>
-            <small>Every project and where it stands</small>
+          <span className={s.rowText}>
+            <span className="type-body-small">Dashboard</span>
+            <span className="type-meta">Every project and where it stands</span>
           </span>
         </button>
-        <h3>Projects</h3>
+        <h3 className={`${s.menuHead} type-label`}>Projects</h3>
         {projects.map((p) => (
           <button
             key={p.id}
-            className={`pm-row ${p.id === projectId ? 'on' : ''}`}
+            role="menuitem"
+            className={s.row}
+            aria-current={p.id === projectId || undefined}
             onClick={() => {
               closeOverlay();
               switchProject(p.id);
             }}
           >
-            <span className="ini">{p.initials}</span>
-            <span className="pm-t">
-              <b>
+            <span className={`${s.tile} type-label`} aria-hidden="true">
+              {p.initials}
+            </span>
+            <span className={s.rowText}>
+              <span className="type-body-small">
                 {p.name}
-                {p.demo && <span className="pm-demo">Demo</span>}
-              </b>
-              <small>
+                {p.demo && <span className={`${s.tag} type-meta`}>Demo</span>}
+              </span>
+              <span className="type-meta">
                 {p.currentPhase
                   ? `Phase ${p.currentPhase.number}, ${p.currentPhase.name}`
                   : p.status === 'intake'
                     ? 'Ready to start'
                     : p.status}{' '}
                 · {p.subtitle ?? p.client}
-              </small>
+              </span>
             </span>
-            <span className="pm-s">
-              <span className={`dot ${DOT[p.health]}`} />
-              {p.waitingCount > 0 && <span className="badge">{p.waitingCount}</span>}
+            <span className={s.rowEnd}>
+              <span
+                className={s.dot}
+                data-tone={p.health}
+                role="img"
+                aria-label={HEALTH[p.health]}
+              />
+              {p.waitingCount > 0 && (
+                <span
+                  className={`${s.badge} type-label`}
+                  aria-label={`${p.waitingCount} waiting on you`}
+                >
+                  {p.waitingCount}
+                </span>
+              )}
             </span>
           </button>
         ))}
-        <button onClick={() => newProject()}>+ New project</button>
+        <div className={s.sep} />
+        <button
+          role="menuitem"
+          className={s.row}
+          onClick={() => {
+            closeOverlay();
+            newProject();
+          }}
+        >
+          <span className={s.tile} aria-hidden="true">
+            <Icon name="plus" size={18} />
+          </span>
+          <span className={s.rowText}>
+            <span className="type-body-small">New project</span>
+          </span>
+        </button>
       </div>
     </Scrim>
   );
@@ -67,21 +101,22 @@ export function ProjectMenu() {
 export function ManageMenu() {
   const { view, projectId, manage, closeOverlay } = useApp();
   return (
-    <Scrim className="manage-scrim">
-      <div className="menu pmenu" role="menu" aria-label="Menu">
+    <Scrim place="nav-bottom">
+      <div className={`${s.float} ${s.menu}`} role="menu" aria-label="Settings">
         {MANAGE.map(([page, label, about]) => (
           <button
             key={page}
             role="menuitem"
-            className={`pm-row ${!projectId && view === page ? 'on' : ''}`}
+            className={s.row}
+            aria-current={(!projectId && view === page) || undefined}
             onClick={() => {
               closeOverlay();
               manage(page);
             }}
           >
-            <span className="pm-t">
-              <b>{label}</b>
-              <small>{about}</small>
+            <span className={s.rowText}>
+              <span className="type-body-small">{label}</span>
+              <span className="type-meta">{about}</span>
             </span>
           </button>
         ))}
@@ -99,15 +134,23 @@ export function DemoMenu() {
     void run(() => post(`/projects/${projectId}/scenarios/${key}`));
   };
   return (
-    <Scrim style={{ placeItems: 'end start', padding: '0 0 96px 16px' }}>
-      <div className="menu">
-        <h3>Demo scenarios for {name}</h3>
-        {scenarios.map((s) => (
-          <button key={s.key} onClick={() => raise(s.key)}>
-            {s.label}
+    <Scrim place="nav-bottom">
+      <div className={`${s.float} ${s.menu}`} role="menu" aria-label="Demo scenarios">
+        <h3 className={`${s.menuHead} type-label`}>Demo scenarios for {name}</h3>
+        {scenarios.map((x) => (
+          <button
+            key={x.key}
+            role="menuitem"
+            className={`${s.row} type-body-small`}
+            onClick={() => raise(x.key)}
+          >
+            {x.label}
           </button>
         ))}
+        <div className={s.sep} />
         <button
+          role="menuitem"
+          className={`${s.row} type-body-small`}
           onClick={() => {
             closeOverlay();
             live.simulateDrop();
@@ -116,6 +159,8 @@ export function DemoMenu() {
           Simulate a connection drop
         </button>
         <button
+          role="menuitem"
+          className={`${s.row} type-body-small`}
           onClick={() => {
             closeOverlay();
             setUi({
@@ -134,49 +179,51 @@ export function DemoMenu() {
 
 export function MoreSheet() {
   const { surface, go, closeOverlay, openOverlay, projects, projectId, theme, setTheme } = useApp();
-  const items: [Surface, string, string][] = [
-    ['workbench', 'document', 'Workbench'],
-    ['preview', 'view', 'Site preview'],
-    ['activity', 'list', 'Activity'],
-    ['scorecard', 'presentation-file', 'Scorecard'],
-    ['settings', 'gear', 'Settings'],
+  const items: [Surface, IconName, string][] = [
+    ['workbench', 'workbench', 'Workbench'],
+    ['preview', 'site', 'Site preview'],
+    ['activity', 'activity', 'Activity'],
+    ['scorecard', 'scorecard', 'Scorecard'],
+    ['settings', 'settings', 'Settings'],
   ];
   const current = projects.find((p) => p.id === projectId);
   return (
-    <Scrim className="sheet-scrim">
-      <div className="sheet" role="dialog" aria-label="More">
-        <div className="sheet-grab" aria-hidden="true" />
-        {items.map(([s, icon, label]) => (
+    <Scrim place="sheet">
+      <div className={`${s.float} ${s.sheet}`} role="dialog" aria-modal="true" aria-label="More">
+        <div className={s.grab} aria-hidden="true" />
+        {items.map(([x, icon, label]) => (
           <button
-            key={s}
-            className="sh-i"
-            aria-current={surface === s ? 'page' : undefined}
+            key={x}
+            className={`${s.row} type-body`}
+            aria-current={surface === x ? 'page' : undefined}
             onClick={() => {
               closeOverlay();
-              go(s);
+              go(x);
             }}
           >
-            <Icon name={icon} />
+            <Icon name={icon} className={s.icon} />
             <span>{label}</span>
           </button>
         ))}
-        <div className="sh-sep" />
-        <button className="sh-i" onClick={() => openOverlay(<ProjectMenu />)}>
-          <Icon name="chevron--down" />
+        <div className={s.sep} />
+        <button className={`${s.row} type-body`} onClick={() => openOverlay(<ProjectMenu />)}>
+          <Icon name="projects" className={s.icon} />
           <span>Switch project</span>
-          <small>{current?.name}</small>
+          <span className={`${s.end} type-meta`}>{current?.name}</span>
         </button>
-        <button className="sh-i" onClick={() => openOverlay(<DemoMenu />)}>
-          <Icon name="tools" />
+        <button className={`${s.row} type-body`} onClick={() => openOverlay(<DemoMenu />)}>
+          <Icon name="tools" className={s.icon} />
           <span>Demo scenarios</span>
         </button>
         <button
-          className="sh-i"
+          className={`${s.row} type-body`}
           onClick={() => setTheme(theme === null ? 'light' : theme === 'light' ? 'dark' : null)}
         >
-          <Icon name="view" />
+          <Icon name={theme === 'dark' ? 'moon' : 'sun'} className={s.icon} />
           <span>Theme</span>
-          <small>{theme === null ? 'System' : theme === 'light' ? 'Light' : 'Dark'}</small>
+          <span className={`${s.end} type-meta`}>
+            {theme === null ? 'System' : theme === 'light' ? 'Light' : 'Dark'}
+          </span>
         </button>
       </div>
     </Scrim>

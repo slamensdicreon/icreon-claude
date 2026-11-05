@@ -2,7 +2,7 @@
  * The Workbench's documents: the panel a page sits in, its title bar and status tags, tables,
  * the structured document's blocks, the Blueprint's rows and side trays, the Decision Log and
  * Project facts. Colors, sizes and radii are tokens; type comes from the type-* classes. The only
- * literals are hairlines, and the reused viewers' type below, which repeats the type-* scale.
+ * literals are hairlines, and the type below that repeats the type-* scale.
  */
 
 /* ---------- the panel and its title bar ---------- */
@@ -580,172 +580,11 @@ button.tag:hover {
   overflow-wrap: anywhere;
 }
 
-/* ---------- reused viewers (Markdown, JSON, Lessons) on Cypher's type ---------- */
-/* Their own contents list goes: "On this page" beside the document reads the same headings. */
-.host :global(.doc-toc) {
-  display: none;
-}
-.host :global(.doc.has-toc) {
-  display: block;
-}
-.host :global(.doc-body) {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--ink);
-}
-.host :global(.doc-body h1) {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.host :global(.doc-body h2),
-.host :global(.doc-body h3) {
-  scroll-margin-top: var(--space-4);
-}
-.host :global(.doc-body h2) {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  border-bottom-color: var(--mist);
-}
-.host :global(.doc-body h3) {
-  font-size: 15px;
-  font-weight: 700;
-}
-.host :global(.doc-body h4) {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
-}
-.host :global(.doc-body a) {
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: var(--mist);
-  text-underline-offset: 3px;
-}
-.host :global(.doc-body code),
-.host :global(.doc-code pre) {
-  font-family: var(--font-sans);
-  font-size: 13.5px;
-  background: var(--surface-quiet);
-  border-color: var(--mist);
-}
-.host :global(.doc-code pre) {
-  border-radius: var(--radius-md);
-}
-.host :global(.doc-code-lang),
-.host :global(.doc-tag),
-.host :global(.pcard-pill),
-.host :global(.faint),
-.host :global(.mono) {
-  font-family: var(--font-sans);
-  font-size: 13.5px;
-}
-.host :global(.doc-code-lang),
-.host :global(.eyebrow) {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
-}
-.host :global(.doc-tag),
-.host :global(.pcard-pill) {
-  border-radius: var(--radius-pill);
-  background: var(--surface-quiet);
-  border: 1px solid var(--mist);
-  color: var(--text-2);
-}
-.host :global(.cred-miss) {
-  font-size: 13.5px !important;
-}
-.host :global(.doc-table),
-.host :global(.doc-mermaid),
-.host :global(.doc-figure img),
-.host :global(.callout),
-.host :global(.doc-stat) {
-  border-color: var(--mist);
-  border-radius: var(--radius-md);
-}
-.host :global(.doc-table table) {
-  font-size: 14.5px;
-}
-.host :global(.doc-table th) {
-  font-size: 14.5px;
-  font-weight: 600;
-  color: var(--text-3);
-  background: var(--surface-quiet);
-}
-.host :global(.doc-stat) {
-  background: var(--surface-quiet);
-}
-.host :global(.doc-stat b) {
-  font-size: 32px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-.host :global(.doc-stat span) {
-  font-size: 13.5px;
-  color: var(--text-3);
-}
-/* Callouts: a tinted well, no accent bar (design system §7). */
-.host :global(.callout) {
-  border-left-width: 1px;
-  background: var(--surface-quiet);
-}
-.host :global(.callout-title) {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
-}
-.host :global(.callout.callout-warning),
-.host :global(.callout.callout-caution) {
-  background: var(--gold-tint);
-}
-.host :global(.data-doc > pre) {
-  font-family: var(--font-sans);
-  font-size: 13.5px;
-  padding: var(--space-4);
-  border: 1px solid var(--mist);
-  border-radius: var(--radius-md);
-  background: var(--surface-quiet);
-}
-.host :global(.btn) {
-  height: auto;
-  min-height: 44px;
-  padding: var(--space-2) var(--space-5);
-  border: 1px solid var(--mist);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  font-weight: 700;
-}
-.host :global(.btn::after) {
-  display: none;
-}
-.host :global(.btn:hover:not(:disabled)) {
-  border-color: var(--text-3);
-}
-.host :global(.btn.primary) {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--on-ink);
-}
-.host :global(.input) {
-  min-height: 44px;
-  border-radius: var(--radius-md);
-  border-color: var(--mist);
-  background: var(--surface-quiet);
-  font-family: var(--font-sans);
-  font-size: 15px;
-}
-.host :global(.muted),
-.host :global(.quiet-line) {
-  color: var(--text-3);
+/* ---------- reused viewers ---------- */
+/* Markdown and JSON documents carry their own Cypher type (parts/doc.module.css); the host only
+   places them. */
+.host {
+  min-width: 0;
 }
 /* Lessons: its own title bar gives way to the Workbench's, its table takes the Workbench's look. */
 .lessons :global(.viewer-head) {
