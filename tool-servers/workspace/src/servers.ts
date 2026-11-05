@@ -13,17 +13,27 @@ const WriteArgs = z.object({
   title: z.string().min(1).max(120),
   format: z.enum(['markdown', 'json']),
   content: z.string().min(1).max(2_000_000),
-  /** The document in plain words for the Director; shown in Workbench Bliss. */
-  summary: z.string().min(1).max(1_200).optional(),
-  /** Up to three things in it worth the Director's look. */
-  attention: z.array(ArtifactPointer).max(3).optional(),
+  /**
+   * The document in plain words for the Director, and up to three pointers into it. Both are
+   * extras: a bad one is dropped (and a long summary trimmed), never a reason to refuse the save.
+   */
+  summary: z.unknown().optional(),
+  attention: z.unknown().optional(),
 });
 
+const Summary = z.string().trim().min(1);
+const Pointers = z.array(ArtifactPointer);
+const summaryOf = (v: unknown) => {
+  const s = Summary.safeParse(v);
+  return s.success ? s.data.slice(0, 1_200) : undefined;
+};
+const pointersOf = (v: unknown) => {
+  const p = Pointers.safeParse(v);
+  return p.success ? p.data.slice(0, 3) : undefined;
+};
+
 /** A JSON document may carry its own summary and pointers (lw.document/1); they lift onto the save. */
-const DocVoice = z.object({
-  summary: z.string().min(1).max(1_200).nullable().optional(),
-  attention: z.array(ArtifactPointer).max(3).optional(),
-});
+const DocVoice = z.object({ summary: z.unknown().optional(), attention: z.unknown().optional() });
 
 const ReadArgs = z.object({
   artifactId: z.string(),
@@ -117,8 +127,8 @@ export class ArtifactsToolServer implements ToolServer {
       }
       const v = await this.library.write(ctx.projectId, {
         ...a.data,
-        summary: a.data.summary ?? lifted.summary ?? null,
-        attention: a.data.attention ?? lifted.attention ?? [],
+        summary: summaryOf(a.data.summary) ?? summaryOf(lifted.summary) ?? null,
+        attention: pointersOf(a.data.attention) ?? pointersOf(lifted.attention) ?? [],
         producer: ctx.role,
       });
       return {

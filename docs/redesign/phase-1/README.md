@@ -18,7 +18,7 @@ the Dashboard and Mission Control in dark.
 | Scorecard       | Three numbers, and what kept coming back                                                                                  | KPI tiles, by category, by phase, repeats                                                                                          |
 | Site preview    | One page: source beside target, parity as a word, next and previous                                                       | Page list with parity, three breakpoints, open in Page builder or on preview                                                        |
 | Plan            | What happens next: the next five activities and what each waits on                                                        | Rebuilt: Today lanes, Engagement weeks, activity list with groups and re-run, zoom (Ctrl+wheel, saved), up next, phone agenda; bars are buttons, states carry a glyph and a word |
-| Workbench       | The documents, newest first; one opens in Everything                                                                      | Rebuilt: document rail with status tags, Blueprint with Filter Menu, completeness and Change Summary (affectUI), Decision Log with override, Project facts, Lessons, every document type, a scoped table of contents |
+| Workbench       | The document in plain words (the agent's summary, or Cypher's from the document), up to three "what to look at" pointers, the other documents below                                                                      | Rebuilt: document rail with status tags, Blueprint with Filter Menu, completeness and Change Summary (affectUI), Decision Log with override, Project facts, Lessons, every document type, a scoped table of contents |
 | Settings        | (Everything only)                                                                                                         | Rebuilt in groups (the project, access, budgets, who decides, the record, danger zone), a sentence before each table               |
 | New project     | (Everything only)                                                                                                         | Rebuilt: one list of steps, a rail with checks, a live summary, radio tiles with arrow keys; validation and request bodies in typed modules shared with Settings |
 | Manage pages    | (Everything only)                                                                                                         | Rebuilt: Global settings (GitHub App), Connections, Playbooks with comparison, Rules, Knowledge with export, Diagnostics; one shared card for rules, lessons and proposals |
@@ -30,6 +30,23 @@ first-load screen and the Workbench's document type. The old stylesheet (`protot
 the bridge and the Carbon icon sprite are deleted. The app loads `theme/tokens.css`, `theme/base.css`
 (resets on tokens) and `theme/type.css`; every component styles itself in a CSS Module. The favicon is
 the eye, and operator email is set in Plus Jakarta Sans.
+
+## The portfolio's sections
+
+Above any project the nav reads Dashboard, Needs you, Projects, Team, Workbench, Activity and
+Scorecard (§8). Needs you and Projects jump to their Dashboard sections; the other four are pages at
+`/team`, `/workbench`, `/activity` and `/scorecard`, each with both faces, fed by
+`GET /portfolio/team`, `/portfolio/workbench`, `/portfolio/activity` and `/portfolio/scorecard`
+(`apps/control-api/src/portfolio.ts`). A row opens the project at that page.
+
+## Also from the plan
+
+- `artifact.versioned` carries the producing agent's `summary` and up to three `attention` pointers;
+  the workspace `write` tool takes them (a malformed one is dropped, never a refused save), and the
+  API writes Cypher's summary from the document where the agent wrote none.
+- `GET/PUT /me/preferences` keeps the Bliss/Everything choice per operator (the integrations key/value
+  table, `prefs:<login>`); localStorage stays the first store.
+- Operator email is on the Cypher brand.
 
 ## Cypher's words come from the API
 
@@ -57,5 +74,3 @@ What the API couldn't fill truthfully, and does instead:
 - The boards' 23px and 29px card titles, 15.5px body and 9px initials in faces have no type token. The
   build uses the nearest token, or a size derived from the spacing tokens; adding type tokens for them
   would settle it.
-- Portfolio-level Team, Workbench, Activity and Scorecard pages (§8) don't exist yet. The portfolio nav
-  shows Home or Dashboard, Needs you and Projects. The last two jump to their Dashboard sections.

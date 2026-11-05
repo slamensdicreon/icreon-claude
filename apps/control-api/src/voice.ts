@@ -856,9 +856,7 @@ export interface DocumentPointerInput {
 }
 
 /** Up to three "what to look at" pointers, in the order they matter. */
-export function documentPointers(
-  d: DocumentPointerInput,
-): {
+export function documentPointers(d: DocumentPointerInput): {
   label: string;
   target: { kind: 'artifact' | 'agent' | 'preview' | 'surface'; ref: string };
 }[] {

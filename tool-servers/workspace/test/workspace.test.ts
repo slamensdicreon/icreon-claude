@@ -69,6 +69,29 @@ describe('artifacts', () => {
     ]);
   });
 
+  it('saves the document even when its summary or pointers are malformed, dropping them', async () => {
+    const s = new ArtifactsToolServer(library);
+    const r = await s.call(
+      'write',
+      {
+        artifactId: 'odd',
+        kind: 'report',
+        title: 'Odd extras',
+        format: 'markdown',
+        content: '# Odd',
+        summary: 'x'.repeat(1_500),
+        attention: [{ label: 'Somewhere', target: { kind: 'nowhere', ref: 1 } }],
+      },
+      ctx(),
+    );
+    expect(r.code).toBe(200);
+    const [saved] = (await store.read('p1')).flatMap((e) =>
+      e.type === 'artifact.versioned' ? [e.data] : [],
+    );
+    expect(saved).toMatchObject({ artifactId: 'odd', attention: [] });
+    expect(saved!.summary).toHaveLength(1_200);
+  });
+
   it('versions each write, stores the content and announces it on the log', async () => {
     const s = new ArtifactsToolServer(library);
     const w = {
