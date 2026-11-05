@@ -37,7 +37,13 @@ export function DangerZone({
   const base = `/projects/${projectId}`;
   const paused = p.status === 'paused';
   const control = (verb: 'pause' | 'resume') =>
-    run(() => post(`${base}/control`, { verb, scope: { kind: 'project', id: projectId } }));
+    run(
+      () => post(`${base}/control`, { verb, scope: { kind: 'project', id: projectId } }),
+      verb === 'pause'
+        ? { title: `${p.name} paused`, detail: 'Nothing runs until you resume it.' }
+        : { title: `${p.name} resumed`, detail: 'The team picks up where it stopped.' },
+      verb === 'pause' ? 'Pausing the project' : 'Resuming the project',
+    );
 
   const pause = () =>
     openOverlay(

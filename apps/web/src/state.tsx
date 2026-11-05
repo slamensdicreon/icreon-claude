@@ -84,6 +84,16 @@ export interface Layout {
   present: boolean;
 }
 
+/** A command in flight: what it is doing, and since when. */
+export interface Pending {
+  id: number;
+  label: string;
+  since: number;
+}
+/** The working indicator waits this long before showing, then stays at least this long. */
+export const PENDING_DELAY = 220;
+const PENDING_MIN = 500;
+
 /** What happened, for the toast's icon and colour: done (a green check), wrong (coral), news (the eye). */
 export type ToastTone = 'done' | 'error' | 'info';
 
@@ -181,6 +191,8 @@ interface AppValue {
   openOverlay: (node: ReactNode) => void;
   closeOverlay: () => void;
   toasts: Toast[];
+  /** Commands in flight, for the working indicator: what each is doing. */
+  pending: Pending[];
   /** A plain line, or a title with a detail, a tone and an action. */
   toast: (text: string | ToastInput, action?: Toast['action']) => void;
   dismissToast: (id: number) => void;
@@ -192,7 +204,15 @@ interface AppValue {
   composer: { text: string; about: string | null; focus: number };
   setComposer: (c: { text: string; about?: string | null; focus?: boolean }) => void;
   /** Runs a command; refusals become a toast in the API's own words. */
-  run: (fn: () => Promise<unknown>, done?: string | ToastInput) => Promise<boolean>;
+  /**
+   * Runs a command: shows that it's working (after a beat, so fast ones don't flicker), refreshes
+   * what it changed, then says how it went. `pending` names the work ("Approving").
+   */
+  run: (
+    fn: () => Promise<unknown>,
+    done?: string | ToastInput,
+    pending?: string,
+  ) => Promise<boolean>;
   /**
    * The first load: whether the project list has arrived, and why not when it hasn't. The boot
    * overlay reads it; background refreshes never touch it once the list is in.
@@ -262,6 +282,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [inspector, setInspector] = useState<AppValue['inspector']>(null);
   const [overlay, setOverlay] = useState<ReactNode>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [pending, setPending] = useState<Pending[]>([]);
   const [layout, setLayoutState] = useState<Layout>({
     dockOpen: false,
     dockCollapsed: store.get('lw-dock') === '1',
@@ -481,6 +502,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     openOverlay: setOverlay,
     closeOverlay: () => setOverlay(null),
     toasts,
+    pending,
     toast,
     dismissToast,
     layout,
@@ -500,17 +522,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setComposer: ({ text, about = null, focus = false }) =>
       setComposerState((c) => ({ text, about, focus: focus ? c.focus + 1 : c.focus })),
     boot: { ...boot, retry: () => void loadProjects() },
-    run: async (fn, done) => {
+    run: async (fn, done, label) => {
+      const id = Date.now() + Math.random();
+      const started = performance.now();
+      setPending((ps) => [...ps, { id, label: label ?? 'Working on it', since: Date.now() }]);
+      // Shown only past a beat (the indicator waits for that itself); once shown, it stays long
+      // enough to read, so it never flickers.
+      const settle = async () => {
+        const took = performance.now() - started;
+        if (took > PENDING_DELAY && took < PENDING_DELAY + PENDING_MIN)
+          await new Promise((r) => setTimeout(r, PENDING_DELAY + PENDING_MIN - took));
+        setPending((ps) => ps.filter((p) => p.id !== id));
+      };
       try {
         await fn();
         if (projectId) live.refresh(projectId);
-        void loadProjects();
+        // Hold the indicator until the screen has caught up, at most a moment and a half.
+        await Promise.race([loadProjects(), new Promise((r) => setTimeout(r, 1500))]);
+        await settle();
         if (done)
           toast(
             typeof done === 'string' ? { title: done, tone: 'done' } : { tone: 'done', ...done },
           );
         return true;
       } catch (err) {
+        await settle();
         toast({
           title: 'That didn’t go through',
           detail: messageOf(err, 'The Control API could not be reached. Check your connection.'),

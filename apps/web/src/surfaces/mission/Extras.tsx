@@ -107,7 +107,11 @@ export function ReadyToStart({ mc }: { mc: MissionControlSnapshot }) {
             <Button
               kind="primary"
               onClick={() =>
-                void run(() => post(`/projects/${projectId}/start`), `Starting ${mc.project.name}`)
+                void run(
+                  () => post(`/projects/${projectId}/start`),
+                  `${mc.project.name} started`,
+                  `Starting ${mc.project.name}`,
+                )
               }
             >
               Start project

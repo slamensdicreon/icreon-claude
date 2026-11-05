@@ -5,18 +5,48 @@
  * and a bar that counts its time down. Hovering holds it. It springs in, and slides away on leaving.
  */
 import { useEffect, useRef, useState } from 'react';
-import { useApp, type Toast } from '../state';
+import { PENDING_DELAY, useApp, type Pending, type Toast } from '../state';
 import { Icon } from '../theme/icons';
 import { SmallEye } from '../ui/eye/SmallEye';
 import t from './toasts.module.css';
 
 export function Toasts() {
-  const { toasts } = useApp();
+  const { toasts, pending } = useApp();
   return (
     <div className={t.stack} aria-live="polite" aria-relevant="additions">
       {toasts.map((x) => (
         <ToastCard key={x.id} toast={x} />
       ))}
+      {pending.length > 0 && <Working pending={pending} />}
+    </div>
+  );
+}
+
+/**
+ * The working indicator: while a command is in flight, a small pill with the eye looking about and
+ * what is being done ("Approving…"). It waits a beat before it shows (PENDING_DELAY), so a quick
+ * command never flickers it; the result's toast lands where it was.
+ */
+function Working({ pending }: { pending: Pending[] }) {
+  const latest = pending[pending.length - 1]!;
+  const label = pending.length > 1 ? `Working on ${pending.length} things` : latest.label;
+  return (
+    <div
+      className={t.working}
+      role="status"
+      aria-label={`${label}…`}
+      style={{ '--delay': `${PENDING_DELAY}ms` } as React.CSSProperties}
+    >
+      <SmallEye state="watching" size={22} tone="onInk" thinking lively />
+      <span className="type-body-small">
+        {label}
+        <span className={t.dots} aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      </span>
+      <span className={t.shimmer} aria-hidden="true" />
     </div>
   );
 }

@@ -40,12 +40,17 @@ export function useCardActions(x: EscalationView) {
           action: {
             label: 'Undo',
             run: () =>
-              void run(() => post(`${base}/escalations/${x.escalationId}/undo`), {
-                title: 'Undone',
-                detail: `${x.title} is back with you.`,
-              }),
+              void run(
+                () => post(`${base}/escalations/${x.escalationId}/undo`),
+                {
+                  title: 'Undone',
+                  detail: `${x.title} is back with you.`,
+                },
+                'Undoing',
+              ),
           },
         },
+        'Sending your answer',
       ),
     defer: () =>
       run(
@@ -54,9 +59,20 @@ export function useCardActions(x: EscalationView) {
             until: new Date(Date.now() + 30 * 60_000).toISOString(),
           }),
         { title: 'Deferred for half an hour', detail: x.title, tone: 'info' },
+        'Deferring',
       ),
-    resume: () => run(() => post(`${base}/escalations/${x.escalationId}/resume`)),
-    undo: () => run(() => post(`${base}/escalations/${x.escalationId}/undo`)),
+    resume: () =>
+      run(
+        () => post(`${base}/escalations/${x.escalationId}/resume`),
+        { title: 'Back in the queue', detail: x.title, tone: 'info' },
+        'Bringing it back',
+      ),
+    undo: () =>
+      run(
+        () => post(`${base}/escalations/${x.escalationId}/undo`),
+        { title: 'Undone', detail: `${x.title} is back with you.` },
+        'Undoing',
+      ),
     approve: (name: string) => {
       if (x.gate?.requiresConfirmation) {
         openOverlay(
@@ -68,18 +84,28 @@ export function useCardActions(x: EscalationView) {
             danger={false}
             onConfirm={() => {
               closeOverlay();
-              void run(() =>
-                post(`${base}/gates/${x.escalationId}/approve`, { confirmation: name }),
+              void run(
+                () => post(`${base}/gates/${x.escalationId}/approve`, { confirmation: name }),
+                { title: 'Approved', detail: x.title },
+                'Approving',
               );
             }}
           />,
         );
         return;
       }
-      void run(() => post(`${base}/gates/${x.escalationId}/approve`, {}));
+      void run(
+        () => post(`${base}/gates/${x.escalationId}/approve`, {}),
+        { title: 'Approved', detail: `${x.title}. The team carries on.` },
+        'Approving',
+      );
     },
     sendBack: (notes: string) =>
-      run(() => post(`${base}/gates/${x.escalationId}/send-back`, { notes })),
+      run(
+        () => post(`${base}/gates/${x.escalationId}/send-back`, { notes }),
+        { title: 'Sent back', detail: `${x.title}, with your notes.` },
+        'Sending it back',
+      ),
     ask: () => {
       setComposer({ text: `About ${x.title}: `, about: x.escalationId, focus: true });
       setLayout({ dockOpen: true });
