@@ -1,10 +1,7 @@
-// The old stylesheet first, Cypher's theme after it, so the theme's bridge wins where they meet.
-// Both old files go per surface at cut-over and whole in phase 5.
-import './styles/prototype.css';
-import './styles/app.css';
+// Cypher's tokens, the page's base, then type; every component styles itself in its own module.
 import './theme/tokens.css';
+import './theme/base.css';
 import './theme/type.css';
-import './theme/bridge.css';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';

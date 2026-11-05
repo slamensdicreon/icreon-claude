@@ -89,8 +89,7 @@ export function ReadyToStart({ mc }: { mc: MissionControlSnapshot }) {
       : creds.length
         ? creds
             .map(
-              (c) =>
-                `${c.system} ${c.provided ? (c.ok ? 'verified' : 'failed') : 'not connected'}`,
+              (c) => `${c.system} ${c.provided ? (c.ok ? 'verified' : 'failed') : 'not connected'}`,
             )
             .join(', ')
         : 'None needed',

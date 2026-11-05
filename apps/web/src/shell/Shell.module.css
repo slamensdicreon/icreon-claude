@@ -479,7 +479,6 @@
   display: none;
 }
 
-
 /* ---------- the scrolling page ---------- */
 .surface {
   flex: 1 1 auto;
@@ -497,7 +496,8 @@
 }
 @media (max-width: 640px) {
   .surface {
-    padding: var(--space-4) var(--space-4) calc(var(--row) + var(--space-6) + env(safe-area-inset-bottom, 0px));
+    padding: var(--space-4) var(--space-4)
+      calc(var(--row) + var(--space-6) + env(safe-area-inset-bottom, 0px));
   }
 }
 /* The Workbench lays itself out by the page's width, not the window's. */

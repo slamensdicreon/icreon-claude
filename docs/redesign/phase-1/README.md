@@ -23,10 +23,13 @@ the Dashboard and Mission Control in dark.
 | New project     | (Everything only)                                                                                                         | Rebuilt: one list of steps, a rail with checks, a live summary, radio tiles with arrow keys; validation and request bodies in typed modules shared with Settings |
 | Manage pages    | (Everything only)                                                                                                         | Rebuilt: Global settings (GitHub App), Connections, Playbooks with comparison, Rules, Knowledge with export, Diagnostics; one shared card for rules, lessons and proposals |
 
-Every page is now rebuilt on Cypher components. The old surface files are deleted; what still uses
-the old stylesheet is the shell's overlays (palette, menus, dialogs), the inspector drawer, the Cypher
-sheet's conversation (the old dock and the portfolio chat), Mission Control's intake and presentation
-modes, and the phone's bottom bar. Those go next, then `prototype.css` and `app.css` come out (phase 5).
+Every page is now rebuilt on Cypher components, and so is everything around them: the palette, menus
+and dialogs, the inspector drawer, the Cypher sheet's conversation (in a project and at portfolio
+level), Mission Control's presentation mode and Ready to start, the phone's bottom bar, toasts, the
+first-load screen and the Workbench's document type. The old stylesheet (`prototype.css`, `app.css`),
+the bridge and the Carbon icon sprite are deleted. The app loads `theme/tokens.css`, `theme/base.css`
+(resets on tokens) and `theme/type.css`; every component styles itself in a CSS Module. The favicon is
+the eye, and operator email is set in Plus Jakarta Sans.
 
 ## Cypher's words come from the API
 
@@ -46,13 +49,13 @@ What the API couldn't fill truthfully, and does instead:
 - **Raiser:** a card with neither a source task nor a triage Lead has no `raisedBy`, so its card says
   "Raised 4 min ago" with no name.
 - **Handled:** lists cards settled without the Director only. Send-backs and deploys aren't listed yet.
+- **The Dashboard's poll:** the overview reads each project's recent log; the API keeps those facts
+  per project until its log moves (at most a minute), so polling doesn't re-read the event store.
 
 ## Open for design
 
 - The boards' 23px and 29px card titles, 15.5px body and 9px initials in faces have no type token. The
   build uses the nearest token, or a size derived from the spacing tokens; adding type tokens for them
   would settle it.
-- The Floor (canvas) still draws Cypher as a "C" disc; per §3 it should be the eye. It's a small change
-  in `scene/Floor.tsx` once the canvas can draw the mark.
 - Portfolio-level Team, Workbench, Activity and Scorecard pages (§8) don't exist yet. The portfolio nav
   shows Home or Dashboard, Needs you and Projects. The last two jump to their Dashboard sections.

@@ -1,7 +1,6 @@
 import type { EscalationView } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
 import { Inspector } from './Inspector';
-import { Sprite } from './lib/icons';
 import { live } from './lib/live';
 import { NewProjectPage as NewProject } from './surfaces/intake/NewProjectPage';
 import { Palette } from './overlays/Palette';
@@ -54,7 +53,6 @@ const CHORD: Record<string, Surface> = {
 export function App() {
   return (
     <AppProvider>
-      <Sprite />
       <Frame />
     </AppProvider>
   );

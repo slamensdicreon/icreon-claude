@@ -4,6 +4,7 @@ import { API } from '../../lib/api';
 import { age, clock } from '../../lib/fmt';
 import { Mode } from '../../mode/Mode';
 import { TextForm } from '../../overlays/Dialogs';
+import { MakeRule } from '../../overlays/MakeRule';
 import { useApp, useMission, useNow } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Eye } from '../../ui/Eye';
@@ -143,7 +144,7 @@ function NeedsBliss({ mc }: { mc: MissionControlSnapshot }) {
  * The row that's open is the card the keyboard acts on (1–4, D, A, J and K).
  */
 function NeedsEverything({ mc }: { mc: MissionControlSnapshot }) {
-  const { ui, setUi } = useApp();
+  const { ui, setUi, openOverlay } = useApp();
   const now = useNow(1000);
   const cards = openCards(mc);
   useJK(cards);
@@ -220,6 +221,18 @@ function NeedsEverything({ mc }: { mc: MissionControlSnapshot }) {
                   {chose && <span className={s.quiet}> · {chose}</span>}
                 </span>
                 <span className="type-meta">{left} s</span>
+                {x.type !== 'gate' && x.resolution?.by === 'director' && (
+                  <Button
+                    kind="quiet"
+                    onClick={() =>
+                      openOverlay(
+                        <MakeRule projectId={mc.project.id} escalationId={x.escalationId} />,
+                      )
+                    }
+                  >
+                    Make this a rule
+                  </Button>
+                )}
                 <Button kind="secondary" onClick={() => act.undo(x)}>
                   Undo
                 </Button>
