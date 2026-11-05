@@ -7,8 +7,8 @@
 import { DemoMenu, ManageMenu, ProjectMenu } from '../overlays/Menus';
 import { isManagePage, useApp, useProjectResource } from '../state';
 import { Icon } from '../theme/icons';
-import { Eye } from '../ui/Eye';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import { SmallEye } from '../ui/eye/SmallEye';
 import { useGlide } from '../ui/cypher/motion';
 import { Ticker } from '../ui/cypher/parts';
 import { useEyeState } from '../voice/eye';
@@ -35,7 +35,15 @@ function useNavState() {
       document.getElementById(spot)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 60);
   };
-  return { ...app, p, scenarios, eye: useEyeState(), onDashboard, jump };
+  // The eye perks up while its button is hovered or focused.
+  const [perk, setPerk] = useState(false);
+  const perkProps = {
+    onPointerEnter: () => setPerk(true),
+    onPointerLeave: () => setPerk(false),
+    onFocus: () => setPerk(true),
+    onBlur: () => setPerk(false),
+  };
+  return { ...app, p, scenarios, eye: useEyeState(), onDashboard, jump, perk, perkProps };
 }
 
 const eyeLabel = (yours: number, state: string) =>
@@ -57,6 +65,8 @@ export function Rail() {
     jump,
     view,
     portfolio,
+    perk,
+    perkProps,
   } = useNavState();
   const navRef = useRef<HTMLElement>(null);
   const glideRef = useRef<HTMLSpanElement>(null);
@@ -87,8 +97,9 @@ export function Rail() {
         className={styles.railEye}
         onClick={home}
         aria-label={`${eyeLabel(eye.yours, eye.state)}. All projects`}
+        {...perkProps}
       >
-        <Eye state={eye.state} blink={eye.blink} size={44} tone="onShell" decorative />
+        <SmallEye state={eye.state} blink={eye.blink} size={44} tone="onShell" perk={perk} />
       </button>
       {p
         ? PROJECT_SECTIONS.map((s) =>
@@ -139,6 +150,8 @@ export function Sidebar() {
     onDashboard,
     jump,
     portfolio,
+    perk,
+    perkProps,
   } = useNavState();
   const navRef = useRef<HTMLElement>(null);
   const glideRef = useRef<HTMLSpanElement>(null);
@@ -178,8 +191,16 @@ export function Sidebar() {
         className={styles.brand}
         onClick={home}
         aria-label={`${eyeLabel(eye.yours, eye.state)}. All projects`}
+        {...perkProps}
       >
-        <Eye state={eye.state} blink={eye.blink} size={34} tone="onShell" decorative />
+        <SmallEye
+          state={eye.state}
+          blink={eye.blink}
+          size={30}
+          tone="onShell"
+          perk={perk}
+          lively={perk}
+        />
         <span className={`${styles.wordmark} type-heading`} aria-hidden="true">
           cypher
         </span>

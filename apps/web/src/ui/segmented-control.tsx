@@ -195,6 +195,10 @@ export function SegmentedControl<T extends string = string>({
       p.dataset.dir = x > from.x ? 'right' : 'left';
       p.style.left = `${x}px`;
       p.style.right = `${t.clientWidth - x - w}px`;
+      // Later placements in this mount (the value effect, a re-measure) follow the glide, not snap
+      gliding.current = true;
+      clearTimeout(glideTimer.current);
+      glideTimer.current = window.setTimeout(() => (gliding.current = false), 460);
       return;
     }
     const instant = !p.dataset.ready || (!animate && !gliding.current);

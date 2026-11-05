@@ -7,6 +7,7 @@ import { Chip, useJump, Who } from '../parts/bits';
 import { useApp, useConversation, useNow, useRoster, useTz } from '../state';
 import { Icon } from '../theme/icons';
 import { Eye } from '../ui/Eye';
+import { SmallEye } from '../ui/eye/SmallEye';
 import { useEyeState } from '../voice/eye';
 import s from './dock.module.css';
 
@@ -43,7 +44,7 @@ export function Dock() {
   return (
     <aside className={s.dock} aria-label="Cypher">
       <div className={s.head}>
-        <Eye state={thinking ? 'watching' : eye.state} blink={eye.blink} size={34} decorative />
+        <SmallEye state={eye.state} blink={eye.blink} size={34} lively thinking={thinking} />
         <div className={s.who}>
           <h2 className={`${s.name} type-section`}>Cypher</h2>
           <p className={`${s.role} type-meta`}>Chief of Staff</p>

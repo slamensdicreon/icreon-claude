@@ -8,6 +8,8 @@ import { ease, lidPath, mixPose, pupilRadius, strokeWidth, type EyePose } from '
 export interface EyeParts {
   lids: SVGPathElement;
   pupil: SVGCircleElement;
+  /** A small catch-light on the pupil, which moves with it; optional. */
+  glint?: SVGCircleElement | null;
 }
 
 export interface Step {
@@ -103,8 +105,15 @@ export class EyeMotion {
     if (!this.filled) p.lids.setAttribute('stroke-width', String(strokeWidth(open)));
     const r = pupilRadius(open, dilate, this.pupilBase);
     p.pupil.setAttribute('r', String(r));
-    p.pupil.setAttribute('cx', String(36 + lookX));
-    p.pupil.setAttribute('cy', String(36 + lookY * Math.min(1, open)));
+    const cx = 36 + lookX;
+    const cy = 36 + lookY * Math.min(1, open);
+    p.pupil.setAttribute('cx', String(cx));
+    p.pupil.setAttribute('cy', String(cy));
+    if (p.glint) {
+      p.glint.setAttribute('r', String(+(r * 0.3).toFixed(2)));
+      p.glint.setAttribute('cx', String(+(cx - r * 0.36).toFixed(2)));
+      p.glint.setAttribute('cy', String(+(cy - r * 0.38).toFixed(2)));
+    }
   }
 }
 

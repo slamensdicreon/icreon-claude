@@ -62,26 +62,47 @@ export function LiveEye({
         { to: { open: 0 }, ms: 90, ease: ease.in },
         { to: { open: pose.open }, ms: 170, ease: ease.out },
       ]);
+    const doubleBlink = () =>
+      m.play([
+        { to: { open: 0 }, ms: 80, ease: ease.in },
+        { to: { open: pose.open }, ms: 120, ease: ease.out, hold: 110 },
+        { to: { open: 0 }, ms: 80, ease: ease.in },
+        { to: { open: pose.open }, ms: 170, ease: ease.out },
+      ]);
+    const glance = (x: number, y: number, hold: number) =>
+      m.play([
+        { to: { lookX: x, lookY: y }, ms: 210, ease: ease.out, hold },
+        { to: { lookX: 0, lookY: 0 }, ms: 260, ease: ease.inOut },
+      ]);
+    const r = lookRange(pose.open);
     const act = async () => {
       if (!alive) return;
+      const roll = Math.random();
       if (state === 'resting') {
-        await m.play([
-          { to: { open: 0.18 }, ms: 800, ease: ease.inOut, hold: 300 },
-          { to: { open: 0 }, ms: 1100, ease: ease.inOut },
-        ]);
-      } else if (state === 'watching' && Math.random() < 0.55) {
-        const r = lookRange(pose.open);
-        await m.play([
-          {
-            to: { lookX: between(-r, r), lookY: between(-r / 2, r / 2) },
-            ms: 240,
-            ease: ease.out,
-            hold: between(500, 1400),
-          },
-        ]);
+        if (roll < 0.35) {
+          // A peek: the lids half-lift, it looks one way and the other, and settles again.
+          await m.play([
+            { to: { open: 0.5 }, ms: 520, ease: ease.out, hold: 160 },
+            { to: { lookX: -3 }, ms: 320, ease: ease.inOut, hold: 260 },
+            { to: { lookX: 3 }, ms: 420, ease: ease.inOut, hold: 260 },
+            { to: { lookX: 0, open: 0 }, ms: 900, ease: ease.inOut },
+          ]);
+        } else {
+          await m.play([
+            { to: { open: 0.18 }, ms: 800, ease: ease.inOut, hold: 300 },
+            { to: { open: 0 }, ms: 1100, ease: ease.inOut },
+          ]);
+        }
+      } else if (state === 'watching') {
+        if (roll < 0.5) await glance(between(-r, r), between(-r / 2, r / 2), between(500, 1300));
+        else if (roll < 0.85) await blinkOnce();
+        else await doubleBlink();
       } else {
-        await blinkOnce();
-        if (state === 'needs-a-word') await m.play([{ to: { lookX: 0, lookY: 0 }, ms: 200 }]);
+        // Needs a word: it keeps looking at the Director, glancing at the cards and back.
+        if (roll < 0.4) await blinkOnce();
+        else if (roll < 0.6) await doubleBlink();
+        else if (roll < 0.85) await glance(between(-r * 0.7, r * 0.7), r * 0.6, between(400, 900));
+        else await glance(between(-1.2, 1.2), between(-1, 1), 160);
       }
       schedule();
     };
@@ -89,10 +110,10 @@ export function LiveEye({
       if (!alive) return;
       const wait =
         state === 'resting'
-          ? between(7000, 12000)
+          ? between(4000, 8000)
           : state === 'watching'
-            ? between(1600, 3800)
-            : between(3000, 6000);
+            ? between(1200, 3000)
+            : between(1800, 4000);
       timer = window.setTimeout(() => void act(), wait);
     };
     void m.play([{ to: pose, ms: 560, ease: ease.spring }]).then((done) => done && schedule());

@@ -8,14 +8,14 @@
  * The sheet's open state is the old dock's (`layout.dockOpen`), so Ctrl or Cmd /, Esc and the
  * phone's bottom bar keep working.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dock } from '../dock/Dock';
 import { CypherHome } from '../surfaces/CypherHome';
-import { useApp } from '../state';
+import { useApp, useConversation } from '../state';
 import { Icon } from '../theme/icons';
 import { usePresence } from '../ui/cypher/motion';
 import { Ticker } from '../ui/cypher/parts';
-import { Eye } from '../ui/Eye';
+import { SmallEye } from '../ui/eye/SmallEye';
 import { useEyeState } from '../voice/eye';
 import styles from './Shell.module.css';
 
@@ -23,6 +23,9 @@ export function CypherLauncher() {
   const { layout, setLayout } = useApp();
   const eye = useEyeState();
   const open = layout.dockOpen;
+  // Hovered or focused, the eye perks up; while Cypher composes a reply it looks about.
+  const [perk, setPerk] = useState(false);
+  const thinking = useConversation().data?.presence === 'thinking';
   return (
     <button
       className={styles.launcher}
@@ -32,8 +35,21 @@ export function CypherLauncher() {
         open ? 'Close Cypher' : eye.yours ? `Open Cypher, ${eye.yours} yours` : 'Open Cypher'
       }
       onClick={() => setLayout({ dockOpen: !open, dockCollapsed: false })}
+      onPointerEnter={() => setPerk(true)}
+      onPointerLeave={() => setPerk(false)}
+      onFocus={() => setPerk(true)}
+      onBlur={() => setPerk(false)}
     >
-      <Eye state={eye.state} blink={eye.blink} size={40} tone="onInk" decorative />
+      <SmallEye
+        state={eye.state}
+        blink={eye.blink}
+        size={40}
+        tone="onInk"
+        lively
+        perk={perk}
+        attending={open}
+        thinking={thinking}
+      />
       {eye.yours > 0 && (
         <span className={`${styles.launcherBadge} type-label`} aria-hidden="true">
           <Ticker value={eye.yours} />

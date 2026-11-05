@@ -7,6 +7,7 @@ import s from '../dock/dock.module.css';
 import { useApp, useNow } from '../state';
 import { Icon } from '../theme/icons';
 import { Eye } from '../ui/Eye';
+import { SmallEye } from '../ui/eye/SmallEye';
 
 const STARTERS = [
   'What needs me today?',
@@ -263,7 +264,7 @@ function CypherPanel() {
   return (
     <section className={s.home}>
       <header className={s.homeHead}>
-        <Eye state={pending ? 'watching' : 'resting'} size={34} decorative />
+        <SmallEye state="watching" size={34} lively thinking={Boolean(pending)} />
         <div className={s.who}>
           <h2 className={`${s.name} type-section`}>{active?.title ?? 'Cypher'}</h2>
           <p className={`${s.role} type-meta`}>

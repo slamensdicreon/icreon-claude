@@ -124,7 +124,7 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: calc(var(--space-2) - 1px);
   padding: 0 var(--space-2) var(--space-4);
   border: 0;
   background: transparent;
@@ -133,10 +133,14 @@
   text-align: left;
   border-radius: var(--radius-md);
 }
+/* The lockup's proportions (theme/marks/wordmark.svg): the word as tall as the eye, a quarter of
+   its size between them, the word's centre a touch below the eye's. */
 .wordmark {
+  font-size: calc(var(--space-6) - var(--space-1));
   font-weight: 800;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.042em;
   line-height: 1;
+  transform: translateY(-1px);
 }
 .navGap {
   height: var(--space-2);

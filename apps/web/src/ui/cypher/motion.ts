@@ -37,7 +37,9 @@ export function useGlide(
       const gr = g.getBoundingClientRect();
       const er = el.getBoundingClientRect();
       const instant =
-        (!animate && performance.now() > glidingUntil.current) || !placed.current || reducedMotion();
+        (!animate && performance.now() > glidingUntil.current) ||
+        !placed.current ||
+        reducedMotion();
       if (!instant && animate) glidingUntil.current = performance.now() + 600;
       if (instant) i.style.transition = 'none';
       i.style.opacity = '1';

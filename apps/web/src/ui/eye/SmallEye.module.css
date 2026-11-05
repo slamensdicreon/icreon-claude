@@ -1,0 +1,131 @@
+/*
+ * The small eye's colours follow the marks per tone (theme/marks.tsx): on the page the ball is ink
+ * and the lids white; on the shell the ball is on-shell and the lids shell; on an ink control the
+ * ball is on-ink and the lids ink. Needs a word is the same on every ground: a coral ball, a white
+ * almond and a shell pupil. Colours move, so a state change reads as a change.
+ */
+.eye {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  line-height: 0;
+}
+.mark {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  shape-rendering: geometricPrecision;
+}
+.ball,
+.lids,
+.pupil,
+.glint {
+  transition:
+    fill 450ms ease-out,
+    stroke 450ms ease-out;
+}
+
+.eye[data-tone='light'] .ball {
+  fill: var(--ink);
+}
+.eye[data-tone='light'] .lids {
+  fill: transparent;
+  stroke: var(--on-ink);
+}
+.eye[data-tone='light'] .pupil {
+  fill: var(--on-ink);
+}
+.eye[data-tone='onShell'] .ball {
+  fill: var(--on-shell);
+}
+.eye[data-tone='onShell'] .lids {
+  fill: transparent;
+  stroke: var(--shell);
+}
+.eye[data-tone='onShell'] .pupil {
+  fill: var(--shell);
+}
+.eye[data-tone='onInk'] .ball {
+  fill: var(--on-ink);
+}
+.eye[data-tone='onInk'] .lids {
+  fill: transparent;
+  stroke: var(--ink);
+}
+.eye[data-tone='onInk'] .pupil {
+  fill: var(--ink);
+}
+/* The catch-light: only on a dark pupil, where it reads. */
+.glint {
+  fill: transparent;
+}
+
+.eye[data-state='needs-a-word'] .ball {
+  fill: var(--coral);
+}
+.eye[data-state='needs-a-word'] .lids {
+  fill: var(--on-shell);
+  stroke: var(--on-shell);
+}
+.eye[data-state='needs-a-word'] .pupil {
+  fill: var(--shell);
+}
+.eye[data-state='needs-a-word'] .glint,
+.eye[data-tone='onShell'] .glint,
+.eye[data-tone='onInk'] .glint {
+  fill: color-mix(in srgb, var(--on-shell) 85%, transparent);
+}
+.eye[data-tone='onInk']:not([data-state='needs-a-word']) .glint {
+  fill: color-mix(in srgb, var(--on-ink) 85%, transparent);
+}
+
+/* Something is the Director's: a coral ring breathes out from behind the eye. */
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+  background: var(--coral);
+  opacity: 0;
+  pointer-events: none;
+}
+.eye[data-state='needs-a-word'] .ring {
+  animation: halo 2.6s ease-out infinite;
+}
+.eye[data-state='needs-a-word'][data-lively] .ring {
+  animation-duration: 2s;
+}
+/* At rest the whole eye breathes, slowly. */
+.eye[data-state='resting'] .mark {
+  animation: breathe 5s ease-in-out infinite;
+}
+
+@keyframes halo {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.035);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .mark {
+    animation: none !important;
+  }
+}
