@@ -1,0 +1,270 @@
+/*
+ * Workbench, Everything: the page rail, the document and "On this page". Every color, size and
+ * radius is a token; type comes from the type-* classes. The only literals are hairlines.
+ * Widths follow the canvas (the shell's container), not the window.
+ */
+
+.wb {
+  --rail-w: calc(var(--sidebar) + var(--space-2));
+  --toc-w: calc(var(--sidebar) - var(--space-6));
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  grid-template-areas: 'rail main';
+  gap: var(--space-4);
+  align-items: start;
+  padding: 0 0 var(--space-8);
+}
+.wb[data-toc] {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--toc-w);
+  grid-template-areas: 'rail main toc';
+}
+
+/* ---------- the rail ---------- */
+.rail {
+  grid-area: rail;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--topbar) - var(--space-6));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface-quiet);
+  color: var(--text-3);
+  flex: none;
+}
+.search:focus-within {
+  outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 2px;
+}
+.search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+  outline: none;
+}
+.search input::placeholder {
+  color: var(--text-3);
+}
+.sec {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.secLabel {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  color: var(--text-3);
+}
+.secHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-3);
+  text-align: left;
+  cursor: pointer;
+}
+.secHead:hover {
+  background: var(--surface-quiet);
+  color: var(--text-2);
+}
+.secChev {
+  flex: none;
+  transition: transform 200ms ease-out;
+}
+.secHead[aria-expanded='false'] .secChev {
+  transform: rotate(-90deg);
+}
+.secCount {
+  margin-left: auto;
+  color: var(--text-3);
+}
+.items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 200ms ease-out;
+}
+.item:hover {
+  background: var(--surface-quiet);
+}
+.item[aria-current='page'] {
+  background: var(--mist-2);
+}
+.item[aria-current='page'] .itemTitle {
+  font-weight: 700;
+}
+.itemTitle {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  color: var(--text-3);
+}
+.none {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-3);
+}
+
+/* On a phone a select stands in for the rail. */
+.pick {
+  display: none;
+}
+
+/* ---------- the page ---------- */
+.main {
+  grid-area: main;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--text-3);
+}
+.crumbs li + li::before {
+  content: '/';
+  margin-right: var(--space-2);
+  color: var(--text-3);
+}
+.crumbs li[aria-current] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ---------- on this page ---------- */
+.tocCol {
+  grid-area: toc;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--topbar) - var(--space-6));
+  overflow-y: auto;
+  padding-top: calc(var(--space-5) + var(--space-3));
+}
+.toc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tocTitle {
+  margin: 0;
+  padding: 0 var(--space-2);
+  color: var(--text-3);
+}
+.tocList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tocList li[data-level='3'] {
+  padding-left: var(--space-4);
+}
+.tocLink {
+  width: 100%;
+  min-height: calc(var(--space-6) + var(--space-1));
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-2);
+  text-align: left;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.tocLink:hover {
+  background: var(--surface-quiet);
+  color: var(--ink);
+}
+
+/* Narrower canvas: "On this page" gives its column back to the document. */
+@container canvas (max-width: 1179px) {
+  .wb[data-toc] {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+    grid-template-areas: 'rail main';
+  }
+  .tocCol {
+    display: none;
+  }
+}
+
+/* Phone: the select replaces the rail, the document takes the width. */
+@container canvas (max-width: 760px) {
+  .wb,
+  .wb[data-toc] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'pick' 'main';
+    gap: var(--space-3);
+  }
+  .rail {
+    display: none;
+  }
+  .pick {
+    display: block;
+    grid-area: pick;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .secChev,
+  .item {
+    transition: none;
+  }
+}

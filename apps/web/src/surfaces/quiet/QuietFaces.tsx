@@ -1,7 +1,7 @@
 /*
  * The Bliss faces of Plan and Workbench, and the switches that pick a face. Their Everything faces
- * are the full consoles (the timelines with zoom, the document wiki and viewers), which keep their
- * behaviour; Bliss reduces each to the few lines a Director reads.
+ * (surfaces/plan, surfaces/workbench) are the full consoles: the timelines with zoom, the document
+ * rail and viewers. Bliss reduces each to the few lines a Director reads.
  */
 import type { ScheduleSnapshot, WorkbenchSnapshot } from '@lw/contracts';
 import { clock, localDate, shortDay } from '../../lib/fmt';
@@ -10,8 +10,8 @@ import { Mode } from '../../mode/Mode';
 import { useApp, useMission, useNow, useProjectResource, useRoster } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Avatar, SectionHeading } from '../../ui/cypher/parts';
-import { Plan } from '../Plan';
-import { Workbench } from '../Workbench';
+import { PlanEverything as Plan } from '../plan/PlanEverything';
+import { WorkbenchEverything as Workbench } from '../workbench/WorkbenchEverything';
 import s from './quiet.module.css';
 
 export function PlanPage() {

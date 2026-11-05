@@ -17,12 +17,15 @@ the Dashboard and Mission Control in dark.
 | Activity        | The Floor, with the last beat as a Tool Call Card (affectUI)                                                              | The log with filters, agent picker, live tail, CSV and paging; the Floor as a tab                                                   |
 | Scorecard       | Three numbers, and what kept coming back                                                                                  | KPI tiles, by category, by phase, repeats                                                                                          |
 | Site preview    | One page: source beside target, parity as a word, next and previous                                                       | Page list with parity, three breakpoints, open in Page builder or on preview                                                        |
-| Plan            | What happens next: the next five activities and what each waits on                                                        | The existing timelines (Today, Engagement, list, zoom), on Cypher's tokens                                                         |
-| Workbench       | The documents, newest first; one opens in Everything                                                                      | The existing wiki and document viewers, on Cypher's tokens                                                                         |
-| Settings, New project, Manage pages | (Everything only)                                                                                     | The existing pages, on Cypher's tokens; their old title is hidden under the top bar's                                              |
+| Plan            | What happens next: the next five activities and what each waits on                                                        | Rebuilt: Today lanes, Engagement weeks, activity list with groups and re-run, zoom (Ctrl+wheel, saved), up next, phone agenda; bars are buttons, states carry a glyph and a word |
+| Workbench       | The documents, newest first; one opens in Everything                                                                      | Rebuilt: document rail with status tags, Blueprint with Filter Menu, completeness and Change Summary (affectUI), Decision Log with override, Project facts, Lessons, every document type, a scoped table of contents |
+| Settings        | (Everything only)                                                                                                         | Rebuilt in groups (the project, access, budgets, who decides, the record, danger zone), a sentence before each table               |
+| New project     | (Everything only)                                                                                                         | Rebuilt: one list of steps, a rail with checks, a live summary, radio tiles with arrow keys; validation and request bodies in typed modules shared with Settings |
+| Manage pages    | (Everything only)                                                                                                         | The existing pages, on Cypher's tokens; their old title is hidden under the top bar's                                              |
 
-Plan, Workbench, Settings and New project still have Everything faces built from the old components,
-re-pointed at Cypher's tokens. They are the next surfaces to rebuild.
+Every project surface and the intake wizard are now rebuilt. The pages above any project (Connections,
+Playbooks, Rules, Knowledge, Diagnostics, Global settings) still use the old components on Cypher's
+tokens; they are next, then the old stylesheet comes out (phase 5).
 
 ## Cypher's words come from the API
 

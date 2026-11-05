@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Inspector } from './Inspector';
 import { Sprite } from './lib/icons';
 import { live } from './lib/live';
-import { NewProject } from './surfaces/NewProject';
+import { NewProjectPage as NewProject } from './surfaces/intake/NewProjectPage';
 import { Palette } from './overlays/Palette';
 import { Boot, useBootState } from './parts/Boot';
 import { useCardActions } from './parts/Card';
@@ -23,7 +23,7 @@ import { NeedsYou } from './surfaces/inbox/NeedsYou';
 import { PlanPage, WorkbenchPage } from './surfaces/quiet/QuietFaces';
 import { SitePreview } from './surfaces/preview/PreviewPage';
 import { ScorecardPage } from './surfaces/scorecard/ScorecardPage';
-import { Settings } from './surfaces/Settings';
+import { SettingsPage as Settings } from './surfaces/settings/SettingsPage';
 import { TeamPage } from './surfaces/team/TeamPage';
 
 const SURFACE: Record<Surface, () => React.JSX.Element> = {
