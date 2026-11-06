@@ -19,7 +19,17 @@ const WriteArgs = z.object({
    */
   summary: z.unknown().optional(),
   attention: z.unknown().optional(),
+  /** A short plain title and who it is for: extras too, dropped when malformed. */
+  headline: z.unknown().optional(),
+  audience: z.unknown().optional(),
 });
+
+const Headline = z.string().trim().min(1);
+const headlineOf = (v: unknown) => {
+  const h = Headline.safeParse(v);
+  return h.success ? h.data.slice(0, 80) : undefined;
+};
+const audienceOf = (v: unknown) => (v === 'director' || v === 'team' ? v : undefined);
 
 const Summary = z.string().trim().min(1);
 const Pointers = z.array(ArtifactPointer);
@@ -33,7 +43,12 @@ const pointersOf = (v: unknown) => {
 };
 
 /** A JSON document may carry its own summary and pointers (lw.document/1); they lift onto the save. */
-const DocVoice = z.object({ summary: z.unknown().optional(), attention: z.unknown().optional() });
+const DocVoice = z.object({
+  summary: z.unknown().optional(),
+  attention: z.unknown().optional(),
+  headline: z.unknown().optional(),
+  audience: z.unknown().optional(),
+});
 
 const ReadArgs = z.object({
   artifactId: z.string(),
@@ -64,6 +79,17 @@ export class ArtifactsToolServer implements ToolServer {
             type: 'string',
             description:
               'Two or three plain sentences for the Director: what this document settles and what, if anything, needs their eye. No jargon, no process narration.',
+          },
+          headline: {
+            type: 'string',
+            description:
+              'A short title in plain words for a non-technical reader, at most eight words, saying what the document is about ("How the site gets rebuilt", "What content moves, and where"). Not the file name.',
+          },
+          audience: {
+            type: 'string',
+            enum: ['director', 'team'],
+            description:
+              'Who it is written for: "director" for plans, results, briefings and audits a person reads; "team" for working files other agents build from (lists, checks, data).',
           },
           attention: {
             type: 'array',
@@ -129,6 +155,8 @@ export class ArtifactsToolServer implements ToolServer {
         ...a.data,
         summary: summaryOf(a.data.summary) ?? summaryOf(lifted.summary) ?? null,
         attention: pointersOf(a.data.attention) ?? pointersOf(lifted.attention) ?? [],
+        headline: headlineOf(a.data.headline) ?? headlineOf(lifted.headline) ?? null,
+        audience: audienceOf(a.data.audience) ?? audienceOf(lifted.audience) ?? null,
         producer: ctx.role,
       });
       return {

@@ -16,11 +16,13 @@ import { clock, shortDay, usd } from '../../lib/fmt';
 import { useOverview } from '../../lib/overview';
 import { usePoll } from '../../lib/poll';
 import { Mode } from '../../mode/Mode';
+import { useMode } from '../../mode/mode';
 import { useApp, type PortfolioPage } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Chip } from '../../parts/bits';
 import {
   Avatar,
+  Button,
   Chips,
   Hero,
   hueOf,
@@ -34,6 +36,7 @@ import { useEyeState } from '../../voice/eye';
 import { leadFace, teamName } from '../mission/model';
 import { faceOf, roleOf } from '../plan/model';
 import s from './portfolio.module.css';
+import w2 from './workbenchStory.module.css';
 
 export function PortfolioPageView({ page }: { page: PortfolioPage }) {
   switch (page) {
@@ -268,17 +271,19 @@ function WorkbenchPage() {
   return <Mode bliss={<WorkbenchBliss w={data} />} everything={<WorkbenchEverything w={data} />} />;
 }
 
-/** Bliss: the newest documents across projects, one line each. */
+/** Bliss: Cypher's sentence and at most three documents for you, then the way to the rest. */
 function WorkbenchBliss({ w }: { w: PortfolioWorkbench }) {
   const { openProject } = useApp();
+  const { setMode } = useMode();
   const tz = useTz();
+  const picks = readingList(w.documents).slice(0, 3);
   return (
     <div className={s.bliss}>
       <BlissHead voice={w.voice} />
-      <section className={s.section} aria-label="The newest documents">
-        <SectionHeading>The newest documents</SectionHeading>
+      <section className={s.section} aria-label="For you">
+        <SectionHeading>For you</SectionHeading>
         <ul className={s.lines}>
-          {w.documents.slice(0, 8).map((d) => (
+          {picks.map((d) => (
             <li key={`${d.projectId}:${d.artifactId}`}>
               <button
                 type="button"
@@ -287,10 +292,13 @@ function WorkbenchBliss({ w }: { w: PortfolioWorkbench }) {
               >
                 <ProjectMark initials={d.initials} hue={d.hue} />
                 <span className={s.stack}>
-                  <b>{d.title}</b>
-                  <span className="type-meta">
-                    {d.project} · version {d.latest}
-                    {d.approved ? ` · version ${d.approved.version} approved` : ''}
+                  <b>{d.headline ?? d.title}</b>
+                  <span
+                    className="type-meta"
+                    data-tone={standingOf(d)?.tone === 'changed' ? 'waiting' : undefined}
+                  >
+                    {standingOf(d)?.word ?? d.project}
+                    {d.author ? ` · ${d.author.name}` : ''}
                     {d.updatedAt ? ` · ${shortDay(d.updatedAt, tz)}` : ''}
                   </span>
                 </span>
@@ -298,100 +306,306 @@ function WorkbenchBliss({ w }: { w: PortfolioWorkbench }) {
               </button>
             </li>
           ))}
-          {w.documents.length === 0 && <li className="type-body">No documents yet.</li>}
+          {picks.length === 0 && <li className="type-body">No documents for you yet.</li>}
         </ul>
       </section>
+      {w.documents.length > 0 && (
+        <div>
+          <Button kind="secondary" onClick={() => setMode('everything')}>
+            Everything the teams wrote
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-type DocFilter = 'all' | 'moved' | 'approved';
+type Doc = PortfolioWorkbench['documents'][number];
 
+/** How a document stands for the Director, in a few words. */
+function standingOf(d: Doc): { word: string; tone: string } | null {
+  if (d.awaitingApproval) return { word: 'Waits on your approval', tone: 'yours' };
+  if (d.changedSinceApproval) return { word: 'Changed since you approved', tone: 'changed' };
+  if (d.approved && d.approved.version === d.latest) return { word: 'Approved', tone: 'done' };
+  if (d.updatedAt && Date.now() - Date.parse(d.updatedAt) < 48 * 3_600_000)
+    return { word: 'New', tone: 'new' };
+  return null;
+}
+
+/** What to read first across projects: what waits on you, what moved, then the newest for you. */
+function readingList(docs: Doc[]): Doc[] {
+  const forYou = docs.filter((d) => d.audience !== 'team');
+  const rank = (d: Doc) => (d.awaitingApproval ? 0 : d.changedSinceApproval ? 1 : 2);
+  return [...forYou].sort(
+    (a, b) => rank(a) - rank(b) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''),
+  );
+}
+
+const dayFmt = new Map<string, Intl.DateTimeFormat>();
+function dayOf(t: string, tz: string): { key: string; label: string } {
+  let f = dayFmt.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
+    dayFmt.set(tz, f);
+  }
+  const key = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(t));
+  const parts = f.formatToParts(new Date(t));
+  const get = (k: string) => parts.find((p) => p.type === k)?.value ?? '';
+  return { key, label: `${get('weekday')} ${get('day')} ${get('month')}` };
+}
+const names = (xs: string[]) =>
+  xs.length <= 1 ? (xs[0] ?? '') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+const short = (p: string) => p.split(' ')[0] ?? p;
+const countWords = [
+  'no',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+];
+const said = (n: number) => countWords[n] ?? String(n);
+
+/**
+ * Everything: the documents as the week's story. Each day, newest first, lists the documents for
+ * you across projects (a short title, two sentences, who wrote it) and folds the team's working
+ * files into one line. Beside it: approvals (what moved past what you approved) and each project.
+ */
 function WorkbenchEverything({ w }: { w: PortfolioWorkbench }) {
   const { openProject } = useApp();
   const tz = useTz();
-  const [filter, setFilter] = useState<DocFilter>('all');
+  const [who, setWho] = useState<'you' | 'all'>('you');
   const [project, setProject] = useState('all');
+  const [openDays, setOpenDays] = useState<Set<string>>(() => new Set());
   const inProject = w.documents.filter((d) => project === 'all' || d.projectId === project);
-  const moved = (d: (typeof w.documents)[number]) => !!d.approved && d.approved.version < d.latest;
-  const shown = inProject.filter((d) =>
-    filter === 'moved' ? moved(d) : filter === 'approved' ? !!d.approved : true,
+  const projects = [...new Map(w.documents.map((d) => [d.projectId, d])).values()];
+  const days = new Map<string, { label: string; docs: Doc[] }>();
+  for (const d of inProject) {
+    if (!d.updatedAt) continue;
+    const day = dayOf(d.updatedAt, tz);
+    if (!days.has(day.key)) days.set(day.key, { label: day.label, docs: [] });
+    days.get(day.key)!.docs.push(d);
+  }
+  const open = (d: Doc) => openProject(d.projectId, 'workbench', { wbArtifact: d.artifactId });
+  const flagged = w.documents.filter((d) => d.awaitingApproval || d.changedSinceApproval);
+  const recentlyApproved = w.documents.filter(
+    (d) =>
+      d.approved &&
+      d.approved.version === d.latest &&
+      Date.now() - Date.parse(d.approved.at) < 7 * 86_400_000,
   );
-  const projects = [...new Map(w.documents.map((d) => [d.projectId, d])).values()].map((d) => ({
-    projectId: d.projectId,
-    name: d.project,
-    archived: false,
-  }));
+
+  const row = (d: Doc) => {
+    const st = standingOf(d);
+    return (
+      <li key={`${d.projectId}:${d.artifactId}`}>
+        <button
+          type="button"
+          className={st?.tone === 'yours' ? `${w2.row} ${w2.yours}` : w2.row}
+          onClick={() => open(d)}
+        >
+          <ProjectMark initials={d.initials} hue={d.hue} />
+          <span className={w2.rowBody}>
+            <span className={w2.rowTop}>
+              <span className={`${w2.kind} type-label`}>{kindOf(d)}</span>
+              <b className="type-body-small">{d.headline ?? d.title}</b>
+              {st && (
+                <span className={`${w2.standing} type-meta`} data-tone={st.tone}>
+                  {st.word}
+                </span>
+              )}
+            </span>
+            {d.summary && <span className={`${w2.summary} type-body-small`}>{d.summary}</span>}
+          </span>
+          <span className={`${w2.by} type-meta`}>
+            {d.author?.name ?? ''}
+            <span className={w2.quiet}>{d.project}</span>
+          </span>
+        </button>
+      </li>
+    );
+  };
+
   return (
-    <div className={s.everything}>
-      <Panel
-        title="Documents"
-        count={shown.length}
-        chips={
+    <div className={w2.page}>
+      <div className={w2.main}>
+        <div className={w2.top}>
+          <p className={`${w2.voice} type-heading`}>
+            <Said text={w.voice.text} emphasis={w.voice.emphasis} />
+          </p>
+        </div>
+        <div className={w2.filters}>
           <Chips
-            label="Which documents"
-            value={filter}
-            onChange={setFilter}
+            label="Whose documents"
+            value={who}
+            onChange={setWho}
             options={[
-              { value: 'all', label: 'All', count: inProject.length },
               {
-                value: 'approved',
-                label: 'Approved',
-                count: inProject.filter((d) => d.approved).length,
+                value: 'you',
+                label: 'For you',
+                count: inProject.filter((d) => d.audience !== 'team').length,
               },
-              { value: 'moved', label: 'Past approval', count: inProject.filter(moved).length },
+              { value: 'all', label: 'Everything the teams wrote', count: inProject.length },
             ]}
           />
-        }
-        meta={<ProjectPicker value={project} onChange={setProject} options={projects} />}
-      >
-        <div className={s.tableWrap}>
-          <table className={`${s.table} type-table`}>
-            <thead>
-              <tr>
-                <th>Document</th>
-                <th>Project</th>
-                <th className={s.num}>Version</th>
-                <th>Approved</th>
-                <th className={s.num}>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((d) => (
-                <tr
-                  key={`${d.projectId}:${d.artifactId}`}
-                  className={s.clickable}
-                  onClick={() =>
-                    openProject(d.projectId, 'workbench', { wbArtifact: d.artifactId })
-                  }
-                >
-                  <td>
-                    <button type="button" className={s.docTitle}>
-                      <Icon name="workbench" size={18} />
-                      <b>{d.title}</b>
-                    </button>
-                  </td>
-                  <td>
-                    <ProjectMark initials={d.initials} hue={d.hue} name={d.project} />
-                  </td>
-                  <td className={s.num}>{d.latest}</td>
-                  <td>
-                    {d.approved ? (
-                      <span data-tone={moved(d) ? 'waiting' : 'ok'} className={s.approval}>
-                        Version {d.approved.version} · {d.approved.gate}
-                      </span>
-                    ) : (
-                      <span className={s.quiet}>Not yet</span>
-                    )}
-                  </td>
-                  <td className={s.num}>{d.updatedAt ? shortDay(d.updatedAt, tz) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ProjectPicker
+            value={project}
+            onChange={setProject}
+            options={projects.map((d) => ({
+              projectId: d.projectId,
+              name: d.project,
+              archived: false,
+            }))}
+          />
         </div>
-      </Panel>
+        {[...days.entries()].map(([key, day]) => {
+          const forYou = day.docs.filter((d) => d.audience !== 'team');
+          const files = day.docs.filter((d) => d.audience === 'team');
+          const showFiles = who === 'all' || openDays.has(key);
+          const shown = showFiles ? [...forYou, ...files] : forYou;
+          if (!shown.length && !files.length) return null;
+          const where = names([...new Set(day.docs.map((d) => short(d.project)))]);
+          return (
+            <section key={key} className={w2.day} aria-label={day.label}>
+              <header className={w2.dayHead}>
+                <b className="type-section">{day.label}</b>
+                <span className={`${w2.quiet} type-meta`}>{where}</span>
+              </header>
+              <ul className={w2.rows}>
+                {shown.map(row)}
+                {!showFiles && files.length > 0 && (
+                  <li className={`${w2.filesLine} type-meta`}>
+                    <span>
+                      {where && forYou.length ? 'Also ' : ''}
+                      {said(files.length)} working {files.length === 1 ? 'file' : 'files'} from the
+                      team: {files.map((d) => d.headline ?? d.title).join(', ')}
+                    </span>
+                    <button
+                      type="button"
+                      className={w2.show}
+                      onClick={() => setOpenDays((sDays) => new Set(sDays).add(key))}
+                    >
+                      Show
+                    </button>
+                  </li>
+                )}
+              </ul>
+            </section>
+          );
+        })}
+        {days.size === 0 && <p className="type-body">No documents yet.</p>}
+      </div>
+
+      <aside className={w2.rail} aria-label="Approvals and projects">
+        <section className={w2.box}>
+          <h2 className={`${w2.boxHead} type-label`}>Approvals</h2>
+          {flagged.map((d) => (
+            <div
+              key={`${d.projectId}:${d.artifactId}`}
+              className={w2.flag}
+              data-tone={d.awaitingApproval ? 'yours' : 'changed'}
+            >
+              <span className={w2.flagTop}>
+                <ProjectMark initials={d.initials} hue={d.hue} />
+                <b className="type-body-small">
+                  {short(d.project)}: {d.headline ?? d.title}
+                </b>
+              </span>
+              <span className="type-meta">
+                {d.awaitingApproval
+                  ? 'Waits on your approval.'
+                  : `Version ${d.latest} since you approved version ${d.approved?.version}.`}
+              </span>
+              <Button kind={d.awaitingApproval ? 'primary' : 'secondary'} onClick={() => open(d)}>
+                {d.awaitingApproval ? 'Review it' : 'See what changed'}
+              </Button>
+            </div>
+          ))}
+          {recentlyApproved.map((d) => (
+            <span key={`a:${d.projectId}:${d.artifactId}`} className={`${w2.done} type-body-small`}>
+              <Icon name="check" size={14} />
+              {short(d.project)}: {d.headline ?? d.title}, approved {shortDay(d.approved!.at, tz)}
+            </span>
+          ))}
+          {!flagged.length && !recentlyApproved.length && (
+            <span className={`${w2.quiet} type-body-small`}>Nothing waits on your approval.</span>
+          )}
+        </section>
+        <section className={w2.box}>
+          <h2 className={`${w2.boxHead} type-label`}>By project</h2>
+          {projects.map((p) => {
+            const mine = w.documents.filter((d) => d.projectId === p.projectId);
+            const last = mine
+              .map((d) => d.updatedAt ?? '')
+              .sort()
+              .at(-1);
+            return (
+              <button
+                key={p.projectId}
+                type="button"
+                className={w2.proj}
+                onClick={() => openProject(p.projectId, 'workbench', { wbView: 'story' })}
+              >
+                <ProjectMark initials={p.initials} hue={p.hue} />
+                <span className={w2.rowBody}>
+                  <b className="type-body-small">{p.project}</b>
+                  <span className={`${w2.quiet} type-meta`}>
+                    {said(mine.length)} {mine.length === 1 ? 'document' : 'documents'}
+                    {last ? ` · last on ${shortDay(last, tz)}` : ''}
+                  </span>
+                </span>
+                <Icon name="forward" size={16} className={s.chev} />
+              </button>
+            );
+          })}
+        </section>
+      </aside>
     </div>
+  );
+}
+
+/** A document's kind in plain words. */
+function kindOf(d: Doc): string {
+  switch (d.kind) {
+    case 'blueprint':
+      return 'Build plan';
+    case 'platform_notes':
+      return 'Briefing';
+    case 'inventory':
+      return d.audience === 'director' ? 'Content audit' : 'Inventory';
+    case 'report':
+      return d.audience === 'director' ? 'Results' : 'Quality check';
+    case 'pull_request':
+      return 'Code change';
+    case 'handover_pack':
+      return 'Handover';
+    default:
+      return 'Document';
+  }
+}
+
+/** Cypher's sentence with the Director's clause in bold. */
+function Said({ text, emphasis }: { text: string; emphasis: string | null }) {
+  const i = emphasis ? text.indexOf(emphasis) : -1;
+  if (i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <b>{emphasis}</b>
+      {text.slice(i + emphasis!.length)}
+    </>
   );
 }
 

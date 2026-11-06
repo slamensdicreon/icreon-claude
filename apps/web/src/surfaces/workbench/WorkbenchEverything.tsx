@@ -17,6 +17,7 @@ import { DecisionLog } from './DecisionLog';
 import { DECISIONS, FACTS, LESSONS, isDocument, sectionsOf, updatedAt, type Page } from './model';
 import { DocHead, Quiet, Tag, arrowNav } from './parts';
 import { ProjectFacts } from './ProjectFacts';
+import { ViewSwitch, WorkbenchStory } from './Story';
 import { Toc, useHeadings } from './toc';
 import d from './doc.module.css';
 import s from './workbench.module.css';
@@ -38,6 +39,7 @@ export function WorkbenchEverything() {
   const toc = useHeadings(docEl, current);
 
   if (!wb.data) return <Quiet>{wb.error ? wb.error.message : 'Loading the Workbench…'}</Quiet>;
+  if (ui.wbView === 'story') return <WorkbenchStory wb={wb.data} />;
 
   const searching = query.trim() !== '';
   const sections = sectionsOf(docs, query, (a) => `v${a.latest} · ${shortDay(updatedAt(a), tz)}`);
@@ -60,6 +62,9 @@ export function WorkbenchEverything() {
   return (
     <div className={s.wb} data-toc={withToc || undefined}>
       <aside className={s.rail} aria-label="Workbench pages" onKeyDown={arrowNav}>
+        <div className={s.switch}>
+          <ViewSwitch />
+        </div>
         <label className={s.search}>
           <Icon name="search" size={18} />
           <input

@@ -24,7 +24,8 @@ import {
   workbench,
   type ProjectState,
 } from '@lw/domain';
-import { enrichEscalation, withVoice } from './enrich';
+import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
+import { withDocumentFacts } from './story';
 import { projectRow, yoursOf, type ReadNewest } from './overview';
 import { CountWord, countWord } from './voice';
 
@@ -86,9 +87,17 @@ export function portfolioWorkbench(states: ProjectState[], now: number): Portfol
   const documents: PortfolioDocument[] = states
     .flatMap((s) => {
       const ref = refOf(s);
-      return workbench(s).artifacts.map((a) => {
+      return withDocumentFacts(withDocumentVoice(workbench(s), s), s).artifacts.map((a) => {
         const latest = a.versions.find((v) => v.version === a.latest) ?? a.versions[0];
         return {
+          headline: a.headline,
+          summary: a.summary,
+          audience: a.audience,
+          author: a.author ?? null,
+          changedSinceApproval: a.changedSinceApproval,
+          awaitingApproval: a.awaitingApproval,
+          phase: a.phase ?? null,
+          timezone: s.timezone,
           projectId: ref.projectId,
           project: ref.name,
           initials: ref.initials,
@@ -103,16 +112,34 @@ export function portfolioWorkbench(states: ProjectState[], now: number): Portfol
       });
     })
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
-  const today = documents.filter(
-    (d) => d.updatedAt && now - Date.parse(d.updatedAt) < 24 * HOUR,
-  ).length;
-  const unapproved = documents.filter((d) => d.approved && d.approved.version < d.latest).length;
-  const head = documents.length
-    ? `Across ${projectsWord(states.length)} there ${plural(documents.length, 'is one document', `are ${countWord(documents.length)} documents`)}; ${countWord(today)} changed today.`
-    : 'No documents yet.';
-  const emphasis = unapproved
-    ? `${CountWord(unapproved)} ${plural(unapproved, 'has', 'have')} moved past the approved version.`
-    : null;
+  // The week's story: what is for the Director, what moved past what they approved.
+  const week = documents.filter(
+    (d) => d.updatedAt && now - Date.parse(d.updatedAt) < 7 * 24 * HOUR,
+  );
+  const forYou = week.filter((d) => d.audience !== 'team');
+  const busy = new Set(week.map((d) => d.projectId)).size;
+  const waiting = documents.find((d) => d.awaitingApproval);
+  const moved = documents.find((d) => d.changedSinceApproval);
+  const approved = documents.find(
+    (d) =>
+      d.approved &&
+      d.approved.version === d.latest &&
+      now - Date.parse(d.approved.at) < 7 * 24 * HOUR,
+  );
+  const noun = (d: PortfolioDocument) =>
+    d.kind === 'blueprint' ? 'build plan' : `“${d.headline ?? d.title}”`;
+  const head = !documents.length
+    ? 'No documents yet.'
+    : week.length
+      ? `This week the teams wrote ${countWord(week.length)} ${plural(week.length, 'document', 'documents')} across ${projectsWord(busy)}, ${countWord(forYou.length)} of them for you.`
+      : `Across ${projectsWord(states.length)} there ${plural(documents.length, 'is one document', `are ${countWord(documents.length)} documents`)}; nothing new this week.`;
+  const emphasis = waiting
+    ? `${waiting.project}'s ${noun(waiting)} waits on your approval.`
+    : moved
+      ? `${moved.project}'s ${noun(moved)} changed since you approved it.`
+      : approved
+        ? `${approved.project}'s ${noun(approved)} is approved.`
+        : null;
   return {
     at: iso(now),
     voice: { text: emphasis ? `${head} ${emphasis}` : head, emphasis, closing: null },

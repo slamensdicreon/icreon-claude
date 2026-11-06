@@ -101,6 +101,8 @@ export class ArtifactLibrary {
       /** What the producing agent wrote about this version, for the Director. */
       summary?: string | null;
       attention?: ArtifactPointer[];
+      headline?: string | null;
+      audience?: 'director' | 'team' | null;
     },
   ): Promise<StoredVersion> {
     const version = ((await this.latest(projectId, a.artifactId))?.version ?? 0) + 1;
@@ -126,6 +128,8 @@ export class ArtifactLibrary {
           format: a.format,
           summary: a.summary ?? null,
           attention: a.attention ?? [],
+          headline: a.headline ?? null,
+          audience: a.audience ?? null,
         },
       },
     ]);

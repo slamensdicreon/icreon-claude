@@ -68,6 +68,7 @@ import {
   taskNames,
   scheduleSnapshot,
   settingsView,
+  readMinutes,
   sinceSummary,
   team,
   toActivity,
@@ -97,6 +98,7 @@ import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
+import { withDocumentFacts, workbenchStory } from './story';
 import { portfolioOverview, type LogCache } from './overview';
 import {
   portfolioActivity,
@@ -1211,11 +1213,39 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
   });
 
+  // Minutes to read a stored version, by its reference (a version never changes once saved).
+  const readCache = new Map<string, number | null>();
+  const minutesOf = async (projectId: string, a: ArtifactView): Promise<number | null> => {
+    const v = a.versions.find((x) => x.version === a.latest) ?? a.versions[0];
+    if (!v?.ref || !deps.artifactContent) return null;
+    if (a.kind === 'pull_request' || a.kind === 'screenshot' || a.kind === 'video') return null;
+    if (v.format !== 'markdown' && v.format !== 'json') return null;
+    if (readCache.has(v.ref)) return readCache.get(v.ref)!;
+    let minutes: number | null = null;
+    try {
+      const bytes = await deps.artifactContent(projectId, v.ref);
+      if (bytes) {
+        const text = new TextDecoder().decode(bytes);
+        // A JSON document reads by its words, not its punctuation.
+        minutes = readMinutes(v.format === 'json' ? text.replace(/[{}[\]",:]/g, ' ') : text);
+      }
+    } catch {
+      minutes = null;
+    }
+    if (readCache.size > 2000) readCache.clear();
+    readCache.set(v.ref, minutes);
+    return minutes;
+  };
+
   app.get<P>('/projects/:id/workbench', async (req, reply) => {
     const s = project(req.params.id);
-    return s
-      ? withDocumentVoice(workbench(s), s)
-      : fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+    if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
+    const wb = withDocumentFacts(withDocumentVoice(workbench(s), s), s);
+    const artifacts = await Promise.all(
+      wb.artifacts.map(async (a) => ({ ...a, readMinutes: await minutesOf(req.params.id, a) })),
+    );
+    const told = { ...wb, artifacts };
+    return { ...told, story: workbenchStory(told, s) };
   });
 
   const artifact = (projectId: string, artifactId: string): ArtifactView => {

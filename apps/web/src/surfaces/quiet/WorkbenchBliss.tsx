@@ -11,7 +11,7 @@ import { useMode } from '../../mode/mode';
 import { useJump } from '../../parts/bits';
 import { useApp, useMission, useProjectResource, useRoster } from '../../state';
 import { Icon } from '../../theme/icons';
-import { Avatar, Button, SectionHeading } from '../../ui/cypher/parts';
+import { Avatar, Button, SectionHeading, VoiceLine } from '../../ui/cypher/parts';
 import { Eye } from '../../ui/Eye';
 import s from './workbenchBliss.module.css';
 
@@ -40,9 +40,17 @@ export function WorkbenchBliss() {
       </div>
     );
 
-  const docs = [...wb.artifacts].sort((x, y) => latestAt(y).localeCompare(latestAt(x)));
-  const shown = docs.find((a) => a.artifactId === ui.wbArtifact) ?? firstOf(docs)!;
-  const others = docs.filter((a) => a.artifactId !== shown.artifactId);
+  // The story's reading list first (what waits on you, what moved, the plan, the newest result);
+  // an API without the story falls back to newest first.
+  const byNewest = [...wb.artifacts].sort((x, y) => latestAt(y).localeCompare(latestAt(x)));
+  const picks = (wb.story?.startHere ?? [])
+    .map((p) => wb.artifacts.find((a) => a.artifactId === p.artifactId))
+    .filter((a): a is ArtifactView => !!a);
+  const docs = picks.length ? picks : byNewest;
+  const shown =
+    wb.artifacts.find((a) => a.artifactId === ui.wbArtifact) ?? firstOf(docs) ?? byNewest[0]!;
+  // Bliss shows three at most: the one open and the rest of the reading list.
+  const others = docs.filter((a) => a.artifactId !== shown.artifactId).slice(0, 2);
   const latest = shown.versions.find((v) => v.version === shown.latest) ?? shown.versions[0];
   const writer = latest ? byId(latest.producer) : undefined;
   const byAgent = shown.summaryBy === 'agent' && writer && writer.tier !== 'chief_of_staff';
@@ -62,10 +70,13 @@ export function WorkbenchBliss() {
 
   return (
     <div className={s.bliss}>
+      {wb.story && <VoiceLine voice={wb.story.voice} small />}
       <article ref={card} className={s.doc} aria-labelledby="wb-bliss-title" tabIndex={-1}>
         <div className={`${s.eyebrow} type-label`}>
           {shown.awaitingApproval ? (
             <span className={s.yours}>Waits on your approval</span>
+          ) : shown.changedSinceApproval ? (
+            <span className={s.yours}>Changed since you approved it</span>
           ) : approved && approved.version === shown.latest ? (
             <span>Approved at {approved.gate}</span>
           ) : (
@@ -74,8 +85,15 @@ export function WorkbenchBliss() {
           {latest && <span className={s.when}>{shortDay(latest.ts, tz)}</span>}
         </div>
         <h1 id="wb-bliss-title" className={`${s.title} type-heading`}>
-          {shown.title}
+          {shown.headline ?? shown.title}
         </h1>
+        {shown.headline && shown.headline !== shown.title && (
+          <span className={`${s.by} type-meta`}>
+            {shown.title}
+            {shown.author ? ` · ${shown.author.name}, ${shown.author.role}` : ''}
+            {shown.readMinutes != null ? ` · ${shown.readMinutes} min to read` : ''}
+          </span>
+        )}
 
         <div className={s.voice}>
           <span className={s.who} aria-hidden="true">
@@ -141,7 +159,9 @@ export function WorkbenchBliss() {
 
       {others.length > 0 && (
         <section className={s.others} aria-label="The other documents">
-          <SectionHeading>The other documents</SectionHeading>
+          <SectionHeading>
+            {picks.length ? 'Start here, too' : 'The other documents'}
+          </SectionHeading>
           <ul className={s.list}>
             {others.map((a) => (
               <li key={a.artifactId}>
@@ -159,12 +179,16 @@ export function WorkbenchBliss() {
                 >
                   <Icon name="workbench" size={20} />
                   <span className={s.lineText}>
-                    <b className="type-body">{a.title}</b>
+                    <b className="type-body">{a.headline ?? a.title}</b>
                     <span
                       className="type-meta"
                       data-tone={a.awaitingApproval ? 'yours' : undefined}
                     >
-                      {a.awaitingApproval ? 'Waits on your approval' : `Version ${a.latest}`}
+                      {a.awaitingApproval
+                        ? 'Waits on your approval'
+                        : a.changedSinceApproval
+                          ? 'Changed since you approved it'
+                          : (a.author?.name ?? `Version ${a.latest}`)}
                       {latestAt(a) ? ` · ${shortDay(latestAt(a), tz)}` : ''}
                     </span>
                   </span>
@@ -174,6 +198,19 @@ export function WorkbenchBliss() {
             ))}
           </ul>
         </section>
+      )}
+      {wb.story && (
+        <div>
+          <Button
+            kind="secondary"
+            onClick={() => {
+              setUi({ wbView: 'story' });
+              setMode('everything');
+            }}
+          >
+            The whole story
+          </Button>
+        </div>
       )}
     </div>
   );

@@ -553,6 +553,21 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       break;
     }
     case 'artifact.versioned': {
+      // The phase its author was working in: the phase of a task the author is running, else
+      // the newest current phase. Older logs get it on replay, from the same events.
+      const authoring = Object.values(s.tasks)
+        .filter(
+          (t) => t.agentId === e.actor.id && (t.state === 'running' || t.state === 'validating'),
+        )
+        .map((t) => t.phase);
+      const current = Object.values(s.phases)
+        .filter((p) => p.status === 'current')
+        .map((p) => p.number);
+      const phase = authoring.length
+        ? Math.max(...authoring)
+        : current.length
+          ? Math.max(...current)
+          : null;
       const a = (s.artifacts[e.data.artifactId] ??= {
         artifactId: e.data.artifactId,
         kind: e.data.kind,
@@ -575,6 +590,9 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
           // What the agent wrote about this version; absent on older events and on saves without.
           ...(e.data.summary ? { summary: e.data.summary } : {}),
           ...(e.data.attention?.length ? { attention: e.data.attention } : {}),
+          phase,
+          ...(e.data.headline ? { headline: e.data.headline } : {}),
+          ...(e.data.audience ? { audience: e.data.audience } : {}),
         },
         ...a.versions.filter((v) => v.version !== e.data.version),
       ].sort((x, y) => y.version - x.version);

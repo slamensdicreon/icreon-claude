@@ -123,4 +123,27 @@ describe('workbench', () => {
       "default-src 'none'; frame-ancestors 'none'",
     );
   });
+
+  it('tells the story, even for documents saved before phases and plain titles existed', async () => {
+    const wb = WorkbenchSnapshot.parse((await app.inject('/projects/p1/workbench')).json());
+    const doc = wb.artifacts.find((a) => a.artifactId === 'page-inventory')!;
+    // No headline or audience in the events: the rules supply them.
+    expect(doc).toMatchObject({
+      headline: 'Every page on the site',
+      audience: 'director',
+      phase: null,
+      changedSinceApproval: false,
+      readMinutes: 1,
+      author: { agentId: 'content-analyst', role: 'Content Analyst' },
+    });
+    const story = wb.story!;
+    // Saved before any phase began: grouped as such, not lost.
+    expect(story.phases.map((p) => p.name)).toEqual(['Before the phases']);
+    expect(story.phases[0]!.docs).toEqual(['page-inventory']);
+    expect(story.startHere[0]).toMatchObject({ artifactId: 'page-inventory' });
+    expect(story.authors[0]).toMatchObject({ agentId: 'content-analyst', count: 1 });
+    expect(story.voice.text).toMatch(/one document, one of them for you/);
+    expect(story.voice.emphasis).toBe('Start with “Every page on the site”.');
+    expect(story.next).toMatchObject({ number: 0 });
+  });
 });

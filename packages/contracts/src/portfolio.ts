@@ -83,6 +83,19 @@ export const PortfolioDocument = z.object({
   approved: z
     .object({ version: z.number().int(), at: z.iso.datetime(), gate: z.string() })
     .nullable(),
+  /** In plain words: a short title, two sentences, who it is for and who wrote it. */
+  headline: z.string().optional(),
+  summary: z.string().optional(),
+  audience: z.enum(['director', 'team']).optional(),
+  author: z
+    .object({ agentId: z.string(), name: z.string(), role: z.string() })
+    .nullable()
+    .optional(),
+  changedSinceApproval: z.boolean().optional(),
+  awaitingApproval: z.boolean().optional(),
+  phase: z.number().int().nullable().optional(),
+  /** The project's own timezone, for grouping by day. */
+  timezone: z.string().optional(),
 });
 export type PortfolioDocument = z.infer<typeof PortfolioDocument>;
 

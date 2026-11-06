@@ -46,6 +46,8 @@ export const SURFACE_LABEL: Record<Surface, string> = {
 /** What each project remembers while you look at another one. */
 export interface ProjectUi {
   wbArtifact: string | null;
+  /** The Workbench as the story of the work, or every file with one open. */
+  wbView: 'story' | 'files';
   bpFilter: string;
   planView: 'today' | 'engagement' | 'list';
   planFilter: string;
@@ -63,6 +65,7 @@ export interface ProjectUi {
 
 const DEFAULT_UI: ProjectUi = {
   wbArtifact: null,
+  wbView: 'story',
   bpFilter: 'all',
   planView: 'today',
   planFilter: 'all',
@@ -389,7 +392,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setUi = useCallback(
     (patch: Partial<ProjectUi>) => {
       if (!projectId) return;
-      uis.current.set(projectId, { ...(uis.current.get(projectId) ?? DEFAULT_UI), ...patch });
+      // Opening a document from anywhere (a link, the palette, a card) shows it, not the story.
+      const p =
+        patch.wbArtifact && !('wbView' in patch) ? { ...patch, wbView: 'files' as const } : patch;
+      uis.current.set(projectId, { ...(uis.current.get(projectId) ?? DEFAULT_UI), ...p });
       setUiVersion((v) => v + 1);
     },
     [projectId],

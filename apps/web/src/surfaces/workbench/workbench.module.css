@@ -290,3 +290,9 @@
     transition: none;
   }
 }
+
+/* The Story / All files switch, above the rail. */
+.switch {
+  display: flex;
+  padding-bottom: var(--space-2);
+}

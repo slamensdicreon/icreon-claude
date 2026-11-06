@@ -664,6 +664,10 @@ export const EventBody = z.discriminatedUnion('type', [
       summary: z.string().nullable().default(null),
       /** Up to three things in it worth the Director's look, from the same agent. */
       attention: z.array(ArtifactPointer).max(3).default([]),
+      /** A short title in plain words ("How the site gets rebuilt"); null when the agent gave none. */
+      headline: z.string().max(80).nullable().default(null),
+      /** Who it is written for: the Director (plans, results) or the team (working files). */
+      audience: z.enum(['director', 'team']).nullable().default(null),
     }),
   ),
   ev(

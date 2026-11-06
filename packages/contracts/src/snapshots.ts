@@ -687,6 +687,11 @@ export const ArtifactVersionView = z.object({
   /** What the producing agent wrote about this version, when it wrote anything. */
   summary: z.string().nullable().optional(),
   attention: z.array(ArtifactPointer).max(3).optional(),
+  /** The phase its author was working in when this version was saved; null when none was. */
+  phase: z.number().int().nullable().optional(),
+  /** The agent's plain title and audience for this version, when it gave them. */
+  headline: z.string().nullable().optional(),
+  audience: z.enum(['director', 'team']).nullable().optional(),
 });
 export type ArtifactVersionView = z.infer<typeof ArtifactVersionView>;
 
@@ -713,13 +718,68 @@ export const ArtifactView = z.object({
   summaryBy: z.enum(['agent', 'cypher']).optional(),
   /** A Director gate waits on this document now. */
   awaitingApproval: z.boolean().optional(),
+  /** A short title in plain words: the agent's, or one from the document's kind and title. */
+  headline: z.string().optional(),
+  /** Who it is for: the Director (plans, results, briefings) or the team (working files). */
+  audience: z.enum(['director', 'team']).optional(),
+  /** The phase the document was first written in; null before any phase began. */
+  phase: z.number().int().nullable().optional(),
+  /** A newer version exists than the one a Director gate approved. */
+  changedSinceApproval: z.boolean().optional(),
+  /** Minutes to read the latest version; null when it is not prose (code, images). */
+  readMinutes: z.number().int().nullable().optional(),
+  /** Who wrote the latest version, in words. */
+  author: z
+    .object({ agentId: z.string(), name: z.string(), role: z.string() })
+    .nullable()
+    .optional(),
 });
 export type ArtifactView = z.infer<typeof ArtifactView>;
+
+/** One phase of "the story so far": what it was about, what you decided, what it produced. */
+export const StoryPhase = z.object({
+  number: z.number().int(),
+  name: z.string(),
+  status: z.string(),
+  /** When the phase began; null before it has. */
+  at: z.iso.datetime().nullable(),
+  /** One line on the phase, from its documents; null when it has none. */
+  line: z.string().nullable(),
+  /** Approvals given in this phase ("You approved the build plan at Gate 1"). */
+  milestones: z.array(z.object({ label: z.string(), at: z.iso.datetime() })),
+  /** Documents for the Director, then the team's working files, newest first. */
+  docs: z.array(z.string()),
+  files: z.array(z.string()),
+});
+export type StoryPhase = z.infer<typeof StoryPhase>;
+
+export const WorkbenchStory = z.object({
+  voice: Voice,
+  /** Newest phase first; only phases that began or produced something. */
+  phases: z.array(StoryPhase),
+  /** Up to three documents that tell the story, each with why it is here. */
+  startHere: z.array(z.object({ artifactId: z.string(), why: z.string() })),
+  authors: z.array(
+    z.object({ agentId: z.string(), name: z.string(), role: z.string(), count: z.number().int() }),
+  ),
+  /** The phase after the current one; null when none is left. */
+  next: z
+    .object({
+      number: z.number().int(),
+      name: z.string(),
+      percent: z.number().nullable(),
+      tasks: z.number().int(),
+    })
+    .nullable(),
+});
+export type WorkbenchStory = z.infer<typeof WorkbenchStory>;
 
 /** Workbench: every artifact by kind, newest version first within each. */
 export const WorkbenchSnapshot = z.object({
   seq: z.number().int().nonnegative(),
   artifacts: z.array(ArtifactView),
+  /** The documents as the story of the work (set by the API). */
+  story: WorkbenchStory.optional(),
 });
 export type WorkbenchSnapshot = z.infer<typeof WorkbenchSnapshot>;
 
