@@ -1,31 +1,29 @@
-import type { ActivityItem, PlanSnapshot, TaskView } from '@lw/contracts';
+import type { ActivityItem, AgentView, PlanSnapshot, TaskView } from '@lw/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Icon } from '../theme/icons';
-import { EyeResting } from '../theme/marks';
-import fl from './floor.module.css';
-import { zoneLabel } from '../lib/fmt';
+import { stamp, zoneLabel } from '../lib/fmt';
 import { useApp, useMission, useProjectResource, useTeam, useTz } from '../state';
+import { Icon } from '../theme/icons';
+import { LiveEye } from '../ui/eye/LiveEye';
+import { useEyeState } from '../voice/eye';
+import fl from './floor.module.css';
+import { beatsFromPlan, type Beat, type TaskLookup, type Workstream } from './model';
 import {
-  applyBeat,
-  applyTeam,
-  beatsFromItems,
-  beatsFromPlan,
-  createScene,
-  layoutFloor,
-  packetPos,
-  relayout,
-  resetScene,
-  settle,
-  specsOf,
-  tick,
-  WORKSTREAM_LABEL,
-  WORKSTREAMS,
-  type Beat,
-  TRAIL,
-  type SceneState,
-  type TaskLookup,
-  type Workstream,
-} from './model';
+  advanceOrbit,
+  agentAt,
+  applyOrbitBeat,
+  beatsWithItems,
+  cometAt,
+  createOrbit,
+  endAt,
+  gazeTo,
+  rebuildOrbit,
+  resetOrbit,
+  RING_R,
+  RINGS,
+  STATION_R,
+  type OrbitState,
+  type Tone,
+} from './orbit';
 import {
   advance,
   atEnd,
@@ -44,65 +42,42 @@ import {
 } from './replay';
 
 /**
- * The agent floor, drawn on a canvas. Live, it takes the Activity surface's rows (newest first,
- * already filtered) and the project's team, plan and Mission Control snapshots; every new row or
- * task change becomes a beat. Opening the floor replays the last minute of rows quickly, so it
- * shows what just happened rather than an empty office. In replay, a window of the project's
- * history plays back at 10x or 60x on a project-time clock, with a strip to scrub.
+ * The Floor: the project's team as an orbit around Cypher. Each team rides its own ring, the
+ * systems they use sit on the outer ring, and every row of the feed launches a comet between
+ * them: a tool call out to a station, a handoff to a teammate, a result back to the Lead, a card
+ * to Cypher. Cypher's eye watches it all; follow someone and the eye, a camera and a caption stay
+ * on them. Live, it takes the Activity rows (newest first) and the team, plan and Mission Control
+ * snapshots; opening it replays the last minute quickly. Replay plays a window of the project's
+ * history at 10x or 60x, with a strip to scrub. Older projects work the same way: agents with no
+ * team ride the inner ring, rows from roles no longer on the roster act from the core, and a
+ * project that went quiet opens its replay on the whole history instead of an empty hour.
  */
 
 const CATCH_UP_MS = 60_000;
 const BEAT_GAP_MS = 320;
+const POOL = 30;
 
 interface Theme {
-  bg: string;
-  surface: string;
-  surface2: string;
-  border: string;
   borderStrong: string;
   fg: string;
-  fg2: string;
   fg3: string;
   accent: string;
-  accentText: string;
-  onAccent: string;
   danger: string;
-  success: string;
   warning: string;
-  ws: Record<Workstream, string>;
   font: string;
 }
 
-/**
- * The floor's palette, read by name from Cypher's tokens (theme/tokens.css). Hue says which team
- * (iris Discovery, blue Engineering, teal Content, gold Quality), coral text says blocked, green
- * says done; everything else is ink on bliss. Tokens are always loaded, so there's no fallback
- * palette to drift from them.
- */
+/** The replay strip's palette, read by name from Cypher's tokens (theme/tokens.css). */
 function readTheme(): Theme {
   const cs = getComputedStyle(document.documentElement);
   const v = (name: string) => cs.getPropertyValue(name).trim();
   return {
-    bg: v('--bliss'),
-    surface: v('--surface'),
-    surface2: v('--surface-quiet'),
-    border: v('--mist'),
     borderStrong: v('--mist'),
     fg: v('--ink'),
-    fg2: v('--text-2'),
     fg3: v('--text-3'),
     accent: v('--ink'),
-    accentText: v('--ink'),
-    onAccent: v('--on-ink'),
     danger: v('--coral-text'),
-    success: v('--green'),
     warning: v('--gold'),
-    ws: {
-      discovery: v('--iris'),
-      engineering: v('--blue'),
-      content: v('--teal'),
-      quality: v('--gold'),
-    },
     font: v('--font-sans'),
   };
 }
@@ -124,35 +99,98 @@ function useTheme(): Theme {
 }
 
 type Mode = 'live' | 'replay';
+type Variant = 'everything' | 'bliss' | 'hero';
 
-/** Trail length: a short wake normally, a long one on a presentation screen. */
-const TRAIL_PRESENT = 72;
+/** Each team's hue, by token. */
+const HUE: Record<Workstream | 'none', string> = {
+  discovery: 'var(--iris)',
+  engineering: 'var(--blue)',
+  content: 'var(--teal)',
+  quality: 'var(--gold)',
+  none: 'var(--text-3)',
+};
+const RING_LABEL: Record<Workstream, string> = {
+  discovery: 'Discovery',
+  engineering: 'Engineering',
+  content: 'Content',
+  quality: 'Quality',
+};
+function toneColor(tone: Tone, ws: Workstream | 'none'): string {
+  return tone === 'team'
+    ? HUE[ws]
+    : tone === 'good'
+      ? 'var(--green)'
+      : tone === 'bad' || tone === 'coral'
+        ? 'var(--coral)'
+        : 'var(--ink)';
+}
 
-export function Floor({ items, hero = false }: { items: ActivityItem[] | null; hero?: boolean }) {
-  const { inspect, layout: appLayout, projectId } = useApp();
+/** Cypher's sentence with the Director's clause in bold, said once. */
+function Said({ text, emphasis }: { text: string; emphasis: string | null }) {
+  const i = emphasis ? text.indexOf(emphasis) : -1;
+  if (i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <b>{emphasis}</b>
+      {text.slice(i + emphasis!.length)}
+    </>
+  );
+}
+
+const pct = (n: number) => `${(n * 100).toFixed(3)}%`;
+const RUNNING = new Set(['running', 'validating']);
+
+export function Floor({
+  items,
+  hero = false,
+  variant: asked = 'everything',
+}: {
+  items: ActivityItem[] | null;
+  hero?: boolean;
+  variant?: 'everything' | 'bliss';
+}) {
+  const variant: Variant = hero ? 'hero' : asked;
+  const { inspect, projectId } = useApp();
   const team = useTeam().data;
   const plan = useProjectResource<PlanSnapshot>('/plan').data;
   const mc = useMission().data;
   const tz = useTz();
   const theme = useTheme();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<SceneState | null>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const [hover, setHover] = useState<string | null>(null);
+  const eye = useEyeState();
   const still = useMemo(() => matchMedia('(prefers-reduced-motion: reduce)').matches, []);
-  const present = appLayout.present;
+
+  const orbitRef = useRef<OrbitState | null>(null);
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const sideRef = useRef(0);
+  const [side, setSide] = useState(0);
+  const agentEls = useRef(new Map<string, HTMLDivElement>());
+  const stationEls = useRef(new Map<string, HTMLDivElement>());
+  const cometEls = useRef<(HTMLSpanElement | null)[]>([]);
+  const gaze = useRef<{ x: number; y: number } | null>(null);
+  const [follow, setFollow] = useState<string | null>(null);
+  const followRef = useRef<string | null>(null);
+  followRef.current = follow;
+  const [cheer, setCheer] = useState(0);
+  const [passText, setPassText] = useState<string | null>(null);
+  const [, setUiTick] = useState(0);
 
   // Replay state. The engine lives in a ref (it ticks every frame); `uiTick` wakes the bar.
   const [mode, setMode] = useState<Mode>('live');
   const modeRef = useRef<Mode>('live');
   modeRef.current = mode;
-  const [preset, setPreset] = useState<ReplayPreset>('hour');
+  const [preset, setPreset] = useState<ReplayPreset | null>(null);
   const [speed, setSpeed] = useState<Speed>(60);
   const [loading, setLoading] = useState<number | null>(null);
   const replayRef = useRef<Replay | null>(null);
   const loadToken = useRef(0);
-  const [, setUiTick] = useState(0);
+
+  // A project that went quiet (an older one, or one between phases) opens its replay on the
+  // whole history rather than an empty last hour.
+  const newest = items?.[0] ? Date.parse(items[0].ts) : null;
+  const defaultPreset: ReplayPreset =
+    newest !== null && Date.now() - newest < 3_600_000 ? 'hour' : 'start';
+  const windowPreset = preset ?? defaultPreset;
 
   // The CMS station is named for the project's platform.
   const cmsLabel = mc?.project.platform?.name ?? 'CMS';
@@ -176,69 +214,84 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
   const lookupRef = useRef(lookup);
   lookupRef.current = lookup;
 
-  // Size follows the frame.
+  // The scene's side follows its frame (it is a square).
   useEffect(() => {
-    const el = wrapRef.current;
+    const el = sceneRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([e]) => {
-      const r = e!.contentRect;
-      setSize({ w: Math.round(r.width), h: Math.round(r.height) });
+      const w = Math.round(e!.contentRect.width);
+      sideRef.current = w;
+      setSide(w);
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // The scene: built from the roster and the frame; kept across relayouts.
-  const specs = useMemo(() => (team ? specsOf(team.agents) : []), [team]);
+  // The orbit: built from the roster; a new roster keeps what is in flight.
+  const roster = team?.agents ?? null;
+  const [orbitVersion, setOrbitVersion] = useState(0);
   useEffect(() => {
-    if (!specs.length || !size.w) return;
-    const layout = layoutFloor(specs, size.w, size.h, cmsLabel);
-    sceneRef.current = sceneRef.current
-      ? relayout(sceneRef.current, layout, specs)
-      : createScene(layout, specs, still);
-  }, [specs, size, cmsLabel, still]);
+    if (!roster) return;
+    orbitRef.current = orbitRef.current
+      ? rebuildOrbit(orbitRef.current, roster, cmsLabel)
+      : createOrbit(roster, cmsLabel);
+    setOrbitVersion((n) => n + 1);
+  }, [roster, cmsLabel]);
+  const orbit = orbitRef.current;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const agents = useMemo(() => (orbit ? [...orbit.agents.values()] : []), [orbitVersion]);
+  // Someone followed who left the roster is let go.
+  useEffect(() => {
+    if (follow && orbit && !orbit.agents.has(follow)) setFollow(null);
+  }, [follow, orbit, orbitVersion]);
 
   // Live beats from new rows: on open, the last minute replays quickly; afterwards each new row.
   const seenSeq = useRef<number | null>(null);
-  const pending = useRef<Beat[]>([]);
+  const pending = useRef<{ beat: Beat; item: ActivityItem | null }[]>([]);
   useEffect(() => {
-    if (!items || !sceneRef.current) return;
+    if (!items || !orbitRef.current) return;
     const oldestFirst = [...items].sort((a, b) => a.seq - b.seq);
     let fresh: ActivityItem[];
     if (seenSeq.current === null) {
       const since = Date.now() - CATCH_UP_MS;
       fresh = oldestFirst.filter((i) => Date.parse(i.ts) >= since);
+      // Nothing recent: the caption still says what happened last.
+      if (!fresh.length && oldestFirst.length) orbitRef.current.latest = oldestFirst.at(-1)!;
     } else {
       fresh = oldestFirst.filter((i) => i.seq > seenSeq.current!);
     }
     if (oldestFirst.length)
       seenSeq.current = Math.max(seenSeq.current ?? 0, oldestFirst.at(-1)!.seq);
-    if (modeRef.current === 'live') pending.current.push(...beatsFromItems(fresh, lookup));
-  }, [items, lookup]);
+    if (modeRef.current === 'live') pending.current.push(...beatsWithItems(fresh, lookup));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, lookup, orbitVersion]);
 
   // Live beats from plan changes: dispatches, handoffs, cards.
   const prevTasks = useRef<Map<string, TaskView> | null>(null);
   useEffect(() => {
     if (!plan) return;
     if (prevTasks.current && modeRef.current === 'live')
-      pending.current.push(...beatsFromPlan(prevTasks.current, plan.tasks));
+      for (const beat of beatsFromPlan(prevTasks.current, plan.tasks))
+        pending.current.push({ beat, item: null });
     prevTasks.current = new Map(plan.tasks.map((t) => [t.taskId, t]));
   }, [plan]);
 
-  // The team's working state and task counts (live only; the replay derives its own).
+  // Who works and whether the project is held (live only; the replay derives its own).
   const syncTeam = useCallback(() => {
-    const s = sceneRef.current;
-    if (!s || !team) return;
-    const running = new Map<string, number>();
-    for (const t of plan?.tasks ?? [])
-      if (t.state === 'running' || t.state === 'validating')
-        running.set(t.agentId, (running.get(t.agentId) ?? 0) + 1);
+    const s = orbitRef.current;
+    if (!s || !roster) return;
+    s.working.clear();
+    for (const t of plan?.tasks ?? []) if (RUNNING.has(t.state)) s.working.add(t.agentId);
+    for (const a of roster) {
+      const o = s.agents.get(a.agentId);
+      if (o) o.state = a.state;
+      if (a.state === 'active') s.working.add(a.agentId);
+    }
     s.paused = mc?.project.status === 'paused' || (mc?.project.holds.length ?? 0) > 0;
-    applyTeam(s, team.agents, running);
-  }, [team, plan, mc]);
+  }, [roster, plan, mc]);
   useEffect(() => {
     if (mode === 'live') syncTeam();
-  }, [mode, syncTeam]);
+  }, [mode, syncTeam, orbitVersion]);
 
   // Replay: load the window, then play it on the loop.
   const startReplay = useCallback(
@@ -263,8 +316,8 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
       )
         .then((rows) => {
           if (token !== loadToken.current) return;
-          const s = sceneRef.current;
-          if (s) resetScene(s);
+          const s = orbitRef.current;
+          if (s) resetOrbit(s);
           replayRef.current = createReplay(rows, w, speed);
           setLoading(null);
         })
@@ -282,25 +335,24 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
     replayRef.current = null;
     setLoading(null);
     setMode('live');
-    const s = sceneRef.current;
+    const s = orbitRef.current;
     if (s) {
-      resetScene(s);
+      resetOrbit(s);
       pending.current = [];
     }
-    // The next team snapshot (or the effect above) restores who works.
     syncTeam();
   }, [syncTeam]);
 
   const seek = useCallback((t: number) => {
     const r = replayRef.current;
-    const s = sceneRef.current;
+    const s = orbitRef.current;
     if (!r || !s) return;
     seekTo(r, t);
-    // Rebuild the floor as it stood at `t`: every beat before it, then end the walks in place.
-    resetScene(s);
-    const before = r.rows.slice(0, r.cursor);
-    for (const b of beatsFromItems(before, lookupRef.current)) applyBeat(s, b);
-    settle(s);
+    // Rebuild the floor as it stood at `t`: every beat before it, without the flying.
+    resetOrbit(s);
+    const now = performance.now();
+    for (const { beat, item } of beatsWithItems(r.rows.slice(0, r.cursor), lookupRef.current))
+      applyOrbitBeat(s, beat, now, { instant: true, item });
     setUiTick((n) => n + 1);
   }, []);
 
@@ -308,10 +360,16 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
     if (replayRef.current) replayRef.current.speed = speed;
   }, [speed]);
 
-  // The loop: release one pending beat every so often (live) or what the clock says (replay),
-  // advance, draw.
-  const hoverRef = useRef<string | null>(null);
-  hoverRef.current = hover;
+  // How fast the rings turn: still when held or paused, slow when nothing is running.
+  const resting = eye.state === 'resting';
+  const rateRef = useRef(1);
+  rateRef.current = still ? 0 : resting ? 0.3 : 1;
+  // Pointing at someone holds the rings, so a moving target is easy to click.
+  const holdRef = useRef(false);
+
+  // The loop: release beats (live) or what the clock says (replay), turn the rings, paint.
+  const cheerSeen = useRef(0);
+  const beatsSeen = useRef(0);
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
@@ -319,55 +377,99 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
     let nextUiAt = 0;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      const s = sceneRef.current;
-      const canvas = canvasRef.current;
-      if (!s || !canvas) return;
+      const s = orbitRef.current;
+      if (!s) return;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const r = replayRef.current;
+      let rate = s.paused || holdRef.current ? 0 : rateRef.current;
       if (modeRef.current === 'replay') {
         if (r) {
-          const settled =
-            [...s.figures.values()].every((f) => !f.trips.length) && !s.packets.length;
-          for (const row of advance(r, dt * 1000, settled, now))
-            for (const b of beatsFromItems([row], lookupRef.current)) applyBeat(s, b);
+          if (!r.playing) rate = 0;
+          for (const row of advance(r, dt * 1000, !s.comets.length, now))
+            for (const { beat, item } of beatsWithItems([row], lookupRef.current))
+              applyOrbitBeat(s, beat, now, { instant: still, item });
           if (now >= nextUiAt) {
             nextUiAt = now + 250;
             setUiTick((n) => n + 1);
           }
-        }
+        } else rate = 0;
       } else if (pending.current.length && now >= nextBeatAt) {
-        applyBeat(s, pending.current.shift()!);
-        // A backlog drains faster than a trickle.
+        const { beat, item } = pending.current.shift()!;
+        applyOrbitBeat(s, beat, now, { instant: still, item });
         nextBeatAt = now + (pending.current.length > 8 ? BEAT_GAP_MS / 3 : BEAT_GAP_MS);
       }
-      tick(s, dt, now, present ? TRAIL_PRESENT : TRAIL);
-      draw(canvas, s, theme, now, present, hoverRef.current);
+      advanceOrbit(s, dt, rate, now);
+      paint(s, now);
+      // A pass lands: Cypher squints, a ripple, a word on what passed.
+      if (s.cheers !== cheerSeen.current && now >= s.cheerAt) {
+        cheerSeen.current = s.cheers;
+        setCheer(s.cheers);
+        setPassText(s.latest?.summary ?? null);
+      }
+      if (s.beats !== beatsSeen.current && modeRef.current === 'live' && now >= nextUiAt) {
+        beatsSeen.current = s.beats;
+        nextUiAt = now + 400;
+        setUiTick((n) => n + 1);
+      }
+    };
+    const paint = (s: OrbitState, now: number) => {
+      const S = sideRef.current;
+      if (!S) return;
+      for (const [id, el] of agentEls.current) {
+        const p = agentAt(s, id);
+        if (!p) continue;
+        el.style.transform = `translate(${(p.x * S).toFixed(1)}px, ${(p.y * S).toFixed(1)}px)`;
+        const working = s.working.has(id) ? '' : null;
+        if (working === null) el.removeAttribute('data-working');
+        else el.setAttribute('data-working', '');
+        const f = s.flash.get(id);
+        if (f) el.setAttribute('data-flash', f.tone);
+        else el.removeAttribute('data-flash');
+      }
+      for (const [id, el] of stationEls.current) {
+        const g = s.glow.get(id);
+        // The glow starts when the comet arrives.
+        if (g && now >= g.until - 900) {
+          el.setAttribute('data-glow', '');
+          el.style.setProperty('--g', toneColor(g.tone, g.ws));
+        } else el.removeAttribute('data-glow');
+      }
+      for (let i = 0; i < POOL; i++) {
+        const el = cometEls.current[i];
+        if (!el) continue;
+        const c = s.comets[i];
+        if (!c) {
+          el.style.opacity = '0';
+          continue;
+        }
+        const { p, t } = cometAt(s, c, now);
+        el.style.transform = `translate(${(p.x * S).toFixed(1)}px, ${(p.y * S).toFixed(1)}px)`;
+        el.style.opacity = String(Math.min(1, Math.sin(Math.PI * Math.min(1, t * 1.05)) * 1.6));
+        el.style.background = toneColor(c.tone, c.ws);
+        el.dataset.shape = c.shape;
+      }
+      // Cypher's gaze: whoever is followed; else wherever something just landed.
+      const fid = followRef.current;
+      const fp = fid ? agentAt(s, fid) : null;
+      if (fp) gaze.current = gazeTo(fp);
+      else if (s.lastTarget && now - s.lastTarget.at < 1600 && now >= s.lastTarget.at - 700)
+        gaze.current = gazeTo(endAt(s, s.lastTarget.end));
+      else gaze.current = null;
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [theme, present]);
+  }, [still]);
 
-  const figureAt = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const s = sceneRef.current;
-    const canvas = canvasRef.current;
-    if (!s || !canvas) return null;
-    const r = canvas.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
-    let best: { id: string; d: number } | null = null;
-    for (const [id, f] of s.figures) {
-      const d = Math.hypot(f.pos.x - x, f.pos.y - y);
-      const radius =
-        (f.spec.tier === 'chief_of_staff' ? 24 : f.spec.tier === 'lead' ? 18 : 15) *
-        (present ? 1.18 : 1);
-      if (d <= radius + 4 && (!best || d < best.d)) best = { id, d };
-    }
-    return best?.id ?? null;
-  };
+  // The word on a pass fades after a few seconds.
+  useEffect(() => {
+    if (!passText) return;
+    const t = window.setTimeout(() => setPassText(null), 3200);
+    return () => window.clearTimeout(t);
+  }, [passText, cheer]);
 
   const replay = replayRef.current;
-  const live = Boolean(team && mc && !sceneRef.current?.paused);
+  const paused = Boolean(orbit?.paused);
   const pill =
     mode === 'replay'
       ? loading !== null
@@ -379,54 +481,402 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
             : 'Replay paused'
       : !team
         ? 'Connecting'
-        : sceneRef.current?.paused
+        : paused
           ? 'Paused'
-          : live
-            ? 'Live'
-            : 'Idle';
-  return (
-    <div className={fl.floor} data-hero={hero || undefined}>
-      <div className={fl.canvas} ref={wrapRef}>
-        <canvas
-          ref={canvasRef}
-          role="img"
-          aria-label="The team at work: agents moving between their desks, their Leads, Cypher and the systems they use"
-          style={{ cursor: hover ? 'pointer' : 'default' }}
-          onMouseMove={(e) => setHover(figureAt(e))}
-          onMouseLeave={() => setHover(null)}
-          onClick={(e) => {
-            const id = figureAt(e);
-            if (id) inspect('agent', id);
+          : resting
+            ? 'Quiet'
+            : 'Live';
+
+  const current = mc?.phases.find((p) => p.status === 'current') ?? null;
+  const followed: AgentView | null =
+    (follow && team?.agents.find((a) => a.agentId === follow)) || null;
+  const followedRing = follow ? (orbit?.agents.get(follow)?.ring ?? null) : null;
+  const latest = orbit?.latest ?? null;
+  const theirs = follow ? (items ?? []).filter((i) => i.agentId === follow) : [];
+  const nameOf = (id: string | null, actor?: string) => {
+    if (!id)
+      return actor === 'director' ? 'You' : actor === 'chief-of-staff' ? 'Cypher' : 'The system';
+    const a = team?.agents.find((g) => g.agentId === id);
+    return a?.tier === 'chief_of_staff' ? 'Cypher' : (a?.persona ?? a?.name ?? 'An agent');
+  };
+  const caption = followed
+    ? {
+        who: nameOf(followed.agentId),
+        text: followed.now ?? theirs[0]?.summary ?? 'At their desk, waiting for the next task.',
+      }
+    : latest
+      ? { who: nameOf(latest.agentId, latest.actorId), text: latest.summary }
+      : null;
+
+  const eyeSize = Math.max(44, Math.min(110, side * (variant === 'hero' ? 0.12 : 0.11)));
+  const scale = Math.max(0.72, Math.min(1.25, side / 600));
+  const stations = orbit?.stations ?? [];
+
+  const scene = (
+    <div
+      className={fl.scene}
+      ref={sceneRef}
+      style={{ '--k': scale } as React.CSSProperties}
+      role="group"
+      aria-label="The Floor: the team on rings around Cypher, by team, with the systems they use on the outer ring"
+    >
+      <svg
+        className={fl.spokes}
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <circle
+          cx="50"
+          cy="50"
+          r={STATION_R * 100}
+          className={fl.stationRing}
+          vectorEffect="non-scaling-stroke"
+        />
+        {stations.map((st) => {
+          const a = (st.deg * Math.PI) / 180;
+          return (
+            <line
+              key={st.id}
+              x1="50"
+              y1="50"
+              x2={50 + STATION_R * 100 * Math.sin(a)}
+              y2={50 - STATION_R * 100 * Math.cos(a)}
+              className={fl.spoke}
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
+      </svg>
+      {RINGS.map((ws) => {
+        if (!agents.some((a) => a.ring === ws)) return null;
+        const r = RING_R[ws];
+        return (
+          <div
+            key={ws}
+            className={fl.ring}
+            data-on={followedRing === ws || undefined}
+            style={
+              {
+                left: pct(0.5 - r),
+                top: pct(0.5 - r),
+                width: pct(2 * r),
+                height: pct(2 * r),
+                '--hue': HUE[ws],
+              } as React.CSSProperties
+            }
+          >
+            <span className={`${fl.ringTag} type-label`}>{RING_LABEL[ws]}</span>
+          </div>
+        );
+      })}
+      {stations.map((st) => {
+        const a = (st.deg * Math.PI) / 180;
+        return (
+          <div
+            key={st.id}
+            className={fl.station}
+            data-minor={
+              st.id === 'door' || st.id === 'research' || st.id === 'browser' || undefined
+            }
+            ref={(el) => {
+              if (el) stationEls.current.set(st.id, el);
+              else stationEls.current.delete(st.id);
+            }}
+            style={{
+              left: pct(0.5 + STATION_R * Math.sin(a)),
+              top: pct(0.5 - STATION_R * Math.cos(a)),
+            }}
+          >
+            <span className={fl.stationBox} data-door={st.id === 'door' || undefined} />
+            <span className={`${fl.stationLabel} type-meta`}>{st.label}</span>
+          </div>
+        );
+      })}
+      <div className={fl.core}>
+        <LiveEye state={eye.state} blink={eye.blink} size={eyeSize} gaze={gaze} cheer={cheer} />
+        {cheer > 0 && <span key={cheer} className={fl.ripple} aria-hidden="true" />}
+      </div>
+      {passText && (
+        <span key={`pass-${cheer}`} className={`${fl.pass} type-meta`} role="status">
+          <Icon name="check" size={14} />
+          <span>{passText}</span>
+        </span>
+      )}
+      {Array.from({ length: POOL }, (_, i) => (
+        <span
+          key={i}
+          className={fl.comet}
+          aria-hidden="true"
+          ref={(el) => {
+            cometEls.current[i] = el;
           }}
         />
-        {!team && <div className={`${fl.empty} type-body-small`}>Loading the team…</div>}
-        <div
-          className={`${fl.state} type-meta`}
-          data-live={mode === 'live' && live}
-          data-replay={mode === 'replay'}
-        >
-          <i />
-          {pill}
-        </div>
-      </div>
-      <div className={`${fl.legend} type-meta`} aria-hidden="true">
-        {WORKSTREAMS.map((ws) => (
-          <span key={ws}>
-            <i style={{ background: theme.ws[ws] }} />
-            {WORKSTREAM_LABEL[ws]}
-          </span>
-        ))}
-        <span>
-          <EyeResting size={14} />
-          Cypher
+      ))}
+      {agents.map((a) => {
+        const isFollowed = a.id === follow;
+        const lead = a.tier === 'lead';
+        return (
+          <div
+            key={a.id}
+            className={fl.agent}
+            data-followed={isFollowed || undefined}
+            data-lead={lead || undefined}
+            data-state={a.state}
+            ref={(el) => {
+              if (el) agentEls.current.set(a.id, el);
+              else agentEls.current.delete(a.id);
+            }}
+            style={{ '--hue': HUE[a.ring] } as React.CSSProperties}
+          >
+            {isFollowed && (
+              <span className={fl.cam} aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
+            <button
+              type="button"
+              className={fl.face}
+              aria-pressed={isFollowed}
+              aria-label={isFollowed ? `Following ${a.name}` : `Follow ${a.name}, ${a.role}`}
+              title={`${a.name}, ${a.role}`}
+              onClick={() => setFollow(isFollowed ? null : a.id)}
+              onPointerEnter={() => (holdRef.current = true)}
+              onPointerLeave={() => (holdRef.current = false)}
+              onFocus={() => (holdRef.current = true)}
+              onBlur={() => (holdRef.current = false)}
+            >
+              {a.initials}
+            </button>
+            {(lead || isFollowed) && <span className={`${fl.name} type-meta`}>{a.first}</span>}
+          </div>
+        );
+      })}
+      {team && !agents.length && (
+        <div className={`${fl.empty} type-body-small`}>No one is on the team yet.</div>
+      )}
+      {!team && <div className={`${fl.empty} type-body-small`}>Loading the team…</div>}
+    </div>
+  );
+
+  const followLine = followed && (
+    <div className={fl.followLine}>
+      <span
+        className={fl.ringAvatar}
+        style={{ '--hue': HUE[followedRing ?? 'none'] } as React.CSSProperties}
+      >
+        {orbit?.agents.get(followed.agentId)?.initials}
+      </span>
+      <span className={fl.followText}>
+        <span className="type-body-small">
+          <b>Following {orbit?.agents.get(followed.agentId)?.first}</b>
+          {followed.now ? <span className={fl.quiet}> · {followed.now}</span> : null}
         </span>
-        <span>Click an agent for details</span>
+        {followed.step && (
+          <span className={fl.bar}>
+            <span
+              style={{
+                width: `${Math.round((followed.step.n / Math.max(1, followed.step.of)) * 100)}%`,
+                background: HUE[followedRing ?? 'none'],
+              }}
+            />
+          </span>
+        )}
+      </span>
+      <button type="button" className={`${fl.btn} type-button`} onClick={() => setFollow(null)}>
+        Stop following
+      </button>
+    </div>
+  );
+
+  return (
+    <div className={fl.floor} data-variant={variant}>
+      <div className={fl.stage}>
+        <div className={fl.head}>
+          <span
+            className={`${fl.state} type-meta`}
+            data-live={mode === 'live' && !paused && !resting && Boolean(team)}
+            data-replay={mode === 'replay'}
+          >
+            <i />
+            {pill}
+          </span>
+          {current && variant !== 'bliss' && (
+            <span className={`${fl.chip} type-meta`}>
+              Phase {current.number} · {current.shortName || current.name}
+            </span>
+          )}
+          {followed && variant !== 'bliss' && (
+            <span className={`${fl.followChip} type-meta`}>
+              <span
+                className={fl.dotAvatar}
+                style={{ background: HUE[followedRing ?? 'none'] }}
+                aria-hidden="true"
+              >
+                {orbit?.agents.get(followed.agentId)?.initials}
+              </span>
+              Following {orbit?.agents.get(followed.agentId)?.first}
+              <button
+                type="button"
+                className={fl.x}
+                aria-label="Stop following"
+                onClick={() => setFollow(null)}
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </span>
+          )}
+          {!followed && agents.length > 0 && (
+            <span className={`${fl.hint} type-meta`}>Click anyone to follow them</span>
+          )}
+        </div>
+        {scene}
+        {caption && (
+          <div className={fl.caption} aria-live="polite">
+            <span className={`${fl.captionWho} type-label`}>{caption.who}</span>
+            <span className={fl.captionText}>{caption.text}</span>
+          </div>
+        )}
+        {variant === 'bliss' && followLine}
       </div>
+
+      {variant === 'everything' && (
+        <aside className={fl.side}>
+          {mc?.voice && (
+            <p className={`${fl.voice} type-body`}>
+              <Said text={mc.voice.text} emphasis={mc.voice.emphasis} />
+            </p>
+          )}
+          {followed ? (
+            <section
+              className={fl.card}
+              data-follow
+              aria-label={`Following ${followed.persona ?? followed.name}`}
+            >
+              <span className={`${fl.label} type-label`}>Following</span>
+              <div className={fl.who}>
+                <span
+                  className={fl.ringAvatar}
+                  style={{ '--hue': HUE[followedRing ?? 'none'] } as React.CSSProperties}
+                >
+                  {orbit?.agents.get(followed.agentId)?.initials}
+                </span>
+                <span className={fl.whoText}>
+                  <b className="type-body-small">{followed.persona ?? followed.name}</b>
+                  <span className={`${fl.quiet} type-meta`}>{followed.name}</span>
+                </span>
+              </div>
+              {followed.now && <b className="type-body-small">{followed.now}</b>}
+              {followed.step && (
+                <>
+                  <span className={`${fl.quiet} type-meta`}>
+                    Step {followed.step.n} of {followed.step.of}
+                  </span>
+                  <span className={fl.bar}>
+                    <span
+                      style={{
+                        width: `${Math.round((followed.step.n / Math.max(1, followed.step.of)) * 100)}%`,
+                        background: HUE[followedRing ?? 'none'],
+                      }}
+                    />
+                  </span>
+                </>
+              )}
+              {theirs.slice(0, 3).map((i) => (
+                <div key={i.seq} className={`${fl.step} type-meta`}>
+                  <span>{i.toolLabel ?? i.summary}</span>
+                  <span data-sev={i.severity}>{i.outcome ?? stamp(i.ts, tz)}</span>
+                </div>
+              ))}
+              {!theirs.length && !followed.now && (
+                <span className={`${fl.quiet} type-meta`}>
+                  Nothing from them in the recent log.
+                </span>
+              )}
+              {followed.next && (
+                <span className={`${fl.quiet} type-meta`}>
+                  Next: {followed.next.title}, {followed.next.when}
+                </span>
+              )}
+              <div className={fl.actions}>
+                <button
+                  type="button"
+                  className={`${fl.btn} type-button`}
+                  onClick={() => inspect('agent', followed.agentId)}
+                >
+                  Details
+                </button>
+                <button
+                  type="button"
+                  className={`${fl.btn} type-button`}
+                  onClick={() => setFollow(null)}
+                >
+                  Stop following
+                </button>
+              </div>
+            </section>
+          ) : (
+            <section className={fl.card}>
+              <span className={`${fl.label} type-label`}>Follow someone</span>
+              <span className="type-body-small">
+                Pick anyone on the floor. The camera stays on them and Cypher keeps an eye on what
+                they do.
+              </span>
+            </section>
+          )}
+          {mc && (
+            <div className={fl.kpis}>
+              <div className={fl.kpi}>
+                <span className={`${fl.label} type-label`}>Running</span>
+                <b className="type-number">{mc.phases.reduce((n, p) => n + p.tasksRunning, 0)}</b>
+                <span className="type-meta">tasks right now</span>
+              </div>
+              <div className={fl.kpi}>
+                <span className={`${fl.label} type-label`}>
+                  {current ? `Phase ${current.number}` : 'Phases'}
+                </span>
+                <b className="type-number">
+                  {current
+                    ? `${Math.round((current.tasksDone / Math.max(1, current.tasksTotal)) * 100)}%`
+                    : mc.project.status === 'completed'
+                      ? 'Done'
+                      : '–'}
+                </b>
+                <span className="type-meta">
+                  {current
+                    ? `${current.tasksDone} of ${current.tasksTotal} tasks`
+                    : 'No phase running'}
+                </span>
+              </div>
+            </div>
+          )}
+          {items && items.length > 0 && (
+            <section className={fl.signal} aria-label="Just now">
+              <span className={`${fl.label} type-label`}>Just now</span>
+              {items.slice(0, 4).map((i) => (
+                <div key={i.seq} className={fl.sig}>
+                  <i data-sev={i.severity} aria-hidden="true" />
+                  <span className="type-body-small">
+                    <span className={fl.clamp}>{i.summary}</span>
+                    <small className="type-meta">
+                      {nameOf(i.agentId, i.actorId)} · {stamp(i.ts, tz)}
+                    </small>
+                  </span>
+                </div>
+              ))}
+            </section>
+          )}
+        </aside>
+      )}
+
       <ReplayBar
         mode={mode}
         onLive={goLive}
-        onReplay={() => startReplay(preset)}
-        preset={preset}
+        onReplay={() => startReplay(windowPreset)}
+        preset={windowPreset}
         onPreset={(p) => {
           setPreset(p);
           if (mode === 'replay') startReplay(p);
@@ -445,7 +895,7 @@ export function Floor({ items, hero = false }: { items: ActivityItem[] | null; h
         onSeek={seek}
         tz={tz}
         theme={theme}
-        phase={sceneRef.current?.phase ?? null}
+        phase={orbit?.phase ?? null}
       />
     </div>
   );
@@ -715,27 +1165,6 @@ function drawStrip(canvas: HTMLCanvasElement, r: Replay, d: Density, th: Theme) 
   ctx.fill();
 }
 
-// ---------------------------------------------------------------------------
-// Drawing the floor
-// ---------------------------------------------------------------------------
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
 /** A colour's `rgba(r, g, b, ` prefix, parsed once per colour (the scene draws every frame). */
 const rgbaPrefix = new Map<string, string | null>();
 
@@ -771,264 +1200,4 @@ function rgbaOf(hex: string): string | null {
     return `rgba(${parts.join(', ')}, `;
   }
   return null;
-}
-
-function draw(
-  canvas: HTMLCanvasElement,
-  s: SceneState,
-  th: Theme,
-  now: number,
-  present: boolean,
-  hover: string | null,
-) {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const W = s.layout.width;
-  const H = s.layout.height;
-  if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-  }
-  const ctx = canvas.getContext('2d')!;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-  ctx.font = `11px ${th.font}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const dim = s.paused ? 0.55 : 1;
-  // On a presentation screen everything that moves is a little larger and brighter.
-  const k = present ? 1.18 : 1;
-
-  // Islands.
-  for (const isl of s.layout.islands) {
-    ctx.fillStyle = alpha(th.ws[isl.ws], 0.06);
-    roundRect(ctx, isl.x, isl.y, isl.w, isl.h, 16);
-    ctx.fill();
-    ctx.strokeStyle = alpha(th.ws[isl.ws], 0.28);
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = th.fg3;
-    ctx.textAlign = 'left';
-    ctx.font = `600 10.5px ${th.font}`;
-    ctx.fillText(isl.label.toUpperCase(), isl.x + 12, isl.y + 14);
-    ctx.textAlign = 'center';
-    ctx.font = `11px ${th.font}`;
-  }
-
-  // The Director's door.
-  ctx.fillStyle = th.fg;
-  roundRect(ctx, s.layout.door.x - 46, s.layout.door.y - 4, 92, 6, 3);
-  ctx.fill();
-  ctx.fillStyle = th.fg2;
-  ctx.fillText('Director', s.layout.door.x, s.layout.door.y - 14);
-
-  // Stations, the Workbench and the live site.
-  for (const st of s.layout.stations) {
-    const busy = [...s.figures.values()].some((f) => f.at === st.id);
-    if (busy && present) {
-      ctx.fillStyle = alpha(th.accent, 0.1);
-      ctx.beginPath();
-      ctx.arc(st.pos.x, st.pos.y, 34, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = busy ? alpha(th.accent, 0.14) : th.surface2;
-    ctx.strokeStyle = busy ? th.accent : th.borderStrong;
-    roundRect(ctx, st.pos.x - 22, st.pos.y - 14, 44, 28, 8);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = th.fg2;
-    ctx.fillText(st.label, st.pos.x, st.pos.y + 28);
-  }
-  const corner = (p: { x: number; y: number }, label: string) => {
-    ctx.strokeStyle = th.borderStrong;
-    ctx.setLineDash([3, 3]);
-    roundRect(ctx, p.x - 28, p.y - 14, 56, 28, 8);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = th.fg3;
-    ctx.fillText(label, p.x, p.y + (p.y < H / 2 ? 28 : -24));
-  };
-  corner(s.layout.workbench, 'Workbench');
-  corner(s.layout.site, 'Live site');
-
-  // Trails (presentation only).
-  if (present && !s.still) {
-    for (const f of s.figures.values()) {
-      if (f.trail.length < 2) continue;
-      const col =
-        f.spec.tier === 'chief_of_staff'
-          ? th.accent
-          : f.spec.workstream
-            ? th.ws[f.spec.workstream]
-            : th.fg3;
-      ctx.lineCap = 'round';
-      for (let i = 1; i < f.trail.length; i++) {
-        const t = i / f.trail.length;
-        ctx.strokeStyle = alpha(col, t * 0.45);
-        ctx.lineWidth = 1 + t * 3;
-        ctx.beginPath();
-        ctx.moveTo(f.trail[i - 1]!.x, f.trail[i - 1]!.y);
-        ctx.lineTo(f.trail[i]!.x, f.trail[i]!.y);
-        ctx.stroke();
-      }
-    }
-  }
-
-  // Packets.
-  for (const p of s.packets) {
-    const pos = packetPos(p);
-    const col =
-      p.kind === 'release'
-        ? th.success
-        : p.kind === 'answer'
-          ? th.fg
-          : p.kind === 'doc'
-            ? th.fg2
-            : th.accent;
-    ctx.fillStyle = alpha(col, 0.22);
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 9 * k, 0, Math.PI * 2);
-    ctx.fill();
-    if (present) {
-      ctx.shadowColor = alpha(col, 0.7);
-      ctx.shadowBlur = 14;
-    }
-    ctx.fillStyle = col;
-    if (p.kind === 'doc') {
-      roundRect(ctx, pos.x - 4 * k, pos.y - 5 * k, 8 * k, 10 * k, 1.5);
-      ctx.fill();
-    } else {
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 4 * k, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-  }
-
-  // Figures: specialists, then Leads, then Cypher on top.
-  const order = [...s.figures.values()].sort((a, b) => rank(a.spec.tier) - rank(b.spec.tier));
-  for (const f of order) {
-    const r = (f.spec.tier === 'chief_of_staff' ? 22 : f.spec.tier === 'lead' ? 16 : 13) * k;
-    const col =
-      f.spec.tier === 'chief_of_staff'
-        ? th.accent
-        : f.spec.workstream
-          ? th.ws[f.spec.workstream]
-          : th.fg2;
-    const faint = f.spec.inactive;
-    ctx.globalAlpha = (faint ? 0.3 : 1) * dim;
-
-    // Working pulse.
-    if (f.working && !s.still && !s.paused) {
-      const ph = (((now / 1600 + f.pos.x * 0.001) % 1) + 1) % 1;
-      ctx.strokeStyle = alpha(col, 0.45 * (1 - ph));
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(f.pos.x, f.pos.y, r + 4 + ph * 12, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // Orbiting tasks.
-    if (f.tasks > 0 && !s.still) {
-      for (let i = 0; i < f.tasks; i++) {
-        const a = now / 2400 + (i / f.tasks) * Math.PI * 2;
-        const ox = f.pos.x + Math.cos(a) * (r + 9);
-        const oy = f.pos.y + Math.sin(a) * (r + 9) * 0.7;
-        ctx.fillStyle = alpha(col, 0.85);
-        ctx.beginPath();
-        ctx.arc(ox, oy, 2.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    // Flash ring after a review or a failure.
-    if (f.flash > 0) {
-      ctx.strokeStyle = alpha(f.flashBad ? th.danger : th.success, f.flash);
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(f.pos.x, f.pos.y, r + 3 + (1 - f.flash) * 6, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // Disc.
-    ctx.fillStyle = f.spec.tier === 'lead' ? th.surface : col;
-    ctx.beginPath();
-    ctx.arc(f.pos.x, f.pos.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    if (f.spec.tier === 'lead') {
-      ctx.strokeStyle = col;
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-    }
-    if (hover === f.spec.id) {
-      ctx.strokeStyle = th.fg;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(f.pos.x, f.pos.y, r + 3, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    if (f.spec.tier === 'chief_of_staff') {
-      // Cypher is only ever the eye (design system §3): the mark's lid over its ink disc.
-      drawEye(ctx, f.pos.x, f.pos.y, r, f.working && !s.paused, th.onAccent);
-    } else {
-      ctx.fillStyle = f.spec.tier === 'lead' ? col : th.onAccent;
-      ctx.font = `600 ${10.5 * k}px ${th.font}`;
-      ctx.fillText(f.spec.initials, f.pos.x, f.pos.y + 0.5);
-    }
-    // Names: Cypher and Leads always, others on hover.
-    if (f.spec.tier !== 'specialist' || hover === f.spec.id) {
-      ctx.fillStyle = th.fg2;
-      ctx.font = `${11 * k}px ${th.font}`;
-      const label = f.spec.tier === 'chief_of_staff' ? 'Cypher' : f.spec.name;
-      ctx.fillText(label, f.pos.x, f.pos.y + r + 11);
-      if (hover === f.spec.id && f.spec.tier !== 'chief_of_staff') {
-        ctx.fillStyle = th.fg3;
-        ctx.fillText(f.spec.role, f.pos.x, f.pos.y + r + 23);
-      }
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  if (s.paused) {
-    ctx.fillStyle = th.fg3;
-    ctx.font = `12px ${th.font}`;
-    ctx.fillText('Paused: everyone is at their desk', W / 2, H - 14);
-  }
-}
-
-/*
- * The eye's lid, from theme/marks/eye-resting.svg and eye-watching.svg (a 72 grid, disc radius
- * 31), scaled to the figure's disc. The disc itself is drawn with the other figures.
- */
-const LID_RESTING = typeof Path2D === 'undefined' ? null : new Path2D('M20 36 Q36 50 52 36');
-const LID_WATCHING =
-  typeof Path2D === 'undefined' ? null : new Path2D('M18 36 Q36 20 54 36 Q36 52 18 36 Z');
-function drawEye(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  r: number,
-  watching: boolean,
-  lid: string,
-) {
-  if (!LID_RESTING || !LID_WATCHING) return;
-  const sc = r / 31;
-  ctx.save();
-  ctx.translate(x - 36 * sc, y - 36 * sc);
-  ctx.scale(sc, sc);
-  ctx.strokeStyle = lid;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  if (watching) {
-    ctx.lineWidth = 3.5;
-    ctx.stroke(LID_WATCHING);
-    ctx.fillStyle = lid;
-    ctx.beginPath();
-    ctx.arc(36, 36, 5, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    ctx.lineWidth = 4;
-    ctx.stroke(LID_RESTING);
-  }
-  ctx.restore();
-}
-
-function rank(t: string): number {
-  return t === 'chief_of_staff' ? 2 : t === 'lead' ? 1 : 0;
 }

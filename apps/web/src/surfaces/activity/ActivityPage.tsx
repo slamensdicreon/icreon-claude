@@ -112,7 +112,7 @@ function ActivityBliss({ log }: { log: Log }) {
   return (
     <div className={s.bliss}>
       <div className={s.floor}>
-        <Floor items={log.items} />
+        <Floor items={log.items} variant="bliss" />
       </div>
       {last && (
         <section className={s.beat} aria-label="The last thing that happened">

@@ -6,6 +6,8 @@
  *   how soon the first clock runs out ("now" under fifteen minutes, "soon" with any clock, "calm"
  *   with none).
  * A new item makes it blink twice. Under reduced motion it holds still in its state's pose.
+ * Given a gaze (the Floor), it looks where the gaze points instead of at the pointer, and a
+ * cheer makes it squint, pleased, for a moment.
  */
 import { useEffect, useRef } from 'react';
 import { EYE_WORDS, type EyeState } from '../../voice/eye';
@@ -26,11 +28,17 @@ export function LiveEye({
   blink = false,
   size = 130,
   urgency = 'calm',
+  gaze,
+  cheer = 0,
 }: {
   state: EyeState;
   blink?: boolean;
   size?: number;
   urgency?: Urgency;
+  /** A unit vector to look along, read every tenth of a second; null to look about freely. */
+  gaze?: React.RefObject<{ x: number; y: number } | null>;
+  /** Bump to make it squint, pleased (a check came back green). */
+  cheer?: number;
 }) {
   const box = useRef<HTMLSpanElement>(null);
   const lids = useRef<SVGPathElement>(null);
@@ -94,7 +102,12 @@ export function LiveEye({
           ]);
         }
       } else if (state === 'watching') {
-        if (roll < 0.5) await glance(between(-r, r), between(-r / 2, r / 2), between(500, 1300));
+        if (gaze?.current) {
+          // Following something: it keeps its eyes on it and only blinks.
+          if (roll < 0.75) await blinkOnce();
+          else await doubleBlink();
+        } else if (roll < 0.5)
+          await glance(between(-r, r), between(-r / 2, r / 2), between(500, 1300));
         else if (roll < 0.85) await blinkOnce();
         else await doubleBlink();
       } else {
@@ -122,11 +135,41 @@ export function LiveEye({
       window.clearTimeout(timer);
       m.cancel();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
-  // Awake, it follows the pointer, a few units at most.
+  // Given a gaze, it tracks it between blinks.
   useEffect(() => {
+    if (!gaze || state === 'resting' || prefersReducedMotion()) return;
+    const id = window.setInterval(() => {
+      const m = motion.current!;
+      const g = gaze.current;
+      if (!g || m.busy) return;
+      const r = lookRange(m.pose.open) * 0.9;
+      const x = g.x * r;
+      const y = g.y * r * 0.7;
+      if (Math.abs(x - m.pose.lookX) + Math.abs(y - m.pose.lookY) < 0.25) return;
+      void m.play([{ to: { lookX: x, lookY: y }, ms: 200, ease: ease.out }]);
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [gaze, state]);
+
+  // A cheer: a pleased squint, then open again.
+  const cheered = useRef(cheer);
+  useEffect(() => {
+    if (cheer === cheered.current) return;
+    cheered.current = cheer;
     if (state === 'resting' || prefersReducedMotion()) return;
+    const open = POSES[state].open;
+    void motion.current!.play([
+      { to: { open: open * 0.55 }, ms: 160, ease: ease.out, hold: 460 },
+      { to: { open }, ms: 300, ease: ease.spring },
+    ]);
+  }, [cheer, state]);
+
+  // Awake, it follows the pointer, a few units at most (not when it has a gaze to follow).
+  useEffect(() => {
+    if (gaze || state === 'resting' || prefersReducedMotion()) return;
     let last = 0;
     const onMove = (e: PointerEvent) => {
       const now = performance.now();
@@ -143,7 +186,7 @@ export function LiveEye({
     };
     window.addEventListener('pointermove', onMove, { passive: true });
     return () => window.removeEventListener('pointermove', onMove);
-  }, [state]);
+  }, [gaze, state]);
 
   // Something new is the Director's: two quick blinks.
   useEffect(() => {

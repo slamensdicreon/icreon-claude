@@ -33,6 +33,11 @@ export class EyeMotion {
     this.pose = { ...start };
   }
 
+  /** True while a move is playing; a follower waits for it rather than cutting it off. */
+  get busy(): boolean {
+    return this.frame !== 0;
+  }
+
   attach(parts: EyeParts | null) {
     this.parts = parts;
     this.draw();
