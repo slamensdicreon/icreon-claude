@@ -692,7 +692,31 @@ export const ArtifactVersionView = z.object({
   /** The agent's plain title and audience for this version, when it gave them. */
   headline: z.string().nullable().optional(),
   audience: z.enum(['director', 'team']).nullable().optional(),
+  /** Cypher's plain version of this version, once written. */
+  explained: z
+    .object({
+      inShort: z.string(),
+      means: z.array(z.string()),
+      toDo: z.string().nullable(),
+      plain: z.string().nullable(),
+      glossary: z.array(z.object({ term: z.string(), meaning: z.string() })),
+      at: z.iso.datetime(),
+    })
+    .optional(),
 });
+
+/** GET …/versions/:v/plain: Cypher's plain version, or how far it has got. */
+export const PlainVersion = z.object({
+  /** ready: written; writing: being written now; none: no model, so only what the API knows. */
+  status: z.enum(['ready', 'writing', 'none']),
+  version: z.number().int(),
+  inShort: z.string().nullable(),
+  means: z.array(z.string()),
+  toDo: z.string().nullable(),
+  plain: z.string().nullable(),
+  glossary: z.array(z.object({ term: z.string(), meaning: z.string() })),
+});
+export type PlainVersion = z.infer<typeof PlainVersion>;
 export type ArtifactVersionView = z.infer<typeof ArtifactVersionView>;
 
 export const ArtifactView = z.object({

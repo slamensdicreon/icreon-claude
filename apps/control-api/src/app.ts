@@ -37,6 +37,7 @@ import {
   type ActivityPage,
   type ApiError,
   type ArtifactView,
+  type PlainVersion,
   type AutonomyLevel,
   type DecisionCategory,
   type CommandResult,
@@ -99,6 +100,7 @@ import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
 import { withDocumentFacts, workbenchStory } from './story';
+import { explainDocument, explainedWithoutModel } from './plain';
 import { portfolioOverview, type LogCache } from './overview';
 import {
   portfolioActivity,
@@ -1245,6 +1247,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       wb.artifacts.map(async (a) => ({ ...a, readMinutes: await minutesOf(req.params.id, a) })),
     );
     const told = { ...wb, artifacts };
+    // Documents for the Director get their plain version written ahead of being opened.
+    for (const x of artifacts)
+      if (x.audience === 'director') writePlain(req.params.id, x, x.latest);
     return { ...told, story: workbenchStory(told, s) };
   });
 
@@ -1290,6 +1295,90 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         .header('content-type', CONTENT_TYPES[v.format ?? 'binary'])
         .header('cache-control', 'private, max-age=31536000, immutable')
         .send(Buffer.from(bytes));
+    },
+  );
+
+  // Cypher's plain version of a document version: written once per version by the model, kept as
+  // an event so it survives restarts and replays, and served from the read model after that.
+  const writingPlain = new Map<string, Promise<void>>();
+  const enrichedDoc = (s: ProjectState, artifactId: string): ArtifactView | undefined =>
+    withDocumentFacts(withDocumentVoice(workbench(s), s), s).artifacts.find(
+      (x) => x.artifactId === artifactId,
+    );
+  const writePlain = (projectId: string, a: ArtifactView, version: number): boolean => {
+    const model = deps.cypher?.model;
+    const v = a.versions.find((x) => x.version === version);
+    if (!model || !deps.artifactContent || !v?.ref || v.explained) return false;
+    const key = `${projectId}:${a.artifactId}:${version}`;
+    if (writingPlain.has(key)) return true;
+    // A few at a time across the API; the rest wait for the next look.
+    if (writingPlain.size >= 4) return false;
+    const job = (async () => {
+      const bytes = await deps.artifactContent!(projectId, v.ref!);
+      if (!bytes) return;
+      const out = await explainDocument(model, {
+        kind: a.kind,
+        title: a.title,
+        audience: a.audience ?? 'team',
+        format: v.format,
+        content: new TextDecoder().decode(bytes),
+        summary: v.summary ?? (version === a.latest ? a.summary : null),
+        awaiting: version === a.latest && !!a.awaitingApproval,
+        changedSinceApproval: version === a.latest && !!a.changedSinceApproval,
+      });
+      if (!out) return;
+      await store.append(projectId, [
+        {
+          type: 'artifact.explained',
+          actor: { kind: 'chief_of_staff', id: 'chief-of-staff' },
+          subject: { kind: 'artifact', id: a.artifactId },
+          severity: 'routine',
+          data: { artifactId: a.artifactId, version, ...out },
+        },
+      ]);
+    })()
+      .catch((err: unknown) => app.log.warn({ err, key }, 'plain version not written'))
+      .finally(() => writingPlain.delete(key));
+    writingPlain.set(key, job);
+    return true;
+  };
+
+  app.get<{ Params: { id: string; artifactId: string; version: string } }>(
+    '/projects/:id/artifacts/:artifactId/versions/:version/plain',
+    async (req, reply): Promise<PlainVersion | void> => {
+      const s = known(req.params.id);
+      await projections.catchUp(req.params.id);
+      const a = enrichedDoc(s, req.params.artifactId);
+      if (!a)
+        return fail(reply, 404, 'unknown_artifact', `No artifact "${req.params.artifactId}".`);
+      const n = req.params.version === 'latest' ? a.latest : Number(req.params.version);
+      const v = a.versions.find((x) => x.version === n);
+      if (!v) return fail(reply, 404, 'unknown_version', `No version ${req.params.version}.`);
+      if (v.explained)
+        return {
+          status: 'ready',
+          version: n,
+          inShort: v.explained.inShort,
+          means: v.explained.means,
+          toDo: v.explained.toDo,
+          plain: v.explained.plain,
+          glossary: v.explained.glossary,
+        };
+      const writing = writePlain(req.params.id, a, n);
+      const known_ = explainedWithoutModel({
+        summary: v.summary ?? (n === a.latest ? a.summary : null),
+        awaiting: n === a.latest && !!a.awaitingApproval,
+        changedSinceApproval: n === a.latest && !!a.changedSinceApproval,
+      });
+      return {
+        status: writing ? 'writing' : 'none',
+        version: n,
+        inShort: known_.inShort || null,
+        means: [],
+        toDo: known_.toDo,
+        plain: null,
+        glossary: [],
+      };
     },
   );
 

@@ -670,6 +670,27 @@ export const EventBody = z.discriminatedUnion('type', [
       audience: z.enum(['director', 'team']).nullable().default(null),
     }),
   ),
+  /**
+   * Cypher's plain version of a document version, for a reader who isn't technical: what it
+   * settles, what it means, what (if anything) the Director needs to do, the document rewritten in
+   * plain words (documents for the Director only) and the terms it can't avoid. Never more than
+   * the document says; the original stays as it is.
+   */
+  ev(
+    'artifact.explained',
+    z.object({
+      artifactId: z.string(),
+      version: z.number().int().positive(),
+      inShort: z.string().max(600),
+      means: z.array(z.string().max(300)).max(3).default([]),
+      toDo: z.string().max(300).nullable().default(null),
+      plain: z.string().max(40_000).nullable().default(null),
+      glossary: z
+        .array(z.object({ term: z.string().max(60), meaning: z.string().max(240) }))
+        .max(12)
+        .default([]),
+    }),
+  ),
   ev(
     'metric.updated',
     z.object({

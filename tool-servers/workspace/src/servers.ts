@@ -4,6 +4,7 @@ import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '
 import { z } from 'zod';
 import type { ArtifactLibrary } from './library';
 import { rejected } from '@lw/tool-gateway';
+import { readabilityOf } from './readability';
 
 const Kind = z.enum(['blueprint', 'platform_notes', 'inventory', 'report', 'handover_pack']);
 
@@ -62,7 +63,7 @@ export class ArtifactsToolServer implements ToolServer {
     write: {
       description:
         'Save a new version of a project document (inventory, platform notes, report, handover pack). Use a stable kebab-case artifactId; each write creates the next version. ' +
-        'Markdown documents are read by the Director and the client in the Workbench, so write them to be read: open with a two-to-three sentence summary; use ## headings; tables for anything listed with attributes; callouts for what needs attention (> [!NOTE], > [!TIP], > [!WARNING], > [!IMPORTANT]); ```mermaid diagrams for structures and flows (site maps, component trees, data flow); embed screenshots and images with ![caption](blob://...) using the refs tools return; link sources and files. ' +
+        'Markdown documents are read by the Director and the client in the Workbench, who are not technical, so write them to be read: open with two or three plain sentences for them (what this settles, what it means for the site, the editors or the schedule, and anything they need to do), with no file paths, package names, code, rule ids or version strings in that opening; then the detail for the team under ## headings. Give every number its meaning (what it measures and whether it is good, when you know). Use ## headings; tables for anything listed with attributes; callouts for what needs attention (> [!NOTE], > [!TIP], > [!WARNING], > [!IMPORTANT]); ```mermaid diagrams for structures and flows (site maps, component trees, data flow); embed screenshots and images with ![caption](blob://...) using the refs tools return; link sources and files. ' +
         'JSON documents hold data for other agents; they are shown as tables.',
       inputSchema: {
         type: 'object',
@@ -159,10 +160,26 @@ export class ArtifactsToolServer implements ToolServer {
         audience: audienceOf(a.data.audience) ?? audienceOf(lifted.audience) ?? null,
         producer: ctx.role,
       });
+      // The opening is for the Director: say so when it isn't plain, so the author can fix it.
+      const read = readabilityOf(a.data.content, a.data.format);
       return {
         code: 200,
-        body: { artifactId: v.artifactId, version: v.version },
-        summary: `${v.title} v${v.version}`,
+        body: {
+          artifactId: v.artifactId,
+          version: v.version,
+          ...(read.ok
+            ? {}
+            : {
+                readability: {
+                  ok: false,
+                  notes: read.notes,
+                  next: 'Saved. Write a new version whose opening a non-technical Director can read.',
+                },
+              }),
+        },
+        summary: read.ok
+          ? `${v.title} v${v.version}`
+          : `${v.title} v${v.version}, saved; the opening needs plain words`,
       };
     }
     if (op === 'read') {

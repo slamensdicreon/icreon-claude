@@ -2,6 +2,7 @@ import DOMPurify from 'dompurify';
 import { Marked, type Tokens } from 'marked';
 import { useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import { blobUrl } from '../lib/api';
+import { glossHtml, useGlossary } from '../lib/glossary';
 import { useApp } from '../state';
 
 let hooked = false;
@@ -44,7 +45,11 @@ export function MarkdownDoc({
 }) {
   const { setUi } = useApp();
   const ref = useRef<HTMLDivElement>(null);
-  const { html, toc } = useMemo(() => render(text, projectId), [text, projectId]);
+  const glossary = useGlossary();
+  const { html, toc } = useMemo(() => {
+    const r = render(text, projectId);
+    return { ...r, html: glossHtml(r.html, glossary) };
+  }, [text, projectId, glossary]);
 
   // Diagrams render after the HTML is in place; mermaid is loaded only when a document has one.
   useEffect(() => {

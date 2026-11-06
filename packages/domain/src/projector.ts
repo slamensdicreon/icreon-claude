@@ -598,6 +598,19 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       ].sort((x, y) => y.version - x.version);
       break;
     }
+    case 'artifact.explained': {
+      const v = s.artifacts[e.data.artifactId]?.versions.find((x) => x.version === e.data.version);
+      if (v)
+        v.explained = {
+          inShort: e.data.inShort,
+          means: e.data.means,
+          toDo: e.data.toDo,
+          plain: e.data.plain,
+          glossary: e.data.glossary,
+          at: e.ts,
+        };
+      break;
+    }
     case 'page.updated': {
       const d = e.data;
       const prior = s.pages[d.pageKey];

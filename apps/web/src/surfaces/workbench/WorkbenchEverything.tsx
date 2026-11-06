@@ -18,6 +18,7 @@ import { DECISIONS, FACTS, LESSONS, isDocument, sectionsOf, updatedAt, type Page
 import { DocHead, Quiet, Tag, arrowNav } from './parts';
 import { ProjectFacts } from './ProjectFacts';
 import { ViewSwitch, WorkbenchStory } from './Story';
+import { PlainLayer } from './Plain';
 import { Toc, useHeadings } from './toc';
 import d from './doc.module.css';
 import s from './workbench.module.css';
@@ -165,9 +166,13 @@ export function WorkbenchEverything() {
               </div>
             </>
           ) : artifact?.kind === 'blueprint' ? (
-            <Blueprint />
+            <PlainLayer key={artifact.artifactId} a={artifact}>
+              <Blueprint />
+            </PlainLayer>
           ) : artifact ? (
-            <ArtifactViewer key={artifact.artifactId} a={artifact} />
+            <PlainLayer key={artifact.artifactId} a={artifact}>
+              <ArtifactViewer a={artifact} />
+            </PlainLayer>
           ) : null}
         </article>
       </div>

@@ -373,3 +373,38 @@
 .body [data-align='left'] {
   text-align: left;
 }
+
+/* A term the glossary explains: a dotted underline, the meaning on hover or focus. */
+.body abbr[data-term] {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.body abbr[data-term]:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.body abbr[data-term] {
+  position: relative;
+}
+/* Keyboard users get the meaning too (the native tooltip is pointer-only). */
+.body abbr[data-term]:focus-visible::after {
+  content: attr(title);
+  position: absolute;
+  left: 0;
+  top: calc(100% + var(--space-2));
+  z-index: 5;
+  width: max-content;
+  max-width: calc(var(--sidebar) + var(--space-8));
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--shell);
+  color: var(--on-shell);
+  font-size: var(--type-meta-size, 13.5px);
+  font-weight: 400;
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: normal;
+}

@@ -107,6 +107,8 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
       return `Cypher ${e.data.presence}`;
     case 'artifact.versioned':
       return `${e.data.title} v${e.data.version}`;
+    case 'artifact.explained':
+      return `Plain version of ${e.data.artifactId} v${e.data.version}`;
     case 'metric.updated':
       return `${e.data.key}: ${e.data.value ?? 'not yet measured'}${e.data.total != null ? ` / ${e.data.total}` : ''}`;
     case 'budget.updated':
