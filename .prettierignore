@@ -5,3 +5,5 @@ packages/orchestrator/test/replay/histories/
 # Copied verbatim from the Cypher Design System, which generates it from tokens.json.
 apps/web/src/theme/tokens.css
 apps/web/src/theme/tokens.json
+# Fixture pages served byte for byte to the browser tool tests; formatting breaks the layout-data parsing.
+tool-servers/browser/test/fixture-site/

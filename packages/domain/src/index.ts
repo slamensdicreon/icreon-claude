@@ -9,6 +9,7 @@ export * from './describe';
 export * from './projector';
 export * from './metrics';
 export * from './documents';
+export * from './readability';
 export * from './errors';
 export * from './schedule';
 export * from './time';

@@ -4,7 +4,7 @@ import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '
 import { z } from 'zod';
 import type { ArtifactLibrary } from './library';
 import { rejected } from '@lw/tool-gateway';
-import { readabilityOf } from './readability';
+import { readabilityOf } from '@lw/domain';
 
 const Kind = z.enum(['blueprint', 'platform_notes', 'inventory', 'report', 'handover_pack']);
 

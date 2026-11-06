@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # The default branch is the release branch; there is no main.
+    branches: [main, claude/sharp-pascal-3u2qg0]
   pull_request:
 
 # Read the code, nothing more: CI writes nowhere.
@@ -20,8 +21,11 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The browser tool server's tests drive a real Chromium.
+      # The browser tool server's tests and the web app's browser checks drive a real Chromium
+      # (one install: both use the same playwright-core).
       - run: pnpm --filter @lw/tool-browser exec playwright-core install --with-deps chromium
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
+      # The web app in a real browser, against the API's simulator (Playwright starts both).
+      - run: pnpm --filter @lw/web e2e --trace off

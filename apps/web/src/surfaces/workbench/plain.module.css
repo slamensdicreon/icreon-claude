@@ -80,6 +80,43 @@
   margin: 0;
   color: var(--text-2);
 }
+/* Asking for a new plain version. */
+.again {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.again:hover {
+  color: var(--ink);
+}
+.ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.note {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  resize: vertical;
+}
+.askActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
 @media (max-width: 640px) {
   .switch,
   .pad {

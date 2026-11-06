@@ -427,7 +427,9 @@ function WorkbenchEverything({ w }: { w: PortfolioWorkbench }) {
                 </span>
               )}
             </span>
-            {d.summary && <span className={`${w2.summary} type-body-small`}>{d.summary}</span>}
+            {(d.inShort ?? d.summary) && (
+              <span className={`${w2.summary} type-body-small`}>{d.inShort ?? d.summary}</span>
+            )}
           </span>
           <span className={`${w2.by} type-meta`}>
             {d.author?.name ?? ''}

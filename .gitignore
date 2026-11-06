@@ -11,3 +11,7 @@ coverage/
 
 # Local git worktrees for parallel agent sessions.
 .claude/worktrees/
+
+# Playwright
+test-results/
+playwright-report/

@@ -6,7 +6,7 @@ import { loadPlaybook } from '@lw/playbook-sdk';
 import { phaseDefs, roster } from '@lw/playbook-sdk/pure';
 import { describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
-import { parseExplained } from '../src/plain';
+import { explainDocument, parseExplained } from '../src/plain';
 
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 const REPORT = `Hero, QuickActions and HazardRoute ported from the Vite app, registered, and available in Page builder on preview deploy 6. Hero video autoplay waits for the Next.js client boundary.`;
@@ -14,9 +14,11 @@ const REPORT = `Hero, QuickActions and HazardRoute ported from the Vite app, reg
 /** A Claude that answers every document the same way, and counts how often it was asked. */
 function scripted(reply: string) {
   const asked: string[] = [];
+  const prompts: string[] = [];
   const model: ModelClient = {
     async create(params) {
       asked.push(String(params.model));
+      prompts.push(JSON.stringify(params.messages));
       return {
         content: [{ type: 'text', text: reply }],
         stop_reason: 'end_turn',
@@ -25,7 +27,7 @@ function scripted(reply: string) {
       } as never;
     },
   };
-  return { model, asked };
+  return { model, asked, prompts };
 }
 
 async function setup(model: ModelClient | null) {
@@ -119,6 +121,33 @@ describe('plain versions', () => {
     await app.close();
   });
 
+  it('writes a new one when the Director asks, with what they said was wrong', async () => {
+    const { model, asked, prompts } = scripted(
+      JSON.stringify({
+        inShort: 'The pilot works in the new site.',
+        means: [],
+        toDo: null,
+        plain: 'Plain.',
+        glossary: [],
+      }),
+    );
+    const { app, store } = await setup(model);
+    const url = '/projects/p1/artifacts/pilot/versions/1/plain';
+    await app.inject(url);
+    await until(async () => (await app.inject(url)).json().status === 'ready');
+    const r = await app.inject({
+      method: 'POST',
+      url: `${url}/rewrite`,
+      payload: { note: 'Too technical for me.' },
+    });
+    expect(r.statusCode).toBe(202);
+    await until(async () => (await store.head('p1')) >= 4);
+    await until(async () => (await app.inject(url)).json().status === 'ready');
+    expect(asked).toHaveLength(2);
+    expect(prompts[1]).toContain('Too technical for me.');
+    await app.close();
+  });
+
   it('says what it knows without a model, and writes nothing', async () => {
     const { app, store } = await setup(null);
     const r = PlainVersion.parse(
@@ -130,7 +159,58 @@ describe('plain versions', () => {
       plain: null,
     });
     expect(await store.head('p1')).toBe(2);
+    const asked = await app.inject({
+      method: 'POST',
+      url: '/projects/p1/artifacts/pilot/versions/1/plain/rewrite',
+    });
+    expect(asked.statusCode).toBe(501);
     await app.close();
+  });
+});
+
+describe('checking its own work', () => {
+  it('tries once more when the plain version still reads like the team wrote it', async () => {
+    const replies = [
+      {
+        inShort:
+          'Hero.tsx ported to Content SDK v1.4.2 via component-map.ts (D-02); QuickActions kit badge pending.',
+        means: [],
+        toDo: null,
+        plain: null,
+        glossary: [],
+      },
+      {
+        inShort: 'The first three sections of the home page now work in the new site.',
+        means: [],
+        toDo: null,
+        plain: null,
+        glossary: [],
+      },
+    ];
+    const seen: unknown[] = [];
+    const model: ModelClient = {
+      async create(params) {
+        seen.push(params.messages.length);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(replies[seen.length - 1]) }],
+          stop_reason: 'end_turn',
+          model: 'x',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        } as never;
+      },
+    };
+    const out = await explainDocument(model, {
+      kind: 'report',
+      title: 'T',
+      audience: 'team',
+      format: 'markdown',
+      content: 'x',
+    });
+    // The second try saw the first answer and what to fix.
+    expect(seen).toEqual([1, 3]);
+    expect(out?.inShort).toBe(
+      'The first three sections of the home page now work in the new site.',
+    );
   });
 });
 

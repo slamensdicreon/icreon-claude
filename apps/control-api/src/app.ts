@@ -1305,14 +1305,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     withDocumentFacts(withDocumentVoice(workbench(s), s), s).artifacts.find(
       (x) => x.artifactId === artifactId,
     );
-  const writePlain = (projectId: string, a: ArtifactView, version: number): boolean => {
+  const plainKey = (projectId: string, artifactId: string, version: number) =>
+    `${projectId}:${artifactId}:${version}`;
+  const writePlain = (
+    projectId: string,
+    a: ArtifactView,
+    version: number,
+    opts: { rewrite?: boolean; feedback?: string | null } = {},
+  ): boolean => {
     const model = deps.cypher?.model;
     const v = a.versions.find((x) => x.version === version);
-    if (!model || !deps.artifactContent || !v?.ref || v.explained) return false;
-    const key = `${projectId}:${a.artifactId}:${version}`;
+    if (!model || !deps.artifactContent || !v?.ref) return false;
+    // Written once; again only when the Director asks.
+    if (v.explained && !opts.rewrite) return false;
+    const key = plainKey(projectId, a.artifactId, version);
     if (writingPlain.has(key)) return true;
-    // A few at a time across the API; the rest wait for the next look.
-    if (writingPlain.size >= 4) return false;
+    // A few at a time across the API; the rest wait for the next look. A rewrite the Director
+    // asked for gets a little more room.
+    if (writingPlain.size >= (opts.rewrite ? 6 : 4)) return false;
     const job = (async () => {
       const bytes = await deps.artifactContent!(projectId, v.ref!);
       if (!bytes) return;
@@ -1325,6 +1335,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         summary: v.summary ?? (version === a.latest ? a.summary : null),
         awaiting: version === a.latest && !!a.awaitingApproval,
         changedSinceApproval: version === a.latest && !!a.changedSinceApproval,
+        feedback: opts.feedback ?? null,
       });
       if (!out) return;
       await store.append(projectId, [
@@ -1354,9 +1365,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const n = req.params.version === 'latest' ? a.latest : Number(req.params.version);
       const v = a.versions.find((x) => x.version === n);
       if (!v) return fail(reply, 404, 'unknown_version', `No version ${req.params.version}.`);
+      const rewriting = writingPlain.has(plainKey(req.params.id, a.artifactId, n));
       if (v.explained)
         return {
-          status: 'ready',
+          // A rewrite under way still shows the last plain version until the new one lands.
+          status: rewriting ? 'writing' : 'ready',
           version: n,
           inShort: v.explained.inShort,
           means: v.explained.means,
@@ -1379,6 +1392,32 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         plain: null,
         glossary: [],
       };
+    },
+  );
+
+  const RewriteBody = z.object({ note: z.string().trim().max(500).optional() }).default({});
+  /** The Director asks for a new plain version, optionally saying what was wrong with the last. */
+  app.post<{ Params: { id: string; artifactId: string; version: string } }>(
+    '/projects/:id/artifacts/:artifactId/versions/:version/plain/rewrite',
+    async (req, reply) => {
+      const s = known(req.params.id);
+      const body = RewriteBody.parse(req.body ?? {});
+      if (!deps.cypher?.model)
+        return fail(reply, 501, 'no_model', 'Plain versions need Claude, and none is configured.');
+      const a = enrichedDoc(s, req.params.artifactId);
+      if (!a)
+        return fail(reply, 404, 'unknown_artifact', `No artifact "${req.params.artifactId}".`);
+      const n = req.params.version === 'latest' ? a.latest : Number(req.params.version);
+      if (!a.versions.some((x) => x.version === n))
+        return fail(reply, 404, 'unknown_version', `No version ${req.params.version}.`);
+      if (!writePlain(req.params.id, a, n, { rewrite: true, feedback: body.note || null }))
+        return fail(
+          reply,
+          503,
+          'busy',
+          'Cypher is writing other plain versions. Try again in a minute.',
+        );
+      return reply.code(202).send({ status: 'writing', version: n });
     },
   );
 

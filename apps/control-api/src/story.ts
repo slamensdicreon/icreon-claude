@@ -51,6 +51,7 @@ export function withDocumentFacts(wb: WorkbenchSnapshot, s: ProjectState): Workb
         audience,
         phase,
         changedSinceApproval: !!approved && approved.version < a.latest,
+        ...(latest?.explained?.inShort ? { inShort: latest.explained.inShort } : {}),
         author: agent
           ? {
               agentId: agent.agentId,

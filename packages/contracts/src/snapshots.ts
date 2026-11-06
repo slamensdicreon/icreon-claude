@@ -752,6 +752,8 @@ export const ArtifactView = z.object({
   changedSinceApproval: z.boolean().optional(),
   /** Minutes to read the latest version; null when it is not prose (code, images). */
   readMinutes: z.number().int().nullable().optional(),
+  /** Cypher's "in short" for the latest version, once its plain version is written. */
+  inShort: z.string().optional(),
   /** Who wrote the latest version, in words. */
   author: z
     .object({ agentId: z.string(), name: z.string(), role: z.string() })

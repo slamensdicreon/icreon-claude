@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { openingOf, readabilityOf } from '../src/readability';
+import { openingOf, readabilityOf } from '../src';
 
 it('passes an opening a non-technical reader can follow', () => {
   const doc = `# Pilot results\n\nThe first three sections of the home page now work in the new site. Editors can place them on a page and change their words without a developer. Nothing needs your decision.\n\n## Detail\n\nHero.tsx ported to Content SDK v1.4; \`HeroParams\` added.`;

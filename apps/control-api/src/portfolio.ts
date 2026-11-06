@@ -92,6 +92,7 @@ export function portfolioWorkbench(states: ProjectState[], now: number): Portfol
         return {
           headline: a.headline,
           summary: a.summary,
+          inShort: a.inShort,
           audience: a.audience,
           author: a.author ?? null,
           changedSinceApproval: a.changedSinceApproval,

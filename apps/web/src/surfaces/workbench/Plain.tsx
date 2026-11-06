@@ -7,11 +7,11 @@
  */
 import type { ArtifactView, PlainVersion } from '@lw/contracts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { get } from '../../lib/api';
+import { get, postFor } from '../../lib/api';
 import { BASE_GLOSSARY, GlossaryContext, type Term } from '../../lib/glossary';
 import { MarkdownDoc } from '../../parts/Doc';
 import { useApp } from '../../state';
-import { Chips } from '../../ui/cypher/parts';
+import { Button, Chips } from '../../ui/cypher/parts';
 import { SmallEye } from '../../ui/eye/SmallEye';
 import { DocHead } from './parts';
 import d from './doc.module.css';
@@ -20,14 +20,14 @@ import s from './plain.module.css';
 type View = 'plain' | 'technical';
 
 /** The plain version of a version, asked for until it is written (a minute at most). */
-function usePlain(projectId: string | null, artifactId: string, version: number) {
+function usePlain(projectId: string | null, artifactId: string, version: number, nonce = 0) {
   const [p, setP] = useState<PlainVersion | null>(null);
   useEffect(() => {
     if (!projectId) return;
     let stop = false;
     let tries = 0;
     let timer = 0;
-    setP(null);
+    if (!nonce) setP(null);
     const ask = () =>
       get<PlainVersion>(`/projects/${projectId}/artifacts/${artifactId}/versions/${version}/plain`)
         .then((r) => {
@@ -41,13 +41,37 @@ function usePlain(projectId: string | null, artifactId: string, version: number)
       stop = true;
       window.clearTimeout(timer);
     };
-  }, [projectId, artifactId, version]);
+  }, [projectId, artifactId, version, nonce]);
   return p;
 }
 
 export function PlainLayer({ a, children }: { a: ArtifactView; children: ReactNode }) {
-  const { projectId } = useApp();
-  const p = usePlain(projectId, a.artifactId, a.latest);
+  const { projectId, run } = useApp();
+  const [nonce, setNonce] = useState(0);
+  const p = usePlain(projectId, a.artifactId, a.latest, nonce);
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState('');
+  const rewrite = async () => {
+    const ok = await run(
+      () =>
+        postFor(
+          `/projects/${projectId}/artifacts/${a.artifactId}/versions/${a.latest}/plain/rewrite`,
+          {
+            ...(note.trim() ? { note: note.trim() } : {}),
+          },
+        ),
+      {
+        title: 'Cypher is rewriting it',
+        detail: 'The new plain version replaces this one in a minute.',
+      },
+      'Asking for a new plain version',
+    );
+    if (ok) {
+      setAsking(false);
+      setNote('');
+      setNonce((n) => n + 1);
+    }
+  };
   const [chosen, setChosen] = useState<View | null>(null);
   const hasPlain = !!p?.plain;
   // Documents for the Director open in plain words once there are some; the rest as written.
@@ -93,6 +117,45 @@ export function PlainLayer({ a, children }: { a: ArtifactView; children: ReactNo
             </p>
           </div>
         )}
+        {p.status === 'ready' &&
+          (asking ? (
+            <form
+              className={s.ask}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void rewrite();
+              }}
+            >
+              <label className={`${s.partHead} type-label`} htmlFor="plain-note">
+                What was wrong with it? (optional)
+              </label>
+              <textarea
+                id="plain-note"
+                className={`${s.note} type-body-small`}
+                value={note}
+                maxLength={500}
+                rows={2}
+                placeholder="Too technical, missed the point, got something wrong…"
+                onChange={(e) => setNote(e.target.value)}
+              />
+              <div className={s.askActions}>
+                <Button kind="primary" onClick={() => void rewrite()}>
+                  Rewrite it
+                </Button>
+                <Button kind="secondary" onClick={() => setAsking(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className={`${s.again} type-meta`}
+              onClick={() => setAsking(true)}
+            >
+              Not quite right? Ask Cypher for a new plain version
+            </button>
+          ))}
         {p.glossary.length > 0 && (
           <details className={s.words}>
             <summary className="type-meta">Words you'll see ({p.glossary.length})</summary>

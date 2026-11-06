@@ -66,9 +66,7 @@ afterAll(() => {
 describe('Ansell, mid-build', () => {
   it('opens on the prototype’s state of play', () => {
     const mc = missionControl(ansell.state);
-    expect(mc.subtitle).toBe(
-      'Phase 4, Components, runs with phase 5 in parallel. Next gate: UAT.',
-    );
+    expect(mc.subtitle).toBe('Phase 4, Components, runs with phase 5 in parallel. Next gate: UAT.');
     expect(mc.stats.map((s) => `${s.label} ${s.value}/${s.total}`)).toEqual([
       'Renderings 9/15',
       'Content items 0/89',

@@ -86,6 +86,8 @@ export const PortfolioDocument = z.object({
   /** In plain words: a short title, two sentences, who it is for and who wrote it. */
   headline: z.string().optional(),
   summary: z.string().optional(),
+  /** Cypher's "in short" for the latest version, once written; preferred over the summary. */
+  inShort: z.string().optional(),
   audience: z.enum(['director', 'team']).optional(),
   author: z
     .object({ agentId: z.string(), name: z.string(), role: z.string() })

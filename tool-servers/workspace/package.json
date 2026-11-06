@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@lw/contracts": "workspace:*",
+    "@lw/domain": "workspace:*",
     "@lw/events": "workspace:*",
     "@lw/plan": "workspace:*",
     "@lw/tool-gateway": "workspace:*",

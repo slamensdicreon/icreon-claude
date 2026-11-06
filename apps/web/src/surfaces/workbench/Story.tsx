@@ -146,7 +146,9 @@ export function WorkbenchStory({ wb }: { wb: WorkbenchSnapshot }) {
                 {a.latest > 1 ? ` · version ${a.latest}` : ''}
               </span>
             )}
-            {a.summary && <span className={`${s.summary} type-body-small`}>{a.summary}</span>}
+            {(a.inShort ?? a.summary) && (
+              <span className={`${s.summary} type-body-small`}>{a.inShort ?? a.summary}</span>
+            )}
             <span className={`${s.meta} type-meta`}>
               {a.author && (
                 <span className={s.avatar} style={{ background: color }} aria-hidden="true">
@@ -218,7 +220,7 @@ export function WorkbenchStory({ wb }: { wb: WorkbenchSnapshot }) {
                 type="button"
                 className={`${s.file} type-meta`}
                 onClick={() => open(a.artifactId)}
-                title={a.summary ?? a.title}
+                title={a.inShort ?? a.summary ?? a.title}
               >
                 <Glyph kind={a.kind} size={14} />
                 {a.headline ?? a.title}

@@ -53,7 +53,10 @@ export function WorkbenchBliss() {
   const others = docs.filter((a) => a.artifactId !== shown.artifactId).slice(0, 2);
   const latest = shown.versions.find((v) => v.version === shown.latest) ?? shown.versions[0];
   const writer = latest ? byId(latest.producer) : undefined;
-  const byAgent = shown.summaryBy === 'agent' && writer && writer.tier !== 'chief_of_staff';
+  // Cypher's plain "in short" once written; until then the author's own summary.
+  const plain = shown.inShort ?? null;
+  const byAgent =
+    !plain && shown.summaryBy === 'agent' && writer && writer.tier !== 'chief_of_staff';
   const name = writer ? (writer.persona ?? writer.name) : '';
   const approved = shown.approved[0];
 
@@ -119,8 +122,8 @@ export function WorkbenchBliss() {
             )}
           </span>
           <div className={s.words}>
-            {shown.summary ? (
-              <p className={`${s.summary} type-body`}>{shown.summary}</p>
+            {plain || shown.summary ? (
+              <p className={`${s.summary} type-body`}>{plain ?? shown.summary}</p>
             ) : (
               // Stand-in for an API without document summaries: facts only, no voice.
               <p className={`${s.summary} type-body`}>
@@ -129,7 +132,11 @@ export function WorkbenchBliss() {
               </p>
             )}
             <span className={`${s.by} type-meta`}>
-              {byAgent ? `In ${name.split(' ')[0]}’s words` : 'Cypher, from the document'}
+              {byAgent
+                ? `In ${name.split(' ')[0]}’s words`
+                : plain
+                  ? 'Cypher, in plain words'
+                  : 'Cypher, from the document'}
             </span>
           </div>
         </div>
