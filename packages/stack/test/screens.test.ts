@@ -8,7 +8,9 @@ const png = (width: number, height: number, rgb: [number, number, number]) => {
   return new Uint8Array(PNG.sync.write(img));
 };
 
-describe('sliceScreenshot', () => {
+// Encoding and slicing full-page PNGs is CPU work: CI runs every package's tests at once on two
+// cores, where the default five seconds is not enough.
+describe('sliceScreenshot', { timeout: 30_000 }, () => {
   it('halves a full-page screenshot and cuts it into slices from the top', () => {
     const slices = sliceScreenshot(png(1440, 3000, [176, 22, 48])).map((s) =>
       PNG.sync.read(Buffer.from(s)),
