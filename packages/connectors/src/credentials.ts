@@ -1,7 +1,7 @@
 import type { ProjectState } from '@lw/domain';
 import type { SecretVault } from '@lw/events';
 import type { CredentialProvider } from '@lw/tool-gateway';
-import type { GithubApp } from './github-app';
+import { AGENT_TOKEN_PERMISSIONS, type GithubApp } from './github-app';
 
 /** A credential a project needs but doesn't have, or one the service refused. */
 export class CredentialError extends Error {}
@@ -66,7 +66,11 @@ export class VaultCredentials implements CredentialProvider {
         `The GitHub App isn't installed on ${repo} yet. Install it, then use Check again on GitHub in Settings.`,
       );
     }
-    return this.deps.github.installationToken(Number(m[1]), [repo.split('/')[1]!]);
+    return this.deps.github.installationToken(
+      Number(m[1]),
+      [repo.split('/')[1]!],
+      AGENT_TOKEN_PERMISSIONS,
+    );
   }
 
   /** An installation token on our organization, limited to the project's build repository. */
@@ -78,7 +82,11 @@ export class VaultCredentials implements CredentialProvider {
       );
     }
     if (!this.deps.github) throw new CredentialError('The Launchworks GitHub App is not set up.');
-    return this.deps.github.installationToken(b.installationId, [b.repo.split('/')[1]!]);
+    return this.deps.github.installationToken(
+      b.installationId,
+      [b.repo.split('/')[1]!],
+      AGENT_TOKEN_PERMISSIONS,
+    );
   }
 
   private async platform(

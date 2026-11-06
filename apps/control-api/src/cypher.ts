@@ -101,6 +101,8 @@ export interface CardForCypher {
   alike: number;
   /** The closing gate: only the Director, with typed confirmation. */
   finalGate: boolean;
+  /** A category only the Director decides (scope, money, launch): Cypher never answers it. */
+  locked?: boolean;
 }
 
 const SYSTEM = `You are Cypher, Chief of Staff at Launchworks, an agentic studio that migrates and builds websites with teams of AI agents. You talk with the Director (the human in charge) on the Dashboard, above any one project.
@@ -688,6 +690,13 @@ export class PortfolioCypher {
             skipped.push({
               escalationId: eid,
               why: 'Not waiting any more (answered, or not this project).',
+            });
+            continue;
+          }
+          if (card.locked) {
+            skipped.push({
+              escalationId: eid,
+              why: 'A decision only the Director makes (its category is locked).',
             });
             continue;
           }

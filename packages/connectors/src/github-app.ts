@@ -87,6 +87,20 @@ export const APP_PERMISSIONS: Record<string, 'read' | 'write'> = {
   actions: 'read',
 };
 
+/**
+ * What an agent's token may do, whatever the installation allows: the code, pull requests and CI
+ * results, never repository settings. Code an agent writes runs where its token travels, so a token
+ * that leaked must not be able to publish, transfer, or hand out access to a repository.
+ */
+export const AGENT_TOKEN_PERMISSIONS: Record<string, 'read' | 'write'> = {
+  metadata: 'read',
+  contents: 'write',
+  pull_requests: 'write',
+  checks: 'read',
+  statuses: 'read',
+  actions: 'read',
+};
+
 const KEY = 'github.app';
 const PENDING = 'github.app.pending';
 const SYSTEM = '__system__';
@@ -522,8 +536,12 @@ export class GithubApp {
    * An installation token limited to the given repositories of that installation, valid about an
    * hour. Reused until five minutes before it expires. This is what agents' tool calls carry.
    */
-  async installationToken(installationId: number, repositories?: string[]): Promise<string> {
-    const key = `${installationId}:${repositories ? [...repositories].sort().join(',') : '*'}`;
+  async installationToken(
+    installationId: number,
+    repositories?: string[],
+    permissions?: Record<string, 'read' | 'write'>,
+  ): Promise<string> {
+    const key = `${installationId}:${repositories ? [...repositories].sort().join(',') : '*'}:${permissions ? JSON.stringify(permissions) : 'all'}`;
     const cached = this.tokens.get(key);
     if (cached && cached.expiresAt - Date.now() > 5 * 60_000) return cached.token;
     const c = await this.config();
@@ -532,7 +550,7 @@ export class GithubApp {
       'POST',
       `/app/installations/${installationId}/access_tokens`,
       await this.jwt(c),
-      repositories ? { repositories } : {},
+      { ...(repositories ? { repositories } : {}), ...(permissions ? { permissions } : {}) },
     );
     if (r.status !== 201) {
       throw new Error(

@@ -1,6 +1,7 @@
 import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '@lw/tool-gateway';
 import { z } from 'zod';
 import { AGENT_BRANCH, INTEGRATION_BRANCH, rejected } from '@lw/tool-gateway';
+import { authFlags, SCRUB } from './git-hygiene';
 
 /**
  * A working copy of the build repository for one task, in an isolated machine: agents read and
@@ -298,6 +299,11 @@ export class SandboxToolServer implements ToolServer {
       a: string[],
       o: { cwd?: string; env?: Record<string, string>; timeoutMs?: number } = {},
     ) => {
+      // A command that carries the token first clears anything a build planted in .git.
+      if (cmd === 'git' && a.some((x) => x.startsWith('http.extraHeader=')))
+        await box.run('sh', ['-c', SCRUB, 'scrub', `https://github.com/${facts.repo}.git`], {
+          cwd: box.root,
+        });
       const r = await box.run(cmd, a, { cwd: box.root, ...o });
       return { exitCode: r.exitCode, output: redact(r.output).slice(-MAX_OUTPUT) };
     };
@@ -311,7 +317,7 @@ export class SandboxToolServer implements ToolServer {
       await run('git', ['config', 'user.name', authorOf(facts).name]);
       await run('git', ['config', 'user.email', authorOf(facts).email]);
     };
-    const auth = ['-c', `http.extraHeader=${basic(ctx.token)}`];
+    const auth = authFlags(basic(ctx.token));
 
     const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
     const count = async (range: string) =>

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Read the code, nothing more: CI writes nowhere.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest

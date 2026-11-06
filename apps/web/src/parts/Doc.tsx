@@ -3,6 +3,8 @@ import { Marked, type Tokens } from 'marked';
 import { useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import { blobUrl } from '../lib/api';
 import { useApp } from '../state';
+
+let hooked = false;
 import ds from './doc.module.css';
 
 const CALLOUTS: Record<string, string> = {
@@ -135,7 +137,7 @@ function render(text: string, projectId: string) {
       table(this: { parser: { parseInline(t: Tokens.Generic[]): string } }, t: Tokens.Table) {
         const cell = (c: Tokens.TableCell, tag: 'th' | 'td', i: number) => {
           const align = t.align[i];
-          return `<${tag}${align ? ` style="text-align:${align}"` : ''}>${this.parser.parseInline(c.tokens)}</${tag}>`;
+          return `<${tag}${align ? ` data-align="${align}"` : ''}>${this.parser.parseInline(c.tokens)}</${tag}>`;
         };
         const head = `<tr>${t.header.map((c, i) => cell(c, 'th', i)).join('')}</tr>`;
         const body = t.rows
@@ -144,7 +146,17 @@ function render(text: string, projectId: string) {
         return `<div class="${ds.table}"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
       },
       image(t: Tokens.Image) {
-        const src = t.href.startsWith('blob://') ? blobUrl(projectId, t.href) : t.href;
+        // Only the project's own stored images (and inline data): an outside image would tell its
+        // server who opened the document, and when.
+        const src = t.href.startsWith('blob://')
+          ? blobUrl(projectId, t.href)
+          : /^data:image\/(png|jpe?g|gif|webp);/i.test(t.href)
+            ? t.href
+            : null;
+        if (!src)
+          return /^https?:\/\//.test(t.href)
+            ? `<a href="${escape(t.href)}" target="_blank" rel="noopener noreferrer">${escape(t.text || t.href)}</a>`
+            : escape(t.text);
         const caption = t.text ? `<figcaption>${escape(t.text)}</figcaption>` : '';
         return `<figure class="${ds.figure}"><img src="${escape(src)}" alt="${escape(t.text)}" loading="lazy" />${caption}</figure>`;
       },
@@ -166,8 +178,42 @@ function render(text: string, projectId: string) {
     (_, kind: string) =>
       `<blockquote class="${ds.callout}" data-kind="${kind.toLowerCase()}"><p class="${ds.calloutTitle}">${CALLOUTS[kind]}</p><p>`,
   );
+  // A link that opens a new tab never hands that tab a handle back to the app.
+  if (!hooked) {
+    hooked = true;
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName === 'A' && node.getAttribute('target'))
+        node.setAttribute('rel', 'noopener noreferrer');
+    });
+  }
+  // Agent-written documents come from untrusted sites: no styles that could restyle the app, no
+  // forms or fields that could imitate a sign-in, nothing embedded.
   html = DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target', 'data-artifact', 'data-src', 'data-mermaid', 'data-kind', 'loading'],
+    ADD_ATTR: [
+      'target',
+      'data-artifact',
+      'data-src',
+      'data-mermaid',
+      'data-kind',
+      'data-align',
+      'loading',
+    ],
+    FORBID_TAGS: [
+      'style',
+      'form',
+      'input',
+      'button',
+      'textarea',
+      'select',
+      'option',
+      'iframe',
+      'object',
+      'embed',
+      'link',
+      'meta',
+      'base',
+    ],
+    FORBID_ATTR: ['style', 'formaction', 'srcset'],
   });
   return { html, toc };
 }

@@ -55,7 +55,7 @@ function open(
     tag: Buffer;
   },
 ): string {
-  const decipher = createDecipheriv('aes-256-gcm', key, row.iv);
+  const decipher = createDecipheriv('aes-256-gcm', key, row.iv, { authTagLength: 16 });
   decipher.setAAD(aad(row.id, row.project_id, row.name));
   decipher.setAuthTag(row.tag);
   return Buffer.concat([decipher.update(row.ciphertext), decipher.final()]).toString('utf8');

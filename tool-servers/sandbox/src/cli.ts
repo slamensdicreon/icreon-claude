@@ -2,6 +2,7 @@ import type { OperationCatalog, ToolCallContext, ToolResult, ToolServer } from '
 import { z } from 'zod';
 import { authorOf, basic, sandboxName, type BoxProvider, type WorkspaceFacts } from './server';
 import { AGENT_BRANCH, rejected } from '@lw/tool-gateway';
+import { authFlags, SCRUB } from './git-hygiene';
 
 /**
  * The Sitecore CLI, for serialization only: pull the project's own items from its environment
@@ -122,10 +123,14 @@ export class SitecoreCliToolServer implements ToolServer {
       argv: string[],
       o: { timeoutMs?: number; sudo?: boolean } = {},
     ) => {
+      if (cmd === 'git' && argv.some((x) => x.startsWith('http.extraHeader=')))
+        await box.run('sh', ['-c', SCRUB, 'scrub', `https://github.com/${facts.repo}.git`], {
+          cwd: box.root,
+        });
       const r = await box.run(cmd, argv, { cwd: box.root, env, ...o });
       return { exitCode: r.exitCode, output: redact(r.output).slice(-MAX_OUTPUT) };
     };
-    const auth = ['-c', `http.extraHeader=${basic(ctx.token)}`];
+    const auth = authFlags(basic(ctx.token));
 
     if (created)
       await run('git', ['remote', 'set-url', 'origin', `https://github.com/${facts.repo}.git`]);

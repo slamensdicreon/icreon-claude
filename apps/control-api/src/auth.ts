@@ -47,6 +47,8 @@ const STATE = 'lw_oauth_state';
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 // The app's post-install page is open: it lands client repository owners, who aren't operators.
 const OPEN_PATHS = ['/health', '/auth/', '/integrations/github/installed'];
+/** The path alone, without its query: routes are matched exactly, not by prefix. */
+const pathOf = (url: string) => url.split('?')[0]!;
 // What a scheduled call (Vercel Cron) may reach with the cron secret.
 const CRON_PATHS = ['/portfolio/watchdog'];
 
@@ -100,9 +102,14 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
     !!cron && !!header && timingSafeEqual(createHash('sha256').update(header).digest(), cron);
 
   app.addHook('onRequest', async (req, reply) => {
-    if (req.method === 'OPTIONS' || OPEN_PATHS.some((p) => req.url === p || req.url.startsWith(p)))
+    if (
+      req.method === 'OPTIONS' ||
+      OPEN_PATHS.some((p) =>
+        p.endsWith('/') ? pathOf(req.url).startsWith(p) : pathOf(req.url) === p,
+      )
+    )
       return;
-    if (isCron(req.headers.authorization) && CRON_PATHS.some((p) => req.url.startsWith(p))) {
+    if (isCron(req.headers.authorization) && CRON_PATHS.includes(pathOf(req.url))) {
       req.operator = { login: 'vercel-cron', name: 'Scheduled check', avatarUrl: null };
       return;
     }

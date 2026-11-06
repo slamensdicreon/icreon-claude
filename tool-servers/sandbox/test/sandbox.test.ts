@@ -79,7 +79,13 @@ describe('working copies', () => {
     });
     const git = fake.runs
       .filter((x) => x.cmd === 'git')
-      .map((x) => x.args.filter((a) => !a.startsWith('http.extraHeader') && a !== '-c').join(' '));
+      .map((x) =>
+        x.args
+          .filter(
+            (a) => !/^(http\.extraHeader|core\.hooksPath|core\.fsmonitor)=/.test(a) && a !== '-c',
+          )
+          .join(' '),
+      );
     expect(git.filter((g) => g.startsWith('merge'))).toEqual([
       'merge --no-ff --no-edit -m Integrate launchworks/port-hero origin/launchworks/port-hero',
       'merge --no-ff --no-edit -m Integrate launchworks/port-card origin/launchworks/port-card',
@@ -108,7 +114,13 @@ describe('working copies', () => {
     expect(r.code).toBe(200);
     const git = fake.runs
       .filter((x) => x.cmd === 'git')
-      .map((x) => x.args.filter((a) => !a.startsWith('http.extraHeader') && a !== '-c').join(' '));
+      .map((x) =>
+        x.args
+          .filter(
+            (a) => !/^(http\.extraHeader|core\.hooksPath|core\.fsmonitor)=/.test(a) && a !== '-c',
+          )
+          .join(' '),
+      );
     expect(git).toContain('checkout -q -B launchworks/integration origin/main');
     // A rebuild keeps the Director's own fixes.
     expect(git.filter((x) => x.startsWith('merge ')).at(-1)).toContain(
@@ -423,7 +435,17 @@ describe('working copies', () => {
     expect(c.code).toBe(200);
     const push = fake.runs.find((r) => r.args.includes('push'))!;
     expect(push.args).toContain('HEAD:refs/heads/launchworks/hero');
-    expect(push.args[1]).toMatch(/^http\.extraHeader=AUTHORIZATION: basic /);
+    expect(push.args).toEqual(
+      expect.arrayContaining(['core.hooksPath=/dev/null', 'core.fsmonitor=false']),
+    );
+    expect(push.args.find((x) => x.startsWith('http.extraHeader='))).toMatch(
+      /^http\.extraHeader=AUTHORIZATION: basic /,
+    );
+    // Right before the token goes out, whatever a build planted in .git is cleared.
+    const scrub = fake.runs[fake.runs.indexOf(push) - 1]!;
+    expect(scrub.cmd).toBe('sh');
+    expect(scrub.args.join(' ')).toMatch(/url\|http.*hookspath/);
+    expect(scrub.args.at(-1)).toMatch(/^https:\/\/github\.com\//);
     expect(
       fake.runs.some(
         (r) => r.args.join(' ').includes('remote set-url') && r.args.join(' ').includes('ghs_'),
@@ -435,7 +457,13 @@ describe('working copies', () => {
   const gitRuns = (runs: { cmd: string; args: string[] }[]) =>
     runs
       .filter((x) => x.cmd === 'git')
-      .map((x) => x.args.filter((a) => !a.startsWith('http.extraHeader') && a !== '-c').join(' '));
+      .map((x) =>
+        x.args
+          .filter(
+            (a) => !/^(http\.extraHeader|core\.hooksPath|core\.fsmonitor)=/.test(a) && a !== '-c',
+          )
+          .join(' '),
+      );
 
   it('brings a working copy kept from an earlier run up to date, and names what is uncommitted', async () => {
     const fake = fakeBox(

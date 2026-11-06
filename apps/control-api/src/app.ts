@@ -288,6 +288,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     );
   });
 
+  // Every answer: never framed, never sniffed into something it is not, no referrer, and JSON that
+  // could never run as a page. A route that sets its own policy (stored blobs) keeps it.
+  app.addHook('onSend', async (_req, reply, payload) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('x-frame-options', 'DENY');
+    reply.header('referrer-policy', 'strict-origin-when-cross-origin');
+    if (!reply.hasHeader('content-security-policy'))
+      reply.header('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
+    return payload;
+  });
+
   // Every project route answers from the head of the log: on a paused or fresh instance the read
   // model may be behind, or not folded yet.
   app.addHook('preHandler', async (req) => {
@@ -1004,6 +1015,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
                 recommendation: x.recommendation ?? null,
                 alike: x.group ? x.group.escalationIds.length : 1,
                 finalGate: Boolean(x.gate?.requiresConfirmation),
+                locked: LOCKED_CATEGORIES.includes(cardCategory(x)),
               }));
           },
           // Answers one card as the Director, through the same path as their own click.
@@ -1391,6 +1403,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   /** Screenshots and images a project's documents refer to (`blob://<project>/<key>`). */
   app.get<{ Params: { id: string; '*': string } }>('/projects/:id/blobs/*', async (req, reply) => {
     known(req.params.id);
+    // A key never climbs out of its project's folder.
+    if (req.params['*'].split('/').some((p) => p === '..' || p === '.' || p === ''))
+      return fail(reply, 400, 'bad_ref', 'That is not a stored reference.');
     const ref = `blob://${req.params.id}/${req.params['*']}`;
     const bytes = deps.artifactContent ? await deps.artifactContent(req.params.id, ref) : null;
     if (!bytes) return fail(reply, 404, 'no_blob', 'Nothing is stored at that reference.');
@@ -1405,9 +1420,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         json: 'application/json',
         md: 'text/markdown; charset=utf-8',
       }[ext ?? ''] ?? 'application/octet-stream';
+    // What a client site served is untrusted: nothing stored here may run as the app. Raster images
+    // show inline; anything else (an SVG can carry script) downloads, and none may script or frame.
+    const raster = ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp';
     return reply
       .header('content-type', type)
       .header('cache-control', 'private, max-age=31536000, immutable')
+      .header('x-content-type-options', 'nosniff')
+      .header(
+        'content-security-policy',
+        "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+      )
+      .header('content-disposition', raster ? 'inline' : 'attachment')
       .send(Buffer.from(bytes));
   });
 

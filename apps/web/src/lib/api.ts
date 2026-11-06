@@ -57,7 +57,9 @@ export const postFor = <T>(path: string, body: unknown) => call<T>('POST', path,
 /** A project's blob reference (`blob://<project>/<key>`) as a URL the browser can load. */
 export function blobUrl(projectId: string, ref: string): string {
   const prefix = `blob://${projectId}/`;
-  return ref.startsWith(prefix)
-    ? `${API}/projects/${projectId}/blobs/${ref.slice(prefix.length)}`
-    : ref;
+  const key = ref.startsWith(prefix) ? ref.slice(prefix.length) : null;
+  // Only a plain key inside the project's folder: never "..", which the browser would resolve to
+  // another route of the app.
+  if (key === null || key.split('/').some((p) => p === '..' || p === '.' || p === '')) return '#';
+  return `${API}/projects/${projectId}/blobs/${key.split('/').map(encodeURIComponent).join('/')}`;
 }

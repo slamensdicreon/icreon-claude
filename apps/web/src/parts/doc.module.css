@@ -362,3 +362,14 @@
     border-radius: var(--radius-md);
   }
 }
+
+/* Table column alignment, from the Markdown (no inline styles reach the page). */
+.body [data-align='center'] {
+  text-align: center;
+}
+.body [data-align='right'] {
+  text-align: right;
+}
+.body [data-align='left'] {
+  text-align: left;
+}

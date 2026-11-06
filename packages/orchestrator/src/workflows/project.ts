@@ -1743,7 +1743,13 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       for (const a of reading.answers) {
         const e = escalations.get(a.escalationId);
         const option = e?.card.options.find((o) => o.id === a.optionId);
-        if (!e || !option || !unresolved(e) || e.card.type === 'gate' || e.card.gate) {
+        // A locked category (scope, money, launch) stays with the Director even when asked; added
+        // after answering shipped, so older histories replay without the check.
+        const locked =
+          e != null &&
+          patched('directive-answers-locked') &&
+          LOCKED_CATEGORIES.includes(categoryOf(e.card));
+        if (!e || !option || !unresolved(e) || e.card.type === 'gate' || e.card.gate || locked) {
           if (e) left.push(e.card.title);
           continue;
         }
@@ -1764,7 +1770,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
               ? `Answered ${done.length} ${done.length === 1 ? 'card' : 'cards'} as you asked: ${done.slice(0, 6).join('; ')}${done.length > 6 ? `; and ${done.length - 6} more` : ''}. Each can be undone from Needs you for a short while.`
               : 'Nothing answered.',
             left.length
-              ? `Left with you: ${left.slice(0, 4).join('; ')}${left.length > 4 ? `; and ${left.length - 4} more` : ''} (answered meanwhile, or a gate).`
+              ? `Left with you: ${left.slice(0, 4).join('; ')}${left.length > 4 ? `; and ${left.length - 4} more` : ''} (answered meanwhile, a gate, or a decision only you make).`
               : '',
           ]
             .filter(Boolean)

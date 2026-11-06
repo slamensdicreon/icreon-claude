@@ -10,7 +10,14 @@ import { buildApp } from '../src/app';
 const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
 
 let app: FastifyInstance;
-const blobs = new Map([['blob://p1/artifacts/page-inventory/v2.json', '{"pages":[]}']]);
+const blobs = new Map([
+  ['blob://p1/artifacts/page-inventory/v2.json', '{"pages":[]}'],
+  [
+    'blob://p1/assets/logo.svg',
+    '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+  ],
+  ['blob://p1/assets/shot.png', 'png'],
+]);
 
 beforeAll(async () => {
   const store = new InMemoryEventStore();
@@ -96,5 +103,24 @@ describe('workbench', () => {
       (await app.inject('/projects/p1/artifacts/page-inventory/versions/9/content')).json().error
         .code,
     ).toBe('unknown_version');
+  });
+
+  it('serves stored blobs so none can run as the app, and refuses keys that climb out', async () => {
+    const svg = await app.inject('/projects/p1/blobs/assets/logo.svg');
+    expect(svg.statusCode).toBe(200);
+    expect(svg.headers['content-disposition']).toBe('attachment');
+    expect(svg.headers['x-content-type-options']).toBe('nosniff');
+    expect(svg.headers['content-security-policy']).toMatch(/default-src 'none'.*sandbox/);
+    const png = await app.inject('/projects/p1/blobs/assets/shot.png');
+    expect(png.headers['content-disposition']).toBe('inline');
+    expect(png.headers['content-security-policy']).toMatch(/sandbox/);
+    expect((await app.inject('/projects/p1/blobs/assets/..%2Fx.svg')).statusCode).toBe(400);
+    expect((await app.inject('/projects/p1/blobs/assets//x.svg')).statusCode).toBe(400);
+    // Every other answer is never framed or sniffed either.
+    const list = await app.inject('/projects/p1/artifacts');
+    expect(list.headers['x-frame-options']).toBe('DENY');
+    expect(list.headers['content-security-policy']).toBe(
+      "default-src 'none'; frame-ancestors 'none'",
+    );
   });
 });
