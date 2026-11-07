@@ -1,6 +1,6 @@
 # Archiving and deleting projects
 
-Status: **plan**, 2026-11-07. Nothing here is built yet beyond what *What exists* lists.
+Status: **plan, decided**, 2026-11-07. The Director's answers are under *Decisions*. M1 is in build.
 
 A project today can run, pause, complete or be cancelled, but there is no way to put it away or to
 remove it. This plan adds two steps at the end of a project's life:
@@ -68,8 +68,8 @@ flowchart LR
 
 ### Archive
 
-- **Allowed from:** paused, completed or cancelled. A running project is paused first; the dialog
-  offers to do it.
+- **Allowed from:** paused, completed or cancelled. A running project has to be paused first; the
+  archive button says so until it is.
 - **What happens:**
   - If the workflow is still alive (a paused project), the project is cancelled the normal way: open
     tasks cancelled, open cards superseded, children finished.
@@ -126,17 +126,17 @@ gets their promoted entries deleted too.
 
 ### Outside resources
 
-We don't own everything we created, and some of it is the client's after handover. Nothing outside
-our own stores is touched unless the operator chooses it in the delete dialog:
+Deletion cleans up what we created (decision 4). The delete dialog lists each resource so the
+operator sees what will go:
 
-| Resource | Choices | Default |
-| --- | --- | --- |
-| GitHub build repo | Leave; archive on GitHub; delete (needs the App's `administration: write`) | Leave if handed over, otherwise archive |
-| Vercel hosting project | Leave; delete | Leave if handed over, otherwise delete |
-| Saved connection | Remove when no other project uses it | Remove if unused |
-| SitecoreAI items and Edge content | Not in this plan: it is the client's tenant. Demo slots are reset by their own task | Leave |
+| Resource | On purge |
+| --- | --- |
+| GitHub build repo in our org | Deleted (needs the App's `administration: write`). A repo already transferred to the client is left and recorded as handed over |
+| Vercel hosting project in our team | Deleted with its deployments. One already moved to the client's team is left and recorded |
+| Saved connection | Removed when no other project uses it |
+| SitecoreAI items and Edge content | Left: it is the client's tenant. Demo slots are reset by their own task |
 
-Each choice and its result goes in the tombstone, so "what happened to the repo" has an answer.
+Each result goes in the tombstone, so "what happened to the repo" has an answer.
 
 ## Who can do it
 
@@ -153,7 +153,7 @@ Each choice and its result goes in the tombstone, so "what happened to the repo"
 | --- | --- | --- |
 | **M1 Archive for real** | `archive` in the Temporal runner (cancel if alive, then `archived` with the previous status); server-side read-only; restore; the operator's login on these events; copy and menu fixes; a Cancel project button in the danger zone | A live project archives, every command answers 409, it restores as completed or cancelled. Tests in `orchestrator`, `control-api`, and an e2e on the danger zone |
 | **M2 Delete inside our stores** | Request and cancel deletion; grace period; the purge job and cron; `SecretVault.deleteProject`; tombstones; rules and knowledge de-identified | A purged project leaves only its tombstone: no rows, blobs or secrets under its id (checked by a test against Postgres and a local blob store), and a purge interrupted at any step finishes on the next run |
-| **M3 Outside resources** | The delete dialog's choices; GitHub archive and delete; Vercel project delete; unused saved connections | Each choice runs, and its result is recorded in the tombstone |
+| **M3 Outside resources** | Purge deletes the build repo and the hosting project (left and recorded when handed over), and unused saved connections; the dialog lists them | Each resource is removed or recorded as handed over, and the result is in the tombstone |
 | **M4 Exports and housekeeping** | Documents zip download; "Deleted projects" list from tombstones; runbook in `docs/deploy/vercel.md`; the open Director decision on Lambert's Cable and Star LLC as the first real archive | An operator can download everything, then delete, without help |
 
 Later, not in this plan: cleaning a project's owned paths on a shared SitecoreAI tenant;
@@ -168,13 +168,20 @@ namespace setting.
   project stays visible until everything else is gone.
 - **Shared things.** Saved connections and tenants are shared. The purge never touches a
   connection another project uses, and never touches a tenant.
+- **Deleting something the client now owns.** The purge checks the repo is still in our org and the
+  hosting project still in our team before deleting either.
 - **Memory loss.** Deleting promoted rules and lessons would make every other project worse. They
   stay, de-identified, unless the client bought private knowledge.
 
-## Open questions for the Director
+## Decisions
 
-1. **Grace period:** is 30 days right?
-2. **Who can delete:** any operator, or a named list?
-3. **Promoted rules and lessons:** keep them de-identified (this plan), or delete them with the project?
-4. **The build repo and hosting:** default to leaving them, or to cleaning up what wasn't handed over?
-5. **Archive from running:** pause first (this plan), or allow archiving a running project directly?
+The Director's answers, 2026-11-07:
+
+1. **Grace period:** 30 days.
+2. **Who can delete:** any operator.
+3. **Promoted rules and lessons:** kept, de-identified.
+4. **The build repo and hosting:** cleaned up on deletion. The purge deletes the build repo in our
+   GitHub org, the Vercel hosting project, and saved connections no other project uses. Anything
+   already transferred to the client is no longer ours to delete; the purge records it as "handed
+   over, left".
+5. **Archive from running:** not allowed. The project is paused first.
