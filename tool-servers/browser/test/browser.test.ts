@@ -90,6 +90,26 @@ afterAll(async () => {
 const ctx = { projectId: 'p1', token: 'unused' };
 
 describe('crawl', () => {
+  it('says when the site refuses our browser on every page, rather than crawling 0 pages', async () => {
+    // A site behind bot protection: every request answered 403, with a page.
+    const walled = createServer((_req, res) =>
+      res.writeHead(403, { 'content-type': 'text/html' }).end('<h1>Access denied</h1>'),
+    );
+    await new Promise<void>((r) => walled.listen(0, '127.0.0.1', r));
+    const port = (walled.address() as { port: number }).port;
+    try {
+      const r = await browser.call('crawl', { url: `http://127.0.0.1:${port}/` }, ctx);
+      // Not 403: that would read as a refused credential and stop the task on an access card.
+      expect(r.code).toBe(422);
+      expect(r.body).toMatchObject({ refusedBySite: true, pages: [] });
+      expect(r.summary).toMatch(
+        /refused our browser: 1 of 1 pages answered HTTP 403.*bot protection, not our access.*needs_decision/,
+      );
+    } finally {
+      await new Promise((r) => walled.close(r));
+    }
+  }, 30_000);
+
   it('inventories the site from links and the sitemap, and explains what it left out', async () => {
     const r = await browser.call('crawl', { url: `${origin}/` }, ctx);
     expect(r.code).toBe(200);

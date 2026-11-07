@@ -480,10 +480,22 @@ export class BrowserToolServer implements ToolServer {
     );
     const truncated = queue.some((u) => !seen.has(u));
     const compact = compactCrawl(pages, this.opts.crawlBudget ?? 400_000);
+    // Pages the site refused (401/403): its bot protection turning our browser away.
+    const refused = excluded.filter((e) => /^HTTP 40[13]$/.test(e.reason));
+    if (!pages.length && refused.length)
+      return {
+        code: 422,
+        body: { origin, ...compact, excluded, repeatedRegions, truncated, refusedBySite: true },
+        summary: siteRefused(origin, refused[0]!.reason, refused.length, excluded.length),
+      };
     return {
       code: 200,
       body: { origin, ...compact, excluded, repeatedRegions, truncated },
-      summary: `Crawled ${pages.length} pages from ${origin}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions`,
+      summary: `Crawled ${pages.length} pages from ${origin}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions${
+        refused.length
+          ? `. The site refused ${refused.length} of them (${refused[0]!.reason}): list those pages as not read, they aren't an access problem of ours`
+          : ''
+      }`,
     };
   }
 
@@ -746,3 +758,13 @@ const refusedNote = (status: number) =>
   status === 401 || status === 403
     ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access: for the missing-page probe, record errorPage as null; otherwise leave the page out and say so`
     : '';
+
+/**
+ * The source site turned our browser away on every page it was asked for: Discovery can't read it
+ * as a visitor. Said so the agent stops and asks the Director, instead of retrying or reporting a
+ * refused credential (the site's refusal isn't one).
+ */
+export const siteRefused = (origin: string, reason: string, refused: number, tried: number) =>
+  `${origin} refused our browser: ${refused} of ${tried} pages answered ${reason}, so no page could be read. ` +
+  `That is the site's bot protection, not our access, and retrying won't change it. ` +
+  `Stop and submit needs_decision for the Director: the client allows our crawler, or gives the source repository, or the project uses another site`;
