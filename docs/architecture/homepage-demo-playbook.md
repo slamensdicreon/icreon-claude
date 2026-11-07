@@ -1,6 +1,6 @@
 # Homepage first: the full audit, one page built
 
-Status: **plan**, 2026-11-07. Replaces the first draft of this plan (branch
+Status: **plan**, 2026-11-07, with the Director's decisions (see *Decisions*). Replaces the first draft of this plan (branch
 `claude/ecstatic-noether-cdioit`). Companion to [playbooks.md](playbooks.md) and the commercial
 model (internal deck, slide 6: "One meeting. Their homepage. Signed.").
 
@@ -39,7 +39,7 @@ method as it is:
 
 | # | Phase | Whole site (today) | Homepage first |
 | --- | --- | --- | --- |
-| 0 | Intake | Unchanged | Unchanged; the tenant is the client's or a demo slot (see *Where it's built*) |
+| 0 | Intake | Unchanged | Unchanged; the tenant is our demo tenant (see *Where it's built*) |
 | 1 | Discovery | Full crawl and inventories | **Unchanged** |
 | 2 | Blueprint, Gate 1 | Whole Blueprint approved | **Unchanged.** The gate card also shows the slice: what gets built now and what's held |
 | 3 | Foundation | Site, tokens, primitives, hosting | Unchanged (it's site-level and the homepage needs all of it) |
@@ -54,7 +54,8 @@ method as it is:
 
 The slice is derived from the approved Blueprint and doesn't need its own artifact:
 
-- **Pages**: the page with `attrs.path: "/"`. The 404 page can be added too, but it's off by default.
+- **Pages**: the page with `attrs.path: "/"` and the 404 page (`attrs.errorPage: 404`). The 404
+  costs little and shows error handling working on SitecoreAI.
 - **Templates**: the homepage's `attrs.template`.
 - **Components**: those with a variant whose `pages` include `/`, those with `datasource: "shared"`
   (header, footer, navigation), and whatever they're merged into.
@@ -95,15 +96,19 @@ Cypher is the one who explains the split, so the Director never has to work it o
 
 ## Where it's built
 
-| Situation | Tenant | After signature |
-| --- | --- | --- |
-| The client has given us access to their SitecoreAI environment | **Theirs** (best: nothing moves later) | *Build the rest* in place |
-| A prospect without a tenant or access yet | A **demo slot** on our tenant: a pre-made site, build repo and Vercel project | The project moves to their tenant: new intake credentials verified, Foundation re-run there, the slice's items replayed by serialization (already part of phase 8), the repo transferred. Then *Build the rest* |
+Demos run on **the SitecoreAI tenant we've been using**, through its saved connection
+(`platforms/sitecoreai/pack.ts:153-163`). There's no pool to provision before the first demo:
 
-Agents can't create SitecoreAI sites (`tool-servers/sitecore/src/authoring.ts:510-525` only
-verifies them), so demo slots are created by hand ahead of time. Start with three, and reset each
-one after use (items removed, repo back to the starter tag). Unsigned prospect content is deleted
-after 30 days.
+- **Each demo gets its own site** in that tenant, so prospects never share items and our other
+  projects' sites are left alone (Intake already fixes the paths a project owns). Agents can't create
+  SitecoreAI sites (`tool-servers/sitecore/src/authoring.ts:510-525` only verifies them), so the
+  site is created by hand in SitecoreAI Sites before the run. That takes a few minutes.
+- **A build repo and Vercel project per demo**, made by Intake as they are today.
+- **Cleanup**: anything unsigned is deleted after **30 days**: the site's items, the repo and the
+  Vercel project. Signed prospects move to their own tenant (M7).
+
+When demos outgrow one person, a small pool of pre-made sites with a reset task replaces the
+by-hand step. That isn't needed to start.
 
 ## The clock, honestly
 
@@ -116,7 +121,8 @@ watches the build start from a URL. Instead:
    project, and the DID approves it ahead of the meeting.
 2. **The meeting shows the finished work**: the audit, the whole-site Blueprint, the homepage in
    Page builder, a live headline edit published to preview, and the estimate for the rest.
-3. **The close** is *Build the rest*, the same afternoon if the client is on their own tenant.
+3. **The close** is a signature. The project then moves to the client's tenant (M7) and *Build the rest*
+   continues it there.
 
 This is a stronger meeting than a race against the clock. The prospect sees a real audit of their
 whole site and a real page, and none of it depends on a 45-minute run going perfectly.
@@ -126,7 +132,7 @@ whole site and a real page, and none of it depends on a 45-minute run going perf
 These don't affect *Whole site* runs:
 
 - `canary: 0` on the slice's `forEach` templates. There's one page; a canary adds nothing.
-- `deploy-code` and `publish-edge` count as `standing` approvals **only on a demo slot**, never on
+- `deploy-code` and `publish-edge` count as `standing` approvals **only on our demo tenant**, never on
   a client tenant.
 - The pilot checkpoint is skipped, because the whole slice is the pilot.
 
@@ -143,7 +149,7 @@ Review counts, autonomy and escalation deadlines stay as they are. The team work
 | **Widening the scope**: recompile without the slice, add the held tasks, and move a finished phase back to in progress | `project.ts` replan path | Medium: the one real orchestrator risk |
 | Architect: always check `/` in acceptance | `prompts/solution-architect.md`, the acceptance check | Small |
 | Cypher's lines: slice summary at Gate 1, held work on the Floor, Homepage review card with the estimate | Chief of Staff prompts, Floor, Workbench | Small |
-| Moving a demo-slot project to the client's tenant | Intake, phase 0 re-verify, serialization replay | Medium; can come last |
+| Moving a demo project to the client's tenant | Intake, phase 0 re-verify, serialization replay | Medium; can come last |
 
 ## Milestones
 
@@ -154,11 +160,11 @@ Review counts, autonomy and escalation deadlines stay as they are. The team work
 | **M2 The slice** | `executionScope`, the `slice` declaration, compiler filtering, held items in the plan and Floor, the Architect's `/` check | A Homepage-first run builds exactly the slice; *Whole site* plans are byte-identical to today's |
 | **M3 Build the rest** | Widening the scope in a running project | A Homepage-first project widens and reaches Gate 2 with nothing rebuilt twice |
 | **M4 Cypher** | Gate 1 slice summary, Homepage review card with the estimate, held work in Bliss and Everything | Design review on the demo project |
-| **M5 Demo slots** | Three slots, claim and release, reset | A slot runs, resets and runs again with nothing left behind |
-| **M6 The meeting** | DID script, presentation view (audit, Blueprint, homepage, estimate), five dry runs | Five varied sites: the homepage on preview before the meeting, every time |
-| **M7 Tenant move** | Move a demo-slot project to the client's tenant | A signed prospect's project continues on their tenant without re-running Discovery |
+| **M5 Demo tenant** | The by-hand checklist for a demo site on our tenant; the 30-day cleanup (site items, repo, Vercel project) | Two demos side by side on our tenant with nothing crossing between them; cleanup leaves nothing behind |
+| **M6 The meeting** | Steve's script as the first DID, presentation view (audit, Blueprint, homepage, estimate), five dry runs | Five varied sites: the homepage on preview before the meeting, every time |
+| **M7 Tenant move** | Move a demo project to the client's tenant | A signed prospect's project continues on their tenant without re-running Discovery |
 
-M0 and M1 can start now. M2 needs M1. M3 needs M2. M5 is independent. M7 comes last.
+M0 and M1 can start now. M2 needs M1. M3 needs M2. M5 is a checklist and a cleanup job, so it can start any time. M7 is needed only once a prospect signs.
 
 ## Risks
 
@@ -167,18 +173,19 @@ M0 and M1 can start now. M2 needs M1. M3 needs M2. M5 is independent. M7 comes l
   Discovery, Blueprint and Gate 1. That's more moving parts, so M3 tries the in-place route first.
 - **URL-only parity.** Agents can't view screenshots, so visual parity is the weak spot without a
   repository. One page keeps the gap small; giving Visual QA image input is the real fix.
-- **Prospect content on our tenant.** Preview isn't indexed, slots are reset, and unsigned content
-  is deleted after 30 days. This needs a line in the meeting and in the terms.
+- **Prospect content on our tenant.** Preview isn't indexed, each demo has its own site, and
+  unsigned content is deleted after 30 days. This needs a line in the meeting and in the terms.
 - **Shared components look finished.** The header, footer and navigation are built for the homepage
   but serve every page. The full build's Lead review must still check them against the other
   templates, not treat them as done.
 
-## Open questions for the Director
+## Decisions
 
-1. **Start the run when the meeting is booked:** is that how sales wants to work, or do we need an
-   in-meeting moment that isn't the finished homepage?
-2. **Client tenant or demo slot by default:** do we ask prospects for SitecoreAI access before
-   signing?
-3. **Is the 404 page part of the slice?** It's cheap and shows error handling, but it's a second
-   page.
-4. **Retention:** is 30 days right for an unsigned prospect's demo?
+Made by the Director on 2026-11-07:
+
+1. **Who runs the demo:** Steve, as the first salesperson and DID. The run starts when the meeting
+   is booked, and Steve approves Gate 1 before the meeting.
+2. **Tenant:** the SitecoreAI tenant we've been using, one site per demo. Signed prospects move to
+   their own tenant.
+3. **404 page:** part of the slice.
+4. **Retention:** 30 days for an unsigned prospect's demo.
