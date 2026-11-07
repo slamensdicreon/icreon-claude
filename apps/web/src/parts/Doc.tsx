@@ -3,6 +3,7 @@ import { Marked, type Tokens } from 'marked';
 import { useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import { blobUrl } from '../lib/api';
 import { glossHtml, useGlossary } from '../lib/glossary';
+import { quotePathLabels } from '../lib/mermaid';
 import { useApp } from '../state';
 
 let hooked = false;
@@ -63,13 +64,26 @@ export function MarkdownDoc({
         securityLevel: 'strict',
         theme: dark ? 'dark' : 'neutral',
         fontFamily: 'inherit',
+        // Without this, a diagram that fails leaves mermaid's "Syntax error" graphic attached to
+        // the page body, one more for every re-render.
+        suppressErrorRendering: true,
       });
+      const valid = async (code: string) =>
+        Boolean(await mermaid.parse(code, { suppressErrors: true }).catch(() => false));
       for (const [i, el] of [...blocks].entries()) {
         if (stop) return;
         // Encoded: DOMPurify drops attribute values holding "-->", which every arrow has.
         const src = decodeURIComponent(el.dataset.src!);
+        const id = `doc-mermaid-${Date.now()}-${i}`;
+        const repaired = quotePathLabels(src);
+        const code = (await valid(src))
+          ? src
+          : repaired !== src && (await valid(repaired))
+            ? repaired
+            : null;
         try {
-          const { svg } = await mermaid.render(`doc-mermaid-${Date.now()}-${i}`, src);
+          if (code === null) throw new Error('invalid diagram');
+          const { svg } = await mermaid.render(id, code);
           el.innerHTML = DOMPurify.sanitize(svg, {
             USE_PROFILES: { svg: true, svgFilters: true },
             ADD_TAGS: ['foreignObject'],
@@ -77,6 +91,10 @@ export function MarkdownDoc({
           el.removeAttribute('data-src');
         } catch {
           el.innerHTML = `<pre class="${ds.pre}">${escape(src)}</pre><p class="${ds.quiet}">This diagram could not be drawn.</p>`;
+          el.removeAttribute('data-src');
+        } finally {
+          // Mermaid draws in a scratch element on the body; make sure none outlives the render.
+          document.getElementById(`d${id}`)?.remove();
         }
       }
     });

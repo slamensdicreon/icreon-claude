@@ -59,3 +59,46 @@ test('a document reads in plain words, switches to the original, and can be rewr
   await expect.poll(() => rewriteNote).toEqual({ note: 'Too technical.' });
   run.clean();
 });
+
+test('a diagram with path labels draws, a broken one falls back, and neither leaks an error onto the page', async ({
+  page,
+}) => {
+  const plain = [
+    '## Routes',
+    '',
+    '```mermaid',
+    'graph TD',
+    '  H[/ Home] --> A[/about]',
+    '  H --> C[/contact]',
+    '```',
+    '',
+    '## Broken',
+    '',
+    '```mermaid',
+    'graph TD',
+    '  A --> (((',
+    '```',
+  ].join('\n');
+  await page.route(/\/versions\/\d+\/plain$/, (r) =>
+    r.fulfill({
+      json: {
+        status: 'ready',
+        version: 1,
+        inShort: 'The route map.',
+        means: [],
+        toDo: null,
+        plain,
+        glossary: [],
+      },
+    }),
+  );
+  const run = await open(page, `/p/${PROJECT}/workbench`);
+  await page.locator('ul button').filter({ hasText: 'Pilot results' }).first().click();
+  await expect(page.locator('[data-mermaid] svg')).toHaveCount(1);
+  await expect(page.locator('[data-mermaid] svg').getByText('/about')).toBeVisible();
+  await expect(page.getByText('This diagram could not be drawn.')).toBeVisible();
+  // Mermaid's own error graphic never reaches the page.
+  await expect(page.getByText('Syntax error in text')).toHaveCount(0);
+  await expect(page.locator('body > [id^="d"]')).toHaveCount(0);
+  run.clean();
+});
