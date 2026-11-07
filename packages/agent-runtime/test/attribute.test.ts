@@ -58,4 +58,30 @@ describe('attributeFailures', () => {
     expect(seen[0]!.body).toMatch(/- hero: Hero Banner/);
     expect(seen[0]!.system).toMatch(/header and footer are components too/);
   });
+
+  it('marks the shared components for the Lead, and sends only their content to "shared"', async () => {
+    const seen: { system: string; body: string }[] = [];
+    const a = await attributeFailures(
+      {
+        ...input,
+        components: [...input.components, { key: 'footer', name: 'Site Footer', shared: true }],
+      },
+      answering(
+        {
+          failures: [
+            { check: 'parity.render', owner: 'shared', component: 'footer', fix: 'Footer links.' },
+            // Only a component marked shared has shared content.
+            { check: 'parity.visual', owner: 'shared', component: 'hero', fix: 'Hero image.' },
+          ],
+        },
+        seen,
+      ),
+    );
+    expect(a.failures.slice(0, 2)).toEqual([
+      { check: 'parity.render', owner: 'shared', component: 'footer', fix: 'Footer links.' },
+      { check: 'parity.visual', owner: 'task', component: null, fix: 'Hero image.' },
+    ]);
+    expect(seen[0]!.body).toMatch(/- footer: Site Footer \(shared\)/);
+    expect(seen[0]!.system).toMatch(/owner "shared"/);
+  });
 });

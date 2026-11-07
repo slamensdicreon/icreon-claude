@@ -599,6 +599,58 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       );
     },
 
+    // The shared header, footer and navigation have their content: every page shows them, so the
+    // task that fills them, once, before the pages, passes only when the home page renders each
+    // one with its fields and its items (footer columns and links, menu entries), no placeholders.
+    'parity.chrome': async (ctx) => {
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      if (!project) return pending('No hosting project is recorded for the head.');
+      const host = `https://${project}-editing.vercel.app`;
+      const kept = (ctx.blueprint?.collections.components ?? []).filter(
+        (c) => c.status !== 'drop' && !(c.status === 'merge' && c.attrs?.mergedInto),
+      );
+      const marked = kept.filter((c) => c.attrs?.datasource === 'shared');
+      const shared = marked.length
+        ? marked
+        : kept.filter((c) => /header|footer|nav|menu/i.test(`${c.key} ${c.name}`));
+      if (!shared.length) return pending('The Blueprint marks no component as shared.');
+      const byName = new Map(shared.map((c) => [renderingName(c).replace(/\s+/g, ''), c]));
+      const page = await getText(cfg, `${host}/`);
+      if (page.status !== 200)
+        return fail([`The home page answered ${page.status || 'nothing'} on ${host}`]);
+      const problems: string[] = [];
+      const empty = (id: string) => new RegExp(`<div id="${id}">\\s*</div>`).test(page.body);
+      if (empty('header')) problems.push('the home page has no header');
+      if (empty('footer')) problems.push('the home page has no footer');
+      const seen: string[] = [];
+      for (const c of layoutComponents(page.body)) {
+        const bp = byName.get(c.name);
+        if (!bp) continue;
+        seen.push(c.name);
+        const text = textOf(c.fields);
+        if (bp.attrs?.children && !itemCount(c.fields) && !loadsOwnItems(c.fields))
+          problems.push(
+            `${bp.name} renders no items: create its child items (each column, group and link, or menu entry) under its shared datasource, from the source site's ${bp.name.toLowerCase()}`,
+          );
+        else if (!text && !itemCount(c.fields))
+          problems.push(
+            `${bp.name} renders no content: fill its shared datasource from the source`,
+          );
+        const placeholders = PLACEHOLDERS.filter((p) => text.includes(p));
+        if (placeholders.length)
+          problems.push(`${bp.name} shows placeholder copy: "${placeholders.join('", "')}"`);
+      }
+      if (!seen.length && !problems.length)
+        problems.push(
+          `none of the shared components (${shared.map((c) => c.name).join(', ')}) render on the home page`,
+        );
+      return problems.length
+        ? fail(problems)
+        : pass(
+            `The shared ${[...new Set(seen)].join(', ')} render with their content on the home page of ${host}.`,
+          );
+    },
+
     // Visual parity: each kept page, as the editing host renders it, looks like the source page.
     // Text parity can't see layouts, images or colours; a model compares screenshots of both, as
     // the client will, and names each difference.

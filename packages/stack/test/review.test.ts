@@ -516,7 +516,13 @@ describe('routing failed checks to the components that own them', () => {
     ({ taskId, role, itemKeys, title: taskId }) as never;
 
   async function route(
-    failures: { check: string; owner: 'task' | 'component'; component: string; fix: string }[],
+    failures: {
+      check: string;
+      owner: 'task' | 'component' | 'shared';
+      component: string;
+      fix: string;
+    }[],
+    opts: { sharedTask?: boolean } = { sharedTask: true },
   ) {
     const store = new InMemoryEventStore();
     const library = new ArtifactLibrary(store, new MemoryBlobStore());
@@ -530,6 +536,7 @@ describe('routing failed checks to the components that own them', () => {
           components: [
             { key: 'hero', name: 'Hero Banner' },
             { key: 'cards', name: 'Service Cards' },
+            { key: 'footer', name: 'Site Footer', attrs: { datasource: 'shared' } },
             { key: 'old', name: 'Old', status: 'drop' },
           ],
         },
@@ -542,18 +549,26 @@ describe('routing failed checks to the components that own them', () => {
       'register-hero': taskView('register-hero', 'rendering-registrar', ['hero']),
       'integrate-hero': taskView('integrate-hero', 'head-integrator', ['hero']),
       'port-cards': taskView('port-cards', 'component-engineer', ['cards']),
+      'port-footer': taskView('port-footer', 'component-engineer', ['footer']),
       'migrate-pages-home': taskView('migrate-pages-home', 'content-migrator', ['home']),
     };
+    if (opts.sharedTask)
+      state.tasks['migrate-shared-chrome'] = {
+        ...(taskView('migrate-shared-chrome', 'content-migrator', []) as object),
+        title: 'Fill the shared header, footer and navigation',
+      } as never;
     const seen: string[][] = [];
+    const shared: string[][] = [];
     const routed = await routeFailures({
       deps: {
         library,
         attribute: async (input) => {
           seen.push(input.components.map((c) => c.key));
+          shared.push(input.components.filter((c) => c.shared).map((c) => c.key));
           return {
             failures: failures.map((f) => ({
               ...f,
-              component: f.owner === 'component' ? f.component : null,
+              component: f.owner === 'task' ? null : f.component,
             })),
             tokens: 50,
             usd: 0.01,
@@ -571,7 +586,7 @@ describe('routing failed checks to the components that own them', () => {
       ],
       codeRoles: new Set(['component-engineer', 'head-integrator']),
     });
-    return { routed, seen };
+    return { routed, seen, shared };
   }
 
   it('sends a component failure to every code task of that component, and the page re-checks', async () => {
@@ -579,7 +594,7 @@ describe('routing failed checks to the components that own them', () => {
       { check: 'parity.visual', owner: 'component', component: 'hero', fix: 'Make the band grey.' },
     ]);
     // Dropped components are not offered.
-    expect(seen[0]).toEqual(['hero', 'cards']);
+    expect(seen[0]).toEqual(['hero', 'cards', 'footer']);
     expect(routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual(['port-hero', 'integrate-hero']);
     expect(routed!.waitOn.sendBack![0]!.fixes).toMatch(
       /Migrate Home fails on Hero Banner: Make the band grey/,
@@ -604,6 +619,40 @@ describe('routing failed checks to the components that own them', () => {
     ]);
     expect(routed!.waitOn.review).toEqual({ fixes: null });
     expect(routed!.waitOn.what).toBe('fixes to Hero Banner and Service Cards');
+  });
+
+  it('sends shared header and footer content to its one task, never to the page or the code', async () => {
+    const { routed, shared } = await route([
+      {
+        check: 'parity.render',
+        owner: 'shared',
+        component: 'footer',
+        fix: 'Create the footer columns and links under the SiteFooter datasource.',
+      },
+      { check: 'parity.visual', owner: 'task', component: '', fix: 'Use the source hero image.' },
+    ]);
+    // The Lead is told which components are shared.
+    expect(shared[0]).toEqual(['footer']);
+    expect(routed!.waitOn.sendBack).toEqual([
+      {
+        taskId: 'migrate-shared-chrome',
+        fixes: expect.stringContaining('Create the footer columns and links'),
+      },
+    ]);
+    expect(routed!.waitOn.review).toEqual({
+      fixes: 'parity.visual: Use the source hero image.',
+    });
+    expect(routed!.reason).toMatch(
+      /^The shared header, footer and navigation content.*is filled by Fill the shared header, footer and navigation, not by a page: sent to its owner/,
+    );
+  });
+
+  it('keeps shared content with the page on a plan with no shared task (0.11.0 and older)', async () => {
+    const { routed } = await route(
+      [{ check: 'parity.render', owner: 'shared', component: 'footer', fix: 'Footer links.' }],
+      { sharedTask: false },
+    );
+    expect(routed).toBeNull();
   });
 
   it('leaves everything with the task when nothing is a component’s', async () => {

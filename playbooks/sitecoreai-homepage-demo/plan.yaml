@@ -178,6 +178,13 @@ templates:
     acceptance: [validator:structural.templates]
 
   # 6 — Content and media migration
+  # The shared header, footer and navigation are filled once, before the pages (as on the website
+  # playbook): the demo's outcome includes them, and the homepage and 404 page both show them.
+  - id: migrate-shared-chrome
+    phase: 6
+    role: content-migrator
+    title: Fill the shared header, footer and navigation
+    acceptance: [validator:head.header-footer, validator:parity.chrome]
   - id: migrate-pages-{key}
     phase: 6
     role: content-migrator
@@ -186,6 +193,7 @@ templates:
     batchSize: 8
     title: Migrate {name}
     metric: pages_migrated
+    dependsOn: [migrate-shared-chrome]
     acceptance:
       [
         validator:structural.layouts,

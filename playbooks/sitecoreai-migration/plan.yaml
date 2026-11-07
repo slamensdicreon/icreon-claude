@@ -176,6 +176,14 @@ templates:
     acceptance: [validator:structural.templates]
 
   # 6 — Content and media migration
+  # The header, footer and navigation are one set of shared datasources every page shows: filled
+  # once, before any page, by one task. A page that fails on them waits on this task instead of
+  # editing them itself (twenty pages doing so race each other and each fails the same way).
+  - id: migrate-shared-chrome
+    phase: 6
+    role: content-migrator
+    title: Fill the shared header, footer and navigation
+    acceptance: [validator:head.header-footer, validator:parity.chrome]
   - id: migrate-pages-{key}
     phase: 6
     role: content-migrator
@@ -183,6 +191,7 @@ templates:
     batchSize: 8
     title: Migrate {name}
     metric: pages_migrated
+    dependsOn: [migrate-shared-chrome]
     acceptance:
       [
         validator:structural.layouts,
