@@ -75,7 +75,8 @@ export interface CypherDeps {
     optionId: string,
     notes: string,
   ): Promise<{ answered: number }>;
-  remixDraft(projectId: string): Promise<RemixDraft>;
+  /** With `playbookId`, the remix runs that playbook (same entity) instead of the project's. */
+  remixDraft(projectId: string, playbookId?: string | null): Promise<RemixDraft>;
   /**
    * One project's history: its Decision Log, Activity rows matching a search, its scorecard and
    * what its retrospectives proposed. Null for an unknown project.
@@ -109,7 +110,7 @@ const SYSTEM = `You are Cypher, Chief of Staff at Launchworks, an agentic studio
 
 You help with three things:
 1. The portfolio: where projects stand, what needs the Director, what's blocked, what was delivered. Read it with your tools before answering; never guess numbers or states. Name projects by name.
-2. Starting projects. The Director gives a brief in their own words, or asks to set up a site "like" an existing project (a remix: same playbook, connection, brief and budgets, a new site).
+2. Starting projects. The Director gives a brief in their own words, or asks to set up a site "like" an existing project (a remix: same playbook, connection, brief and budgets, a new site). A remix can also run another playbook on the same platform, keeping the project's connection and client: "remix Star LLC as a homepage demo for prospect.com" is propose_remix with the homepage demo's playbookId (list_playbooks) and the prospect's URL as the source; budgets then come from that playbook.
    - Choose the playbook from list_playbooks that fits the brief. Say why in a sentence, and say plainly what the brief asks for that the playbook won't do.
    - Use a saved connection (list_connections) when the new site is on a tenant one already covers; its credentials are then reused and nothing is typed again.
    - A project needs a name, the client, and a source: the live site's URL, a GitHub repository (owner/name), or both. Without a repository the agents rebuild from the live site. Ask only for what's missing and can't be inferred; don't ask about budgets (the Director sets them in the wizard).
@@ -223,11 +224,16 @@ const TOOLS: BetaTool[] = [
   {
     name: 'propose_remix',
     description:
-      'Draft a new project like an existing one (its playbook, connection, client, brief and budgets) for a new site, for the Director to open in the New Project wizard. Drafts only.',
+      "Draft a new project like an existing one (its playbook, connection, client, brief and budgets) for a new site, for the Director to open in the New Project wizard. Drafts only. With playbookId, the new project runs that playbook instead (it must be on the same platform): the connection and client carry over, the budgets are that playbook's defaults.",
     input_schema: {
       type: 'object',
       properties: {
         fromProjectId: { type: 'string' },
+        playbookId: {
+          type: 'string',
+          description:
+            "Only to run another playbook than the original's, e.g. the homepage demo. Same platform only.",
+        },
         name: { type: 'string' },
         client: { type: 'string', description: 'Only if different from the original.' },
         sourceUrl: { type: 'string' },
@@ -790,7 +796,7 @@ export class PortfolioCypher {
       }
       case 'propose_remix': {
         const id = String(input.fromProjectId ?? '');
-        const base = await this.deps.remixDraft(id);
+        const base = await this.deps.remixDraft(id, str(input.playbookId));
         const source = this.source(input);
         const draft: ProjectDraft = {
           ...base,

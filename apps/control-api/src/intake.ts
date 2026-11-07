@@ -886,10 +886,21 @@ export class IntakeService {
    * A new project's intake, prefilled from an existing one: same playbook, client, budgets, brief
    * and connection (the one it uses, or one saved from it), and the target facts the connection
    * shares. The site and its hosting are left for the Director.
+   *
+   * With `playbookId`, the new project runs another playbook on the same entity (a site remixed as
+   * a homepage demo): the connection, client and tenant facts carry over; the budgets are that
+   * playbook's defaults and the brief keeps only the answers its questions ask for.
    */
-  async remixDraft(s: ProjectState): Promise<RemixDraft> {
+  async remixDraft(s: ProjectState, playbookId?: string | null): Promise<RemixDraft> {
     if (!s.playbook || !s.intake)
       throw new CommandError(422, 'invalid', `${s.name} has no intake to remix.`);
+    const other = playbookId && playbookId !== s.playbook.id ? this.resolve(playbookId) : null;
+    if (other && other.pack.id !== s.intake.platform)
+      throw new CommandError(
+        422,
+        'invalid',
+        `${other.entry.playbook.manifest.name} runs on ${other.pack.name}; ${s.name} is on another platform, so its connection can't carry over.`,
+      );
     const pack = this.packOf(s);
     let connection: ConnectionRecord | null = null;
     if (s.intake.connectionId) connection = await this.connection(s.intake.connectionId);
@@ -902,14 +913,18 @@ export class IntakeService {
     const target: TargetValues = {};
     for (const f of sharedFields)
       if (s.intake.target[f] !== undefined) target[f] = s.intake.target[f]!;
+    const brief = Object.fromEntries(s.brief.map((b) => [b.key, b.answer]));
+    const asked = other ? new Set(other.spec.brief.map((q) => q.key)) : null;
     return {
-      playbookId: s.playbook.id,
+      playbookId: other ? other.entry.playbook.manifest.id : s.playbook.id,
       from: { projectId: s.projectId, name: s.name },
       connectionId: connection?.id ?? null,
       client: s.client,
       timezone: s.timezone,
-      budgets: s.budgets,
-      brief: Object.fromEntries(s.brief.map((b) => [b.key, b.answer])),
+      budgets: other ? other.entry.playbook.manifest.defaults.budgets : s.budgets,
+      brief: asked
+        ? Object.fromEntries(Object.entries(brief).filter(([k]) => asked.has(k)))
+        : brief,
       target: { ...target, ...(connection?.target ?? {}) },
       providedCredentials: connection ? Object.keys(connection.credentials) : [],
       standingApprovals: Array.isArray(s.settings.standingApprovals)

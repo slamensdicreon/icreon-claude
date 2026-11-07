@@ -192,3 +192,56 @@ it('refuses a connection for another platform, or one that does not exist', asyn
   expect(r.status).toBe(404);
   expect((await call('POST', '/connections', { name: 'x', fromProject: 'nope' })).status).toBe(404);
 });
+
+it('remixes a site onto the homepage demo: same connection and client, the demo’s budgets and brief', async () => {
+  const { projections } = await start();
+  const globex = (await call('POST', '/projects', first)).body.projectId as string;
+  const saved = await call('POST', '/connections', { name: 'Globex tenant', fromProject: globex });
+  const id = saved.body.connectionId as string;
+
+  const draft = RemixDraft.parse(
+    (await call('GET', `/projects/${globex}/remix?playbook=sitecoreai-homepage-demo`)).body,
+  );
+  expect(draft).toMatchObject({
+    playbookId: 'sitecoreai-homepage-demo',
+    from: { projectId: globex, name: 'Globex site' },
+    connectionId: id,
+    client: 'Globex',
+    // The demo's own budgets, not the website project's.
+    budgets: { usd: 300, tokens: 20_000_000, hours: 10 },
+    providedCredentials: ['sitecore-environment', 'edge-preview'],
+  });
+  // The demo doesn't ask about personalization or accessibility targets.
+  expect(draft.brief).not.toHaveProperty('personalization');
+  expect(draft.brief).not.toHaveProperty('accessibility');
+
+  // The prospect's homepage demo, on the same tenant: only its own site and hosting.
+  const demo = await call('POST', '/projects', {
+    playbookId: draft.playbookId,
+    name: 'Initech homepage demo',
+    client: 'Initech',
+    budgets: draft.budgets,
+    source: { repo: null, branch: 'main', url: 'https://www.initech.example' },
+    target: { site: 'initech-demo', hostingProject: 'initech-demo' },
+    brief: draft.brief,
+    connectionId: id,
+    credentials: {},
+    standingApprovals: draft.standingApprovals,
+  });
+  expect(demo.status).toBe(201);
+  await projections.catchUpAll();
+  const s = projections.get(demo.body.projectId as string)!;
+  expect(s.playbook?.id).toBe('sitecoreai-homepage-demo');
+  expect(s.intake).toMatchObject({
+    connectionId: id,
+    target: { cmHost: 'xmc-globex.sitecorecloud.io', site: 'initech-demo' },
+  });
+  expect(s.credentials['sitecore-environment']).toMatchObject({ ok: true });
+
+  // Another platform's playbook can't take the connection.
+  const other = await call('GET', `/projects/${globex}/remix?playbook=optimizely-saas-migration`);
+  expect(other.status).toBe(422);
+  expect(JSON.stringify(other.body)).toContain('another platform');
+  // An unknown playbook is a 404.
+  expect((await call('GET', `/projects/${globex}/remix?playbook=nope`)).status).toBe(404);
+});
