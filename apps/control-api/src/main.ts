@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient, draftRule, retrospect, triageQuestion } from '@lw/agent-runtime';
+import {
+  anthropicModelClient,
+  draftRule,
+  retrospect,
+  sortProposals,
+  triageQuestion,
+} from '@lw/agent-runtime';
 import {
   CommandBus,
   masterKey,
@@ -560,6 +566,16 @@ const app = await buildApp({
     : null,
   rules,
   ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,
+  proposalSorter: process.env.ANTHROPIC_API_KEY ? (input) => sortProposals(input) : null,
+  // What changed in the product since older proposals were written, so the sort can call them out
+  // of date. Add a line when a fix lands that a proposal or gap describes.
+  productNotes: [
+    'The browser crawl is bounded: its result is compacted to fit the context, it stops after 7 minutes and returns what it read, with the sitemap count.',
+    "A page the source site refuses (401/403) is the site's answer, not a refused credential; a 404 page comes back with its content.",
+    'Checks skip components merged into another; the homepage demo (0.2.0) blueprints only the homepage and 404 page, with no held components.',
+    "The Director's notes in a project's conversation reach every agent's context.",
+    'Cypher posts a heads-up when the source site throttles or refuses the team.',
+  ],
   knowledge,
   retrospective:
     knowledge && process.env.ANTHROPIC_API_KEY

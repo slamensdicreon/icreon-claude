@@ -15,6 +15,7 @@ import { Field, Select, TextArea, TextInput } from '../../ui/cypher/forms';
 import { Chips, Panel } from '../../ui/cypher/parts';
 import { Action, Actions, Notice, usePlaybooks } from '../intake/shared';
 import { EntryCard } from './EntryCard';
+import { ProposalReview } from './ProposalReview';
 import {
   catalogNames,
   count,
@@ -230,6 +231,10 @@ export function Knowledge({ projects }: { projects: PortfolioItem[] }) {
         you approve them.
       </Lead>
       {error && <Notice tone="bad">{error}</Notice>}
+      <ProposalReview
+        waiting={data.entries.filter((e) => e.status === 'proposed').length}
+        onDone={() => void reload()}
+      />
       {platforms.length > 0 && (
         <div className={s.exportRow}>
           <span className={`${s.exportLabel} type-meta`}>

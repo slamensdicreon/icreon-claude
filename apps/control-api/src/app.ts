@@ -23,6 +23,7 @@ import {
   AutonomySetting,
   CreateRule,
   EditRule,
+  ApplyProposals,
   CreateKnowledge,
   EditKnowledge,
   RunRetrospective,
@@ -94,7 +95,13 @@ import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
 import { PortfolioCypher } from './cypher';
 import { projectHistory } from './history';
-import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
+import type {
+  ModelClient,
+  ProposalSortInput,
+  RuleDraftInput,
+  SortedProposal,
+} from '@lw/agent-runtime';
+import { applyProposals, inForce, unsorted } from './knowledge-review';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { escalationsCsv } from './escalations-csv';
@@ -164,6 +171,10 @@ export interface AppDeps {
   ruleDrafter?: ((input: RuleDraftInput) => Promise<{ when: string; then: string }>) | null;
   /** The team's knowledge across projects: lessons, procedures and gaps. */
   knowledge?: KnowledgeStore;
+  /** Cypher's recommendation on each waiting proposal (Claude); absent where no model is set up. */
+  proposalSorter?: ((input: ProposalSortInput) => Promise<SortedProposal[]>) | null;
+  /** What changed in the product, for the proposal sort to weigh ("the crawl is bounded"). */
+  productNotes?: string[];
   /**
    * Runs a finished phase's retrospective (Cypher proposes entries with evidence); absent where
    * no model is configured.
@@ -828,6 +839,90 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!found) return;
     return found.store.history(found.r.id);
   });
+
+  // ---- What the next build knows, and the proposals waiting to join it ----------------------
+
+  /** What a new project on a playbook starts with: its rules, lessons, procedures and known gaps. */
+  app.get<{ Params: { id: string } }>('/playbooks/:id/in-force', async (req, reply) => {
+    const pb = deps.intake?.playbooks().find((p) => p.id === req.params.id);
+    if (!pb) return fail(reply, 404, 'unknown_playbook', `No playbook "${req.params.id}".`);
+    const [entries, ruleList] = await Promise.all([
+      deps.knowledge?.list() ?? [],
+      deps.rules?.list() ?? [],
+    ]);
+    return inForce(pb, entries, ruleList);
+  });
+
+  /**
+   * Every waiting proposal (lessons, procedures, gaps and rules, from every project), with Cypher's
+   * recommendation on each: read together, so repeats and contradictions are caught.
+   */
+  app.post('/proposals/sort', async () => {
+    const [entries, ruleList] = await Promise.all([
+      deps.knowledge?.list() ?? [],
+      deps.rules?.list() ?? [],
+    ]);
+    const list = unsorted(entries, ruleList);
+    if (!deps.proposalSorter || !list.length)
+      return { available: !!deps.proposalSorter, recommendations: list };
+    const names = new Map(projections.all().map((p) => [p.projectId, p.name]));
+    const proposed = entries.filter((e) => e.status === 'proposed');
+    const proposedRules = ruleList.filter((r) => r.status === 'proposed');
+    const sorted = await deps.proposalSorter({
+      proposals: [
+        ...proposed.map((e) => ({
+          kind: 'knowledge' as const,
+          id: e.id,
+          ref: e.ref,
+          type: e.kind,
+          title: e.title,
+          text: e.text,
+          scope: e.scope,
+          roles: e.roles,
+          from: e.source?.projectId ? (names.get(e.source.projectId) ?? e.source.projectId) : null,
+        })),
+        ...proposedRules.map((r) => ({
+          kind: 'rule' as const,
+          id: r.id,
+          ref: r.ref,
+          type: r.category,
+          title: `When ${r.when}`,
+          text: `Then ${r.then}`,
+          scope: r.scope,
+          roles: r.roles,
+          from: r.sources[0] ? (names.get(r.sources[0].projectId) ?? r.sources[0].projectId) : null,
+        })),
+      ],
+      active: [
+        ...entries.filter((e) => e.status === 'active').map((e) => `${e.ref}: ${e.title}`),
+        ...ruleList.filter((r) => r.status === 'active').map((r) => `${r.ref}: when ${r.when}`),
+      ],
+      playbooks: (deps.intake?.playbooks() ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        platform: p.platform.id,
+      })),
+      notes: deps.productNotes,
+    });
+    const byId = new Map(sorted.map((x) => [x.id, x]));
+    return {
+      available: true,
+      recommendations: list.map((p) => {
+        const s = byId.get(p.id);
+        return s
+          ? { ...p, action: s.action, reason: s.reason, edit: s.edit, duplicateOf: s.duplicateOf }
+          : { ...p, reason: 'Cypher made no recommendation on this one: read it yourself.' };
+      }),
+    };
+  });
+
+  /** The Director's decisions on waiting proposals, applied in one go. */
+  app.post('/proposals/apply', async (req) =>
+    applyProposals(
+      { knowledge: deps.knowledge, rules: deps.rules },
+      ApplyProposals.parse(req.body),
+    ),
+  );
 
   // ---- Knowledge: what the team knows across projects ----------------------------------------
 
