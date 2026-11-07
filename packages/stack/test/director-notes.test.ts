@@ -54,3 +54,33 @@ it('keeps the latest ten notes, clipped, and says nothing when there are none', 
   expect(directorNotes([note('D-1', 'x'.repeat(900))])[0]).toMatch(/x…$/);
   expect(directorNotes([])).toEqual([]);
 });
+
+it('tells every agent the files the Director gave the team, with the ref media.upload takes', async () => {
+  const projections = {
+    get: () => ({
+      name: 'Paylocity',
+      client: 'Star LLC',
+      sourceUrl: 'https://www.paylocity.com/',
+      brief: [],
+      artifacts: {},
+      decisions: [],
+      preview: {},
+      files: [
+        {
+          name: 'Paylocity logo.svg',
+          contentType: 'image/svg+xml',
+          bytes: 2048,
+          ref: 'blob://p1/files/file-1-Paylocity-logo.svg',
+          note: 'The footer logo',
+        },
+      ],
+    }),
+  } as unknown as Projections;
+  const text = await projectContext(projections, {
+    context: () => [],
+  } as unknown as PlatformPack).forTask('p1', {} as never);
+  expect(text).toContain('Files the Director gave the team');
+  expect(text).toContain(
+    '- Paylocity logo.svg (image/svg+xml, 2 KB): ref blob://p1/files/file-1-Paylocity-logo.svg. The footer logo',
+  );
+});

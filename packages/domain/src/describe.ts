@@ -109,6 +109,8 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
       return e.data.summary;
     case 'director.message':
       return 'Director message';
+    case 'file.attached':
+      return `Director attached ${e.data.name}`;
     case 'cos.presence':
       return `Cypher ${e.data.presence}`;
     case 'artifact.versioned':

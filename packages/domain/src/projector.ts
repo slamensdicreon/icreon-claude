@@ -81,6 +81,17 @@ export interface ProjectState {
   escalations: Record<string, EscalationView>;
   decisions: DecisionView[];
   conversation: ConversationItem[];
+  /** Files the Director gave the team, oldest first. */
+  files: {
+    fileId: string;
+    name: string;
+    contentType: string;
+    bytes: number;
+    ref: string;
+    note: string | null;
+    about: string | null;
+    ts: string;
+  }[];
   metrics: Record<MetricKey, MetricView>;
   latest: ActivityItem[];
   holds: Record<string, { kind: ScopeKind; id: string; label: string }>;
@@ -191,6 +202,7 @@ export function createProjectState(projectId: string): ProjectState {
     escalations: {},
     decisions: [],
     conversation: [],
+    files: [],
     metrics,
     latest: [],
     holds: {},
@@ -551,6 +563,33 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         settled: null,
       });
       break;
+    case 'file.attached': {
+      const { fileId, name, contentType, bytes, ref, note, about } = e.data;
+      s.files.push({ fileId, name, contentType, bytes, ref, note, about, ts: e.ts });
+      s.conversation.push({
+        messageId: fileId,
+        seq: e.seq,
+        ts: e.ts,
+        from: 'director',
+        kind: 'director',
+        title: null,
+        body: `Attached ${name} (${contentType}, ${Math.max(1, Math.round(bytes / 1024))} KB)${note ? `: ${note}` : ''}`,
+        sections: [],
+        proceedsAt: null,
+        directiveId: null,
+        label: null,
+        rows: [],
+        bullets: [],
+        note: null,
+        links: [],
+        status: null,
+        needs: [],
+        upNext: [],
+        about,
+        settled: null,
+      });
+      break;
+    }
     case 'cos.presence':
       s.presence = e.data.presence;
       break;

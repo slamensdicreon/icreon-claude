@@ -25,6 +25,7 @@ import {
   CreateRule,
   EditRule,
   ApplyProposals,
+  AttachFile,
   CreateKnowledge,
   EditKnowledge,
   RunRetrospective,
@@ -131,6 +132,13 @@ export interface AppDeps {
   github?: GithubApp;
   /** Stored content of an artifact version, or null if none is stored. */
   artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
+  /** Stores a file the Director gives the team (the blob store); absent where nothing can hold it. */
+  putFile?: (
+    projectId: string,
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+  ) => Promise<string>;
   /** The playbook's escalation policy table, for Settings. */
   policyDefaults?: (projectId: string) => PolicyRow[];
   /** The playbook's autonomy defaults for a project, for Settings and triage. */
@@ -1681,6 +1689,54 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .parse(req.query.seq ?? s.seq);
     const events = await store.read(s.projectId, { after: Math.max(0, from - 2000) });
     return sinceSummary(s, events, from, now());
+  });
+
+  /**
+   * A file the Director gives the team: a logo, a brand kit, a content export. Stored with the
+   * project, listed in every agent's context with the ref media.upload takes, and shown in the
+   * conversation. JSON with the file as base64, up to 10 MB.
+   */
+  app.post<P>('/projects/:id/files', { bodyLimit: 15 * 1024 * 1024 }, async (req, reply) => {
+    const s = known(req.params.id);
+    if (!deps.putFile)
+      return fail(reply, 501, 'files_unavailable', 'This server has nowhere to keep files.');
+    const input = AttachFile.parse(req.body);
+    const bytes = new Uint8Array(Buffer.from(input.dataBase64, 'base64'));
+    if (!bytes.length) return fail(reply, 422, 'empty_file', 'The file is empty.');
+    if (bytes.length > 10 * 1024 * 1024)
+      return fail(reply, 413, 'file_too_large', 'Files can be up to 10 MB.');
+    const fileId = `file-${randomUUID().slice(0, 8)}`;
+    // The stored name keeps its extension (what media.upload and the download route go by).
+    const safe =
+      input.name
+        .normalize('NFKD')
+        .replace(/[^\w.\-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(-120) || 'file';
+    const ref = await deps.putFile(
+      s.projectId,
+      `files/${fileId}-${safe}`,
+      bytes,
+      input.contentType,
+    );
+    const [stored] = await store.append(s.projectId, [
+      {
+        type: 'file.attached',
+        actor: { kind: 'director', id: 'director' },
+        subject: { kind: 'project', id: s.projectId },
+        severity: 'notable',
+        data: {
+          fileId,
+          name: input.name,
+          contentType: input.contentType,
+          bytes: bytes.length,
+          ref,
+          note: input.note?.trim() || null,
+          about: input.about ?? null,
+        },
+      },
+    ]);
+    return reply.status(201).send({ fileId, ref, seq: stored?.seq ?? null });
   });
 
   /** Screenshots and images a project's documents refer to (`blob://<project>/<key>`). */

@@ -34,6 +34,7 @@ function setup() {
   }) as typeof globalThis.fetch;
   const stored = new Map([
     ['blob://p1/assets/abc123.png', new Uint8Array([137, 80, 78, 71, 1, 2])],
+    ['blob://p1/files/file-1a2b3c4d-paylocity-logo.svg', new TextEncoder().encode('<svg/>')],
   ]);
   const blobs = {
     put: async () => '',
@@ -66,6 +67,33 @@ describe('media.upload', () => {
     expect(uploads).toEqual([
       { url: 'https://up.example/x', name: 'hsa.png', type: 'image/png', size: 6 },
     ]);
+  });
+
+  it('uploads a file the Director gave the team, by its ref', async () => {
+    const { s, uploads } = setup();
+    const r = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/media library/Project/Brands/ansco/Shared/logo',
+        ref: 'blob://p1/files/file-1a2b3c4d-paylocity-logo.svg',
+        fileName: 'logo.svg',
+      },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    expect(uploads).toEqual([
+      { url: 'https://up.example/x', name: 'logo.svg', type: 'image/svg+xml', size: 6 },
+    ]);
+    // Anything else stored for the project isn't for the media library.
+    expect(
+      (
+        await s.call(
+          'media.upload',
+          { itemPath: '/sitecore/media library/x', ref: 'blob://p1/sessions/t1.json' },
+          ctx,
+        )
+      ).code,
+    ).toBe(422);
   });
 
   it('takes the media library path in any casing, as Sitecore does', async () => {

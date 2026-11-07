@@ -1,6 +1,6 @@
 import type { ConversationItem } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
-import { post } from '../lib/api';
+import { messageOf, post } from '../lib/api';
 import { clock, localDate, longDay, zoneLabel } from '../lib/fmt';
 import { TYPE_LABEL } from '../lib/escalation';
 import { Chip, useJump, Who } from '../parts/bits';
@@ -431,8 +431,9 @@ function Directive({ m }: { m: ConversationItem }) {
 }
 
 function Composer() {
-  const { projectId, composer, setComposer, run } = useApp();
+  const { projectId, composer, setComposer, run, toast } = useApp();
   const ref = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!composer.focus) return;
     const el = ref.current;
@@ -452,6 +453,37 @@ function Composer() {
     if (!body || !projectId) return;
     setComposer({ text: '' });
     await run(() => post(`/projects/${projectId}/messages`, { body, ...(about ? { about } : {}) }));
+  };
+  /**
+   * A file for the team (a logo, a brand kit, a content export): stored with the project and
+   * listed in every agent's context. What's typed in the box goes with it as its note.
+   */
+  const attach = async (file: File) => {
+    if (!projectId) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast('Files can be up to 10 MB.');
+      return;
+    }
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
+      r.onerror = () => reject(r.error ?? new Error('The file could not be read.'));
+      r.readAsDataURL(file);
+    });
+    const note = composer.text.trim();
+    try {
+      await post(`/projects/${projectId}/files`, {
+        name: file.name,
+        contentType: file.type || 'application/octet-stream',
+        dataBase64,
+        ...(note ? { note } : {}),
+        ...(composer.about ? { about: composer.about } : {}),
+      });
+      setComposer({ text: '' });
+      toast(`${file.name} is with the team.`);
+    } catch (err) {
+      toast(messageOf(err, 'The file could not be attached.'));
+    }
   };
   return (
     <div className={s.composer}>
@@ -484,6 +516,27 @@ function Composer() {
             }
           }}
         />
+        <input
+          ref={picker}
+          type="file"
+          hidden
+          aria-hidden="true"
+          tabIndex={-1}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) void attach(file);
+          }}
+        />
+        <button
+          type="button"
+          className={s.attach}
+          aria-label="Attach a file for the team"
+          title="Attach a file for the team (what you type goes with it)"
+          onClick={() => picker.current?.click()}
+        >
+          <Icon name="attach" size={18} />
+        </button>
         <button
           type="button"
           className={s.send}
@@ -495,7 +548,7 @@ function Composer() {
         </button>
       </div>
       <div className={`${s.hint} type-meta`}>
-        <span>Enter sends</span>
+        <span>Enter sends · the clip attaches a file</span>
         <span>/status · /pause · /resume · /approve</span>
       </div>
     </div>

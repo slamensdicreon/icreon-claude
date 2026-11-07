@@ -355,6 +355,31 @@ describe('page.markup, page.styles', () => {
 });
 
 describe('snapshot, screenshot, fetch.asset', () => {
+  it('stores an embedded data: URI image, decoded rather than fetched', async () => {
+    // The Paylocity logo: an inline SVG in the footer's CSS background-image.
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="44"><rect width="160" height="44"/></svg>';
+    const css = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+    const r = await browser.call('fetch.asset', { url: css }, ctx);
+    expect(r.code).toBe(200);
+    const body = r.body as { contentType: string; bytes: number; ref: string };
+    expect(body).toMatchObject({ contentType: 'image/svg+xml', bytes: svg.length });
+    expect(body.ref).toMatch(/assets\/[0-9a-f]{64}\.svg$/);
+    const png = await browser.call(
+      'fetch.asset',
+      { url: `data:image/png;base64,${Buffer.from([137, 80, 78, 71]).toString('base64')}` },
+      ctx,
+    );
+    expect(png).toMatchObject({ code: 200, body: { contentType: 'image/png', bytes: 4 } });
+    // Images only, and never empty.
+    expect(
+      (await browser.call('fetch.asset', { url: 'data:text/html,<script>x</script>' }, ctx)).code,
+    ).toBe(422);
+    expect((await browser.call('fetch.asset', { url: 'data:image/png;base64,' }, ctx)).code).toBe(
+      422,
+    );
+  });
+
   it('captures one page’s blocks in order', async () => {
     const r = await browser.call('snapshot', { url: `${origin}/` }, ctx);
     const page = r.body as { blocks: { tag: string; className: string; heading: string | null }[] };

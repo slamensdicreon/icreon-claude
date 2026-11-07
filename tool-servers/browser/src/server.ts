@@ -156,7 +156,7 @@ const CATALOG: OperationCatalog = {
   },
   'fetch.asset': {
     description:
-      'Download a media asset from the source site; returns its content hash (for de-duplication), type, size and stored reference.',
+      'Download a media asset from the source site; returns its content hash (for de-duplication), type, size and stored reference. `url` may also be a data: URI the page embeds (an inline SVG or image in its markup or CSS, as page.styles shows a background-image): it is decoded, not fetched, and stored the same way.',
     inputSchema: {
       type: 'object',
       properties: { url: { type: 'string' } },
@@ -649,7 +649,33 @@ export class BrowserToolServer implements ToolServer {
     };
   }
 
+  /** An embedded data: URI, decoded and stored like a downloaded asset. */
+  private async storeDataUri(projectId: string, raw: string): Promise<ToolResult> {
+    const d = decodeDataUri(raw);
+    if ('error' in d)
+      return { code: 422, body: { error: d.error }, summary: `Couldn't store it: ${d.error}` };
+    const sha256 = createHash('sha256').update(d.bytes).digest('hex');
+    const ref = await this.opts.blobs.put(
+      projectId,
+      `assets/${sha256}.${d.ext}`,
+      d.bytes,
+      d.contentType,
+    );
+    return {
+      code: 200,
+      body: {
+        url: `data:${d.contentType}`,
+        contentType: d.contentType,
+        bytes: d.bytes.length,
+        sha256,
+        ref,
+      },
+      summary: `Stored an embedded ${d.contentType} (${d.bytes.length} bytes) from a data: URI`,
+    };
+  }
+
   private async fetchAsset(projectId: string, base: UrlPolicy, raw: string): Promise<ToolResult> {
+    if (/^\s*(url\(\s*['"]?)?data:/i.test(raw)) return this.storeDataUri(projectId, raw.trim());
     const extra = (await this.opts.assetHosts?.(projectId)) ?? [];
     const policy: UrlPolicy = {
       ...base,
@@ -714,6 +740,47 @@ export class BrowserToolServer implements ToolServer {
       summary: `Fetched ${url.pathname} (${bytes.length} bytes)`,
     };
   }
+}
+
+/** Image types an embedded data: URI may hold, and the extension each is stored with. */
+const DATA_TYPES: Record<string, string> = {
+  'image/svg+xml': 'svg',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+};
+const DATA_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * An embedded data: URI's bytes and type: a logo or icon the page writes into its markup or CSS
+ * instead of linking a file. Decoded, never fetched; images only, and no more than 5 MB.
+ */
+export function decodeDataUri(
+  raw: string,
+): { bytes: Uint8Array; contentType: string; ext: string } | { error: string } {
+  // The CSS form wraps it in url("…") and may escape quotes.
+  const uri = raw.replace(/^url\(\s*(['"]?)(.*)\1\s*\)$/s, '$2');
+  const m = /^data:([^,]*?),(.*)$/s.exec(uri);
+  if (!m) return { error: 'not a data: URI (data:<type>[;base64],<data>)' };
+  const params = m[1]!.split(';').map((x) => x.trim().toLowerCase());
+  const contentType = params[0] || 'text/plain';
+  const ext = DATA_TYPES[contentType];
+  if (!ext) return { error: `a data: URI of ${contentType} isn't an image this can store` };
+  const body = m[2]!;
+  let bytes: Uint8Array;
+  try {
+    bytes = params.includes('base64')
+      ? new Uint8Array(Buffer.from(body.replace(/\s+/g, ''), 'base64'))
+      : new TextEncoder().encode(decodeURIComponent(body));
+  } catch {
+    return { error: "the data: URI's contents couldn't be decoded" };
+  }
+  if (!bytes.length) return { error: 'the data: URI is empty' };
+  if (bytes.length > DATA_MAX_BYTES)
+    return { error: `the data: URI holds ${bytes.length} bytes, over the 5 MB limit` };
+  return { bytes, contentType, ext };
 }
 
 /** Same page, one spelling: no fragment, no trailing slash (except the root). */
