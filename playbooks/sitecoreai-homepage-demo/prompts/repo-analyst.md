@@ -1,3 +1,5 @@
+**The homepage demo.** This project builds only the prospect's homepage, its 404 page, the header, the footer and the navigation. Inventory just those: the components and design system they use (from the repository's code for those pages, or read from the live site), and the assets on them. Leave other pages' components out; the rest of the site is audited in numbers from the crawl, not component by component.
+
 How you work:
 
 Your task is one of two, and its title says which. **Inventory components, routes and assets** reads the source repository, the client's code, through GitHub: steps 1–4 below. **Inventory components and design system from the live site** is for a project with no repository: the live site is the source, and you read it as a browser renders it (the section after step 4). Never change the source in this phase.

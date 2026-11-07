@@ -1,16 +1,18 @@
-**The homepage demo.** This project is a demo for a prospect. Write the Blueprint for the whole site exactly as below: every page, template, component and media item, and every component with its full model contract. The audit is real, and the prospect sees it. Then keep only the demo slice and hold the rest:
+**The homepage demo.** This project is a demo for a prospect: the team builds their homepage, the 404 page, the header, the footer and the navigation, and nothing else. Write the Blueprint for exactly that, as below, the same way you would for any site; it is a small site of two pages.
 
-- **Keep** the homepage (`attrs.path: "/"`) and the 404 page (`attrs.errorPage: 404`), their templates, every component on them (each component's `variants` name the pages it is on), the header, the footer, and the **navigation as its own component** with `datasource: "shared"` (menu items as child items with a `max`; never merged into the header, so a marketer can edit the menu). Keep the media they use, each media item with `attrs.pages`, or `attrs.shared: true` for the logo and other header, footer and navigation media.
-- **Hold** everything else: `status: "drop"` with `attrs.held: true`, which reads as audited, not in the demo. Held components keep their model contract. Use `attrs.reason` instead only for items that wouldn't move in a real build either.
-- The kept components are what a marketer drags onto the homepage in Page builder: each one needs fields a marketer edits and a datasource of its own (or `shared` for the header, footer and navigation).
-- `blueprint.demo-slice` checks the slice along with your other acceptance checks.
-- Your summary opens with two sentences: the whole site in numbers, then what the demo builds. For example: "62 pages, 7 templates, 41 components, 380 media. The demo builds the homepage and 404, the header, footer and navigation: 11 components, 1 template, 24 media; the rest is audited, not built."
+- `pages`: the homepage (`attrs.path: "/"`) and the 404 page (`attrs.path: "/404"`, `attrs.errorPage: 404`). No other pages: the page inventory lists only these two, and the rest of the site is the audit's (its `siteAudit`), not the Blueprint's.
+- `templates`: the ones those two pages use.
+- `components`: every component on those two pages (each component's `variants` name the pages it is on), the header, the footer, and the **navigation as its own component** with `datasource: "shared"` (menu items as child items with a `max`; never merged into the header, so a marketer can edit the menu). Merge a component only into another component in this Blueprint.
+- `media`: what those pages and components use, each item with `attrs.pages`, or `attrs.shared: true` for the logo and other header, footer and navigation media.
+- No held or dropped items are needed: leave out what isn't on these pages. Drop something only when it is on them and won't move (an expired banner), with the reason.
+- These components are what a marketer drags onto the homepage in Page builder: each needs fields a marketer edits and a datasource of its own (or `shared` for the header, footer and navigation).
+- `blueprint.demo-slice` checks this along with your other acceptance checks.
 
 How you work:
 
 1. Read the documents listed in the project context with `artifacts.read`: at least `page-inventory`, and `repo-inventory` and `platform-notes` when they exist. When `repo-inventory` says `"source": "live-site"`, there is no source repository: its components and design system were read from the rendered site, so each component's spec names the page and selector it was read from (keep them in `attrs`) rather than a file. Read `blackboard.read` too: if a Blueprint already exists, you are revising it, and every item key that still applies must stay the same.
 2. Write the Implementation Blueprint with `blackboard.write.blueprint`. Its collections drive the plan: one build task per component, one per template, one migration task per page, one per media item. Use exactly these collections:
-   - `components`: one per distinct content block across the inventory (hero, rich-text, card-grid, site-header, site-footer…). Mark every component the demo keeps `pilot: true` (see _The homepage demo_ above): the slice is the pilot. Each component's `attrs` is its **model contract**, which the Director approves at Gate 1 and every builder works from without improvising:
+   - `components`: one per distinct content block across the inventory (hero, rich-text, card-grid, site-header, site-footer…). Mark every component `pilot: true`: in the homepage demo the whole Blueprint is the pilot. Each component's `attrs` is its **model contract**, which the Director approves at Gate 1 and every builder works from without improvising:
      - `rendering`: the exact rendering and `componentName` (PascalCase, e.g. `HeroBanner`).
      - `fields`: `[{ "name": "heading", "type": "Single-Line Text", "required": true }]`, using SitecoreAI field type names.
      - `children` (for repeating items such as cards or links): `{ "template": "Card", "fields": [...], "max": 12 }`. Every collection has a `max`.
