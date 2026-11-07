@@ -1820,7 +1820,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         ...say(
           'directive_ack',
           'Directive',
-          `Understood: ${interpretation}. No change to the plan.`,
+          // Said so the Director knows a note reaches the work: every agent's context carries it.
+          `Understood: ${interpretation}. No change to the plan; the team sees this note from its next task.`,
         ),
         decision(
           text,
