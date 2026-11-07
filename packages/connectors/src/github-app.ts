@@ -72,6 +72,15 @@ export interface GithubDeps {
 }
 
 /**
+ * What happened to something outside our stores when a project was deleted: removed, already gone,
+ * the client's now (left), or refused (recorded; the purge carries on).
+ */
+export interface CleanupResult {
+  outcome: 'deleted' | 'not_found' | 'handed_over' | 'refused' | 'skipped';
+  detail: string;
+}
+
+/**
  * What agents may do in a client repository: read the code, push to their own branch, open pull
  * requests, and read CI results. Administration is used only in our own organization, to create
  * each project's build repository; clients install the app on single repositories, where it
@@ -536,6 +545,53 @@ export class GithubApp {
    * An installation token limited to the given repositories of that installation, valid about an
    * hour. Reused until five minutes before it expires. This is what agents' tool calls carry.
    */
+  /**
+   * Deletes a project's build repository, for a project being deleted. Only one still in our
+   * organization: a repository transferred to the client is theirs and is left. GitHub's answers
+   * about the repository come back as an outcome rather than an error, so a refusal is recorded
+   * and the purge carries on; a GitHub outage throws, so the purge tries again next run.
+   */
+  async deleteBuildRepo(org: string, repo: BuildRepo): Promise<CleanupResult> {
+    const [owner] = repo.repo.split('/');
+    if (owner?.toLowerCase() !== org.toLowerCase())
+      return { outcome: 'handed_over', detail: `${repo.repo} is not in ${org}: left.` };
+    if (!(await this.config()))
+      return {
+        outcome: 'refused',
+        detail: 'The GitHub App is not set up, so nothing was deleted.',
+      };
+    let token: string;
+    try {
+      token = `token ${await this.installationToken(repo.installationId)}`;
+    } catch (err) {
+      return { outcome: 'refused', detail: (err as Error).message };
+    }
+    const found = await this.call('GET', `/repos/${repo.repo}`, token);
+    if (found.status === 404)
+      return {
+        outcome: 'not_found',
+        detail: `${repo.repo} no longer exists, or the app can't see it.`,
+      };
+    if (found.status !== 200)
+      throw new Error(`GitHub answered ${found.status} reading ${repo.repo}.`);
+    // A transferred repository answers under its new name: it is the client's now.
+    const now = (found.body as { full_name?: string }).full_name ?? repo.repo;
+    if (now.toLowerCase() !== repo.repo.toLowerCase())
+      return { outcome: 'handed_over', detail: `${repo.repo} was moved to ${now}: left.` };
+    const gone = await this.call('DELETE', `/repos/${repo.repo}`, token);
+    if (gone.status === 204) return { outcome: 'deleted', detail: `${repo.repo} deleted.` };
+    if (gone.status === 404)
+      return { outcome: 'not_found', detail: `${repo.repo} was already gone.` };
+    if (gone.status === 403) {
+      const message = (gone.body as { message?: string } | null)?.message;
+      return {
+        outcome: 'refused',
+        detail: `GitHub refused to delete ${repo.repo}${message ? `: ${message}` : ''}. The app needs Administration: Read and write, and the organization must let it delete repositories.`,
+      };
+    }
+    throw new Error(`GitHub answered ${gone.status} deleting ${repo.repo}.`);
+  }
+
   async installationToken(
     installationId: number,
     repositories?: string[],

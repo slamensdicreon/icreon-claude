@@ -38,6 +38,7 @@ import { createPlatforms } from '@lw/platforms';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import {
   composeStack,
+  deleteHostingProject,
   hostingStatus,
   recipients,
   resendNotifier,
@@ -590,6 +591,10 @@ const app = await buildApp({
         rules,
         knowledge,
         commands: opened.sql ? new CommandBus(opened.sql) : null,
+        github,
+        buildOrg: env.GITHUB_BUILD_ORG ?? null,
+        hosting: hosting ? { deleteProject: (name) => deleteHostingProject(hosting, name) } : null,
+        projects: () => projections.all(),
       }
     : undefined,
   deleteGraceDays: env.DELETE_GRACE_DAYS,

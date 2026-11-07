@@ -303,6 +303,9 @@ describe('archive and restore', () => {
     ).toBeGreaterThanOrEqual(1);
     expect(Object.keys(tomb!.steps)).toEqual([
       'workflow',
+      'repository',
+      'hosting',
+      'connection',
       'blobs',
       'secrets',
       'integrations',

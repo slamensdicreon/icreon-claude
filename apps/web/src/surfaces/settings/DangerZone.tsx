@@ -127,11 +127,19 @@ export function DangerZone({
       'Restoring the project',
     );
 
+  // What the purge removes outside our stores, by name, so nobody is surprised.
+  const created = [
+    p.buildRepo && `the build repository ${p.buildRepo.repo}`,
+    p.hosting && `the Vercel project ${p.hosting.project}`,
+  ].filter(Boolean);
+  const outside = created.length
+    ? `${created.join(' and ').replace(/^t/, 'T')} ${created.length > 1 ? 'are' : 'is'} deleted too, unless already handed to the client.`
+    : '';
   const deleteProject = () =>
     openOverlay(
       <TypedConfirm
         title="Delete this project?"
-        body="After a 30-day grace period, everything held for it is deleted: its history, documents, screenshots, credentials, and its own rules and lessons. Lessons it taught other projects stay, without its name. You can cancel until then. Download anything you need first."
+        body={`After a 30-day grace period, everything held for it is deleted: its history, documents, screenshots, credentials, and its own rules and lessons.${outside ? ` ${outside}` : ''} Lessons it taught other projects stay, without its name. You can cancel until then. Download anything you need first.`}
         confirmLabel="Schedule deletion"
         typed={p.name}
         onConfirm={() => {
@@ -192,7 +200,7 @@ export function DangerZone({
                 </Row>
                 <Row
                   title="Delete the project"
-                  note="After a 30-day grace period, everything held for it is deleted for good. You can cancel until then."
+                  note={`After a 30-day grace period, everything held for it is deleted for good${created.length ? ', with its build repository and hosting project' : ''}. You can cancel until then.`}
                 >
                   <Action kind="danger" onClick={deleteProject}>
                     Delete project
