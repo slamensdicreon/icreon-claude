@@ -104,7 +104,7 @@ export function sectionsOf(
 /* ---------- the Blueprint ---------- */
 
 export type Status = BlueprintRow['status'];
-export const STATUSES: Status[] = ['done', 'in_progress', 'planned', 'merged', 'dropped'];
+export const STATUSES: Status[] = ['done', 'in_progress', 'planned', 'merged', 'held', 'dropped'];
 
 type Collection = BlueprintSnapshot['collections'][number];
 
@@ -116,7 +116,9 @@ export const statusLabel = (s: Status, doneLabel: string) =>
       ? 'in progress'
       : s === 'merged'
         ? 'library code'
-        : s;
+        : s === 'held'
+          ? 'audited, not built'
+          : s;
 
 export const capital = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 

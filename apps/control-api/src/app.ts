@@ -650,12 +650,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
-  app.get<P>('/projects/:id/remix', async (req, reply) => {
+  // ?playbook=<id> remixes the site onto another playbook on the same entity (a homepage demo).
+  app.get<P & { Querystring: { playbook?: string } }>('/projects/:id/remix', async (req, reply) => {
     const service = intake(reply);
     if (!service) return;
     const s = project(req.params.id);
     if (!s) return fail(reply, 404, 'unknown_project', `No project "${req.params.id}".`);
-    return service.remixDraft(s);
+    return service.remixDraft(s, req.query.playbook ?? null);
   });
 
   /** Tells rules how they did: the Director agreed with the answer they gave, or overrode it. */
@@ -1027,11 +1028,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             const { answered } = await resolveCard(id, escalationId, optionId, notes, true);
             return { answered };
           },
-          remixDraft: async (id) => {
+          remixDraft: async (id, playbookId) => {
             await projections.catchUp(id);
             const s = project(id);
             if (!s) throw new Error(`No project "${id}". Use list_projects for ids.`);
-            return deps.intake!.remixDraft(s);
+            return deps.intake!.remixDraft(s, playbookId);
           },
           history: async (id, search) => {
             await projections.catchUp(id);

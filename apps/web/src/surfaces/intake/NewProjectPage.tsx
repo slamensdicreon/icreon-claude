@@ -10,11 +10,12 @@
  */
 import type {
   IntakeCredentialSpec,
+  RemixDraft,
   VerifyIntakeCredential,
   VerifyIntakeResult,
 } from '@lw/contracts';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { messageOf, postFor } from '../../lib/api';
+import { get, messageOf, postFor } from '../../lib/api';
 import { catalogGroups } from '../../lib/showcase';
 import { useApp } from '../../state';
 import { Icon } from '../../theme/icons';
@@ -153,6 +154,24 @@ export function NewProjectPage() {
   const pickPlaybook = (id: string) => {
     setPlaybookId(id);
     setChecks({});
+    // A remix moved onto another playbook (a site remixed as a homepage demo) keeps its connection,
+    // client and tenant facts, and takes that playbook's budgets and brief questions.
+    if (draft?.from) void remixOnto(draft.from.projectId, id);
+  };
+  const remixOnto = async (projectId: string, id: string) => {
+    try {
+      const d = await get<RemixDraft>(
+        `/projects/${encodeURIComponent(projectId)}/remix?playbook=${encodeURIComponent(id)}`,
+      );
+      const fresh = initialAnswers(d);
+      setAnswers((a) => ({
+        ...a,
+        f: { ...a.f, usd: fresh.f.usd, tokensM: fresh.f.tokensM, hours: fresh.f.hours },
+        brief: fresh.brief,
+      }));
+    } catch (err) {
+      setError(messageOf(err, 'The remix could not move to that playbook.'));
+    }
   };
 
   /* ---------- the steps ---------- */

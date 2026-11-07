@@ -439,3 +439,47 @@ it('opens a project drafted with Cypher with his reasoning and the brief', async
     expect.arrayContaining([expect.objectContaining({ value: 'WCAG 2.2 AA' })]),
   );
 });
+
+it('drafts a site remixed as a homepage demo: the demo playbook on the same connection', async () => {
+  let projectId = '';
+  const { model } = scripted([
+    {
+      tool: 'propose_remix',
+      input: () => ({
+        fromProjectId: projectId,
+        playbookId: 'sitecoreai-homepage-demo',
+        name: 'Initech homepage demo',
+        client: 'Initech',
+        sourceUrl: 'https://www.initech.example',
+        reason: 'A homepage demo for Initech on the Globex tenant.',
+      }),
+    },
+    { text: 'Drafted the Initech homepage demo on the Globex tenant.' },
+    { text: '```json\n{"title": "Initech demo", "summary": "Drafted a homepage demo."}\n```' },
+  ]);
+  const { store } = await start(model);
+  projectId = (await call('POST', '/projects', first)).body.projectId;
+  await call('POST', '/connections', { name: 'Globex tenant', fromProject: projectId });
+
+  const r = await call('POST', '/cypher', {
+    body: 'Remix the Globex site as a homepage demo for initech.example.',
+  });
+  expect(r.status).toBe(200);
+  const proposal = CypherConversation.parse(r.body).messages[1]!.proposals[0]!;
+  expect(proposal).toMatchObject({
+    kind: 'remix',
+    draft: {
+      playbookId: 'sitecoreai-homepage-demo',
+      from: { projectId, name: 'Globex site' },
+      name: 'Initech homepage demo',
+      client: 'Initech',
+      sourceUrl: 'https://www.initech.example',
+      budgets: { usd: 300, tokens: 20_000_000, hours: 10 },
+      target: { cmHost: 'xmc-globex.sitecorecloud.io', siteCollection: 'globex' },
+    },
+  });
+  // Only the demo's own questions: nothing about personalization or accessibility.
+  expect(proposal.draft.brief).toEqual({});
+  expect(proposal.draft.connectionId).toMatch(/^con-/);
+  expect(await store.projectIds()).toEqual([projectId]);
+});

@@ -33,6 +33,7 @@ const STATUS_TONE: Record<Status, StateTone> = {
   planned: 'quiet',
   merged: 'quiet',
   dropped: 'quiet',
+  held: 'quiet',
 };
 
 export function Blueprint() {
@@ -316,10 +317,12 @@ function Completeness({ collections }: { collections: Collection[] }) {
       <div className={s.trayCard}>
         {collections.map((c) => {
           const n = (st: Status) => c.rows.filter((r) => r.status === st).length;
-          const kept = c.rows.filter((r) => r.status !== 'dropped' && r.status !== 'merged').length;
+          const kept = c.rows.filter(
+            (r) => r.status !== 'dropped' && r.status !== 'merged' && r.status !== 'held',
+          ).length;
           const done = n('done');
           const pct = kept ? Math.round((done / kept) * 100) : 0;
-          const rest = (['in_progress', 'planned', 'dropped', 'merged'] as const)
+          const rest = (['in_progress', 'planned', 'held', 'dropped', 'merged'] as const)
             .filter((st) => n(st) > 0)
             .map((st) => `${capital(statusLabel(st, c.doneLabel))} ${n(st)}`);
           return (

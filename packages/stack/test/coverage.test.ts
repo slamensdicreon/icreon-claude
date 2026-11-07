@@ -11,11 +11,17 @@ const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS, optimizely: OPT
 describe('acceptance check coverage', () => {
   it('names every check a playbook relies on that nothing implements', async () => {
     const found: Record<string, string[]> = {};
-    for (const id of ['sitecoreai-migration', 'optimizely-saas-migration']) {
+    for (const id of [
+      'sitecoreai-migration',
+      'sitecoreai-homepage-demo',
+      'optimizely-saas-migration',
+    ]) {
       const pb = await loadPlaybook(dir(id));
       found[id] = uncheckedValidators(pb, platforms.get(pb.manifest.platform)?.checks ?? {});
     }
     expect(found['sitecoreai-migration']).toEqual(EXPECTED_SITECORE);
+    // The demo uses the website playbook's checks and its own slice check, all implemented.
+    expect(found['sitecoreai-homepage-demo']).toEqual([]);
     expect(found['optimizely-saas-migration']).toEqual(EXPECTED_OPTIMIZELY);
   });
 });
