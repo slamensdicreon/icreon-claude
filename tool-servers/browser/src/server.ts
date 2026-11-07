@@ -773,18 +773,25 @@ const withoutScripts = (html: string, url: string) =>
 
 /**
  * A tool result's code for a page the browser loaded. The page's own HTTP status passes through,
- * except a refusal: a source site answering 401 or 403 (often bot protection at its CDN, or how
- * it answers a URL it doesn't have) says nothing about our access, and a 401 or 403 from a tool
- * means a credential was refused, which stops the task for the Director. So it's a 422: the
- * agent's to work around.
+ * except two cases where it would mislead:
+ * - A not-found page (404, 410) was read all the same, and it's often what the agent asked for
+ *   (the missing-page probe, the site's 404 page). An error code would hand the agent only the
+ *   summary, without the page's title, headings and text, so it's a 200 with the status in the
+ *   body and the summary.
+ * - A refusal (401, 403: bot protection at the site's CDN, or how it answers a URL it doesn't
+ *   have) says nothing about our access, but a 401 or 403 from a tool means a credential was
+ *   refused, which stops the task for the Director. So it's a 422: the agent's to work around.
  */
-export const pageCode = (status: number) => (status === 401 || status === 403 ? 422 : status);
+export const pageCode = (status: number) =>
+  status === 401 || status === 403 ? 422 : status === 404 || status === 410 ? 200 : status;
 
-/** What the agent is told about a page the site refused. */
+/** What the agent is told about a page the site refused, or a not-found page it read. */
 const refusedNote = (status: number) =>
-  status === 401 || status === 403
-    ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access: for the missing-page probe, record errorPage as null; otherwise leave the page out and say so`
-    : '';
+  status === 404 || status === 410
+    ? `. The site answered HTTP ${status}: this is its not-found page, read as served. Its title, headings and text are in the result (for the missing-page probe, they are the errorPage)`
+    : status === 401 || status === 403
+      ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access: for the missing-page probe, record errorPage as null; otherwise leave the page out and say so`
+      : '';
 
 /**
  * The source site turned our browser away on every page it was asked for: Discovery can't read it
