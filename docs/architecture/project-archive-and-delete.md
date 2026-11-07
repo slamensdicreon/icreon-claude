@@ -1,7 +1,7 @@
 # Archiving and deleting projects
 
-Status: **plan, decided**, 2026-11-07. The Director's answers are under *Decisions*. **M1 is built**
-(archive, read-only, restore); M2–M4 are next.
+Status: **plan, decided**, 2026-11-07. The Director's answers are under *Decisions*. **M1 and M2 are built**
+(archive, read-only, restore; deletion inside our own stores); M3–M4 are next.
 
 A project today can run, pause, complete or be cancelled, but there is no way to put it away or to
 remove it. This plan adds two steps at the end of a project's life:
@@ -153,7 +153,7 @@ Each result goes in the tombstone, so "what happened to the repo" has an answer.
 | | Work | Done when |
 | --- | --- | --- |
 | **M1 Archive for real** (built) | `POST /projects/:id/archive` for live projects (cancels a paused project through the workflow, then `archived` with the previous status); a server hook that answers `409 archived` to every change; `POST /projects/:id/restore`; the operator's login as the actor; the danger zone (Archive disabled while running, Restore when archived) and the switcher. No separate Cancel button: archiving a paused project cancels it | `apps/control-api/test/archive.test.ts` and `apps/web/e2e/settings-archive.e2e.ts` |
-| **M2 Delete inside our stores** | Request and cancel deletion; grace period; the purge job and cron; `SecretVault.deleteProject`; tombstones; rules and knowledge de-identified | A purged project leaves only its tombstone: no rows, blobs or secrets under its id (checked by a test against Postgres and a local blob store), and a purge interrupted at any step finishes on the next run |
+| **M2 Delete inside our stores** (built) | `POST`/`DELETE /projects/:id/deletion` (archived only, typed name; restore waits until it's cancelled); `project.deletion` events and `deletion` on the project summary; the daily purge `GET /portfolio/purge-due` (Vercel Cron 07:41 UTC, `CRON_SECRET`), resumable step by step; 410 while a purge is under way; `lw_project_tombstones` and `GET /portfolio/deleted`; `SecretVault.deleteProject`, `CommandBus.forget`, `forgetProject` on rules and knowledge; `DELETE_GRACE_DAYS` (default 30); the danger zone's Delete and Cancel deletion | `packages/events/test/forget.test.ts` (Postgres and memory), `apps/control-api/test/archive.test.ts` (purge leaves only the tombstone; a failed purge resumes), `apps/web/e2e/settings-archive.e2e.ts` |
 | **M3 Outside resources** | Purge deletes the build repo and the hosting project (left and recorded when handed over), and unused saved connections; the dialog lists them | Each resource is removed or recorded as handed over, and the result is in the tombstone |
 | **M4 Exports and housekeeping** | Documents zip download; "Deleted projects" list from tombstones; runbook in `docs/deploy/vercel.md`; the open Director decision on Lambert's Cable and Star LLC as the first real archive | An operator can download everything, then delete, without help |
 

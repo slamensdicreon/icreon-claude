@@ -6,7 +6,7 @@
  */
 import type { ProjectSummary, SettingsSnapshot } from '@lw/contracts';
 import type { ReactNode } from 'react';
-import { post } from '../../lib/api';
+import { del, post } from '../../lib/api';
 import { TypedConfirm } from '../../overlays/Dialogs';
 import { useApp } from '../../state';
 import { Panel } from '../../ui/cypher/parts';
@@ -127,26 +127,84 @@ export function DangerZone({
       'Restoring the project',
     );
 
-  if (archived)
+  const deleteProject = () =>
+    openOverlay(
+      <TypedConfirm
+        title="Delete this project?"
+        body="After a 30-day grace period, everything held for it is deleted: its history, documents, screenshots, credentials, and its own rules and lessons. Lessons it taught other projects stay, without its name. You can cancel until then. Download anything you need first."
+        confirmLabel="Schedule deletion"
+        typed={p.name}
+        onConfirm={() => {
+          closeOverlay();
+          void run(
+            () => post(`${base}/deletion`, { confirmation: p.name }),
+            {
+              title: `${p.name} scheduled for deletion`,
+              detail: 'Cancel it here any time before then.',
+            },
+            'Scheduling the deletion',
+          );
+        }}
+      />,
+    );
+  const cancelDeletion = () =>
+    run(
+      () => del(`${base}/deletion`),
+      { title: 'Deletion cancelled', detail: `${p.name} stays archived.` },
+      'Cancelling the deletion',
+    );
+
+  if (archived) {
+    const due = p.deletion
+      ? new Date(p.deletion.due).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : null;
     return (
       <div className={s.danger}>
         <Panel title="Archived">
           <p className={`${s.lead} ${s.sentence}`}>
-            This project is archived and read-only. Nothing runs and nothing can be changed.
+            {due
+              ? `This project is archived and will be deleted on ${due}.`
+              : 'This project is archived and read-only. Nothing runs and nothing can be changed.'}
           </p>
           <ul className={s.dangerRows}>
-            <Row
-              title="Restore the project"
-              note="Brings it back as completed or cancelled, to read and export. To do more work, start a new project from it with Remix."
-            >
-              <Action kind="primary" onClick={() => void restore()}>
-                Restore project
-              </Action>
-            </Row>
+            {due ? (
+              <Row
+                title={`Deletion scheduled for ${due}`}
+                note="Everything held for this project goes on that date. Cancel to keep it archived; then it can be restored."
+              >
+                <Action kind="primary" onClick={() => void cancelDeletion()}>
+                  Cancel deletion
+                </Action>
+              </Row>
+            ) : (
+              <>
+                <Row
+                  title="Restore the project"
+                  note="Brings it back as completed or cancelled, to read and export. To do more work, start a new project from it with Remix."
+                >
+                  <Action kind="primary" onClick={() => void restore()}>
+                    Restore project
+                  </Action>
+                </Row>
+                <Row
+                  title="Delete the project"
+                  note="After a 30-day grace period, everything held for it is deleted for good. You can cancel until then."
+                >
+                  <Action kind="danger" onClick={deleteProject}>
+                    Delete project
+                  </Action>
+                </Row>
+              </>
+            )}
           </ul>
         </Panel>
       </div>
     );
+  }
 
   return (
     <div className={s.danger}>

@@ -211,6 +211,10 @@
     {
       "path": "/portfolio/watchdog",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/portfolio/purge-due",
+      "schedule": "41 7 * * *"
     }
   ]
 }

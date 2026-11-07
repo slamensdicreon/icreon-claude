@@ -22,6 +22,7 @@ const MIGRATIONS = [
   '004_integrations.sql',
   '005_rules.sql',
   '006_knowledge.sql',
+  '007_tombstones.sql',
 ];
 
 /**

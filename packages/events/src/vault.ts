@@ -17,6 +17,8 @@ export interface SealedRef {
 export interface SecretVault {
   seal(projectId: string, name: string, value: string): Promise<SealedRef>;
   open(reference: string): Promise<string>;
+  /** Deletes every secret sealed for a project (a project being deleted). How many went. */
+  deleteProject(projectId: string): Promise<number>;
 }
 
 /**
@@ -92,6 +94,14 @@ export class PostgresVault implements SecretVault {
     return { reference: `vault:${id}`, hint: hintOf(value) };
   }
 
+  async deleteProject(projectId: string): Promise<number> {
+    const { rows } = await this.sql.query<{ id: string }>(
+      'DELETE FROM lw_secrets WHERE project_id = $1 RETURNING id',
+      [projectId],
+    );
+    return rows.length;
+  }
+
   async open(reference: string): Promise<string> {
     const { rows } = await this.sql.query<{
       id: string;
@@ -135,6 +145,16 @@ export class MemoryVault implements SecretVault {
       ...seal(this.key, id, projectId, name, value),
     });
     return { reference: `vault:${id}`, hint: hintOf(value) };
+  }
+
+  async deleteProject(projectId: string): Promise<number> {
+    let n = 0;
+    for (const [id, row] of [...this.rows])
+      if (row.project_id === projectId) {
+        this.rows.delete(id);
+        n++;
+      }
+    return n;
   }
 
   async open(reference: string): Promise<string> {

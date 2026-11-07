@@ -70,6 +70,12 @@ export interface KnowledgeStore {
   retrieve(ctx: KnowledgeContext, limit?: number): Promise<KnowledgeEntry[]>;
   used(ids: string[], use: { projectId: string; taskId: string }): Promise<void>;
   history(id: string): Promise<{ at: string; kind: string; detail: Record<string, unknown> }[]>;
+  /**
+   * A project is being deleted: its own entries go, with their history. Entries it taught every
+   * project stay; they keep the project's id in `source` (it points at the deletion record), lose
+   * the project's evidence, and their history keeps the counts without the project.
+   */
+  forgetProject(projectId: string): Promise<{ deleted: number; deidentified: number }>;
 }
 
 interface Body {
@@ -98,6 +104,14 @@ interface Row {
   updated_at: string | Date;
   rank?: number;
 }
+
+/** Evidence from a deleted project: kept as a count, without its reference or words. */
+const forgottenEvidence = (e: KnowledgeEvidence, projectId: string): KnowledgeEvidence =>
+  e.projectId === projectId ? { projectId, ref: '', label: 'Evidence from a deleted project' } : e;
+const forgottenUseDetail = (detail: Record<string, unknown>) => {
+  const { projectId: _p, taskId: _t, ...rest } = detail;
+  return { ...rest, project: 'deleted' };
+};
 
 const iso = (t: string | Date) => new Date(t).toISOString();
 const clean = (s: string, max: number) => s.trim().replace(/\s+/g, ' ').slice(0, max);
@@ -343,6 +357,39 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
     for (const id of ids) await this.log(id, 'used', { ...use });
   }
 
+  async forgetProject(projectId: string) {
+    const own = await this.sql.query<{ id: string }>(
+      "SELECT id FROM lw_knowledge WHERE scope_kind = 'project' AND scope_id = $1",
+      [projectId],
+    );
+    for (const { id } of own.rows) {
+      await this.sql.query('DELETE FROM lw_knowledge_history WHERE entry_id = $1', [id]);
+      await this.sql.query('DELETE FROM lw_knowledge WHERE id = $1', [id]);
+    }
+    const taught = await this.sql.query<Row>(
+      `SELECT * FROM lw_knowledge WHERE body->'source'->>'projectId' = $1
+         OR body->'evidence' @> $2::jsonb`,
+      [projectId, JSON.stringify([{ projectId }])],
+    );
+    for (const r of taught.rows) {
+      const evidence = r.body.evidence.map((e) => forgottenEvidence(e, projectId));
+      await this.sql.query('UPDATE lw_knowledge SET body = $2::jsonb WHERE id = $1', [
+        r.id,
+        JSON.stringify({ ...r.body, evidence }),
+      ]);
+    }
+    const uses = await this.sql.query<{ seq: string | number; detail: Record<string, unknown> }>(
+      "SELECT seq, detail FROM lw_knowledge_history WHERE detail->>'projectId' = $1",
+      [projectId],
+    );
+    for (const u of uses.rows)
+      await this.sql.query('UPDATE lw_knowledge_history SET detail = $2::jsonb WHERE seq = $1', [
+        u.seq,
+        JSON.stringify(forgottenUseDetail(u.detail)),
+      ]);
+    return { deleted: own.rows.length, deidentified: taught.rows.length };
+  }
+
   async history(id: string) {
     const { rows } = await this.sql.query<{
       at: string | Date;
@@ -467,6 +514,35 @@ export class MemoryKnowledgeStore implements KnowledgeStore {
       this.entries.set(id, { ...cur, used: cur.used + 1 });
       this.push(id, 'used', { ...use });
     }
+  }
+
+  async forgetProject(projectId: string) {
+    let deleted = 0;
+    let deidentified = 0;
+    for (const [id, e] of [...this.entries]) {
+      if (e.scope.kind === 'project' && e.scope.id === projectId) {
+        this.entries.delete(id);
+        this.log.delete(id);
+        deleted++;
+      } else if (
+        e.source?.projectId === projectId ||
+        e.evidence.some((x) => x.projectId === projectId)
+      ) {
+        this.entries.set(id, {
+          ...e,
+          evidence: e.evidence.map((x) => forgottenEvidence(x, projectId)),
+        });
+        deidentified++;
+      }
+    }
+    for (const [id, items] of this.log)
+      this.log.set(
+        id,
+        items.map((h) =>
+          h.detail.projectId === projectId ? { ...h, detail: forgottenUseDetail(h.detail) } : h,
+        ),
+      );
+    return { deleted, deidentified };
   }
 
   async history(id: string) {

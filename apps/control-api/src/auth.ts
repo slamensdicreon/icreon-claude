@@ -50,7 +50,7 @@ const OPEN_PATHS = ['/health', '/auth/', '/integrations/github/installed'];
 /** The path alone, without its query: routes are matched exactly, not by prefix. */
 const pathOf = (url: string) => url.split('?')[0]!;
 // What a scheduled call (Vercel Cron) may reach with the cron secret.
-const CRON_PATHS = ['/portfolio/watchdog'];
+const CRON_PATHS = ['/portfolio/watchdog', '/portfolio/purge-due'];
 
 /**
  * Sign-in with GitHub for the one or two operators who run Launchworks. Only identity is kept:
