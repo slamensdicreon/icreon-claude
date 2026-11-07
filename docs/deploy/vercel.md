@@ -211,6 +211,45 @@ API terminates its Temporal workflow, deletes its events after intake and its Bl
 the intake facts, credentials (and their checks) and the source site. **Start** on Mission Control
 runs it again from phase 0.
 
+## Archiving and deleting a project
+
+All of it is in the project's **Settings → Danger zone**. Any operator can do every step; each is
+recorded under their GitHub login.
+
+1. **Pause it** if it's running. Archive is disabled until nothing runs.
+2. **Archive it.** Type the project's name. A paused project is cancelled first (open tasks
+   stopped, waiting cards cleared). From then on the API refuses every change to it (`409
+   archived`); it leaves the project switcher and shows under the Dashboard's Archived filter.
+   **Restore** brings it back as completed or cancelled, to read and export; more work is a new
+   project made from it with Remix.
+3. **Download everything.** The archived project's Danger zone has *Documents (.zip)*: the latest
+   version of every stored document, the activity log as CSV and a README
+   (`GET /projects/:id/documents.zip`), and *Activity (.csv)*.
+4. **Delete it.** Type the name again. The deletion is scheduled `DELETE_GRACE_DAYS` (30) days out,
+   and the project shows *Deletion scheduled for …* with **Cancel deletion**. Restore is refused
+   until it's cancelled.
+5. **The purge** runs every day at 07:41 UTC (`GET /portfolio/purge-due`, Vercel Cron with
+   `CRON_SECRET`; an operator can call it too). For each project that's due it records a
+   tombstone in `lw_project_tombstones`, then, one step at a time: stops the workflow; deletes the
+   build repository in `GITHUB_BUILD_ORG` and the hosting project in our Vercel team (left when
+   another project uses them or they were handed to the client); removes an unused saved
+   connection; deletes the blobs, secrets, triage replay, the project's own rules and lessons
+   (de-identifying what it taught other projects), its commands, and last its event log. The
+   project answers `410` while it goes.
+6. **Check what happened** under the Dashboard's Archived filter, in *Deleted projects*: when it
+   went, who asked, and what happened to the build repository and the hosting project. *Refused*
+   means GitHub or Vercel said no; the reason is in its tooltip (and in `GET /portfolio/deleted`).
+
+If a purge fails part way (GitHub or Vercel down, a database error), the project stays listed and
+answers `410`; the next daily run resumes from the first step it hasn't recorded. A refusal is not
+a failure: it's recorded and the purge goes on, so fix the permission and delete the repository or
+Vercel project by hand:
+
+- **GitHub refused:** the app needs **Administration: Read and write** on the build organization's
+  installation, and the organization must allow it to delete repositories.
+- **Vercel refused:** the owner of `VERCEL_PREVIEWS_TOKEN` needs a role in the team that can delete
+  projects (an Owner can).
+
 ## Deploying while projects run
 
 Push at any time; nothing needs pausing. Every deployment replaces the `worker` daemon, and agent

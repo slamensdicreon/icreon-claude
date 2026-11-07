@@ -418,3 +418,26 @@
     border-bottom: 0;
   }
 }
+
+/* A download in the danger zone: a link that looks like the secondary buttons beside it. */
+.download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--row) - var(--space-3));
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  line-height: 1.25;
+  transition: border-color 200ms ease-out;
+}
+.download:hover {
+  border-color: var(--text-3);
+}
+.download:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}

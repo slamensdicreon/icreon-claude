@@ -98,6 +98,7 @@ async function start() {
       platforms: createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fakeSitecore } }),
       vault,
     }),
+    artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
     purge: {
       store,
       tombstones,
@@ -345,5 +346,34 @@ describe('archive and restore', () => {
     expect(await purge()).toEqual({ purged: [id], failed: [] });
     expect(await store.head(id)).toBe(0);
     expect(t.stopped).toEqual([id]);
+  });
+
+  it('downloads every document, the activity log and a README in one zip', async () => {
+    const t = await start();
+    const { store, projectId: id } = t;
+    const ref = await t.blobs.put(id, 'artifacts/page-inventory/v2.md', Buffer.from('# Pages\n'));
+    const doc = (version: number, r: string | null) => ({
+      type: 'artifact.versioned' as const,
+      actor: { kind: 'agent' as const, id: 'content-analyst' },
+      subject: { kind: 'artifact' as const, id: 'page-inventory' },
+      severity: 'notable' as const,
+      data: {
+        artifactId: 'page-inventory',
+        kind: 'inventory' as const,
+        title: 'Page inventory',
+        version,
+        ref: r,
+        format: 'markdown' as const,
+      },
+    });
+    await store.append(id, [doc(1, null), doc(2, ref)]);
+    const res = await app!.inject({ method: 'GET', url: `/projects/${id}/documents.zip` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('application/zip');
+    expect(res.headers['content-disposition']).toMatch(/Globex-site-documents-.*\.zip/);
+    const text = res.rawPayload.toString('latin1');
+    for (const name of ['documents/page-inventory-v2.md', 'activity.csv', 'README.txt'])
+      expect(text).toContain(name);
+    expect(res.rawPayload.subarray(0, 4).toString('hex')).toBe('504b0304');
   });
 });

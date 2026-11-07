@@ -6,6 +6,7 @@ import { EscalationLines, SpendBars, Swatch } from '../../ui/cypher/charts';
 import { leftOf, pillHue, pillOf, useYoursActions } from '../../ui/cypher/cards';
 import { Avatar, Bar, Button, Chips, hueOf, Kpi, NeedsRow, Panel } from '../../ui/cypher/parts';
 import s from './dashboard.module.css';
+import { DeletedProjects } from './DeletedProjects';
 
 type Filter = 'all' | 'yours' | 'archived';
 
@@ -102,6 +103,7 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
             </table>
           </div>
         </Panel>
+        {filter === 'archived' && <DeletedProjects />}
       </div>
 
       <div id="needs">
