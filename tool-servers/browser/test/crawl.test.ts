@@ -328,6 +328,7 @@ describe('limits and failures', () => {
         reused: 0,
         throttled: 0,
         refused: 0,
+        challenged: 0,
         dropped: 0,
         robots: 0,
         readingSince: now,
@@ -485,6 +486,7 @@ describe.each([
       reused: 0,
       throttled: 0,
       refused: 0,
+      challenged: 0,
       dropped: 0,
       robots: 0,
       readingSince: null,
@@ -601,4 +603,115 @@ describe.each([
     await new Promise((r) => setTimeout(r, 10));
     expect(await store.lease('c2', 'w1', 60_000)).toBe(true); // w2's ran out
   });
+});
+
+describe('bot protection that answers 200', () => {
+  const challenge =
+    '<!doctype html><html><head><title>Just a moment...</title></head><body><div id="challenge-platform"></div><script src="/cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1"></script></body></html>';
+  const real = (i: number, title = `Product ${i} | Acme`) =>
+    `<html><head><title>${title}</title></head><body><main><h1>Product ${i}</h1><p>${'word '.repeat(120)}</p>${Array.from({ length: 25 }, (_, j) => `<a href="/p/${j}">${j}</a>`).join(' ')}</main></body></html>`;
+
+  /** A site: `mode` decides what plain clients and browsers get. */
+  async function site(mode: 'browsers-pass' | 'nobody-passes' | 'same-title') {
+    const { createServer } = await import('node:http');
+    const server = createServer((req, res) => {
+      const path = new URL(req.url!, 'http://x').pathname;
+      const browser = String(req.headers['user-agent']).includes('HeadlessChrome');
+      if (path === '/robots.txt' || path === '/sitemap.xml') return res.writeHead(404).end();
+      const i = Number(path.split('/').pop()) || 0;
+      const body =
+        mode === 'same-title'
+          ? real(i, 'Please accept cookies')
+          : mode === 'nobody-passes' || !browser
+            ? challenge
+            : real(i);
+      res.writeHead(200, { 'content-type': 'text/html' }).end(body);
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    return { origin, close: () => new Promise((r) => server.close(r)) };
+  }
+
+  it('knows challenge pages, and leaves real pages that mention a vendor alone', async () => {
+    const { challengeOf } = await import('../src/crawl/crawler');
+    expect(challengeOf({ title: 'Just a moment...', wordCount: 3 })).toBe('a bot check');
+    expect(challengeOf({ title: 'x', wordCount: 4 }, challenge)).toBe('Cloudflare');
+    expect(challengeOf({ title: 'Access Denied', wordCount: 8 })).toBe('a bot check');
+    expect(
+      challengeOf(
+        { title: 'Our CDN', wordCount: 400 },
+        `<p>We use Cloudflare and challenge-platform. ${'w '.repeat(400)}</p>`,
+      ),
+    ).toBeNull();
+  });
+
+  it('reads pages a real browser gets past the check, and counts them', async () => {
+    const s = await site('browsers-pass');
+    const server = new BrowserToolServer({
+      policy,
+      blobs: new MemoryBlobStore(),
+      browser: guarded,
+      settleMs: 200,
+    });
+    try {
+      const r = await server.call('crawl.start', { url: `${s.origin}/p/0`, maxPages: 6 }, ctx);
+      const status = await finish(server, (r.body as { crawlId: string }).crawlId);
+      expect(status.progress.read).toBe(6);
+      expect(status.how).toMatchObject({ rendered: 6, http: 0 });
+      const page = await server.call('crawl.page', { url: `${s.origin}/p/1` }, ctx);
+      expect(page.body).toMatchObject({ title: 'Product 1 | Acme', via: 'browser' });
+      expect((await server.call('crawl.status', {}, ctx)).summary).toMatch(
+        /sends a bot check to every plain request and a real browser passes it, so every page is read in a browser/,
+      );
+    } finally {
+      await server.close();
+      await s.close();
+    }
+  }, 60_000);
+
+  it('says the site refused us when the browser is challenged too, instead of storing the check as content', async () => {
+    const s = await site('nobody-passes');
+    const server = new BrowserToolServer({
+      policy,
+      blobs: new MemoryBlobStore(),
+      browser: guarded,
+      settleMs: 200,
+    });
+    try {
+      const r = await server.call('crawl.start', { url: `${s.origin}/p/0` }, ctx);
+      const status = await finish(server, (r.body as { crawlId: string }).crawlId);
+      expect(status.progress.read).toBe(0);
+      expect(status.excluded).toContainEqual(
+        expect.objectContaining({
+          reason: 'blocked by bot protection (Cloudflare challenge page, also to a real browser)',
+        }),
+      );
+      expect((await server.call('crawl.status', {}, ctx)).summary).toMatch(
+        /found no page it could read.*bot protection, not our access.*needs_decision/,
+      );
+    } finally {
+      await server.close();
+      await s.close();
+    }
+  }, 60_000);
+
+  it('warns when many pages share one title, which real sites rarely do', async () => {
+    const s = await site('same-title');
+    const server = new BrowserToolServer({
+      policy,
+      blobs: new MemoryBlobStore(),
+      browser: guarded,
+    });
+    try {
+      const r = await server.call('crawl.start', { url: `${s.origin}/p/0` }, ctx);
+      const status = await finish(server, (r.body as { crawlId: string }).crawlId);
+      expect(status.progress.read).toBe(25);
+      expect((await server.call('crawl.status', {}, ctx)).summary).toMatch(
+        /Check the content: 25 pages share the title "Please accept cookies"/,
+      );
+    } finally {
+      await server.close();
+      await s.close();
+    }
+  }, 60_000);
 });

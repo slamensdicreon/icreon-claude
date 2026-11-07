@@ -68,6 +68,8 @@ const slug = (pattern: string) =>
 const SAME_PARENT = 0.5;
 /** Different parents, or top-level pages: almost the same layout. */
 const ACROSS = 0.8;
+/** Fewer section tokens than this can't tell layouts apart across URL patterns. */
+const MIN_LAYOUT = 3;
 
 export interface Grouping {
   templates: Template[];
@@ -105,8 +107,13 @@ export function groupTemplates(pages: TemplatePage[]): Grouping {
 
   // Across parents, and the top-level pages: merge what is built the same way.
   const merged: Cluster[] = [];
+  // A layout of one or two tokens says nothing (every page is "div"): such pages merge with
+  // nothing, so their URL patterns keep them apart.
   const add = (c: Cluster) => {
-    const m = merged.find((m) => jaccard(m.rep, c.rep) >= ACROSS);
+    const m =
+      c.rep.length >= MIN_LAYOUT
+        ? merged.find((m) => m.rep.length >= MIN_LAYOUT && jaccard(m.rep, c.rep) >= ACROSS)
+        : undefined;
     if (!m) return merged.push(c);
     m.pages.push(...c.pages);
     for (const [k, n] of c.patterns) m.patterns.set(k, (m.patterns.get(k) ?? 0) + n);

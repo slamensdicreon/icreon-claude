@@ -87,6 +87,18 @@ export class CrawlReports {
     }
     const redirectCount = excluded.filter((u) => u.reason?.startsWith('redirects (')).length;
     const truncated = job.stats.dropped > 0;
+    // Many pages with one title: the site may be serving a challenge, error or consent page in
+    // place of its content. Real sites rarely share a title across a third of their pages.
+    const titles = new Map<string, number>();
+    for (const p of g.pages) {
+      const t = (p.summary?.title ?? '').trim();
+      if (t) titles.set(t, (titles.get(t) ?? 0) + 1);
+    }
+    const [topTitle, topCount] = [...titles].sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
+    const suspect =
+      g.pages.length >= 20 && topCount >= Math.max(10, g.pages.length * 0.3)
+        ? { title: topTitle, pages: topCount }
+        : null;
 
     const body = {
       crawlId: job.id,
@@ -110,6 +122,7 @@ export class CrawlReports {
         reused: job.stats.reused,
         throttled: job.stats.throttled,
         refused: job.stats.refused,
+        challenged: job.stats.challenged ?? 0,
       },
       limits: {
         maxPages: job.options.maxPages,
@@ -122,6 +135,7 @@ export class CrawlReports {
         ? { moreTemplates: g.grouping.templates.length - 40 }
         : {}),
       repeatedRegions: g.regions,
+      ...(suspect ? { suspect } : {}),
       redirects: { count: redirectCount, first: redirects },
       excluded: [...reasons.values()].sort((a, b) => b.count - a.count),
       ...(job.message ? { message: job.message } : {}),
@@ -208,7 +222,15 @@ interface StatusBody {
     perMinute: number | null;
     etaMinutes: number | null;
   };
-  how: { http: number; rendered: number; reused: number; throttled: number; refused: number };
+  how: {
+    http: number;
+    rendered: number;
+    reused: number;
+    throttled: number;
+    refused: number;
+    challenged: number;
+  };
+  suspect?: { title: string; pages: number };
   limits: { truncated: boolean; maxPages: number; dropped: number };
   templates: unknown[];
   moreTemplates?: number;
@@ -223,6 +245,15 @@ function statusLine(job: CrawlJob, b: StatusBody): string {
   const throttled = b.how.throttled
     ? `. The site is throttling us (${b.how.throttled} "too many requests" answers): the crawl slowed to its pace`
     : '';
+  const suspect = b.suspect
+    ? `. Check the content: ${b.suspect.pages} pages share the title "${b.suspect.title.slice(0, 80)}", which may be a challenge, error or consent page the site served instead of its pages. Read two of them with crawl.page before relying on the templates`
+    : '';
+  const challenged =
+    b.how.challenged && b.how.http === 0 && b.how.rendered > 0
+      ? '. The site sends a bot check to every plain request and a real browser passes it, so every page is read in a browser (slower, but complete)'
+      : b.how.challenged > b.how.refused
+        ? `. ${b.how.challenged - b.how.refused} pages answered with a bot check that a real browser passed`
+        : '';
   const refused = b.how.refused
     ? `. The site refused ${b.how.refused} pages (401/403, also to a real browser): list them as not read, they aren't an access problem of ours`
     : '';
@@ -231,12 +262,12 @@ function statusLine(job: CrawlJob, b: StatusBody): string {
       ? `. A large site (${p.found} URLs found): work from the templates and crawl.query, not page by page`
       : '';
   if (job.status === 'running')
-    return `${head}: running, ${p.read} of ${p.found} URLs read${p.perMinute ? ` (${p.perMinute}/min${p.etaMinutes ? `, about ${p.etaMinutes} min left` : ''})` : ''}; ${t} templates so far${throttled}${refused}${big}`;
+    return `${head}: running, ${p.read} of ${p.found} URLs read${p.perMinute ? ` (${p.perMinute}/min${p.etaMinutes ? `, about ${p.etaMinutes} min left` : ''})` : ''}; ${t} templates so far${suspect}${throttled}${refused}${challenged}${big}`;
   if (job.status === 'done' && p.read === 0 && b.how.refused)
     return `${head} found no page it could read: ${job.message ?? 'the site refused our browser'}. That is the site's bot protection, not our access, and retrying won't change it. Stop and submit needs_decision for the Director: the client allows our crawler, or gives the source repository, or the project uses another site`;
   const how = `${b.how.http} read directly, ${b.how.rendered} in a browser${b.how.reused ? `, ${b.how.reused} unchanged since the last crawl` : ''}`;
   const cut = b.limits.truncated
     ? `. Stopped at maxPages (${b.limits.maxPages}): ${b.limits.dropped} more URLs were found and not read; the inventory is partial`
     : '';
-  return `${head}: ${job.status}, ${p.read} pages read (${how}), ${p.excluded + p.failed} excluded, ${b.redirects.count} redirects, ${t} templates, ${b.repeatedRegions.length} repeated regions${job.message ? `. ${job.message}` : ''}${cut}${throttled}${refused}${big}`;
+  return `${head}: ${job.status}, ${p.read} pages read (${how}), ${p.excluded + p.failed} excluded, ${b.redirects.count} redirects, ${t} templates, ${b.repeatedRegions.length} repeated regions${job.message ? `. ${job.message}` : ''}${cut}${suspect}${throttled}${refused}${challenged}${big}`;
 }

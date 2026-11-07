@@ -49,30 +49,49 @@ export function extractPage() {
 
   /**
    * The page's layout as a short list of section tokens (`section.hero`, `div.card-grid`), for
-   * telling templates apart. Looks through single wrappers (page builders nest the content in
-   * one or two divs), and keeps class names without digits, which are usually generated.
+   * telling templates apart. Looks through single wrappers (page builders and CMSs such as AEM
+   * nest the content in many), ignores class names that say nothing about the component (grid,
+   * container and style classes, and names with digits, which are usually generated), and names a
+   * generic section by the first component inside it (`div>teaser`).
    */
   function layoutOf(root: Element): string[] {
-    let el = root;
-    for (let i = 0; i < 4; i++) {
-      const kids = Array.from(el.children).filter(
-        (c) => !['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'LINK'].includes(c.tagName),
+    const SKIP = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'LINK'];
+    const GENERIC =
+      /^(aem-|cmp-container|container|responsivegrid|wrapper|inner|row|col|grid|content|section|block|style|layout|flex|d-|w-|h-|text-|bg-|is-|has-|js-)/i;
+    const kids = (el: Element) => Array.from(el.children).filter((c) => !SKIP.includes(c.tagName));
+    const meaningful = (el: Element) => {
+      const hint = el.getAttribute('data-component') ?? el.getAttribute('data-block');
+      if (hint) return hint.slice(0, 60);
+      return (
+        (el.getAttribute('class') ?? '')
+          .split(/\s+/)
+          .find((t) => t && !/\d/.test(t) && !GENERIC.test(t))
+          ?.slice(0, 60) ?? ''
       );
-      if (kids.length !== 1) break;
-      el = kids[0]!;
+    };
+    /** The first component class inside a generic section, looking a few levels down. */
+    const inner = (el: Element) => {
+      let level = kids(el);
+      for (let depth = 0; depth < 6 && level.length; depth++) {
+        for (const c of level.slice(0, 12)) {
+          const m = meaningful(c);
+          if (m) return m;
+        }
+        level = level.slice(0, 12).flatMap(kids);
+      }
+      return '';
+    };
+    let el = root;
+    for (let i = 0; i < 12; i++) {
+      const k = kids(el);
+      if (k.length !== 1) break;
+      el = k[0]!;
     }
     const out: string[] = [];
-    for (const c of Array.from(el.children)) {
-      if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'LINK'].includes(c.tagName)) continue;
-      const hint =
-        c.getAttribute('data-component') ??
-        c.getAttribute('data-block') ??
-        (c.getAttribute('class') ?? '')
-          .split(/\s+/)
-          .filter((t) => t && !/\d/.test(t))
-          .slice(0, 2)
-          .join('.');
-      const token = `${c.tagName.toLowerCase()}${hint ? `.${hint.slice(0, 60)}` : ''}`;
+    for (const c of kids(el)) {
+      const own = meaningful(c);
+      const within = own ? '' : inner(c);
+      const token = `${c.tagName.toLowerCase()}${own ? `.${own}` : ''}${within ? `>${within}` : ''}`;
       // A run of the same section (cards, list items) is one token.
       if (out[out.length - 1] !== token) out.push(token);
       if (out.length >= 40) break;

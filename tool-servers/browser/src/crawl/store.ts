@@ -25,8 +25,10 @@ export interface CrawlStats {
   reused: number;
   /** 429 and 503 answers: the site asking us to slow down. */
   throttled: number;
-  /** 401 and 403 answers, also to a real browser: bot protection. */
+  /** 401 and 403 answers, or challenge pages, also to a real browser: bot protection. */
   refused: number;
+  /** Challenge pages served with 200 to a plain client (passed or not in a browser). */
+  challenged: number;
   /** URLs found but not queued: past maxPages. */
   dropped: number;
   /** Disallowed by robots.txt. */
@@ -41,6 +43,7 @@ export const emptyStats = (): CrawlStats => ({
   reused: 0,
   throttled: 0,
   refused: 0,
+  challenged: 0,
   dropped: 0,
   robots: 0,
   readingSince: null,

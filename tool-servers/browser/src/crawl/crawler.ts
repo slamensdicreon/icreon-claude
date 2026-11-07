@@ -32,7 +32,7 @@ export interface CrawlerOptions {
    * crawl doesn't run on one context for hours, and a Chromium restart costs one segment.
    */
   segmentSize?: number;
-  /** Pages read in a real browser at once, across a crawl (default 2): they cost the most. */
+  /** Pages read in a real browser at once, across crawls (default 4): they cost the most. */
   renderConcurrency?: number;
   /** How long a crawl's lease lasts without renewal (default 60 s). */
   leaseMs?: number;
@@ -126,6 +126,48 @@ interface Run {
   dropped: Set<string>;
 }
 
+/**
+ * Bot protection that answers 200 with a challenge or block page instead of the content
+ * (Cloudflare, Akamai, Imperva, PerimeterX, DataDome, Kasada, Sucuri, AWS WAF). Stored as a page,
+ * it would pass for content: every "page" the same few words, and templates made of it.
+ */
+const CHALLENGES: [string, RegExp][] = [
+  [
+    'Cloudflare',
+    /cf-browser-verification|challenge-platform|__cf_chl_|cf_chl_opt|<title>\s*(just a moment|attention required)/i,
+  ],
+  [
+    'Akamai',
+    /<title>\s*access denied\s*<\/title>[\s\S]{0,2000}reference\s*#|_abck|ak_bmsc|bm-verify/i,
+  ],
+  ['Imperva', /_Incapsula_Resource|incapsula incident id|<title>\s*request unsuccessful/i],
+  ['PerimeterX', /px-captcha|perimeterx|_pxhd|<title>\s*access to this page has been denied/i],
+  ['DataDome', /captcha-delivery\.com|datadome/i],
+  ['Kasada', /ips\.js\?|x-kpsdk|kpsdk/i],
+  ['Sucuri', /sucuri website firewall|sucuri\.net\/access-denied/i],
+  ['AWS WAF', /awswaf|aws-waf-token|challenge\.js.*awswaf/i],
+  [
+    'a bot check',
+    /<title>\s*(pardon our interruption|are you a robot|checking your browser|verify you are human|security check)/i,
+  ],
+];
+const CHALLENGE_TITLE =
+  /^(just a moment\.*|attention required!?.*|access denied|pardon our interruption|request unsuccessful.*|are you a robot\??|checking your browser.*|verify you are human|security check|access to this page has been denied\.?)$/i;
+
+/**
+ * Whose challenge page this is, or null. Only small pages are judged by their markup: a real page
+ * may load a vendor's script and mention it, but a challenge page is little else.
+ */
+export function challengeOf(
+  page: { title?: string | null; wordCount?: number },
+  html?: string,
+): string | null {
+  if (html && (page.wordCount ?? 0) <= 150)
+    for (const [who, re] of CHALLENGES) if (re.test(html)) return who;
+  if (page.title && CHALLENGE_TITLE.test(page.title.trim())) return 'a bot check';
+  return null;
+}
+
 /** An empty app container, as single-page apps serve their pages. */
 const SHELL =
   /<(div|main|section)\b[^>]*\bid=["'](root|app|__next|__nuxt|___gatsby|main-app)["'][^>]*>\s*<\/\1>/i;
@@ -178,7 +220,7 @@ export class Crawler {
   private closing = false;
 
   constructor(private readonly opts: CrawlerOptions) {
-    this.render = new Pacer(opts.renderConcurrency ?? 2);
+    this.render = new Pacer(opts.renderConcurrency ?? 4);
   }
 
   get store(): CrawlStore {
@@ -579,6 +621,31 @@ export class Crawler {
     const { job, policy, pacer, stats } = run;
     const attempts = u.attempts + 1;
     try {
+      // A site that challenges every plain request (a bot check a browser passes): ask the
+      // browser directly, rather than spend a refused request on every page first.
+      if (stats.challenged >= 10 && stats.http === 0) {
+        const r = await pacer.run(() => this.rendered(run, u.url));
+        if (!r || r.status >= 400 || challengeOf(r)) {
+          stats.refused++;
+          return await store.finish(job.id, u.url, {
+            state: 'excluded',
+            reason:
+              r && r.status >= 400
+                ? `HTTP ${r.status}`
+                : 'blocked by bot protection (a challenge page, also to a real browser)',
+            attempts,
+          });
+        }
+        stats.rendered++;
+        pacer.succeeded();
+        await store.finish(job.id, u.url, { state: 'done', page: r, attempts });
+        const found: NewUrl[] = [];
+        for (const raw of r.links) {
+          const c = onOrigin(cleanLink(raw), job.origin);
+          if (c) found.push({ url: c, depth: u.depth + 1, source: 'link', lastmod: null });
+        }
+        return await this.queue(run, found);
+      }
       const get = (url: string) =>
         pacer.run(() =>
           fetchPage(url, policy, {
@@ -622,11 +689,14 @@ export class Crawler {
       if (f.status === 401 || f.status === 403) {
         // Bot protection often turns away plain clients only: ask a real browser.
         page = await this.rendered(run, u.url);
-        if (!page || page.status >= 400) {
+        if (!page || page.status >= 400 || challengeOf(page)) {
           stats.refused++;
           return await store.finish(job.id, u.url, {
             state: 'excluded',
-            reason: `HTTP ${page?.status ?? f.status}`,
+            reason:
+              page && page.status < 400
+                ? 'blocked by bot protection (a challenge page, also to a real browser)'
+                : `HTTP ${page?.status ?? f.status}`,
             attempts,
           });
         }
@@ -645,8 +715,28 @@ export class Crawler {
       } else {
         const extract = await parser.parse(f.body, f.finalUrl);
         page = { url: u.url, status: f.status, via: 'http', ...extract };
+        const challenge = challengeOf(extract, f.body);
+        if (challenge) {
+          // A challenge page served with 200: a real browser may pass it; if not, the site
+          // refused us, whatever the status said.
+          stats.challenged++;
+          const r = await this.rendered(run, u.url);
+          if (!r || r.status >= 400 || challengeOf(r)) {
+            stats.refused++;
+            return await store.finish(job.id, u.url, {
+              state: 'excluded',
+              reason: `blocked by bot protection (${challenge} challenge page, also to a real browser)`,
+              attempts,
+            });
+          }
+          page = r;
+        }
         const pattern = urlPattern(u.url);
-        if (needsBrowser(extract, f.body) && run.rendering.get(pattern) !== false) {
+        if (
+          page.via === 'http' &&
+          needsBrowser(extract, f.body) &&
+          run.rendering.get(pattern) !== false
+        ) {
           // Built in the browser, by the look of it: read it there.
           const r = await this.rendered(run, u.url);
           const better = !!r && r.status < 400 && sizeOf(r) > sizeOf(extract) * 1.2 + 10;
