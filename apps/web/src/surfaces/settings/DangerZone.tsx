@@ -6,7 +6,7 @@
  */
 import type { ProjectSummary, SettingsSnapshot } from '@lw/contracts';
 import type { ReactNode } from 'react';
-import { del, post } from '../../lib/api';
+import { API, del, post } from '../../lib/api';
 import { TypedConfirm } from '../../overlays/Dialogs';
 import { useApp } from '../../state';
 import { Panel } from '../../ui/cypher/parts';
@@ -179,6 +179,17 @@ export function DangerZone({
               : 'This project is archived and read-only. Nothing runs and nothing can be changed.'}
           </p>
           <ul className={s.dangerRows}>
+            <Row
+              title="Download everything"
+              note="Every document’s latest version and the activity log, in one zip. Do this before deleting."
+            >
+              <a className={s.download} href={`${API}${base}/documents.zip`} download>
+                Documents (.zip)
+              </a>
+              <a className={s.download} href={`${API}${base}/activity.csv?view=all`} download>
+                Activity (.csv)
+              </a>
+            </Row>
             {due ? (
               <Row
                 title={`Deletion scheduled for ${due}`}

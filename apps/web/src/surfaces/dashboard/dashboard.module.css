@@ -228,3 +228,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* A purge step GitHub or Vercel refused: the reason is in its title. */
+.refused {
+  color: var(--coral-text);
+  font-weight: 600;
+}

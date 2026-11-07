@@ -106,6 +106,7 @@ import type {
 import { applyProposals, inForce, unsorted } from './knowledge-review';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
+import { zip, type ZipEntry } from './zip';
 import { purgeDue, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
@@ -1809,6 +1810,72 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * The activity log as a CSV download, oldest first, with full text: an audit trail to hand on.
    * Takes the Activity page's filters (view, severity, agent, phase) and an optional ISO `since`.
    */
+  /** A project's activity, oldest first, read through its whole log (capped at 200,000 rows). */
+  const activityOf = async (s: ProjectState, keep: (i: ActivityItem) => boolean) => {
+    const items: ActivityItem[] = [];
+    let after = 0;
+    const MAX = 200_000;
+    while (items.length < MAX) {
+      const chunk = await store.read(s.projectId, { after, limit: 1000 });
+      if (!chunk.length) break;
+      for (const e of chunk) {
+        const i = toActivity(s, e);
+        if (keep(i)) items.push(i);
+      }
+      after = chunk.at(-1)!.seq;
+    }
+    return items;
+  };
+
+  /**
+   * Everything worth keeping from a project, in one zip: the latest version of every document with
+   * stored content, the activity log as CSV, and a README saying what it is. Offered before a
+   * project is deleted; it works for any project, archived ones included.
+   */
+  app.get<P>('/projects/:id/documents.zip', async (req, reply) => {
+    const s = known(req.params.id);
+    const ext = { markdown: 'md', json: 'json', png: 'png', binary: 'bin' } as const;
+    const files: ZipEntry[] = [];
+    const missing: string[] = [];
+    for (const a of Object.values(s.artifacts)) {
+      const v = a.versions.find((x) => x.version === a.latest);
+      const bytes =
+        v?.ref && deps.artifactContent
+          ? await deps.artifactContent(s.projectId, v.ref).catch(() => null)
+          : null;
+      if (!v || !bytes) {
+        missing.push(a.title ?? a.artifactId);
+        continue;
+      }
+      files.push({
+        name: `documents/${a.artifactId}-v${v.version}.${ext[v.format ?? 'binary']}`,
+        data: bytes,
+        date: new Date(v.ts),
+      });
+    }
+    const activity = await activityOf(s, (i) => i.toolLabel !== null);
+    files.push({
+      name: 'activity.csv',
+      data: Buffer.from(`\uFEFF${activityCsv(activity, (id) => s.agents[id])}`, 'utf8'),
+    });
+    const lines = [
+      `${s.name} (${s.client})`,
+      `Exported ${new Date().toISOString()} from Launchworks. Project id ${s.projectId}, status ${s.status}.`,
+      '',
+      `documents/: the latest version of ${files.length - 1} document(s).`,
+      'activity.csv: every step the team took, with who, which tool, the result and the tokens.',
+      ...(missing.length ? ['', `Not included (no stored content): ${missing.join(', ')}.`] : []),
+    ];
+    files.push({ name: 'README.txt', data: Buffer.from(lines.join('\n') + '\n', 'utf8') });
+    const day = new Date().toISOString().slice(0, 10);
+    const name = `${(s.name ?? s.projectId).replace(/[^A-Za-z0-9-]+/g, '-')}-documents-${day}.zip`;
+    return reply
+      .header('content-type', 'application/zip')
+      .header('content-disposition', `attachment; filename="${name}"`)
+      .header('cache-control', 'no-store')
+      .send(zip(files));
+  });
+
   app.get<P & { Querystring: Record<string, string> }>(
     '/projects/:id/activity.csv',
     async (req, reply) => {
@@ -1821,26 +1888,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const severities = q.severity?.split(',');
       const types = q.type?.split(',');
       const since = q.since ? Date.parse(q.since) : null;
-      const items: ActivityItem[] = [];
-      let after = 0;
-      const MAX = 200_000;
-      while (items.length < MAX) {
-        const chunk = await store.read(s.projectId, { after, limit: 1000 });
-        if (!chunk.length) break;
-        for (const e of chunk) {
-          const i = toActivity(s, e);
-          if (
-            (q.view === 'all' || i.toolLabel !== null) &&
-            (!severities || severities.includes(i.severity)) &&
-            (!types || types.includes(i.type)) &&
-            (!q.agent || i.agentId === q.agent) &&
-            (q.phase === undefined || i.phase === q.phase) &&
-            (since === null || Date.parse(i.ts) >= since)
-          )
-            items.push(i);
-        }
-        after = chunk.at(-1)!.seq;
-      }
+      const items = await activityOf(
+        s,
+        (i) =>
+          (q.view === 'all' || i.toolLabel !== null) &&
+          (!severities || severities.includes(i.severity)) &&
+          (!types || types.includes(i.type)) &&
+          (!q.agent || i.agentId === q.agent) &&
+          (q.phase === undefined || i.phase === q.phase) &&
+          (since === null || Date.parse(i.ts) >= since),
+      );
       const day = new Date().toISOString().slice(0, 10);
       const name = `${(s.name ?? s.projectId).replace(/[^A-Za-z0-9-]+/g, '-')}-activity-${day}.csv`;
       return reply

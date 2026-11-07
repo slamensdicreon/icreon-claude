@@ -61,6 +61,7 @@ test('an archived project can be scheduled for deletion, and the deletion cancel
   const schedule = dialog.getByRole('button', { name: 'Schedule deletion' });
   await expect(schedule).toBeDisabled();
   await dialog.getByLabel('Confirm').fill(name);
+  await expect(schedule).toBeEnabled();
   await schedule.click();
   await expect.poll(() => typed).toEqual({ confirmation: name });
   await page.reload();
@@ -73,5 +74,59 @@ test('an archived project can be scheduled for deletion, and the deletion cancel
   await page.reload();
   await page.waitForLoadState('networkidle');
   await expect(page.getByRole('button', { name: 'Delete project' })).toBeVisible();
+  run.clean();
+});
+
+test('an archived project offers its documents and log to download', async ({ page }) => {
+  await page.route(new RegExp(`/projects/${PROJECT}/mission-control(\\?.*)?$`), async (r) => {
+    const res = await r.fetch();
+    const body = await res.json();
+    body.project.status = 'archived';
+    await r.fulfill({ response: res, json: body });
+  });
+  const run = await open(page, `/p/${PROJECT}/settings`);
+  await expect(page.getByRole('link', { name: 'Documents (.zip)' })).toHaveAttribute(
+    'href',
+    new RegExp(`/projects/${PROJECT}/documents\\.zip$`),
+  );
+  await expect(page.getByRole('link', { name: 'Activity (.csv)' })).toBeVisible();
+  run.clean();
+});
+
+test('the Dashboard lists deleted projects under Archived, with what happened outside', async ({
+  page,
+}) => {
+  await page.route(/\/portfolio\/deleted$/, (r) =>
+    r.fulfill({
+      json: [
+        {
+          projectId: 'prj-gone',
+          name: 'Globex site',
+          client: 'Globex',
+          requestedBy: 'steve',
+          requestedAt: '2026-11-07T12:00:00.000Z',
+          startedAt: '2026-12-08T07:41:00.000Z',
+          finishedAt: '2026-12-08T07:42:00.000Z',
+          purgedBy: 'vercel-cron',
+          steps: {
+            repository: { at: 'x', result: { outcome: 'deleted', detail: 'deleted' } },
+            hosting: {
+              at: 'x',
+              result: { outcome: 'refused', detail: 'Vercel refused to delete globex-website' },
+            },
+          },
+        },
+      ],
+    }),
+  );
+  const run = await open(page, '/');
+  await page
+    .getByRole('group', { name: 'Show projects' })
+    .getByRole('button', { name: /Archived/ })
+    .click();
+  const deleted = page.getByRole('region', { name: 'Deleted projects' });
+  await expect(deleted.getByText('Globex site')).toBeVisible();
+  await expect(deleted.getByText('Refused')).toHaveAttribute('title', /Vercel refused/);
+  await expect(deleted.getByText('Dec 8, 2026')).toBeVisible();
   run.clean();
 });
