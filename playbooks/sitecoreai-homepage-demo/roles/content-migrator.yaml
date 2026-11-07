@@ -57,6 +57,8 @@ tools:
   artifacts:
     ops:
       - read
+      # A large site's proven template mapping (template-mapping-<key>), for the bulk import.
+      - write
   # Reproduce a page on the head and read what the server logged (a 500 names what threw).
   hosting:
     ops:

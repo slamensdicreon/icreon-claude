@@ -74,6 +74,9 @@ async function findByName(
 /** The collection's kept items, or only the task's own when it covers some of them. */
 const inScope = (ctx: PlatformCheckContext, collection: string) => {
   const kept = (ctx.blueprint?.collections[collection] ?? []).filter((i) => i.status !== 'drop');
+  // A large site's template is proven on its example pages: the pages merged into it.
+  if (collection === 'pages' && ctx.scope.collection === 'page-templates' && ctx.scope.items.length)
+    return kept.filter((i) => ctx.scope.items.includes(String(i.attrs?.mergedInto ?? '')));
   const own =
     ctx.scope.collection === collection && ctx.scope.items.length ? ctx.scope.items : null;
   return own ? kept.filter((i) => own.includes(i.key)) : kept;

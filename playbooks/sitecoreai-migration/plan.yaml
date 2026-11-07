@@ -52,7 +52,14 @@ templates:
     dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
     # discovery.blueprint: every source form placed (a Director item when Form is the SDK's
     # built-in), redirects decided, the 404 page at /404, source components mapped, media hosts named.
-    acceptance: [validator:blueprint.coverage, validator:discovery.blueprint]
+    # blueprint.page-templates: the size rule. A large site's big templates are planned per
+    # template; a small site's every page is planned on its own.
+    acceptance:
+      [
+        validator:blueprint.coverage,
+        validator:discovery.blueprint,
+        validator:blueprint.page-templates,
+      ]
 
   # 3 — Foundation
   - id: create-site
@@ -190,6 +197,24 @@ templates:
         validator:parity.render,
         validator:parity.visual,
       ]
+  # Large sites only: a template of many pages (page-templates in the Blueprint) is proven on its
+  # example pages, which merge into it, and its proven mapping is what the bulk import applies to
+  # the rest. A small site's Blueprint has no page-templates, so these tasks never exist for it.
+  # The size rule is platforms/sitecoreai/page-templates.ts (blueprint.page-templates).
+  - id: prove-template-{key}
+    phase: 6
+    role: content-migrator
+    forEach: page-templates
+    optional: true
+    title: Prove the {name} mapping on its example pages
+    acceptance:
+      [
+        validator:template.mapping,
+        validator:structural.layouts,
+        validator:head.pages-render,
+        validator:parity.render,
+        validator:parity.visual,
+      ]
   - id: upload-media-{key}
     phase: 6
     role: media-migrator
@@ -205,7 +230,7 @@ templates:
     phase: 6
     role: parity-auditor
     title: Audit content parity
-    dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
+    dependsOn: [migrate-pages-*, prove-template-*, upload-media-*, recrawl-source]
     acceptance: [validator:parity.render, validator:parity.visual, validator:parity.page]
 
   # 7 — Experience enablement

@@ -142,6 +142,60 @@ describe('compilePlan', () => {
     expect(ids(keeping).filter((id) => id.endsWith('-tabs')).length).toBeGreaterThan(0);
   });
 
+  it("plans a large site's big templates once each, proven on examples that merge into them", () => {
+    const large = blueprint({
+      'page-templates': [
+        { key: 'resources-learn', name: 'Learn article' },
+        { key: 'resources-glossary', name: 'Glossary term' },
+      ],
+      pages: [
+        { key: 'home', name: 'Home' },
+        ...['learn-1', 'learn-2', 'term-1'].map((key) => ({
+          key,
+          name: key,
+          status: 'merge',
+          attrs: { mergedInto: key.startsWith('term') ? 'resources-glossary' : 'resources-learn' },
+        })),
+      ],
+    } as never);
+    const plan = compilePlan(pb, large, { skipMerged: true });
+    const prove = plan.tasks.filter((t) => t.templateId === 'prove-template-{key}');
+    expect(prove.map((t) => [t.taskId, t.title, t.collection, t.itemKeys])).toEqual([
+      [
+        'prove-template-resources-learn',
+        'Prove the Learn article mapping on its example pages',
+        'page-templates',
+        ['resources-learn'],
+      ],
+      [
+        'prove-template-resources-glossary',
+        'Prove the Glossary term mapping on its example pages',
+        'page-templates',
+        ['resources-glossary'],
+      ],
+    ]);
+    // The example pages are migrated by the proof, not on their own.
+    expect(
+      plan.tasks.filter((t) => t.templateId === 'migrate-pages-{key}').map((t) => t.taskId),
+    ).toEqual(['migrate-pages-home']);
+    expect(plan.tasks.find((t) => t.taskId === 'audit-parity')!.dependsOn).toEqual(
+      expect.arrayContaining([
+        'prove-template-resources-learn',
+        'prove-template-resources-glossary',
+      ]),
+    );
+    assertTopological(plan);
+  });
+
+  it('gives a small site no template tasks at all, before or after its Blueprint', () => {
+    const before = compilePlan(pb, null);
+    expect(before.tasks.some((t) => t.taskId.startsWith('prove-template'))).toBe(false);
+    // A small site's Blueprint has no page-templates collection: not an error, no tasks.
+    const after = compilePlan(pb, blueprint(), { skipMerged: true });
+    expect(after.tasks.some((t) => t.taskId.startsWith('prove-template'))).toBe(false);
+    expect(after.tasks.filter((t) => t.templateId === 'migrate-pages-{key}')).toHaveLength(25);
+  });
+
   it('builds the pilot slice: non-pilot work waits on a checkpoint after the pilot items', () => {
     const plan = compilePlan(pb, blueprint());
     const byId = new Map(plan.tasks.map((t) => [t.taskId, t]));

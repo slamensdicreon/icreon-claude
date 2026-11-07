@@ -103,11 +103,39 @@ Cypher's heads-up (`sourceNotice` in `packages/stack/src/operator.ts`) reads `cr
 summaries for throttling, refusals and size, since a background crawl's own requests are not
 steps.
 
+## Planning per template (large sites only)
+
+A large site is planned and migrated per template; a small site page by page, exactly as before.
+The rule is code, not agent judgment: `platforms/sitecoreai/page-templates.ts`.
+
+- **Large** means the discovery crawl found `LARGE_SITE_PAGES` (400) pages or more. Each crawl
+  template of `BULK_TEMPLATE_PAGES` (20) pages or more becomes an item of the Blueprint's
+  `page-templates` collection: its crawl template, its Sitecore page template, and a field
+  mapping (`{ component, field, from }`). Two to five of its example pages go in `pages` with
+  `status: "merge"` and `attrs.mergedInto` the template, so they get no tasks of their own.
+  Everything else (the home page, landing and one-off pages, templates under 20 pages) stays in
+  `pages`, one task per page.
+- **Small** sites have no `page-templates` collection. The check `blueprint.page-templates`
+  (on `draft-blueprint` in the website playbook) fails a small site's Blueprint that has one,
+  and a large site's that leaves a big template unplanned (it may be dropped with a reason).
+- The plan template `prove-template-{key}` is `optional: true`: no placeholder before the
+  Blueprint, and no tasks (rather than a plan error) when the Blueprint has no such collection.
+  A small site's plan is therefore unchanged, task for task.
+- `prove-template-{key}` (Content Migrator) builds the template's example pages from the mapping,
+  corrects the mapping where real pages differ, and writes it as `template-mapping-<key>`. Its
+  acceptance is the page checks, scoped to the example pages (`inScope` maps a `page-templates`
+  task to the pages merged into it), and `template.mapping`, which checks the document keeps every
+  field and records each example's page item.
+- The Solution Architect can read the crawl (`crawl.status`, `crawl.query`, `crawl.page`) and
+  layout data (`page.data`) to write mappings. The homepage demo shares the roles but not the
+  rule: it builds only the homepage, even of a large site.
+
 ## Next
 
-- Plan per template downstream. The Solution Architect and the page-migration tasks still
-  assume a page list. At thousands of pages, content migration should be a bulk import per
-  template, not an agent per page.
+- Stage 2: the bulk import. A tool operation applies `template-mapping-<key>` to every other page
+  of the template from the crawl store, writing items through the gateway in batches, idempotent
+  and resumable; cheap checks on every page, visual parity on a sample, and pages that don't fit
+  the mapping routed back to agents as exceptions.
 - Phase 2: external services behind a backend interface. Hosted browsers (Browserbase,
   Browserless) for rendering at scale, and an unblocking service (Firecrawl, Zyte, Bright Data)
   for sites whose bot protection refuses us. Our extractors stay the same. The `fetchPage` and
