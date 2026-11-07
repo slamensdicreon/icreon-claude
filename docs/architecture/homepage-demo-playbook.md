@@ -1,24 +1,26 @@
 # The homepage demo playbook
 
 Status: **plan**, 2026-11-07. Companion to the commercial model (the internal deck, slide 6: "One
-meeting. Their homepage. A price.") and to [playbooks.md](playbooks.md).
+meeting. Their homepage. Signed.") and to [playbooks.md](playbooks.md).
 
 ## What it is
 
 A variant of the SitecoreAI website playbook (`playbooks/sitecoreai-migration`) that runs inside
-one sales meeting, about 60 minutes. The Deployed Implementation Director (DID) types the
-prospect's live URL into New project. Before the meeting ends, the prospect has seen two things:
+one sales meeting. The Deployed Implementation Director (DID) types the prospect's live URL into
+New project. Within 30 to 60 minutes, the prospect has seen two things:
 
-1. **The whole site, sized.** Pages, templates, components, languages, forms and media, counted
-   across the entire site, placed in a rate-card band (S up to 25 components, M 26–60, L 61–120,
-   plus extra sites and languages) and priced.
+1. **The whole site, sized.** Pages, templates, components, languages, forms, media and the sites
+   that would sit under the entity, counted across the entire site. From that, the license is
+   scoped in the room: the entity, extra sites, the playbooks that fit, and the three Director
+   months.
 2. **Their homepage, built on SitecoreAI.** Executed end to end on our demo tenant: components
    ported and registered, the page composed, a preview deploy, and the page open in Page builder
    where the DID edits a headline live.
 
-The demo replaces the old idea of a free week-long Blueprint. After signature, the real build runs
-on `sitecoreai-migration` and its Blueprint is a same-day effort; Gate 1 confirms the size the
-demo quoted.
+**The demo is the close.** There are no milestones and no payment gates: a full migration takes
+hours, so the prospect buys a license (per entity and per playbook) in the meeting, with a DID
+required for the first three months. The next day the DID starts the full migration on the
+customer's own tenant on `sitecoreai-migration`, starting from the demo's inventory and Blueprint.
 
 ## What the code gives us today
 
@@ -28,7 +30,7 @@ run records.
 | Need | Today | Where |
 | --- | --- | --- |
 | A playbook that only executes one page | **No switch.** A page can be kept out of the build by marking it `status: drop` in the Blueprint; dropped items stay visible, so the sizing survives | `packages/plan/src/compile.ts:345-354` |
-| Whole-site sizing | **Nothing produces a band or price.** The inputs exist: `page-inventory` (pages, words, images, languages, templates, forms, redirects) and the repo or live-UI inventory (components with `usedOn`) | `prompts/content-analyst.md:11-91`, `prompts/repo-analyst.md:15-60` |
+| Whole-site sizing | **Nothing produces a size or a license scope.** The inputs exist: `page-inventory` (pages, words, images, languages, templates, forms, redirects) and the repo or live-UI inventory (components with `usedOn`) | `prompts/content-analyst.md:11-91`, `prompts/repo-analyst.md:15-60` |
 | The homepage's components | `usedOn: ["/"]` on inventory components is the natural selector | `prompts/repo-analyst.md` |
 | URL-only source | Supported since 0.5.0 (`inventory-live-ui`, `page.markup`, `page.styles`), but visual parity loops are the weak spot: agents can't view screenshots | `docs/architecture/agent-intelligence-build-plan.md:136-160` |
 | Our own tenant, repo and hosting | Already how it works: build repos in our GitHub org from the starter, our Vercel team, shared tenant by saved connection | `apps/control-api/src/intake.ts:486-531`, `platforms/sitecoreai/pack.ts:153-163` |
@@ -40,9 +42,10 @@ run records.
 | Deadlines | `defaults.escalationDeadlines` accepts minutes (`5m`) | `playbook.yaml:129-135` |
 | Inheritance between playbooks | **None.** The portal and Optimizely playbooks are copies with edits | `packages/playbook-sdk/src/load.ts` |
 
-### The clock is the risk
+### The clock
 
-There is no evidence yet that anything close to 60 minutes is possible:
+The target is the homepage in 30 to 60 minutes. The run records so far are for whole sites, and
+they agree with "a migration takes hours":
 
 - **Ervin Cable** (no repo, about 16 pages) took about 8 hours across phases 4–6. Most of that was
   page-migration loops waiting on component send-backs.
@@ -55,8 +58,9 @@ There is no evidence yet that anything close to 60 minutes is possible:
   - The crawl is sequential, at up to 30 seconds per navigation.
 - **No task template sets an `estimate`.**
 
-So the first milestone measures before we build. One homepage is a small job: the header, the
-footer and six to ten components. The waits are what decide whether the run fits in the meeting.
+One homepage is a small job: the header, the footer and six to ten components. The fixed waits
+decide whether it fits in the hour, so the first milestone times a homepage-only run before we tune
+anything.
 
 ## The design
 
@@ -76,14 +80,14 @@ footer and six to ten components. The waits are what decide whether the run fits
 | # | Phase | Runs | Target |
 | --- | --- | --- | --- |
 | 0 | Slot | Claims a pre-provisioned demo slot (site, repo, editing host, Vercel project); no intake form beyond the URL | 1 min |
-| 1 | Size | Sitemap read, stratified sample crawl, live-UI inventory of the sample and the homepage, **site-sizing** document with the band and the price | 10–15 min |
+| 1 | Size | Sitemap read, stratified sample crawl, live-UI inventory of the sample and the homepage, **site-sizing** document with the license scope | 10–15 min |
 | 2 | Scope | Solution Architect writes the Blueprint: every page and component listed, all but the homepage and its components dropped. **The DID approves it in the meeting** (one click; it's the moment the prospect sees the scope) | 3–5 min |
 | 3 | Build | Components ported in parallel, renderings registered, header and footer datasources, homepage composed, homepage content and media migrated | 20–25 min |
 | 4 | Show | One code deploy, homepage published to preview, visual diff at desktop, Page builder link and preview link posted by Cypher | 8–10 min |
 
 The playbook keeps Foundation out of the meeting: the demo slot already is the foundation.
 
-### Sizing, the commercial half
+### Sizing, the commercial half: scoping the license
 
 A new Discovery task, `size-site`, writes a `site-sizing` document:
 
@@ -93,18 +97,26 @@ A new Discovery task, `size-site`, writes a `site-sizing` document:
 - **Components**: distinct live-UI components across a stratified sample (every template at least
   twice, about 30 pages), with header and footer counted once.
 - **Languages, forms, media**: from the sample and the crawl's `languages`, `forms`, `mediaHosts`.
-- **The band and the price**: from a rate card file in the playbook (`pricing.yaml`: bands,
-  add-ons, founding discount). The commercial numbers live in one place and are versioned with the
-  playbook.
+- **Sites under care**: the domains, brands and language sites found (hreflang, subdomains,
+  country paths), because the entity license includes five and charges per extra site.
+- **Which playbooks fit**: a website for every site; a customer portal where login and account
+  pages are found; consolidation where several sites share a component library.
+- **Migration hours**: an estimate for the full migration, from the component and page counts.
+  It's what the DID says when asked "how long?".
+- **The license**: from a price list in the playbook (`pricing.yaml`: entity, included sites, extra
+  sites, playbooks, Director months, founding discount). The commercial numbers live in one place
+  and are versioned with the playbook.
 - **Confidence**: high, medium or low, with the reason ("no sitemap", "sample hit 2 of 3
-  templates"). A low-confidence size is quoted as a band, never a single number.
+  templates"). A low-confidence site count is quoted as a range, never a single number.
 
-Cypher posts it as a brief: "62 pages, 7 templates, 41 components, 2 languages. Band M: $75K.
-Confidence high." The Workbench shows the full document.
+Cypher posts it as a brief: "62 pages, 7 templates, 41 components, 2 languages, 4 sites. Entity
+$60K and the website playbook $60K a year; the Director $45K for three months. Year 1: $165K.
+The full migration: about 6 hours. Confidence high." The Workbench shows the full document.
 
 **Calibration** is a test, not a hope. We have five real projects (Ansco, Ervin Cable, Lambert's
 Cable, Star LLC, icreon). For each one with a written Blueprint, `size-site` runs against the live
-site and must land in the band that Blueprint lands in, missing on no more than one.
+site, and its component and page counts must land within 20% of that Blueprint's, missing on no
+more than one.
 
 ### The demo pool
 
@@ -149,44 +161,48 @@ The one-gate trap has to be fixed in the core, not worked around:
 | Minute | DID | Prospect sees |
 | --- | --- | --- |
 | 0 | Opens New project, picks "Homepage demo", pastes their URL | Their site, read in real time on the Floor |
-| 12 | Opens Cypher's sizing brief | Pages, templates, components, the band and the price |
+| 12 | Opens Cypher's sizing brief | Pages, templates, components, sites, and the license with its Year 1 total |
 | 15 | Approves the scope | Their whole site in the Blueprint, everything but the homepage marked for the real build |
 | 15–50 | Talks through Activity and Team | Specialists porting their components, live |
-| 50 | Opens the Page builder link | Their homepage on SitecoreAI |
-| 55 | Edits the hero headline, publishes to preview | A marketer's change, live, without a developer |
+| 45 | Opens the Page builder link | Their homepage on SitecoreAI |
+| 50 | Edits the hero headline, publishes to preview | A marketer's change, live, without a developer |
+| 55 | Opens the license from the sizing brief | Entity, playbooks, three Director months. Signed in the room; the migration starts tomorrow |
 
 ## Milestones
 
 | | Work | Done when |
 | --- | --- | --- |
-| **M0 Measure** | Run today's `sitecoreai-migration` homepage-only (the Architect drops every other page) on three sites, one with a repo, two URL-only. Record wall-clock time per phase and per wait | A timing table and the critical path named. If one homepage takes over 3 hours, stop and re-plan the meeting format before building M3–M5 |
-| **M1 Sizing** | `size-site` task and prompt, `site-sizing` document type in the Workbench, sitemap read in the browser server, `pricing.yaml`, the sizing brief | Calibration test passes: band right on all but one past project |
+| **M0 Measure** | Run today's `sitecoreai-migration` homepage-only (the Architect drops every other page) on three sites, one with a repo, two URL-only. Record wall-clock time per phase and per wait | A timing table and the critical path named |
+| **M1 Sizing** | `size-site` task and prompt, `site-sizing` document type in the Workbench, sitemap read in the browser server, `pricing.yaml`, the sizing brief with the license and Year 1 total | Calibration test passes: counts within 20% on all but one past project |
 | **M2 Gate roles** | `gateRole` in the schema, orchestrator uses it, `sitecoreai-migration` and the portal playbook declare theirs | Existing tests green; a one-gate playbook adopts the Blueprint without closing the engagement |
 | **M3 The playbook** | `playbooks/sitecoreai-homepage-demo/`, copied from the website playbook and cut to the phases above; Architect prompt for homepage scope; speed settings; a drift test that flags differences from the shared role and knowledge files in `sitecoreai-migration` | Loads and validates; `playbook-sdk` and `stack` coverage tests list it; it shows in New project as ready |
 | **M4 Demo pool** | Ten slots provisioned, claim and release in the playbook, the reset task | A slot runs, resets and runs again with nothing left behind |
 | **M5 Speed** | Tune from M0's numbers: concurrency, waits, build caching, review rules | The homepage done in 45 minutes or less on three test sites |
-| **M6 The meeting** | Presentation mode for the demo (Floor, sizing card, Page builder link), the DID script, a fallback for a run that overruns | Ten dry runs on varied sites: 8 of 10 inside 60 minutes, sizing band right on all ten |
+| **M6 The meeting** | Presentation mode for the demo (Floor, sizing card, Page builder link, the license), the DID script, a fallback for a run that overruns | Ten dry runs on varied sites: 8 of 10 inside 60 minutes, site counts right on all ten |
+| **M7 Hand-off to the real build** | After signature, a new `sitecoreai-migration` project on the customer's tenant starts from the demo's inventory and Blueprint instead of crawling again | The DID starts the full migration the day after the meeting with Discovery already done |
 
 M1 and M2 don't depend on M0 and can start now. M3 needs M2. M5 needs M0, M3 and M4.
 
 ## Risks
 
-- **The clock.** If M0 shows hours, not minutes, the format changes: the run starts when the
-  meeting is booked, and the meeting shows it finishing live. We decide that after M0, not before.
+- **The clock.** The close depends on the homepage landing inside the meeting. If M0 shows a
+  homepage takes longer than an hour, the fallback is to start the run when the meeting is booked
+  and show it finishing live. M5 exists to make that unnecessary.
 - **URL-only parity.** Agents can't see screenshots, so visual parity is the weakest part of a
   URL-only build. Showing one homepage keeps the gap small. Giving Visual QA image input is the real
   fix and helps every playbook.
 - **Their content in our tenant.** A prospect's homepage copy and media sit on our demo slot.
   Preview is not indexed, slots are reset after each demo, and anything unsigned after 30 days is
   deleted. This needs a sentence in the meeting and in the terms.
-- **Sizing credibility.** A wrong band in the room is worse than no band. The confidence label and
-  the calibration test exist for that reason; low confidence is quoted as a range.
+- **Sizing credibility.** A wrong site count in the room means a wrong license. The confidence
+  label and the calibration test exist for that reason; low confidence is quoted as a range, and
+  the license can add sites later at the list price.
 - **Playbook drift.** Without inheritance, the demo playbook copies roles and knowledge from the
   website playbook. The drift test catches divergence until the SDK gets a real `extends`.
 
 ## Open questions for the Director
 
-1. **Show a price in the room, or a band?** The plan shows both, with the price from `pricing.yaml`.
+1. **When does the license start:** the day it's signed, or the day the first migration starts?
 2. **Pool size:** ten slots, or start with three until M6?
 3. **Retention:** is 30 days right for an unsigned prospect's demo?
 4. **A prospect who wants their own tenant:** do we offer it, or only after signature?
