@@ -47,6 +47,7 @@ async function sourceSite() {
   const paths = new Map<string, string>();
   for (let i = 0; i < 30; i++) paths.set(`/resources/learn/article-${i}`, article(i));
   paths.set('/resources/archive/article-99', article(99).replaceAll('Article 99', 'Archived 99'));
+  paths.set('/resources/learn/q&a-1', article(1).replaceAll('Article 1', 'Q and A'));
   paths.set(
     '/',
     '<html><head><title>Home</title></head><body><main><h1>Home</h1><p>' +
@@ -99,7 +100,9 @@ class FakeSitecore implements ToolServer {
     'item.update': { mutates: true, pathArgs: ['path'] },
     'layout.compose': { mutates: true, pathArgs: ['path'] },
     'media.upload': { mutates: true, pathArgs: ['itemPath'] },
+    'item.delete': { mutates: true, pathArgs: ['path'] },
   };
+  readonly deleted: string[] = [];
 
   target() {
     return 'tenant';
@@ -183,6 +186,16 @@ class FakeSitecore implements ToolServer {
       i.fields.set('__Renderings', String(a.renderingsXml));
       return { code: 200, body: { path: i.path } };
     }
+    if (op === 'item.delete') {
+      const i = this.get(String(a.path));
+      if (!i) return { code: 404, body: { error: 'missing' } };
+      const lower = `${i.path.toLowerCase()}/`;
+      if ([...this.items.keys()].some((k) => k.startsWith(lower)))
+        return { code: 409, body: { error: 'has children' } };
+      this.items.delete(i.path.toLowerCase());
+      this.deleted.push(i.path);
+      return { code: 200, body: { path: i.path } };
+    }
     if (op === 'media.upload') {
       this.uploads.push(String(a.itemPath));
       const i = this.get(String(a.itemPath)) ?? this.add(String(a.itemPath), 'image');
@@ -226,7 +239,15 @@ afterAll(async () => {
 });
 
 /** The project as the example's proof left it: Sitecore with the example page, the Blueprint and the mapping. */
-function project(opts: { mapping?: unknown[]; store?: ImportStore } = {}) {
+function project(
+  opts: {
+    mapping?: unknown[];
+    store?: ImportStore;
+    verify?: (
+      paths: string[],
+    ) => { id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[];
+  } = {},
+) {
   const sitecore = new FakeSitecore();
   sitecore.add(SITE, 'site');
   sitecore.add(HOME, 'home', { Title: 'Home' });
@@ -339,6 +360,7 @@ function project(opts: { mapping?: unknown[]; store?: ImportStore } = {}) {
       reports[template] = content;
     },
     sitePath: () => SITE,
+    ...(opts.verify ? { verify: async (_p: string, paths: string[]) => opts.verify!(paths) } : {}),
   });
   return {
     sitecore,
@@ -367,14 +389,14 @@ describe('the bulk import', () => {
     const started = await p.server.call('start', { template: 'learn' }, ctx);
     expect(started.code).toBe(202);
     expect(started.summary).toMatch(
-      /^Importing 30 pages of learn in the background \(import-\w+\)/,
+      /^Importing 31 pages of learn in the background \(import-\w+\)/,
     );
     let status;
     do status = await p.server.call('status', { template: 'learn', waitSeconds: 60 }, ctx);
     while ((status.body as { status: string }).status === 'running');
     expect(status.body).toMatchObject({
       status: 'done',
-      pages: { total: 30, written: 28, exceptions: 2 },
+      pages: { total: 31, written: 28, exceptions: 3 },
     });
 
     const page = p.sitecore.get(`${HOME}/resources/learn/article-12`)!;
@@ -413,15 +435,18 @@ describe('the bulk import', () => {
     expect(reasons['/resources/learn/article-7']).toMatch(
       /nothing for Article Body\.body \(css:article\.article-body @html\): it doesn't fit the mapping/,
     );
+    expect(reasons['/resources/learn/q&a-1']).toMatch(
+      /its URL segment "q&a-1" isn't a valid Sitecore item name/,
+    );
     expect(reasons['/resources/archive/article-99']).toMatch(
       /its parent \/resources\/archive isn't on the new site yet/,
     );
     expect(status.summary).toMatch(
-      /done, 28 of 30 pages written, 2 exceptions \(7%\)\. Build each exception page yourself/,
+      /done, 28 of 31 pages written, 3 exceptions \(10%\)\. Build each exception page yourself/,
     );
 
     // The report its acceptance reads.
-    expect(p.reports.learn).toMatchObject({ status: 'done', total: 30 });
+    expect(p.reports.learn).toMatchObject({ status: 'done', total: 31 });
     expect((p.reports.learn as { imported: unknown[] }).imported).toHaveLength(28);
 
     // Every write went through the gateway, as the task, and is on record.
@@ -440,10 +465,10 @@ describe('the bulk import', () => {
       p.docs['template-mapping-learn'] as { mapping: { field: string; optional?: boolean }[] }
     ).mapping.find((m) => m.field === 'body')!.optional = true;
     const again = await p.server.call('start', { template: 'learn', retry: true }, ctx);
-    expect(again.summary).toMatch(/^Retrying 2 pages of learn/);
+    expect(again.summary).toMatch(/^Retrying 3 pages of learn/);
     const done = await p.importer.wait(first!.id, 60_000);
     expect(done?.status).toBe('done');
-    expect(await p.importer.store.counts(first!.id)).toMatchObject({ done: 30, exception: 0 });
+    expect(await p.importer.store.counts(first!.id)).toMatchObject({ done: 30, exception: 1 });
     expect(
       p.sitecore
         .get(`${HOME}/resources/archive/article-99/Data/Article Header`)!
@@ -459,7 +484,7 @@ describe('the bulk import', () => {
     const r = await p.server.call('start', { template: 'learn' }, ctx);
     expect(r.code).toBe(200);
     expect(r.summary).toMatch(
-      /learn was imported already \(import-\w+\): 28 pages, 2 exceptions\. Pass retry: true/,
+      /learn was imported already \(import-\w+\): 28 pages, 3 exceptions\. Pass retry: true/,
     );
   }, 120_000);
 
@@ -558,6 +583,7 @@ describe.each([
       done: 1,
       exception: 1,
       failed: 0,
+      reverted: 0,
     });
     expect(await store.requeue('i1', ['exception'])).toBe(1);
     expect((await store.pages('i1', { states: ['queued'] })).map((p) => p.path)).toEqual([
@@ -573,4 +599,97 @@ describe.each([
     expect(await store.lease('i1', 'w1', 60_000)).toBe(true);
     expect(await store.lease('i1', 'w2', 60_000)).toBe(false);
   }, 60_000);
+});
+
+describe('a canary, and taking an import back', () => {
+  it('pauses after its first pages when the page checks fail on them, and goes on after a fix', async () => {
+    let verdict: 'fail' | 'pass' = 'fail';
+    const checked: string[][] = [];
+    const p = project({
+      verify: (paths) => {
+        checked.push(paths);
+        return [
+          {
+            id: 'parity.render',
+            status: verdict,
+            detail: verdict === 'fail' ? 'the body shows 40% of the source text' : 'ok',
+          },
+        ];
+      },
+    });
+    await p.server.call('start', { template: 'learn' }, ctx);
+    const job = (await p.importer.store.latest('p1', 'learn'))!;
+    const paused = await p.importer.wait(job.id, 60_000);
+    expect(paused?.status).toBe('paused');
+    // Its first 5 pages, less any that didn't fit, are the ones checked.
+    const first = await p.importer.store.counts(job.id);
+    expect(first.done + first.exception).toBe(5);
+    expect(checked[0]).toHaveLength(first.done);
+    const status = await p.server.call('status', { template: 'learn' }, ctx);
+    expect(status.summary).toMatch(
+      /paused\. Paused after its first \d pages: the page checks failed on them \(parity\.render: the body shows 40% of the source text\)\. Fix template-mapping-learn/,
+    );
+    // A second start without retry says so, and writes nothing.
+    expect((await p.server.call('start', { template: 'learn' }, ctx)).summary).toMatch(
+      /is paused \(import-\w+\)/,
+    );
+    verdict = 'pass';
+    const again = await p.server.call('start', { template: 'learn', retry: true }, ctx);
+    expect(again.summary).toMatch(/^Retrying/);
+    const done = await p.importer.wait(job.id, 60_000);
+    expect(done?.status).toBe('done');
+    expect(done?.stats.canary).toMatchObject({ passed: true });
+    expect((await p.importer.store.counts(job.id)).done).toBe(28);
+  }, 120_000);
+
+  it('pauses when none of its first pages can be written', async () => {
+    const p = project({
+      mapping: [{ component: 'Article Header', field: 'heading', from: 'css:.no-such-thing' }],
+    });
+    await p.importer.start('p1', 't', 'learn', { role: 'content-migrator' });
+    const job = (await p.importer.store.latest('p1', 'learn'))!;
+    const paused = await p.importer.wait(job.id, 60_000);
+    expect(paused?.status).toBe('paused');
+    expect(paused?.message).toMatch(
+      /Paused after its first \d+ pages: none could be written \(.*nothing for Article Header\.heading/,
+    );
+    expect((await p.importer.store.counts(job.id)).queued).toBeGreaterThan(20);
+  }, 120_000);
+
+  it('takes an import back out: only the pages it made, bottom-up, and only when confirmed', async () => {
+    const p = project();
+    // A page an agent built before the import: the import updates it, a revert leaves it.
+    p.sitecore.add(`${HOME}/resources/learn/article-5`, 'article-page', { Title: 'by hand' });
+    await p.importer.start('p1', 't', 'learn', { role: 'content-migrator' });
+    const job = (await p.importer.store.latest('p1', 'learn'))!;
+    await p.importer.wait(job.id, 60_000);
+    expect(p.sitecore.get(`${HOME}/resources/learn/article-12/Data/CTA`)).toBeDefined();
+
+    const unconfirmed = await p.server.call('revert', { template: 'learn', confirm: 'yes' }, ctx);
+    expect(unconfirmed.code).toBe(422);
+    expect(p.sitecore.deleted).toEqual([]);
+
+    const r = await p.server.call('revert', { template: 'learn', confirm: job.id }, ctx);
+    expect(r.code).toBe(200);
+    expect(r.body).toMatchObject({
+      removed: 27,
+      kept: ['/resources/learn/article-5 (built before the import)'],
+    });
+    expect(p.sitecore.get(`${HOME}/resources/learn/article-12`)).toBeUndefined();
+    expect(p.sitecore.get(`${HOME}/resources/learn/article-12/Data/CTA`)).toBeUndefined();
+    // Bottom-up: a datasource before its Data folder, the folder before the page.
+    const order = p.sitecore.deleted.filter((d) => d.includes('/article-12'));
+    expect(order.at(-1)).toBe(`${HOME}/resources/learn/article-12`);
+    expect(order.at(-2)).toBe(`${HOME}/resources/learn/article-12/Data`);
+    // The example, and the page built by hand, stay.
+    expect(p.sitecore.get(`${HOME}/resources/learn/article-0`)).toBeDefined();
+    expect(p.sitecore.get(`${HOME}/resources/learn/article-5`)).toBeDefined();
+    expect(r.summary).toMatch(
+      /Reverted import import-\w+: 27 pages moved to the Recycle Bin; 1 left/,
+    );
+    expect((await p.importer.store.get(job.id))?.status).toBe('reverted');
+    // A fresh import may follow a revert.
+    const fresh = await p.server.call('start', { template: 'learn' }, ctx);
+    expect(fresh.code).toBe(202);
+  }, 120_000);
 });

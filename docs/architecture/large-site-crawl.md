@@ -103,6 +103,25 @@ Cypher's heads-up (`sourceNotice` in `packages/stack/src/operator.ts`) reads `cr
 summaries for throttling, refusals and size, since a background crawl's own requests are not
 steps.
 
+## Lessons from a dry run against paylocity.com
+
+A read-only crawl of 300 pages (no Sitecore) found two things a synthetic site couldn't:
+
+- **A bot check on every plain request.** Paylocity answers plain HTTP with a challenge page
+  (status 200) that a real browser passes. Stored as is, every page would have been the check.
+  The crawler recognises challenge pages from the common vendors and titles and reads them in a
+  browser. If the browser is challenged too, it excludes them as refused. After 10 such pages and
+  no plain success, it goes to the browser directly. Paylocity reads at about 130 pages a minute
+  this way, so about 20 minutes for its 2,693 pages.
+- **AEM markup defeated the layout fingerprint.** The content sits under seven or more single
+  wrappers, and every page reduced to `div`, so the whole site became one template. The
+  fingerprint now looks through twelve wrappers, skips grid, container and style classes, and
+  names a generic section by the component inside it. Layouts under three tokens never merge URL
+  sections. The 300 pages group into the site's real sections.
+
+`crawl.status` also warns when many pages share one title (a challenge, error or consent page
+served in place of content).
+
 ## Planning per template (large sites only)
 
 A large site is planned and migrated per template; a small site page by page, exactly as before.
@@ -157,6 +176,20 @@ background:
    exceptions again after a fix.
 5. **Imports live in Postgres** (migration `008_imports.sql`), each held by one worker through a
    lease, and resumed after a restart. When an import finishes it writes `template-import-<key>`.
+
+**Canary.** An import writes its first 5 pages, then runs the page checks on the ones written
+(`head.pages-render`, `parity.render`). If they fail, or none could be written, it pauses with
+the reason. `import.start` with `retry: true` writes those pages again with the fixed mapping,
+then the rest. A mapping wrong in a way the examples didn't show costs 5 pages, not 800.
+
+**Revert.** `import.revert` (with `confirm` set to the import's id, and only on the Director's
+decision) moves each page the import created to the Recycle Bin, where it can be restored. It
+removes the page's copied child items, then its datasources, then its Data folder, then the
+page. Pages built before the import, and pages that have gained items the import didn't make,
+are left and listed. A fresh import may follow.
+
+**Item names.** A URL segment that isn't a valid Sitecore item name (letters, digits, spaces,
+hyphens, underscores and `$`) is an exception, so the page's URL never changes silently.
 
 `template.imported` (the task's acceptance) passes when the import is done, no more than 1 in 10
 pages were exceptions (more means the mapping is wrong: fix it and retry), every exception page

@@ -51,6 +51,19 @@ export interface ImporterDeps {
   sitePath: (projectId: string) => string | null;
   /** Pages written at once (default 4): Sitecore's pace, not the source's. */
   concurrency?: number;
+  /**
+   * The first pages written, then checked before the rest (default 5; 0 turns it off): a mapping
+   * wrong in a way the examples didn't show costs five pages, not eight hundred.
+   */
+  canary?: number;
+  /**
+   * The page checks on these paths (rendering, text against the source); null when no checks are
+   * connected. A failed check pauses the import after its canary pages.
+   */
+  verify?: (
+    projectId: string,
+    paths: string[],
+  ) => Promise<{ id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[] | null>;
   leaseMs?: number;
   /** Replaceable in tests. */
   fetch?: typeof fetch;
@@ -137,14 +150,15 @@ export class TemplateImporter {
     taskId: string,
     template: string,
     opts: { retry?: boolean; role?: string } = {},
-  ): Promise<{ job: ImportJob; existing: 'running' | 'done' | 'retried' | null }> {
+  ): Promise<{ job: ImportJob; existing: 'running' | 'paused' | 'done' | 'retried' | null }> {
     const last = await this.deps.store.latest(projectId, template);
     if (last?.status === 'running') {
       this.ensure(last);
       return { job: last, existing: 'running' };
     }
+    if (last?.status === 'paused' && !opts.retry) return { job: last, existing: 'paused' };
     if (last && last.status === 'done' && !opts.retry) return { job: last, existing: 'done' };
-    if (last && opts.retry && last.status !== 'failed') {
+    if (last && opts.retry && last.status !== 'failed' && last.status !== 'reverted') {
       // The mapping may have been fixed since: read the example page and mapping again.
       const { plan } = await this.preflight(
         projectId,
@@ -152,8 +166,14 @@ export class TemplateImporter {
         taskId,
         opts.role ?? 'content-migrator',
       );
-      const n = await this.deps.store.requeue(last.id, ['exception', 'failed']);
+      // A paused import's canary pages are written again with the fixed mapping.
+      const paused = last.status === 'paused';
+      const n = await this.deps.store.requeue(
+        last.id,
+        paused ? ['exception', 'failed', 'done'] : ['exception', 'failed'],
+      );
       await this.deps.store.update(last.id, {
+        ...(paused ? { stats: { ...last.stats, canary: null } } : {}),
         plan,
         status: 'running',
         message: `Retrying ${n} page${n === 1 ? '' : 's'}.`,
@@ -470,30 +490,49 @@ export class TemplateImporter {
       await store.requeue(id);
       let checked = 0;
       let halted = false;
-      await this.deps.browser.withContext(
-        policy,
-        async (offline) => {
-          const parser = new OfflineParser(offline);
-          const workers = Array.from({ length: this.deps.concurrency ?? 4 }, async () => {
-            for (;;) {
-              if (lost || this.closing || halted) return;
-              if (Date.now() - checked > 2_000) {
-                checked = Date.now();
-                const current = await store.get(id);
-                if (current?.status !== 'running') {
-                  halted = true;
-                  return;
+      /** Writes queued pages, `limit` of them at most, until none are left or it must stop. */
+      const drain = (limit = Infinity) => {
+        let taken = 0;
+        return this.deps.browser.withContext(
+          policy,
+          async (offline) => {
+            const parser = new OfflineParser(offline);
+            const workers = Array.from({ length: this.deps.concurrency ?? 4 }, async () => {
+              for (;;) {
+                if (lost || this.closing || halted || taken >= limit) return;
+                if (Date.now() - checked > 2_000) {
+                  checked = Date.now();
+                  const current = await store.get(id);
+                  if (current?.status !== 'running') {
+                    halted = true;
+                    return;
+                  }
                 }
+                taken++;
+                const [page] = await store.claim(id, 1);
+                if (!page) return;
+                await this.importPage(job, plan, page, { parser, source, policy, stats, media });
               }
-              const [page] = await store.claim(id, 1);
-              if (!page) return;
-              await this.importPage(job, plan, page, { parser, source, policy, stats, media });
-            }
-          });
-          await Promise.all(workers);
-        },
-        { offline: true },
-      );
+            });
+            await Promise.all(workers);
+          },
+          { offline: true },
+        );
+      };
+      const canary = this.deps.canary ?? 5;
+      if (canary > 0 && stats.canary?.passed !== true) {
+        await drain(canary);
+        if (lost || this.closing || halted) {
+          await store.update(id, { stats });
+          return;
+        }
+        const pause = await this.checkCanary(job, stats);
+        if (pause) {
+          await store.update(id, { status: 'paused', stats, message: pause });
+          return;
+        }
+      }
+      await drain();
       await store.update(id, { stats });
       if (lost || this.closing || halted) return;
       const c = await store.counts(id);
@@ -517,6 +556,124 @@ export class TemplateImporter {
       clearInterval(heartbeat);
       await store.release(id, this.owner).catch(() => {});
     }
+  }
+
+  /**
+   * After the canary pages: the reason to pause, or null to go on. All of them exceptions, or a
+   * page check failing on those written, means the mapping is wrong for the template.
+   */
+  private async checkCanary(job: ImportJob, stats: ImportStats): Promise<string | null> {
+    const done = await this.deps.store.pages(job.id, { states: ['done'] });
+    if (!done.length) {
+      const off = await this.deps.store.pages(job.id, { states: ['exception', 'failed'] });
+      const reasons = [...new Set(off.map((p) => p.reason ?? 'unknown'))].slice(0, 3).join('; ');
+      stats.canary = { passed: false, detail: reasons };
+      return `Paused after its first ${off.length} pages: none could be written (${reasons}). Fix template-mapping-${job.template}, then import.start with retry: true`;
+    }
+    const results = this.deps.verify
+      ? await this.deps
+          .verify(
+            job.projectId,
+            done.map((p) => p.path),
+          )
+          .catch(() => null)
+      : null;
+    const failed = (results ?? []).filter((r) => r.status === 'fail');
+    if (failed.length) {
+      const detail = failed.map((r) => `${r.id}: ${r.detail}`).join(' ');
+      stats.canary = { passed: false, detail };
+      return `Paused after its first ${done.length} pages: the page checks failed on them (${detail}). Fix template-mapping-${job.template} (or the components), then import.start with retry: true: those pages are written again before the rest`;
+    }
+    stats.canary = {
+      passed: true,
+      detail: results?.length
+        ? results.map((r) => `${r.id} ${r.status}`).join(', ')
+        : 'no page checks connected',
+    };
+    return null;
+  }
+
+  /**
+   * Takes an import back out of Sitecore: each page the import itself created, with its Data
+   * folder and datasources, moved to the Recycle Bin (restorable there), bottom-up. Pages an
+   * agent built, or that gained items the import didn't make, are left and listed. Only for an
+   * import that is no longer writing.
+   */
+  async revert(
+    id: string,
+    role = 'content-migrator',
+  ): Promise<{ removed: number; kept: string[] }> {
+    const store = this.deps.store;
+    const job = await store.get(id);
+    if (!job) throw new ImportError(`No import ${id}`);
+    if (job.status === 'running')
+      throw new ImportError(`Import ${id} is still writing: stop it first (import.stop)`);
+    const plan = job.plan as ImportPlan;
+    const kept: string[] = [];
+    let removed = 0;
+    let k = Date.now() * 64;
+    const call = (op: string, args: Record<string, unknown>) =>
+      this.deps.call(job.projectId, role, job.taskId, k++, 'sitecore-authoring', op, args);
+    const childrenOf = async (path: string) => {
+      const r = await call('item.read', { path, children: true });
+      return r.ok
+        ? ((r.body as { children?: { nodes?: { name: string; path: string }[] } }).children
+            ?.nodes ?? [])
+        : null;
+    };
+    for (const page of await store.pages(id, { states: ['done'] })) {
+      if (!page.created) {
+        kept.push(`${page.path} (built before the import)`);
+        continue;
+      }
+      const itemPath = page.path === '/' ? plan.home : `${plan.home}${page.path}`;
+      // Only what the import makes: its Data folder, the datasources it names, and their copied
+      // child items. Anything else under the page means someone added to it: leave it.
+      const own = new Set(plan.datasources.map((d) => d.name.toLowerCase()));
+      const top = await childrenOf(itemPath);
+      if (!top) {
+        await store.finish(id, page.url, { state: 'reverted', reason: 'already gone' });
+        continue;
+      }
+      const data = plan.dataFolder?.name.toLowerCase();
+      const foreign = top.filter((c) => c.name.toLowerCase() !== data);
+      const dataPath = plan.dataFolder ? `${itemPath}/${plan.dataFolder.name}` : null;
+      const inData = dataPath ? ((await childrenOf(dataPath)) ?? []) : [];
+      const foreignData = inData.filter((c) => !own.has(c.name.toLowerCase()));
+      if (foreign.length || foreignData.length) {
+        kept.push(`${page.path} (it has items the import didn't make)`);
+        continue;
+      }
+      let ok = true;
+      for (const ds of inData) {
+        const plannedDs = plan.datasources.find(
+          (d) => d.name.toLowerCase() === ds.name.toLowerCase(),
+        );
+        for (const child of (await childrenOf(ds.path)) ?? []) {
+          if (!plannedDs?.children.some((c) => c.name.toLowerCase() === child.name.toLowerCase())) {
+            ok = false;
+            break;
+          }
+          if (!(await call('item.delete', { path: child.path })).ok) ok = false;
+        }
+        if (ok && !(await call('item.delete', { path: ds.path })).ok) ok = false;
+      }
+      if (ok && dataPath && !(await call('item.delete', { path: dataPath })).ok) ok = false;
+      if (ok && !(await call('item.delete', { path: itemPath })).ok) ok = false;
+      if (!ok) {
+        kept.push(`${page.path} (Sitecore refused a delete: check it by hand)`);
+        continue;
+      }
+      removed++;
+      await store.finish(id, page.url, { state: 'reverted', reason: 'removed by revert' });
+    }
+    await store.update(id, {
+      status: 'reverted',
+      message: `Reverted: ${removed} pages moved to the Recycle Bin${kept.length ? `, ${kept.length} left` : ''}.`,
+      finishedAt: new Date().toISOString(),
+    });
+    await this.writeReport({ ...job, status: 'reverted' });
+    return { removed, kept };
   }
 
   /** template-import-<key>: what was imported, and every exception with its reason. */
@@ -574,6 +731,12 @@ export class TemplateImporter {
       const segments = page.path.split('/').filter(Boolean);
       if (!segments.length) return await exception('the home page is never part of a template');
       const name = decodeURIComponent(segments[segments.length - 1]!);
+      // Sitecore item names hold letters, digits, spaces, hyphens, underscores and $; a page whose
+      // URL needs anything else is built by hand (with a redirect if its URL must change).
+      if (!ITEM_NAME.test(name))
+        return await exception(
+          `its URL segment "${name}" isn't a valid Sitecore item name: build it by hand, naming it so its URL stays the same or adding a redirect`,
+        );
       const parentRoute = `/${segments.slice(0, -1).join('/')}`;
       const parentPath = parentRoute === '/' ? plan.home : `${plan.home}${parentRoute}`;
       const itemPath = `${parentPath}/${name}`;
@@ -666,6 +829,7 @@ export class TemplateImporter {
       if (created.existed && pageFields.length)
         await call('sitecore-authoring', 'item.update', { path: itemPath, fields: pageFields });
       const itemId = String(created.itemId ?? '');
+      const made = created.existed !== true;
 
       // Its Data folder and datasources; the example's datasource IDs, mapped to this page's.
       const ids = new Map<string, string>();
@@ -713,7 +877,13 @@ export class TemplateImporter {
         .replace(/\buid="[^"]*"/gi, () => `uid="${braced(randomUUID())}"`);
       await call('sitecore-authoring', 'layout.compose', { path: itemPath, renderingsXml: xml });
       ctx.stats.written++;
-      await store.finish(job.id, page.url, { state: 'done', itemId, reason: null, attempts });
+      await store.finish(job.id, page.url, {
+        state: 'done',
+        itemId,
+        created: made,
+        reason: null,
+        attempts,
+      });
     } catch (err) {
       const reason = err instanceof Error ? err.message.split('\n')[0]! : String(err);
       const retry = err instanceof CallFailed ? err.retryable : true;
@@ -774,6 +944,9 @@ export class TemplateImporter {
     });
   }
 }
+
+/** Sitecore's default item name rule (ItemNameValidation). */
+const ITEM_NAME = /^[\w*$][\w\s\-$]*(\(\d{1,}\)){0,1}$/;
 
 class CallFailed extends Error {
   constructor(

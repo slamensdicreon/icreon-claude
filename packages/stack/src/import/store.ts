@@ -1,7 +1,7 @@
 import type { SqlClient } from '@lw/events';
 
-export type ImportStatus = 'running' | 'done' | 'stopped' | 'failed';
-export type PageState = 'queued' | 'inflight' | 'done' | 'exception' | 'failed';
+export type ImportStatus = 'running' | 'paused' | 'done' | 'stopped' | 'failed' | 'reverted';
+export type PageState = 'queued' | 'inflight' | 'done' | 'exception' | 'failed' | 'reverted';
 
 export interface ImportStats {
   /** Pages written, read back. */
@@ -10,6 +10,11 @@ export interface ImportStats {
   uploads: number;
   /** When pages started being written (after the preflight), ISO. */
   writingSince: string | null;
+  /**
+   * The first pages, written and checked before the rest: null until they are, then whether they
+   * passed and what the checks said.
+   */
+  canary?: { passed: boolean | null; detail?: string } | null;
 }
 
 export interface ImportJob {
@@ -36,6 +41,8 @@ export interface ImportPage {
   path: string;
   state: PageState;
   itemId: string | null;
+  /** The import made the page item, so a revert may remove it. */
+  created: boolean;
   reason: string | null;
   attempts: number;
 }
@@ -63,6 +70,7 @@ export interface ImportStore {
     o: {
       state: Exclude<PageState, 'inflight'>;
       itemId?: string | null;
+      created?: boolean;
       reason?: string | null;
       attempts?: number;
     },
@@ -80,6 +88,7 @@ export const emptyCounts = (): Record<PageState, number> => ({
   done: 0,
   exception: 0,
   failed: 0,
+  reverted: 0,
 });
 
 /** For tests and single-process runs: lost on restart. */
@@ -131,6 +140,7 @@ export class MemoryImportStore implements ImportStore {
         seq: ++this.seq,
         state: 'queued',
         itemId: null,
+        created: false,
         reason: null,
         attempts: 0,
       });
@@ -163,6 +173,7 @@ export class MemoryImportStore implements ImportStore {
     r.state = o.state;
     r.reason = o.reason ?? null;
     if (o.itemId !== undefined) r.itemId = o.itemId;
+    if (o.created) r.created = true;
     if (o.attempts !== undefined) r.attempts = o.attempts;
   }
   async counts(id: string) {
@@ -202,6 +213,7 @@ interface PageRow {
   path: string;
   state: PageState;
   item_id: string | null;
+  created: boolean;
   reason: string | null;
   attempts: number;
 }
@@ -228,10 +240,11 @@ const page = (r: PageRow): ImportPage => ({
   path: r.path,
   state: r.state,
   itemId: r.item_id,
+  created: r.created,
   reason: r.reason,
   attempts: r.attempts,
 });
-const PAGE_COLS = 'seq, url, path, state, item_id, reason, attempts';
+const PAGE_COLS = 'seq, url, path, state, item_id, created, reason, attempts';
 
 /** Imports in the shared database (migration 008_imports.sql). */
 export class PostgresImportStore implements ImportStore {
@@ -332,7 +345,7 @@ export class PostgresImportStore implements ImportStore {
          ORDER BY seq LIMIT $2 FOR UPDATE SKIP LOCKED)
        UPDATE lw_import_pages p SET state = 'inflight', updated_at = now()
        FROM picked WHERE p.import_id = $1 AND p.url = picked.url
-       RETURNING p.seq, p.url, p.path, p.state, p.item_id, p.reason, p.attempts`,
+       RETURNING p.seq, p.url, p.path, p.state, p.item_id, p.created, p.reason, p.attempts`,
       [id, n],
     );
     return rows.map(page).sort((a, b) => a.seq - b.seq);
@@ -348,9 +361,17 @@ export class PostgresImportStore implements ImportStore {
   async finish(id: string, url: string, o: Parameters<ImportStore['finish']>[2]) {
     await this.sql.query(
       `UPDATE lw_import_pages SET state = $3, reason = $4, item_id = COALESCE($5, item_id),
-         attempts = COALESCE($6, attempts), updated_at = now()
+         attempts = COALESCE($6, attempts), created = created OR $7, updated_at = now()
        WHERE import_id = $1 AND url = $2`,
-      [id, url, o.state, o.reason ?? null, o.itemId ?? null, o.attempts ?? null],
+      [
+        id,
+        url,
+        o.state,
+        o.reason ?? null,
+        o.itemId ?? null,
+        o.attempts ?? null,
+        o.created === true,
+      ],
     );
   }
   async counts(id: string) {

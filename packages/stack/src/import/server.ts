@@ -52,6 +52,17 @@ const CATALOG: OperationCatalog = {
     },
     mutates: false,
   },
+  revert: {
+    description:
+      "Take an import back out of Sitecore: every page it created, with its Data folder and datasources, moved to the Recycle Bin (restorable there). Pages built before the import, or that have items it didn't make, are left and listed. Only on the Director's decision (submit needs_decision first): it removes hundreds of pages. Give confirm: the importId, to say you mean it. Stop a running import first.",
+    inputSchema: {
+      type: 'object',
+      properties: { template: { type: 'string' }, importId, confirm: { type: 'string' } },
+      required: ['confirm'],
+      additionalProperties: false,
+    },
+    mutates: true,
+  },
   stop: {
     description: 'Stop an import; the pages written stay.',
     inputSchema: {
@@ -90,11 +101,13 @@ export class ImportToolServer implements ToolServer {
         const lead =
           existing === 'running'
             ? `An import of ${template} is already running (${job.id}): follow it`
-            : existing === 'done'
-              ? `${template} was imported already (${job.id}): ${c.done} pages, ${c.exception + c.failed} exceptions. Pass retry: true to try the exceptions again`
-              : existing === 'retried'
-                ? `Retrying ${c.queued} pages of ${template} (${job.id})`
-                : `Importing ${total} pages of ${template} in the background (${job.id})`;
+            : existing === 'paused'
+              ? `The import of ${template} is paused (${job.id}): ${job.message ?? ''} Fix what it says, then import.start with retry: true`
+              : existing === 'done'
+                ? `${template} was imported already (${job.id}): ${c.done} pages, ${c.exception + c.failed} exceptions. Pass retry: true to try the exceptions again`
+                : existing === 'retried'
+                  ? `Retrying ${c.queued} pages of ${template} (${job.id})`
+                  : `Importing ${total} pages of ${template} in the background (${job.id})`;
         return {
           code: existing ? 200 : 202,
           body: { importId: job.id, status: job.status, existing, pages: total },
@@ -139,6 +152,20 @@ export class ImportToolServer implements ToolServer {
         };
       }
       if (op === 'stop') return this.status((await this.importer.stop(job.id)) ?? job);
+      if (op === 'revert') {
+        if (args.confirm !== job.id)
+          return {
+            code: 422,
+            body: { error: `Give confirm: "${job.id}" to revert import ${job.id}` },
+            summary: `Revert not confirmed: confirm must be ${job.id}`,
+          };
+        const r = await this.importer.revert(job.id, ctx.role);
+        return {
+          code: 200,
+          body: { importId: job.id, removed: r.removed, kept: r.kept },
+          summary: `Reverted import ${job.id}: ${r.removed} pages moved to the Recycle Bin${r.kept.length ? `; ${r.kept.length} left (${r.kept.slice(0, 3).join('; ')})` : ''}`,
+        };
+      }
       return { code: 400, body: { error: `Unknown operation ${op}` } };
     } catch (err) {
       if (err instanceof ImportError)
@@ -177,6 +204,7 @@ export class ImportToolServer implements ToolServer {
       if (e.examples.length < 3) e.examples.push(p.path);
       reasons.set(key, e);
     }
+    const canary = job.stats.canary;
     const share = total ? Math.round(((c.exception + c.failed) / total) * 100) : 0;
     const body = {
       importId: job.id,
@@ -187,19 +215,24 @@ export class ImportToolServer implements ToolServer {
       perMinute,
       etaMinutes: eta,
       exceptions: [...reasons.values()].sort((a, b) => b.count - a.count).slice(0, 12),
+      ...(canary ? { canary } : {}),
       ...(job.message ? { message: job.message } : {}),
     };
     const head = `Import ${job.id} of ${job.template}`;
     const summary =
-      job.status === 'running'
-        ? `${head}: running, ${c.done} of ${total} pages written${perMinute ? ` (${perMinute}/min${eta ? `, about ${eta} min left` : ''})` : ''}; ${c.exception + c.failed} exceptions so far`
-        : `${head}: ${job.status}, ${c.done} of ${total} pages written, ${c.exception + c.failed} exceptions (${share}%)${job.message ? `. ${job.message}` : ''}${
-            share > 10
-              ? ". More than 1 in 10 pages don't fit: the mapping is likely wrong for them. Read the reasons, fix template-mapping, and retry, rather than building them one by one"
-              : c.exception + c.failed
-                ? '. Build each exception page yourself as you would any page (import.pages state exception lists them), or retry once what they wait on is done'
-                : ''
-          }`;
+      job.status === 'paused'
+        ? `${head}: paused. ${job.message ?? ''}`
+        : job.status === 'reverted'
+          ? `${head}: reverted. ${job.message ?? ''}`
+          : job.status === 'running'
+            ? `${head}: running, ${c.done} of ${total} pages written${perMinute ? ` (${perMinute}/min${eta ? `, about ${eta} min left` : ''})` : ''}; ${c.exception + c.failed} exceptions so far`
+            : `${head}: ${job.status}, ${c.done} of ${total} pages written, ${c.exception + c.failed} exceptions (${share}%)${job.message ? `. ${job.message}` : ''}${
+                share > 10
+                  ? ". More than 1 in 10 pages don't fit: the mapping is likely wrong for them. Read the reasons, fix template-mapping, and retry, rather than building them one by one"
+                  : c.exception + c.failed
+                    ? '. Build each exception page yourself as you would any page (import.pages state exception lists them), or retry once what they wait on is done'
+                    : ''
+              }`;
     return { code: 200, body, summary };
   }
 }

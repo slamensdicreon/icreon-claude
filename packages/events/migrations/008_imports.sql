@@ -27,9 +27,11 @@ CREATE TABLE IF NOT EXISTS lw_import_pages (
   import_id   text        NOT NULL REFERENCES lw_imports (id) ON DELETE CASCADE,
   url         text        NOT NULL,
   path        text        NOT NULL,
-  -- queued, inflight, done, exception, failed
+  -- queued, inflight, done, exception, failed, reverted
   state       text        NOT NULL,
   item_id     text,
+  -- The import made this page item (not one an agent built before it): a revert may remove it.
+  created     boolean     NOT NULL DEFAULT false,
   reason      text,
   attempts    integer     NOT NULL DEFAULT 0,
   updated_at  timestamptz NOT NULL DEFAULT now(),

@@ -490,6 +490,33 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       const i = opts.projections.get(projectId)?.intake;
       return i ? (opts.platform.bindings(i.target).sitePath ?? null) : null;
     },
+    // The canary pages through the platform's page checks: they render, and show the source's text.
+    verify: async (projectId, paths) => {
+      const checks = opts.platform.checks;
+      if (!checks) return null;
+      const out: { id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[] = [];
+      for (const id of ['head.pages-render', 'parity.render']) {
+        const check = checks[id];
+        if (!check) continue;
+        const r = await runPlatformCheck(projectId, (ctx) =>
+          check({
+            ...ctx,
+            blueprint: {
+              collections: {
+                ...(ctx.blueprint?.collections ?? {}),
+                pages: paths.map((path, i) => ({
+                  key: `canary-${i}`,
+                  name: path,
+                  attrs: { path },
+                })),
+              },
+            },
+          }),
+        );
+        out.push({ id, status: r.status, detail: r.detail });
+      }
+      return out;
+    },
   });
   const servers: ToolServer[] = [
     browserServer,

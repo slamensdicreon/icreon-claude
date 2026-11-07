@@ -21,6 +21,8 @@ tools:
       - item.create
       - item.update
       - layout.compose
+      # Moves an item to the Recycle Bin (restorable): what a bulk import made, when it's reverted.
+      - item.delete
       # A page's own photos, from the source page (sourceUrl), when no media task uploaded them.
       - media.upload
     scope:
@@ -61,6 +63,8 @@ tools:
       - status
       - pages
       - stop
+      # Takes a bad import back out (to the Recycle Bin), on the Director's decision only.
+      - revert
   artifacts:
     ops:
       - read
