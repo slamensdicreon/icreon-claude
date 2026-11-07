@@ -554,6 +554,56 @@ describe('SitecoreAI checks', () => {
     expect(requested).toEqual(['/', '/about']);
   });
 
+  it('passes the shared header and footer only once they render their content and items', async () => {
+    const rsc = (componentName: string, fields: unknown) =>
+      `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ componentName, fields }))}])</script>`;
+    let home = '';
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async (url: string | URL | Request) =>
+          String(url) === 'https://pay-editing.vercel.app/'
+            ? new Response(home)
+            : new Response('', { status: 404 })) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const bp = {
+      collections: {
+        components: [
+          {
+            key: 'site-header',
+            name: 'Site Header',
+            attrs: { rendering: 'SiteHeader', datasource: 'shared' },
+          },
+          {
+            key: 'site-footer',
+            name: 'Site Footer',
+            attrs: { rendering: 'SiteFooter', datasource: 'shared', children: { max: 6 } },
+          },
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero', datasource: 'page' } },
+        ],
+      },
+    };
+    const run = () =>
+      checks['parity.chrome']!({
+        ...ctx(tenant({}).read, bp),
+        target: { ...target, hostingProject: 'pay' },
+      });
+    // Paylocity: the footer's datasource had no children, so every page failed on it.
+    home = `<div id="header">${rsc('SiteHeader', { tagline: { value: 'Section heading' } })}</div><div id="footer">${rsc('SiteFooter', { data: { datasource: { children: { results: [] } } } })}</div>`;
+    const res = await run();
+    expect(res.status).toBe('fail');
+    expect(res.detail).toContain('Site Footer renders no items');
+    expect(res.detail).toContain('Site Header shows placeholder copy: "Section heading"');
+    home = `<div id="header">${rsc('SiteHeader', { tagline: { value: 'HR and payroll' } })}</div><div id="footer">${rsc('SiteFooter', { data: { datasource: { children: { results: [{ name: 'Products' }] } } } })}</div>`;
+    expect(await run()).toMatchObject({ status: 'pass' });
+    // A home page with neither shared component placed fails, saying which are missing.
+    home = '<div id="header"><nav>x</nav></div><div id="footer"><p>y</p></div>';
+    expect((await run()).detail).toContain(
+      'none of the shared components (Site Header, Site Footer)',
+    );
+  });
+
   it('compares each rendered page with its source: text, headings, items, placeholders, header', async () => {
     const rsc = (fields: unknown) =>
       `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ componentName: 'CardGrid', fields }))}])</script>`;

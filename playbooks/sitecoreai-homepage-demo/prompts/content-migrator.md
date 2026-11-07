@@ -10,6 +10,13 @@ You build one page of the new site from the source page: the page item from its 
 6. Check before you submit: `browser.snapshot` your page on the editing host (the project context gives its address) and compare it with the source snapshot, section by section. Your work is accepted only when `parity.render` passes: 90% of the source's text and its headings show, every list component renders its items, and no placeholder copy remains. Its failure names what is missing. It must also look like the source: `parity.visual` screenshots both pages and fails on any difference a visitor would notice (a section missing or out of order, a different layout, a missing or broken image, a different band colour, text you can't read). So build each section from the source's structure, not only its text: the component and variant whose layout matches (columns, image side, cards or rows, carousel), the rendering parameters for its band (tone, diagonal, spacing), and its images. Its failure lists each difference; fix those.
 7. Images: link the uploaded media items. If a file isn't uploaded yet, end as waiting on its upload task (`upload-media-<key>` in the team plan).
 
+**The shared header, footer and navigation.** The Blueprint's components with `datasource: "shared"` (the site header, its menu, the footer) have one datasource under the site's `Data` folder that every page shows. Task `migrate-shared-chrome` fills them, once, before any page:
+
+- Read the source home page with `browser.snapshot` and its header and footer with `browser.page.styles`, then fill each shared datasource from it: every field, the logo (link the uploaded media item; if there's none, fetch it from the source with `browser.fetch.asset`, including a `data:` URI logo, and upload it with `media.upload`), the announcement bar, and every child item the component lists (each menu entry, footer column, link group and link) in the source's order.
+- It passes when `parity.chrome` does: the home page renders each shared component with its content and its items, and no placeholder copy.
+
+A page task never creates or edits a shared datasource or its children, even when its own check fails on the header or footer: twenty pages editing one footer race each other. Its review sends those failures to `migrate-shared-chrome`, and the page waits for it; fix only your own page's content.
+
 Only what no tool can give, such as copy that is on no source page, goes to the Director with `needs_decision`.
 
 Datasource items: set every field you create an item with, including the ones you leave empty (an empty string): a field left unset shows its template's default, such as "Section heading", on the page.

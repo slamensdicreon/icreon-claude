@@ -148,8 +148,12 @@ describe('role prompts', () => {
       fileURLToPath(new URL('../../../playbooks', import.meta.url)),
     );
     const entry = catalog.get('sitecoreai-migration')!;
-    // Lambert's Cable runs 0.5.1 and Star LLC 0.6.3: their teams stay as they were.
-    expect(entry.older?.map((o) => o.playbook.manifest.version)).toEqual(['0.6.3', '0.5.1']);
+    // Lambert's Cable runs 0.5.1 and Star LLC 0.6.3, Paylocity 0.11.0: their teams stay as they were.
+    expect(entry.older?.map((o) => o.playbook.manifest.version)).toEqual([
+      '0.11.0',
+      '0.6.3',
+      '0.5.1',
+    ]);
     const lambert = versionOf(entry, '0.5.1');
     expect(lambert.playbook.manifest.version).toBe('0.5.1');
     expect(lambert.playbook.roles.map((r) => r.role)).toContain('layout-engineer');

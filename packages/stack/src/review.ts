@@ -141,6 +141,9 @@ async function ownedFiles(
  * The checks that exist, by validator id; the platform pack adds its own. Everything else a plan
  * names is pending.
  */
+/** The plan task that fills the shared header, footer and navigation content, once, before pages. */
+export const SHARED_CHROME_TASK = 'migrate-shared-chrome';
+
 export const CHECKS: Record<string, Check> = {
   // Built green after the last change, and that state committed.
   // Committing first and then building is as good as building first: what counts is that the
@@ -695,17 +698,28 @@ export async function routeFailures(a: {
   codeRoles: Set<string>;
 }): Promise<{ waitOn: AgentWaiting; reason: string; tokens: number } | null> {
   if (!a.deps.attribute) return null;
-  let components: { key: string; name: string }[] = [];
+  let components: { key: string; name: string; shared?: boolean }[] = [];
   try {
     const doc = await a.deps.library.read(a.projectId, 'blueprint');
     const bp = doc
       ? (JSON.parse(doc.content) as {
-          collections?: { components?: { key: string; name: string; status?: string }[] };
+          collections?: {
+            components?: {
+              key: string;
+              name: string;
+              status?: string;
+              attrs?: Record<string, unknown>;
+            }[];
+          };
         })
       : null;
     components = (bp?.collections?.components ?? [])
       .filter((c) => c.status !== 'drop')
-      .map((c) => ({ key: c.key, name: c.name }));
+      .map((c) => ({
+        key: c.key,
+        name: c.name,
+        ...(c.attrs?.datasource === 'shared' ? { shared: true } : {}),
+      }));
   } catch {
     return null;
   }
@@ -730,17 +744,24 @@ export async function routeFailures(a: {
     tasks.filter(
       (t) => t.itemKeys.includes(key) && a.codeRoles.has(t.role) && t.taskId !== a.task.taskId,
     );
+  // The shared header, footer and navigation content has one task of its own (the plan's
+  // `migrate-shared-chrome`): a page that fails on it waits for that task, never edits it itself.
+  const sharedTask = tasks.find(
+    (t) => t.taskId === SHARED_CHROME_TASK && t.taskId !== a.task.taskId,
+  );
   const own: string[] = [];
   const byKey = new Map<string, string[]>();
+  const sharedFixes: string[] = [];
   for (const f of read.failures) {
     if (f.owner === 'component' && f.component && owners(f.component).length)
       byKey.set(f.component, [...(byKey.get(f.component) ?? []), f.fix]);
+    else if (f.owner === 'shared' && sharedTask) sharedFixes.push(f.fix);
     else own.push(`${f.check}: ${f.fix}`);
   }
   // A failed check the attribution left out stays the task's, in the check's own words.
   for (const f of a.fails)
     if (!read.failures.some((x) => x.check === f.id)) own.push(`${f.id}: ${f.detail}`);
-  if (!byKey.size) return null;
+  if (!byKey.size && !sharedFixes.length) return null;
   const nameOf = (key: string) => components.find((c) => c.key === key)?.name ?? key;
   const names = [...byKey.keys()].map(nameOf);
   const sendBack = [...byKey].flatMap(([key, fixes]) =>
@@ -749,14 +770,30 @@ export async function routeFailures(a: {
       fixes: `${a.task.title} fails on ${nameOf(key)}: ${fixes.join(' ')}`,
     })),
   );
-  const listed =
-    names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-  const reason = `${listed} ${names.length === 1 ? 'needs' : 'need'} fixing in code, which this task can't change: sent to ${names.length === 1 ? 'its owner' : 'their owners'}, and this task waits for ${names.length === 1 ? 'it' : 'them'}.${own.length ? ` Yours to fix when it runs again: ${own.join(' ')}` : ' It is checked again once they are redone.'}`;
+  if (sharedTask && sharedFixes.length)
+    sendBack.push({
+      taskId: sharedTask.taskId,
+      fixes: `${a.task.title} fails on the shared header, footer or navigation content: ${sharedFixes.join(' ')}`,
+    });
+  const join = (xs: string[]) =>
+    xs.length === 1 ? xs[0]! : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`;
+  const parts = [
+    names.length
+      ? `${join(names)} ${names.length === 1 ? 'needs' : 'need'} fixing in code, which this task can't change`
+      : '',
+    sharedFixes.length
+      ? `the shared header, footer and navigation content, which every page shows, is filled by ${sharedTask!.title}, not by a page`
+      : '',
+  ].filter(Boolean);
+  const listed = join([...names, ...(sharedFixes.length ? [sharedTask!.title] : [])]);
+  const n = names.length + (sharedFixes.length ? 1 : 0);
+  const reason = `${parts.join('; ')}: sent to ${n === 1 ? 'its owner' : 'their owners'}, and this task waits for ${n === 1 ? 'it' : 'them'}.${own.length ? ` Yours to fix when it runs again: ${own.join(' ')}` : ' It is checked again once they are redone.'}`;
+  const capital = reason.charAt(0).toUpperCase() + reason.slice(1);
   return {
-    reason,
+    reason: capital,
     tokens: read.tokens,
     waitOn: {
-      summary: reason,
+      summary: capital,
       taskIds: [],
       sendBack,
       what: `fixes to ${listed}`,
