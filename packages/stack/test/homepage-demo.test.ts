@@ -70,12 +70,32 @@ describe('sitecoreai-homepage-demo playbook', () => {
     expect(approve.dependsOn).toEqual(expect.arrayContaining(['integrate-navigation']));
   });
 
-  it('passes its own slice check, and shows held items as audited, not built', async () => {
+  it('passes its own Blueprint check; a 0.1.0 project’s held items still read as audited', async () => {
     const { blueprint } = await loadFixtures(DEMO);
-    expect((await sliceCheck(blueprint)).status).toBe('pass');
+    expect(await sliceCheck(blueprint)).toMatchObject({
+      status: 'pass',
+      detail: 'The demo builds 2 pages, 2 templates, 7 components and 3 media.',
+    });
+    // Projects started on 0.1.0 wrote whole-site Blueprints with the rest held.
+    const old = {
+      ...blueprint,
+      collections: {
+        ...blueprint.collections,
+        pages: [
+          ...blueprint.collections.pages!,
+          {
+            key: 'about',
+            name: 'About',
+            status: 'drop' as const,
+            pilot: false,
+            attrs: { held: true, path: '/about' },
+          },
+        ],
+      },
+    };
     const snap = blueprintSnapshot({
       seq: 1,
-      current: { version: 1, blueprint },
+      current: { version: 1, blueprint: old },
       approved: null,
       tasks: [],
       decisions: [],
@@ -85,11 +105,6 @@ describe('sitecoreai-homepage-demo playbook', () => {
       home: 'planned',
       'not-found': 'planned',
       about: 'held',
-      services: 'held',
-      faq: 'held',
-      work: 'held',
-      'news-1': 'held',
-      'old-campaign': 'dropped',
     });
   });
 
@@ -117,8 +132,9 @@ describe('sitecoreai-homepage-demo playbook', () => {
   // the files below, each on purpose. Copy the fix across, or add the file here with the reason.
   it("keeps the website playbook's roles, prompts and knowledge, except where it says why", async () => {
     const DIFFERS: Record<string, string> = {
-      'prompts/solution-architect.md': 'the demo slice: keep the homepage, hold the rest',
-      'prompts/content-analyst.md': 'the parity re-crawl reads only the kept pages',
+      'prompts/solution-architect.md': 'a Blueprint for the homepage and the 404 page only',
+      'prompts/content-analyst.md': 'inventory two pages in full, audit the whole site in numbers',
+      'prompts/repo-analyst.md': 'inventory the homepage, 404, header, footer and navigation only',
       'prompts/experience-enabler.md': 'only the kept pages; no redirects, sitemap or robots',
       'prompts/handover-writer.md': 'the demo summary and drag-and-drop checklist',
       'roles/handover-writer.yaml': 'writes the demo summary, not the handover pack',
@@ -229,7 +245,9 @@ describe('blueprint.demo-slice', () => {
       attrs: { held: true, fields: [{ name: 'heading' }], variants: [{ pages: ['/'] }] },
     };
     const d = await problems(bp);
-    expect(d).toContain('page about (/about) is kept');
+    expect(d).toContain(
+      'page about (/about) is in the Blueprint; only the homepage and 404 are built',
+    );
     expect(d).toContain('hero is on the homepage or 404 (or shared) but dropped');
   });
 
@@ -281,13 +299,7 @@ describe('blueprint.demo-slice', () => {
       attrs: { mergedInto: 'faq', variants: [{ pages: ['/careers'] }] },
     });
     expect(await problems(bp)).toContain(
-      "jobs is merged into faq, which the demo doesn't build: hold jobs too",
+      "jobs is merged into faq, which the demo doesn't build: leave jobs out",
     );
-  });
-
-  it('keeps the model contract of held components', async () => {
-    const bp = base();
-    bp.collections.components![3] = { ...bp.collections.components![3]!, attrs: { held: true } };
-    expect(await problems(bp)).toContain('faq is held but has no fields');
   });
 });

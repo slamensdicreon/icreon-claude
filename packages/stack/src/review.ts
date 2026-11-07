@@ -305,9 +305,10 @@ export const CHECKS: Record<string, Check> = {
         );
   },
 
-  // The homepage demo's slice (homepage demo playbook, Gate 1): the whole site in the Blueprint,
-  // only the homepage, the 404 page and what they use kept, everything else held. The plan builds
-  // the kept items, so this is what keeps the demo to its slice.
+  // The homepage demo's Blueprint (homepage demo playbook, Gate 1): the homepage, the 404 page and
+  // what they use, with the navigation its own component. The plan builds every kept item, so this
+  // is what keeps the demo to two pages. (Items held from a whole-site Blueprint, as version 0.1.0
+  // wrote them, are still accepted.)
   'blueprint.demo-slice': async (ctx) => {
     const bp = (await readJson(ctx, 'blueprint')) as {
       collections?: Record<string, Item[]>;
@@ -344,14 +345,16 @@ export const CHECKS: Record<string, Check> = {
     const onSlice = (i: Item) => pagesOf(i).some((p) => slicePaths.has(p));
     for (const p of pages)
       if (!slice.includes(p) && kept(p))
-        problems.push(`page ${p.key} (${pathOf(p)}) is kept; only the homepage and 404 are built`);
+        problems.push(
+          `page ${p.key} (${pathOf(p)}) is in the Blueprint; only the homepage and 404 are built, so leave it out (the audit counts it)`,
+        );
 
     const neededTemplates = new Set(slice.map((p) => String(p.attrs?.template ?? '')));
     for (const t of all('templates')) {
       if (neededTemplates.has(t.key) && !kept(t))
         problems.push(`template ${t.key} is used by the homepage or 404 but dropped`);
       else if (!neededTemplates.has(t.key) && kept(t))
-        problems.push(`template ${t.key} isn't used by the homepage or 404: mark it held`);
+        problems.push(`template ${t.key} isn't used by the homepage or 404: leave it out`);
     }
 
     const components = all('components');
@@ -366,18 +369,15 @@ export const CHECKS: Record<string, Check> = {
         problems.push(`${c.key} is on the homepage or 404 (or shared) but dropped`);
       else if (!needed && kept(c) && !merged(c))
         problems.push(
-          `${c.key} isn't on the homepage or 404 and isn't shared: mark it held, or list the pages it's on`,
+          `${c.key} isn't on the homepage or 404 and isn't shared: leave it out, or list the pages it's on`,
         );
       // A merged component ships with the one it's merged into: that one must be built too.
       const into = merged(c) ? String(c.attrs!.mergedInto) : null;
       const target = into ? components.find((x) => x.key === into) : null;
       if (into && kept(c) && (!target || !kept(target)))
         problems.push(
-          `${c.key} is merged into ${into}, which the demo doesn't build: hold ${c.key} too, or merge it into a kept component`,
+          `${c.key} is merged into ${into}, which the demo doesn't build: leave ${c.key} out, or merge it into a component it builds`,
         );
-      const fields = c.attrs?.fields;
-      if (held(c) && (!Array.isArray(fields) || !fields.length))
-        problems.push(`${c.key} is held but has no fields: the audit keeps every model contract`);
     }
 
     for (const m of all('media')) {
@@ -385,7 +385,7 @@ export const CHECKS: Record<string, Check> = {
       if (needed && held(m)) problems.push(`media ${m.key} is used by the demo but held`);
       else if (!needed && kept(m))
         problems.push(
-          `media ${m.key} isn't used on the homepage, 404, header, footer or navigation: mark it held, or list its pages`,
+          `media ${m.key} isn't used on the homepage, 404, header, footer or navigation: leave it out, or list its pages`,
         );
     }
 
@@ -399,7 +399,7 @@ export const CHECKS: Record<string, Check> = {
     return problems.length
       ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))
       : pass(
-          `The demo builds ${count('pages')} pages, ${count('templates')} templates, ${count('components')} components and ${count('media')} media; ${heldCount} items are audited, not in the demo.`,
+          `The demo builds ${count('pages')} pages, ${count('templates')} templates, ${count('components')} components and ${count('media')} media${heldCount ? `; ${heldCount} items are held, not built` : ''}.`,
         );
   },
 

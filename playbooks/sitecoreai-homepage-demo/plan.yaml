@@ -1,12 +1,10 @@
-# Task templates for the homepage demo: the website playbook's tasks, over the demo slice. The plan
-# compiler expands forEach templates over the Blueprint's kept items, and in this playbook the
-# Architect keeps only the slice (the homepage, the 404 page, their templates, the components they
-# use, the header, footer and navigation, and their media) and marks everything else
-# `status: drop` with `attrs.held: true`: audited, not in the demo. blueprint.demo-slice checks the
-# marks, so the plan always builds exactly the slice.
+# Task templates for the homepage demo: the website playbook's tasks over a two-page Blueprint. The
+# Architect writes the Blueprint for the homepage, the 404 page, their templates, the components on
+# them, the header, footer and navigation, and their media; blueprint.demo-slice checks it. The rest
+# of the site is audited in numbers in the page inventory, not blueprinted.
 #
-# No pilot block: the slice is the pilot. Its components are proven end to end (editing host,
-# Page builder checks) before the templates and pages are built on them.
+# No pilot block: the whole Blueprint is the pilot. Its components are proven end to end (editing
+# host, Page builder checks) before the templates and pages are built on them.
 
 templates:
   # 0 — Intake and access verification
