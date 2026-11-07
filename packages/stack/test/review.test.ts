@@ -129,7 +129,7 @@ describe('acceptance on live projects', () => {
     }));
     await write('page-inventory', { pages: [{ path: '/' }] });
     // Compiled before the template had checks: the playbook's blueprint.coverage still runs, and
-    // discovery.blueprint, which has no Blueprint to compare with the source yet.
+    // discovery.blueprint and the size rule, which have no Blueprint to judge yet.
     const r = await validate(task({ templateId: 'draft-blueprint', acceptance: [] }));
     expect(r).toEqual({
       pass: false,
@@ -137,6 +137,7 @@ describe('acceptance on live projects', () => {
       checks: [
         { id: 'blueprint.coverage', status: 'fail' },
         { id: 'discovery.blueprint', status: 'pending' },
+        { id: 'blueprint.page-templates', status: 'pending' },
       ],
     });
   });

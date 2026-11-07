@@ -130,12 +130,54 @@ The rule is code, not agent judgment: `platforms/sitecoreai/page-templates.ts`.
   layout data (`page.data`) to write mappings. The homepage demo shares the roles but not the
   rule: it builds only the homepage, even of a large site.
 
+## The bulk import
+
+After a template is proven, `import-template-{key}` (Content Migrator) runs `import.start` and
+follows it with `import.status`. The importer (`packages/stack/src/import`) runs in the
+background:
+
+1. **Preflight**, before anything is written. It reads the page-templates item, the proven
+   `template-mapping-<key>` (it must parse: see the mapping language below), and a finished crawl.
+   It reads the example page in Sitecore (its item, `__Renderings`, its Data folder and each
+   datasource item) and lists the template's other pages from the crawl. It refuses with a
+   sentence the agent can act on: no proven mapping, a source it can't read, a component the
+   example has no datasource for, or a datasource with child items that isn't copied whole.
+2. **Each page** gets the mapped values from its source: plain HTTP, parsed offline (`css:`,
+   `title`, `description`, `h1`), or from its embedded layout data (`data:`). The importer then
+   creates the page item under its parent, the Data folder, each datasource (mapped fields
+   filled, `same` fields copied, others set empty), and the example's layout with its datasource
+   IDs pointed at this page's. Images are downloaded through `browser.fetch.asset` and uploaded
+   once each to the template's `mediaFolder`.
+3. **Every write goes through the gateway** as the task that started the import, with that role's
+   grants and scope, write locks and audit trail. Step numbers are unique per page and attempt,
+   so a retry reads and writes again.
+4. **A page that doesn't fit** is an exception with its reason, for an agent: its parent isn't
+   built, a mapped value is missing from its source, its source answers an error, or a write
+   is refused. Timeouts and throttling are retried. `import.start` with `retry: true` queues
+   exceptions again after a fix.
+5. **Imports live in Postgres** (migration `008_imports.sql`), each held by one worker through a
+   lease, and resumed after a restart. When an import finishes it writes `template-import-<key>`.
+
+`template.imported` (the task's acceptance) passes when the import is done, no more than 1 in 10
+pages were exceptions (more means the mapping is wrong: fix it and retry), every exception page
+now exists in Sitecore (the agent built it), and a spread of imported pages passes the page checks:
+`parity.render` on 20 and `parity.visual` on 3.
+
+### The mapping language
+
+`{ component, field, from, as?, optional? }`. `component` is `page` or a datasource item's name
+under the example's Data folder. `from` is `title`, `description`, `h1`, `path`, `same`,
+`css:<selector>` (with ` @html` or ` @<attribute>`), or `data:<Component>.<field>`. `as` is
+`text`, `html`, `image` or `link`. Parsed by `platforms/sitecoreai/mapping.ts`, which the Blueprint
+check, the proof check and the importer all use.
+
+Lists that differ per page (related links, cards) can't be mapped yet. A datasource whose child
+items are the same on every page is copied whole (`field: "*"`, `from: "same"`). A template whose
+pages differ in their lists stays page by page.
+
 ## Next
 
-- Stage 2: the bulk import. A tool operation applies `template-mapping-<key>` to every other page
-  of the template from the crawl store, writing items through the gateway in batches, idempotent
-  and resumable; cheap checks on every page, visual parity on a sample, and pages that don't fit
-  the mapping routed back to agents as exceptions.
+- Lists per page in the mapping (repeating source elements into child items).
 - Phase 2: external services behind a backend interface. Hosted browsers (Browserbase,
   Browserless) for rendering at scale, and an unblocking service (Firecrawl, Zyte, Bright Data)
   for sites whose bot protection refuses us. Our extractors stay the same. The `fetchPage` and

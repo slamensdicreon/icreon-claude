@@ -1,7 +1,13 @@
 import { SITECORE_DEFAULTS } from '@lw/connectors';
 import { describe, expect, it } from 'vitest';
 import { createPlatforms } from '../src';
-import { BULK_TEMPLATE_PAGES, LARGE_SITE_PAGES, siteScale } from '../sitecoreai/page-templates';
+import {
+  BULK_TEMPLATE_PAGES,
+  LARGE_SITE_PAGES,
+  pageTemplateChecks,
+  siteScale,
+  spread,
+} from '../sitecoreai/page-templates';
 
 const target = {
   cmHost: 'xmc.sitecorecloud.io',
@@ -48,7 +54,12 @@ const article = {
     pages: 778,
     mapping: [
       { component: 'PageHeader', field: 'title', from: 'h1' },
-      { component: 'ArticleBody', field: 'body', from: 'article.article-body' },
+      {
+        component: 'ArticleBody',
+        field: 'body',
+        from: 'css:article.article-body @html',
+        as: 'html',
+      },
     ],
   },
 };
@@ -58,7 +69,7 @@ const glossary = {
   attrs: {
     crawlTemplate: 'resources-glossary',
     template: 'term',
-    mapping: [{ component: 'Term', field: 'definition', from: '.glossary-term p' }],
+    mapping: [{ component: 'Term', field: 'definition', from: 'css:.glossary-term p' }],
   },
 };
 const example = (key: string, path: string, into: string) => ({
@@ -237,7 +248,12 @@ describe("a template's proof", () => {
       ...partial,
       mapping: [
         ...partial.mapping,
-        { component: 'ArticleBody', field: 'body', from: 'layout data: ArticleBody.body' },
+        {
+          component: 'ArticleBody',
+          field: 'body',
+          from: 'css:article.article-body @html',
+          as: 'html',
+        },
       ],
       examples: [...partial.examples, { path: '/resources/learn/pto/', itemId: '{2}' }],
     };
@@ -251,5 +267,80 @@ describe("a template's proof", () => {
 
   it('is pending for a task that proves no template', async () => {
     expect((await checks['template.mapping']!(ctx(largeBlueprint, {}))).status).toBe('pending');
+  });
+});
+
+describe("a template's bulk import", () => {
+  const scope = { collection: 'page-templates', items: ['resources-learn'] };
+  const sampled: { id: string; paths: string[] }[] = [];
+  const page =
+    (id: string) =>
+    async (c: { blueprint: { collections: { pages: { attrs?: { path?: string } }[] } } }) => {
+      sampled.push({ id, paths: c.blueprint.collections.pages.map((p) => String(p.attrs?.path)) });
+      return { status: 'pass' as const, detail: 'ok' };
+    };
+  const checks = pageTemplateChecks({
+    'parity.render': page('parity.render') as never,
+    'parity.visual': page('parity.visual') as never,
+  });
+  const imported = Array.from({ length: 100 }, (_, i) => ({ path: `/resources/learn/a-${i}` }));
+  const withDoc = (doc: unknown, built: string[] = []) => ({
+    ...ctx(largeBlueprint, { 'template-import-resources-learn': doc }, scope),
+    read: async (_s: string, _op: string, args: Record<string, unknown>) => ({
+      code: built.some((b) => String(args.path).endsWith(b)) ? 200 : 404,
+      body: {},
+    }),
+  });
+
+  it('waits for an import that is missing or unfinished', async () => {
+    const check = checks['template.imported']!;
+    expect((await check(withDoc(null))).detail).toMatch(/hasn't been imported: run import.start/);
+    expect((await check(withDoc({ status: 'running' }))).detail).toMatch(
+      /import is running: follow it with import.status/,
+    );
+  });
+
+  it('sends a mapping that misses more than 1 in 10 pages back to be fixed', async () => {
+    const res = await checks['template.imported']!(
+      withDoc({
+        status: 'done',
+        total: 100,
+        imported: imported.slice(0, 85),
+        exceptions: Array.from({ length: 15 }, (_, i) => ({ path: `/x-${i}`, reason: 'no body' })),
+      }),
+    );
+    expect(res.detail).toMatch(
+      /15 of 100 pages of resources-learn didn't fit its mapping \(more than 10%\): fix template-mapping-resources-learn .*no body.* and retry the import/,
+    );
+  });
+
+  it('needs each exception page built, then samples the imported pages through the page checks', async () => {
+    const doc = {
+      status: 'done',
+      total: 100,
+      imported: imported.slice(0, 97),
+      exceptions: [
+        { path: '/resources/learn/odd-1' },
+        { path: '/resources/learn/odd-2' },
+        { path: '/resources/learn/odd-3' },
+      ],
+    };
+    const res = await checks['template.imported']!(withDoc(doc, ['/odd-1']));
+    expect(res.detail).toMatch(
+      /2 exception pages of resources-learn aren't built yet: \/resources\/learn\/odd-2, \/resources\/learn\/odd-3/,
+    );
+    sampled.length = 0;
+    const ok = await checks['template.imported']!(withDoc(doc, ['/odd-1', '/odd-2', '/odd-3']));
+    expect(ok).toEqual({
+      status: 'pass',
+      detail:
+        'Imported: Learn article: 97 pages imported, 3 built by hand; parity.render on 20; parity.visual on 3.',
+    });
+    // A spread, first to last, not the first 20.
+    const text = sampled.find((s) => s.id === 'parity.render')!.paths;
+    expect(text).toHaveLength(20);
+    expect(text[0]).toBe('/resources/learn/a-0');
+    expect(text.at(-1)).toBe('/resources/learn/a-96');
+    expect(spread([1, 2, 3, 4, 5], 3)).toEqual([1, 3, 5]);
   });
 });

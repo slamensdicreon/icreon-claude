@@ -53,6 +53,13 @@ import {
 } from '@lw/tool-gateway';
 import { ValidatorsToolServer } from '@lw/tool-validators';
 import {
+  ImportToolServer,
+  MemoryImportStore,
+  TemplateImporter,
+  type ImportCall,
+  type ImportStore,
+} from './import';
+import {
   AcceptanceToolServer,
   ArtifactLibrary,
   ArtifactsToolServer,
@@ -110,6 +117,8 @@ export interface StackOptions {
    * runs once; see createCrawler. Without one, the stack keeps its crawls in memory.
    */
   crawler?: Crawler;
+  /** Where bulk imports are kept (Postgres in the worker, so they resume); memory otherwise. */
+  imports?: ImportStore;
 }
 
 /**
@@ -156,6 +165,8 @@ export function createCrawler(opts: {
 
 export interface Stack {
   activities: Activities;
+  /** Bulk imports of large sites' page templates: resume them once the worker is up. */
+  importer: TemplateImporter;
   /** Roles running on real agents; the rest are stubs. */
   liveRoles: string[];
   gateway: ToolGateway;
@@ -414,8 +425,75 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     crawler: opts.crawler,
     assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
   });
+  // Bulk imports write through the gateway as the task that started them; it exists below.
+  let gatewayRef: ToolGateway | null = null;
+  const importCall: ImportCall = async (projectId, role, taskId, stepIndex, server, op, args) => {
+    const r = await gatewayRef!.call({
+      projectId,
+      taskId,
+      stepIndex,
+      attempt: 0,
+      role,
+      server,
+      op,
+      args,
+    });
+    if (r.ok) {
+      const b = r.body as { untrusted?: boolean; content?: unknown } | null;
+      return { ok: true, code: r.code, body: b?.untrusted ? b.content : r.body };
+    }
+    if ('denied' in r)
+      return {
+        ok: false,
+        code: 403,
+        body: null,
+        message: r.message,
+        retryable: r.denied === 'locked',
+      };
+    return { ok: false, code: r.code, body: null, message: r.message, retryable: r.retryable };
+  };
+  const importer = new TemplateImporter({
+    store: opts.imports ?? new MemoryImportStore(),
+    crawls: browserServer.crawler.store,
+    browser: chromium,
+    policy,
+    call: importCall,
+    blueprint: async (projectId) => {
+      const doc = await library.read(projectId, 'blueprint').catch(() => null);
+      try {
+        return doc ? (JSON.parse(doc.content) as Blueprint) : null;
+      } catch {
+        return null;
+      }
+    },
+    document: async (projectId, artifactId) => {
+      const doc = await library.read(projectId, artifactId).catch(() => null);
+      try {
+        return doc ? JSON.parse(doc.content) : null;
+      } catch {
+        return null;
+      }
+    },
+    report: async (projectId, template, content) => {
+      await library.write(projectId, {
+        artifactId: `template-import-${template}`,
+        kind: 'report',
+        title: `Bulk import: ${template}`,
+        format: 'json',
+        content: JSON.stringify(content, null, 2),
+        producer: 'content-migrator',
+        summary: null,
+        audience: 'team',
+      });
+    },
+    sitePath: (projectId) => {
+      const i = opts.projections.get(projectId)?.intake;
+      return i ? (opts.platform.bindings(i.target).sitePath ?? null) : null;
+    },
+  });
   const servers: ToolServer[] = [
     browserServer,
+    new ImportToolServer(importer),
     new ValidatorsToolServer({
       blobs,
       policy,
@@ -514,6 +592,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       return i && opts.platform.facts ? opts.platform.facts(call, body, i.target) : [];
     },
   });
+  gatewayRef = gateway;
 
   const { blueprint: fixture, outputs } = await loadFixtures(opts.playbookDir);
   const stubs = createStubActivities({
@@ -727,11 +806,13 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
 
   return {
     activities,
+    importer,
     liveRoles: live,
     gateway,
     library,
     close: async () => {
       // Its own crawler, if it made one, lets go of its crawls; a shared one is its owner's.
+      await importer.shutdown();
       await browserServer.close();
       if (!opts.browser) await chromium.close();
     },

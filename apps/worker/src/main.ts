@@ -35,6 +35,8 @@ import {
   composeStack,
   GuardedBrowser,
   createCrawler,
+  MemoryImportStore,
+  PostgresImportStore,
   hostingToolServer,
   learnAsCardsSettle,
   retrospectAtPhaseExit,
@@ -348,6 +350,8 @@ const browser = new GuardedBrowser();
 // One background crawler for every stack: crawls live in Postgres, so a crawl a deploy interrupted
 // is resumed by the next worker (below, once the stacks are composed) from where it was.
 const crawler = createCrawler({ projections, browser, sql: opened.sql });
+// Bulk imports of large sites' page templates, in Postgres too, resumed the same way.
+const imports = opened.sql ? new PostgresImportStore(opened.sql) : new MemoryImportStore();
 
 // One stack per playbook version kept: its roles, prompts, grants and platform pack. A project
 // runs on the version it was created on; new projects start on the current one.
@@ -399,6 +403,7 @@ async function compose(playbook: Playbook, dir: string): Promise<Stack> {
     knowledge,
     browser,
     crawler,
+    imports,
     screens: env.AGENTS === 'claude' ? (input) => compareScreens(input) : null,
     servers,
     credentials,
@@ -483,6 +488,12 @@ const resumed = await crawler.resumeAll().catch((err: unknown) => {
   return 0;
 });
 if (resumed) console.log(`Crawls: ${resumed} still running; resuming those no other worker holds`);
+// Imports too: each stack's importer tries them, and the lease gives each to one.
+let importing = 0;
+for (const { stack } of stacks)
+  importing = Math.max(importing, await stack.importer.resumeAll().catch(() => 0));
+if (importing)
+  console.log(`Imports: ${importing} still running; resuming those no other worker holds`);
 
 // The operator: tells the Director, once, when a card no Lead settled waits on them or nothing has
 // moved for a while; in the project's conversation, by email (RESEND and OPERATOR_EMAIL_TO) and on
@@ -563,6 +574,7 @@ const stop = (signal: string) => {
   if (draining.signal.aborted) return;
   // Crawls in progress put their claimed pages back and stay running for the next worker.
   void crawler.shutdown();
+  for (const { stack } of stacks) void stack.importer.shutdown();
   console.log(
     `${signal}: shutting down. Agent sessions hand over after their turn in progress; activities get ${grace} s.`,
   );

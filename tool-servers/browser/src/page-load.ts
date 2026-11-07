@@ -120,12 +120,34 @@ export class OfflineParser {
   ) {}
 
   async parse(html: string, url: string): Promise<PageExtract> {
+    return this.run(html, url, (page) => page.evaluate(EXTRACT_OFFLINE) as Promise<PageExtract>);
+  }
+
+  /**
+   * Values from the page as served, one per query, for a template's field mapping: the text of
+   * the first element a CSS selector matches, its cleaned inner HTML (`attr: 'html'`), or an
+   * attribute (`src`, `href` and the like come back as absolute URLs); the <title> or meta
+   * description with `kind`. Null where nothing matches.
+   */
+  async select(html: string, url: string, queries: SelectQuery[]): Promise<(string | null)[]> {
+    return this.run(
+      html,
+      url,
+      (page) =>
+        page.evaluate(`(${selectValues.toString()})(${JSON.stringify(queries)})`) as Promise<
+          (string | null)[]
+        >,
+    );
+  }
+
+  private async run<T>(html: string, url: string, read: (page: Page) => Promise<T>): Promise<T> {
     const page = await this.acquire();
     let healthy = true;
     try {
       await page.setContent(withoutScripts(html, url), { waitUntil: 'domcontentloaded' });
       // Init scripts don't run with scripts off: define the helper the bundler may reference.
-      return (await page.evaluate(EXTRACT_OFFLINE)) as PageExtract;
+      await page.evaluate('globalThis.__name = globalThis.__name || ((f) => f)');
+      return await read(page);
     } catch (err) {
       healthy = false;
       throw err;
@@ -157,6 +179,57 @@ export class OfflineParser {
     if (next) next(page);
     else this.free.push(page);
   }
+}
+
+export interface SelectQuery {
+  kind?: 'title' | 'description';
+  selector?: string;
+  /** `html` for the element's cleaned inner HTML, or an attribute name. */
+  attr?: string;
+}
+
+/** Runs inside the page (serialized), so it must be self-contained. */
+function selectValues(queries: SelectQuery[]): (string | null)[] {
+  const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+  const DROP = 'script,style,noscript,iframe,template,form,button,svg,link,meta';
+  const KEEP_ATTRS = new Set(['href', 'src', 'alt', 'title', 'colspan', 'rowspan', 'target']);
+  const html = (el: Element) => {
+    const copy = el.cloneNode(true) as Element;
+    for (const x of Array.from(copy.querySelectorAll(DROP))) x.remove();
+    for (const x of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
+      for (const a of Array.from(x.attributes)) {
+        if (!KEEP_ATTRS.has(a.name)) {
+          x.removeAttribute(a.name);
+          continue;
+        }
+        // Links and images as absolute URLs, so they still work on the new site.
+        const prop = (x as unknown as Record<string, unknown>)[a.name];
+        if ((a.name === 'href' || a.name === 'src') && typeof prop === 'string' && prop)
+          x.setAttribute(a.name, prop);
+      }
+    }
+    return copy.innerHTML.replace(/\s+\n/g, '\n').trim();
+  };
+  return queries.map((q) => {
+    if (q.kind === 'title') return clean(document.title) || null;
+    if (q.kind === 'description')
+      return document.querySelector('meta[name="description"]')?.getAttribute('content') ?? null;
+    let el: Element | null = null;
+    try {
+      el = q.selector ? document.querySelector(q.selector) : null;
+    } catch {
+      return null; // not a valid selector
+    }
+    if (!el) return null;
+    if (q.attr === 'html') return html(el) || null;
+    if (q.attr) {
+      // URL attributes as the browser resolves them (absolute), others as written.
+      const prop = (el as unknown as Record<string, unknown>)[q.attr];
+      if ((q.attr === 'src' || q.attr === 'href') && typeof prop === 'string') return prop || null;
+      return el.getAttribute(q.attr);
+    }
+    return clean(el.textContent) || null;
+  });
 }
 
 /** Same page, one spelling: no fragment, no trailing slash (except the root). */

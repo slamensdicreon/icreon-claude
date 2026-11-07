@@ -215,6 +215,17 @@ templates:
         validator:parity.render,
         validator:parity.visual,
       ]
+  # ... then the rest of the template's pages in bulk, from its proven mapping (import.start).
+  # Pages that don't fit are exceptions the agent builds by hand; more than 1 in 10 means the
+  # mapping is wrong. Parents first: the page-by-page pages include the template's listing pages.
+  - id: import-template-{key}
+    phase: 6
+    role: content-migrator
+    forEach: page-templates
+    optional: true
+    title: Import the rest of {name} in bulk
+    dependsOn: ['prove-template-{key}', migrate-pages-*]
+    acceptance: [validator:template.imported]
   - id: upload-media-{key}
     phase: 6
     role: media-migrator
@@ -230,7 +241,8 @@ templates:
     phase: 6
     role: parity-auditor
     title: Audit content parity
-    dependsOn: [migrate-pages-*, prove-template-*, upload-media-*, recrawl-source]
+    dependsOn:
+      [migrate-pages-*, prove-template-*, import-template-*, upload-media-*, recrawl-source]
     acceptance: [validator:parity.render, validator:parity.visual, validator:parity.page]
 
   # 7 — Experience enablement

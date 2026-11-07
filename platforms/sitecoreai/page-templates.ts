@@ -1,4 +1,6 @@
 import type { CheckResult, PlatformCheck, PlatformCheckContext } from '../src/index';
+import { mappingProblems } from './mapping';
+import { sitecoreBindings } from './pack';
 
 /**
  * Large sites are planned and migrated per template; small sites page by page. The rule lives here,
@@ -68,7 +70,21 @@ const examplesOf = (ctx: PlatformCheckContext, t: Item) =>
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function pageTemplateChecks(): Record<string, PlatformCheck> {
+/** Most exception pages a template's import may leave; past it the mapping is likely wrong. */
+export const MAX_EXCEPTION_SHARE = 0.1;
+/** Imported pages whose rendering is compared with the source, and of those, looked at. */
+const TEXT_SAMPLE = 20;
+const VISUAL_SAMPLE = 3;
+
+/** `n` items spread evenly through a list (first, last and between), for a fair sample. */
+export function spread<T>(xs: T[], n: number): T[] {
+  if (xs.length <= n) return xs;
+  return Array.from({ length: n }, (_, i) => xs[Math.round((i * (xs.length - 1)) / (n - 1))]!);
+}
+
+export function pageTemplateChecks(
+  base: Record<string, PlatformCheck> = {},
+): Record<string, PlatformCheck> {
   return {
     // The size rule, on the Blueprint: per template for a large site's big templates, page by
     // page for everything else.
@@ -126,13 +142,8 @@ export function pageTemplateChecks(): Record<string, PlatformCheck> {
           problems.push(
             `${t.key} has no attrs.mapping: list each field its pages fill, as { "component", "field", "from" }`,
           );
-        const loose = mapping.filter(
-          (m) => typeof m?.field !== 'string' || typeof m?.from !== 'string' || !m.from.trim(),
-        );
-        if (loose.length)
-          problems.push(
-            `${t.key}: ${count(loose.length, 'mapping entry has', 'mapping entries have')} no field or no source ("from")`,
-          );
+        if (mapping.length)
+          for (const p of mappingProblems(mapping).slice(0, 3)) problems.push(`${t.key}: ${p}`);
         const examples = examplesOf(ctx, t);
         if (!examples.length)
           problems.push(
@@ -154,6 +165,88 @@ export function pageTemplateChecks(): Record<string, PlatformCheck> {
       return pass(
         `A large site (${count(scale.pages, 'page')}): ${count(kept.length, 'template')} planned per template (${bulkPages} pages, proven on their examples first), ${count(own, 'page')} planned one by one.`,
       );
+    },
+
+    // A template's bulk import: finished, few pages that didn't fit (each built by an agent since),
+    // and a spread of the imported pages rendering like their source pages.
+    'template.imported': async (ctx) => {
+      const items =
+        ctx.scope.collection === 'page-templates'
+          ? (ctx.blueprint?.collections['page-templates'] ?? []).filter(
+              (t) => t.status !== 'drop' && ctx.scope.items.includes(t.key),
+            )
+          : [];
+      if (!items.length) return pending('This task imports no page template.');
+      const problems: string[] = [];
+      const notes: string[] = [];
+      const home = `${sitecoreBindings(ctx.target).sitePath}/Home`;
+      for (const t of items) {
+        const doc = (await ctx.document(`template-import-${t.key}`)) as {
+          status?: string;
+          total?: number;
+          imported?: { path: string }[];
+          exceptions?: { path: string; reason?: string | null }[];
+        } | null;
+        if (!doc) {
+          problems.push(`${t.key} hasn't been imported: run import.start with template "${t.key}"`);
+          continue;
+        }
+        if (doc.status !== 'done') {
+          problems.push(
+            `${t.key}'s import is ${doc.status ?? 'unfinished'}: follow it with import.status until it is done`,
+          );
+          continue;
+        }
+        const total = Number(doc.total) || 0;
+        const off = doc.exceptions ?? [];
+        if (total && off.length / total > MAX_EXCEPTION_SHARE) {
+          problems.push(
+            `${off.length} of ${total} pages of ${t.key} didn't fit its mapping (more than ${Math.round(MAX_EXCEPTION_SHARE * 100)}%): fix template-mapping-${t.key} from their reasons (${[...new Set(off.map((e) => e.reason ?? ''))].slice(0, 2).join('; ')}) and retry the import, rather than building them one by one`,
+          );
+          continue;
+        }
+        // Each exception page built by hand since: it exists in Sitecore now.
+        const unbuilt: string[] = [];
+        for (const e of off) {
+          const r = await ctx.read('sitecore-authoring', 'item.read', { path: `${home}${e.path}` });
+          if (r.code !== 200) unbuilt.push(e.path);
+        }
+        if (unbuilt.length)
+          problems.push(
+            `${count(unbuilt.length, 'exception page')} of ${t.key} ${unbuilt.length === 1 ? "isn't" : "aren't"} built yet: ${unbuilt.slice(0, 5).join(', ')}${unbuilt.length > 5 ? ` and ${unbuilt.length - 5} more` : ''}. Build each as you would any page, or retry the import once what it waits on is done`,
+          );
+        // A spread of the imported pages, through the page checks: they render like the source.
+        const imported = (doc.imported ?? []).map((p) => p.path);
+        const sample = (n: number) => ({
+          ...ctx,
+          scope: { collection: null, items: [] },
+          blueprint: {
+            collections: {
+              ...(ctx.blueprint?.collections ?? {}),
+              pages: spread(imported, n).map((path, i) => ({
+                key: `imported-${i}`,
+                name: path,
+                attrs: { path },
+              })),
+            },
+          },
+        });
+        for (const [id, n] of [
+          ['parity.render', TEXT_SAMPLE],
+          ['parity.visual', VISUAL_SAMPLE],
+        ] as const) {
+          const check = base[id];
+          if (!check || !imported.length) continue;
+          const r = await check(sample(n));
+          if (r.status === 'fail') problems.push(`${t.key}, sampled imported pages: ${r.detail}`);
+          else if (r.status === 'pass') notes.push(`${id} on ${Math.min(n, imported.length)}`);
+        }
+        if (!problems.length)
+          notes.unshift(
+            `${t.name}: ${imported.length} pages imported, ${off.length} built by hand`,
+          );
+      }
+      return problems.length ? fail(problems) : pass(`Imported: ${notes.join('; ')}.`);
     },
 
     // A template's proof: its mapping, as it worked on the example pages, written down for the
@@ -190,11 +283,11 @@ export function pageTemplateChecks(): Record<string, PlatformCheck> {
           problems.push(
             `template-mapping-${t.key} leaves out ${missing.map((m) => `${m.component ? `${String(m.component)}.` : ''}${String(m.field)}`).join(', ')} from the Blueprint's mapping: keep every field, with how it was really filled`,
           );
-        const unsourced = (doc.mapping ?? []).filter(
-          (m) => typeof m.from !== 'string' || !m.from.trim(),
-        );
-        if (unsourced.length)
-          problems.push(`template-mapping-${t.key} has fields with no source ("from")`);
+        for (const p of mappingProblems(
+          doc.mapping,
+          (doc as { mediaFolder?: unknown }).mediaFolder,
+        ))
+          problems.push(`template-mapping-${t.key}: ${p}`);
         const want = examplesOf(ctx, t).map((p) => String(p.attrs?.path ?? '').replace(/\/$/, ''));
         const done = new Map(
           (doc.examples ?? []).map((e) => [String(e.path ?? '').replace(/\/$/, ''), e]),

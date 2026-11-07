@@ -182,17 +182,25 @@ describe('compilePlan', () => {
       expect.arrayContaining([
         'prove-template-resources-learn',
         'prove-template-resources-glossary',
+        'import-template-resources-learn',
+        'import-template-resources-glossary',
       ]),
     );
+    // The rest of each template is imported once it is proven and the pages above it are built.
+    expect(plan.tasks.find((t) => t.taskId === 'import-template-resources-learn')).toMatchObject({
+      title: 'Import the rest of Learn article in bulk',
+      dependsOn: expect.arrayContaining(['prove-template-resources-learn', 'migrate-pages-home']),
+      acceptance: ['validator:template.imported'],
+    });
     assertTopological(plan);
   });
 
   it('gives a small site no template tasks at all, before or after its Blueprint', () => {
     const before = compilePlan(pb, null);
-    expect(before.tasks.some((t) => t.taskId.startsWith('prove-template'))).toBe(false);
+    expect(before.tasks.some((t) => /^(prove|import)-template/.test(t.taskId))).toBe(false);
     // A small site's Blueprint has no page-templates collection: not an error, no tasks.
     const after = compilePlan(pb, blueprint(), { skipMerged: true });
-    expect(after.tasks.some((t) => t.taskId.startsWith('prove-template'))).toBe(false);
+    expect(after.tasks.some((t) => /^(prove|import)-template/.test(t.taskId))).toBe(false);
     expect(after.tasks.filter((t) => t.templateId === 'migrate-pages-{key}')).toHaveLength(25);
   });
 
