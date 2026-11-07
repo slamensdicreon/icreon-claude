@@ -41,6 +41,8 @@ const KIND: Record<OperatorNotice['kind'], { chip: string; fg: string; bg: strin
     review: { chip: 'To review', fg: T.coralText, bg: T.coralTint, band: T.coral },
     down: { chip: 'Worker down', fg: T.coralText, bg: T.coralTint, band: T.coral },
     up: { chip: 'Back up', fg: T.green, bg: T.mist2, band: T.green },
+    // A heads-up: nothing to decide, so iris rather than coral.
+    source: { chip: 'Heads-up', fg: T.iris, bg: T.irisTint, band: T.iris },
   };
 
 const TYPE_LABEL: Record<EscalationType, string> = {

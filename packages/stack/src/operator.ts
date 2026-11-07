@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { EscalationType, NewEvent } from '@lw/contracts';
+import type { EscalationType, LwEvent, NewEvent } from '@lw/contracts';
 import type { ProjectState } from '@lw/domain';
 
 /** Cypher's voice: counts under thirteen in words. */
@@ -13,7 +13,8 @@ export interface OperatorNotice {
   projectId: string;
   project: string;
   /** down/up: the worker itself, told by the watchdog (no project). */
-  kind: 'attention' | 'stalled' | 'review' | 'down' | 'up';
+  /** source: a heads-up that the source site is slowing or turning the team away. */
+  kind: 'attention' | 'stalled' | 'review' | 'down' | 'up' | 'source';
   title: string;
   body: string;
   /** The cards and gates the notice is about (attention notices). */
@@ -74,16 +75,88 @@ export async function operatorSweep(deps: OperatorDeps): Promise<OperatorNotice[
       (deps.pendingReview
         ? reviewNotice(s, await deps.pendingReview(s.projectId).catch(() => null))
         : null);
-    if (!notice) continue;
-    await deps.store.append(s.projectId, [message(notice, s)]);
-    await deps
-      .notify?.(notice)
-      .catch((err: unknown) =>
-        (deps.log ?? console.error)(`Operator notice for ${s.projectId} not sent`, err),
-      );
-    out.push(notice);
+    // A heads-up about the source site is told beside any other notice: it needs nothing of the
+    // Director, it explains why things are slower.
+    const recent = await (async () =>
+      deps.store.read(s.projectId, { order: 'desc', limit: 400 }))().catch(() => [] as LwEvent[]);
+    const notices = [notice, sourceNotice(s, recent, now)].filter(
+      (n): n is OperatorNotice => n !== null,
+    );
+    for (const n of notices) {
+      await deps.store.append(s.projectId, [message(n, s)]);
+      await deps
+        .notify?.(n)
+        .catch((err: unknown) =>
+          (deps.log ?? console.error)(`Operator notice for ${s.projectId} not sent`, err),
+        );
+      out.push(n);
+    }
   }
   return out;
+}
+
+const HEADS_UP = 'Heads-up';
+/** How far back a sweep looks at the source site's answers, and how long one heads-up holds. */
+const SOURCE_WINDOW_MINUTES = 15;
+const SOURCE_REPEAT_MINUTES = 60;
+
+/**
+ * Cypher's heads-up when the source site slows the team or turns it away, read from the browser's
+ * recent answers: "too many requests" (it throttles us), a refusal (bot protection), or a crawl
+ * that ran out of time (a large site). Nothing for the Director to decide here: it says why the
+ * work is slower than usual. Each kind is told once an hour at most.
+ */
+export function sourceNotice(s: ProjectState, recent: LwEvent[], now: Date): OperatorNotice | null {
+  const steps = recent.filter(
+    (e): e is Extract<LwEvent, { type: 'step.recorded' }> =>
+      e.type === 'step.recorded' &&
+      e.data.toolServer === 'browser' &&
+      minutes(e.ts, now) <= SOURCE_WINDOW_MINUTES,
+  );
+  const throttled = steps.filter((e) => e.data.resultCode === 429).length;
+  const refused = steps.filter(
+    (e) =>
+      e.data.resultCode === 422 && /refused our browser|answered HTTP 40[13]/.test(e.data.summary),
+  ).length;
+  const slow = steps.filter(
+    (e) =>
+      e.data.operation === 'crawl' &&
+      (e.data.resultCode === 504 || /Stopped for time/.test(e.data.summary)),
+  ).length;
+  const site = siteName(s.sourceUrl);
+  const told = (title: string) =>
+    s.conversation.some(
+      (c) =>
+        c.label === HEADS_UP && c.title === title && minutes(c.ts, now) < SOURCE_REPEAT_MINUTES,
+    );
+  const heads = (title: string, body: string): OperatorNotice | null =>
+    told(title) ? null : { projectId: s.projectId, project: s.name, kind: 'source', title, body };
+  // The most telling first: a refusal stops Discovery, throttling and size only slow it.
+  if (refused >= 2)
+    return heads(
+      `${site} is turning the team away`,
+      `Just so you know: ${site} is refusing our browser (${word(refused)} pages answered "access denied" in the last ${SOURCE_WINDOW_MINUTES} minutes). That's the site's bot protection, not our access. The team will skip what it can't read, and if it can't read enough it will ask you how to go on.`,
+    );
+  if (throttled >= 2)
+    return heads(
+      `${site} is throttling the team`,
+      `Just so you know: ${site} is throttling the team (it answered "too many requests" ${word(throttled)} times in the last ${SOURCE_WINDOW_MINUTES} minutes), so ${s.name} will take a little longer than usual. The team keeps going at the pace the site allows. Nothing for you to do.`,
+    );
+  if (slow >= 1)
+    return heads(
+      `${site} is a large site`,
+      `Just so you know: ${site} is large, so the crawl ran past its time limit and the team is reading it in parts. Discovery will take a little longer than usual. Nothing for you to do.`,
+    );
+  return null;
+}
+
+/** "paylocity.com" from the project's source URL, or "The source site". */
+function siteName(url: string | null | undefined): string {
+  try {
+    return url ? new URL(url).hostname.replace(/^www\./, '') : 'The source site';
+  } catch {
+    return 'The source site';
+  }
 }
 
 /** The one notice a project warrants now, or none: attention first, then a stall. */
@@ -207,10 +280,14 @@ export function reviewNotice(
   };
 }
 
+const CHIEF = { kind: 'chief_of_staff', id: 'chief-of-staff' } as const;
+
 function message(n: OperatorNotice, s: ProjectState): NewEvent {
+  const headsUp = n.kind === 'source';
   return {
     type: 'cos.message',
-    actor: SYSTEM,
+    // A heads-up is Cypher talking to the Director; the other notices are the operator's.
+    actor: headsUp ? CHIEF : SYSTEM,
     subject: { kind: 'project', id: s.projectId },
     severity: n.kind === 'stalled' ? 'warning' : 'notable',
     data: {
@@ -218,7 +295,7 @@ function message(n: OperatorNotice, s: ProjectState): NewEvent {
       kind: 'text',
       title: n.title,
       body: n.body,
-      label: LABEL,
+      label: headsUp ? HEADS_UP : LABEL,
       needs: n.needs ?? [],
       rows: n.proposals ? [{ label: 'proposals', value: String(n.proposals) }] : [],
     },

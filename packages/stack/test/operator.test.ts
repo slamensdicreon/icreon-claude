@@ -1,11 +1,12 @@
-import type { NewEvent } from '@lw/contracts';
+import type { LwEvent, NewEvent } from '@lw/contracts';
 import type { ProjectState } from '@lw/domain';
 import type { EventStore, Projections } from '@lw/events';
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   noticeFor,
   operatorSweep,
   reviewNotice,
+  sourceNotice,
   webhookNotifier,
   type OperatorNotice,
 } from '../src/operator';
@@ -238,4 +239,81 @@ it('names why a project stalled: a failing or stopped workflow, a missing capabi
     },
   });
   expect(read).toEqual(['p1']);
+});
+
+describe('source-site heads-up', () => {
+  const step = (minute: number, resultCode: number, operation = 'snapshot', summary = 'x') =>
+    ({
+      type: 'step.recorded',
+      ts: `2026-11-07T13:${String(minute).padStart(2, '0')}:00.000Z`,
+      data: { toolServer: 'browser', operation, resultCode, summary },
+    }) as unknown as LwEvent;
+  const now = at('2026-11-07T13:50:00.000Z');
+  const paylocity = (conversation: unknown[] = []) =>
+    project({
+      name: 'Paylocity',
+      sourceUrl: 'https://www.paylocity.com',
+      conversation,
+    } as Partial<ProjectState>);
+
+  it('tells the Director the site is throttling the team, in Cypher’s words', () => {
+    const n = sourceNotice(paylocity(), [step(47, 429), step(48, 429, 'page.markup')], now);
+    expect(n).toMatchObject({
+      kind: 'source',
+      title: 'paylocity.com is throttling the team',
+      body: expect.stringMatching(
+        /^Just so you know: paylocity\.com is throttling the team .*two times.*Paylocity will take a little longer than usual\. .*Nothing for you to do\.$/,
+      ),
+    });
+  });
+
+  it('names a refusal first, then a crawl that ran out of time', () => {
+    const refused = [
+      step(46, 422, 'snapshot', 'The site answered HTTP 403 for this page'),
+      step(47, 422, 'crawl', 'paylocity.com refused our browser: 9 of 9 pages'),
+      step(48, 429),
+      step(48, 429),
+    ];
+    expect(sourceNotice(paylocity(), refused, now)?.title).toBe(
+      'paylocity.com is turning the team away',
+    );
+    expect(sourceNotice(paylocity(), [step(47, 504, 'crawl')], now)?.title).toBe(
+      'paylocity.com is a large site',
+    );
+  });
+
+  it('says nothing for one stray 429, old answers, or within the hour after telling', () => {
+    expect(sourceNotice(paylocity(), [step(48, 429)], now)).toBeNull();
+    expect(sourceNotice(paylocity(), [step(10, 429), step(11, 429)], now)).toBeNull();
+    const told = paylocity([
+      {
+        label: 'Heads-up',
+        title: 'paylocity.com is throttling the team',
+        ts: '2026-11-07T13:20:00.000Z',
+      },
+    ]);
+    expect(sourceNotice(told, [step(47, 429), step(48, 429)], now)).toBeNull();
+  });
+
+  it('posts the heads-up from Cypher beside the sweep’s other notices', async () => {
+    const appended: { projectId: string; events: NewEvent[] }[] = [];
+    const live = paylocity();
+    await operatorSweep({
+      projections: { catchUpAll: async () => {}, all: () => [live] } as unknown as Projections,
+      store: {
+        append: async (projectId: string, events: NewEvent[]) =>
+          void appended.push({ projectId, events }),
+        read: async () => [step(48, 429), step(49, 429)],
+      } as unknown as EventStore,
+      now: () => now,
+    });
+    // The project has also stalled, so it gets that notice too; the heads-up comes beside it.
+    const messages = appended.map((a) => a.events[0]! as NewEvent & { data: { label: string } });
+    expect(messages.map((m) => m.data.label)).toEqual(['Operator', 'Heads-up']);
+    const headsUp = messages[1];
+    expect(headsUp).toMatchObject({
+      actor: { kind: 'chief_of_staff' },
+      data: { label: 'Heads-up', title: 'paylocity.com is throttling the team' },
+    });
+  });
 });
