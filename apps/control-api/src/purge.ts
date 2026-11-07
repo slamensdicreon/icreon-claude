@@ -1,4 +1,5 @@
-import type { NewEvent } from '@lw/contracts';
+import type { BuildRepo, NewEvent } from '@lw/contracts';
+import type { CleanupResult } from '@lw/connectors';
 import type {
   EventStore,
   IntegrationStore,
@@ -28,12 +29,22 @@ export interface PurgeDeps {
   rules?: RuleStore;
   knowledge?: KnowledgeStore;
   commands?: { forget(projectId: string): Promise<number> } | null;
+  /** Deletes the build repository in our GitHub organization (`buildOrg`). */
+  github?: { deleteBuildRepo(org: string, repo: BuildRepo): Promise<CleanupResult> } | null;
+  buildOrg?: string | null;
+  /** Deletes the hosting project in our Vercel team. */
+  hosting?: { deleteProject(name: string): Promise<CleanupResult> } | null;
+  /** Every project: what another project still uses is left alone. */
+  projects?: () => ProjectState[];
   now?: () => number;
 }
 
 /** The steps, in order. Each is idempotent: running one twice removes nothing more. */
 export const PURGE_STEPS = [
   'workflow',
+  'repository',
+  'hosting',
+  'connection',
   'blobs',
   'secrets',
   'integrations',
@@ -49,8 +60,57 @@ interface SavedConnection {
   createdFrom?: { projectId: string; name: string } | null;
 }
 
-async function run(deps: PurgeDeps, id: string, step: PurgeStep): Promise<Record<string, unknown>> {
+/** Other projects, not counting ones whose own purge is under way. */
+const others = (deps: PurgeDeps, s: ProjectState) =>
+  (deps.projects?.() ?? []).filter((p) => p.projectId !== s.projectId && !p.deletion?.purging);
+
+async function run(
+  deps: PurgeDeps,
+  s: ProjectState,
+  step: PurgeStep,
+): Promise<Record<string, unknown>> {
+  const id = s.projectId;
   switch (step) {
+    case 'repository': {
+      const repo = s.buildRepo;
+      if (!repo) return { outcome: 'skipped', detail: 'No build repository.' };
+      const sharer = others(deps, s).find(
+        (p) => p.buildRepo?.repo.toLowerCase() === repo.repo.toLowerCase(),
+      );
+      if (sharer)
+        return { outcome: 'skipped', detail: `${repo.repo} is also ${sharer.name}'s: left.` };
+      if (!deps.github || !deps.buildOrg)
+        return {
+          outcome: 'refused',
+          detail: `No GitHub App or build organization is connected here, so ${repo.repo} was left.`,
+        };
+      return { ...(await deps.github.deleteBuildRepo(deps.buildOrg, repo)) };
+    }
+    case 'hosting': {
+      const name = s.hosting?.project;
+      if (!name) return { outcome: 'skipped', detail: 'No hosting project.' };
+      const sharer = others(deps, s).find((p) => p.hosting?.project === name);
+      if (sharer) return { outcome: 'skipped', detail: `${name} is also ${sharer.name}'s: left.` };
+      if (!deps.hosting)
+        return {
+          outcome: 'refused',
+          detail: `No Vercel token is connected here, so ${name} was left.`,
+        };
+      return { ...(await deps.hosting.deleteProject(name)) };
+    }
+    case 'connection': {
+      const cid = s.intake?.connectionId;
+      if (!cid) return { outcome: 'skipped', detail: 'No saved connection.' };
+      const sharer = others(deps, s).find((p) => p.intake?.connectionId === cid);
+      if (sharer)
+        return {
+          outcome: 'skipped',
+          detail: `The saved connection is also ${sharer.name}'s: kept.`,
+        };
+      await deps.integrations?.delete(`connection:${cid}`);
+      const secrets = deps.vault ? await deps.vault.deleteProject(`connection:${cid}`) : 0;
+      return { outcome: 'deleted', detail: `Saved connection removed, with ${secrets} secret(s).` };
+    }
     case 'workflow':
       if (!deps.stop) return { skipped: 'no orchestrator connected' };
       await deps.stop(id);
@@ -124,7 +184,7 @@ export async function purgeProject(
   }
   for (const step of PURGE_STEPS) {
     if (tombstone.steps[step]) continue;
-    const result = await run(deps, id, step);
+    const result = await run(deps, s, step);
     await deps.tombstones.step(id, step, result);
   }
   await deps.tombstones.finish(id, by);
