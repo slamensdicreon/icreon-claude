@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import {
   ApproveGate,
@@ -41,6 +42,7 @@ import {
   type AutonomyLevel,
   type DecisionCategory,
   type CommandResult,
+  type NewEvent,
   type PortfolioDiagnostics,
   type PlaybookScorecard,
   type RuleDraftView,
@@ -86,7 +88,7 @@ import type {
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
 import { harvestRules, type OperatorNotice } from '@lw/stack';
-import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
@@ -97,6 +99,7 @@ import { projectHistory } from './history';
 import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
+import { purgeDue, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
 import { withDocumentFacts, workbenchStory } from './story';
@@ -160,6 +163,13 @@ export interface AppDeps {
   heartbeat?: () => Promise<WorkerHeartbeat | null>;
   /** Rules from the Director's answers, applied by Lead triage. Absent where nothing stores them. */
   rules?: RuleStore;
+  /**
+   * Deleting projects: what the purge removes from. Absent where it can't run (no store for
+   * tombstones); deletion can then be requested but not carried out.
+   */
+  purge?: PurgeDeps;
+  /** Days between asking for a deletion and the purge (default 30). */
+  deleteGraceDays?: number;
   /** Drafts a rule from an answered card (Claude); without it, the draft copies the card. */
   ruleDrafter?: ((input: RuleDraftInput) => Promise<{ when: string; then: string }>) | null;
   /** The team's knowledge across projects: lessons, procedures and gaps. */
@@ -308,6 +318,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.addHook('preHandler', async (req) => {
     const id = (req.params as { id?: unknown } | undefined)?.id;
     if (typeof id === 'string' && req.url.startsWith('/projects/')) await projections.catchUp(id);
+  });
+
+  // An archived project is read-only: only restoring it changes it. Reads and downloads still work.
+  // A project being deleted answers 410 to everything: nothing may read or write it while it goes.
+  const OPEN_WHEN_ARCHIVED = /^\/projects\/[^/]+\/(restore|archive|deletion)$/;
+  app.addHook('preHandler', async (req) => {
+    const id = (req.params as { id?: unknown } | undefined)?.id;
+    if (typeof id !== 'string' || !req.url.startsWith('/projects/')) return;
+    const s = projections.get(id);
+    if (s?.deletion?.purging) throw new CommandError(410, 'deleted', `${s.name} is being deleted.`);
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
+    if (OPEN_WHEN_ARCHIVED.test(req.url.split('?')[0]!)) return;
+    if (s?.status === 'archived')
+      throw new CommandError(
+        409,
+        'archived',
+        `${s.name} is archived and read-only. Restore it from Settings to change anything.`,
+      );
   });
 
   const project = (id: string): ProjectState | null => projections.get(id) ?? null;
@@ -1819,15 +1847,183 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
+  /** Who did it: the signed-in operator's login, so the log says who archived or restored. */
+  const operatorActor = (req: FastifyRequest) =>
+    ({ kind: 'director', id: req.operator?.login ?? 'director' }) as const;
+  const note = (projectId: string, title: string, body: string): NewEvent => ({
+    type: 'cos.message',
+    actor: { kind: 'chief_of_staff', id: 'chief-of-staff' },
+    subject: { kind: 'project', id: projectId },
+    severity: 'notable',
+    data: { messageId: randomUUID(), kind: 'text', title, body },
+  });
+
+  /**
+   * Archive: the project stops for good, leaves the active lists and becomes read-only (the hook
+   * above). Only once nothing runs: a running project is paused first. A paused project is
+   * cancelled the normal way (open tasks cancelled, cards superseded) before it is archived.
+   */
   app.post<P>('/projects/:id/archive', async (req) => {
     const { confirmation } = ArchiveProject.parse(req.body);
-    if (confirmation !== known(req.params.id).name)
+    const id = req.params.id;
+    const s = known(id);
+    if (confirmation !== s.name)
       throw new CommandError(
         422,
         'confirmation_mismatch',
         'Type the project name exactly to archive it.',
       );
-    return command(req.params.id, (o) => supported(o, 'archive')());
+    if (s.status === 'archived')
+      throw new CommandError(409, 'archived', `${s.name} is already archived.`);
+    if (s.status === 'running')
+      throw new CommandError(
+        409,
+        'not_paused',
+        `Pause ${s.name} first. A project is archived only once nothing is running.`,
+      );
+    if (s.mode !== 'live') return command(id, (o) => supported(o, 'archive')());
+    const previous = s.status;
+    if (previous === 'paused')
+      await orchestrator(id).control({ verb: 'cancel', scope: { kind: 'project', id } });
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.status',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { status: 'archived', previous },
+      },
+      note(
+        id,
+        'Archived',
+        `${by.id === 'director' ? 'The Director' : by.id} archived this project. It is read-only: nothing runs and nothing can be changed. Its history, documents and handover pack stay. Restore it from Settings to read it as ${previous === 'completed' ? 'completed' : previous === 'intake' ? 'not started' : 'cancelled'}.`,
+      ),
+    ]);
+    return settled(id);
+  });
+
+  /**
+   * Delete: asked for on an archived project, carried out by the daily purge once the grace period
+   * is over. Until then it can be cancelled, and restoring is refused (cancel first).
+   */
+  app.post<P>('/projects/:id/deletion', async (req) => {
+    const { confirmation } = ArchiveProject.parse(req.body);
+    const id = req.params.id;
+    const s = known(id);
+    if (confirmation !== s.name)
+      throw new CommandError(
+        422,
+        'confirmation_mismatch',
+        'Type the project name exactly to delete it.',
+      );
+    if (s.status !== 'archived')
+      throw new CommandError(
+        409,
+        'not_archived',
+        `Archive ${s.name} first. Only an archived project can be deleted.`,
+      );
+    if (s.deletion)
+      throw new CommandError(
+        409,
+        'deletion_scheduled',
+        `${s.name} is already scheduled for deletion.`,
+      );
+    const days = deps.deleteGraceDays ?? 30;
+    const due = new Date(now() + days * 86_400_000).toISOString();
+    const by = operatorActor(req);
+    const when = new Date(due).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    await store.append(id, [
+      {
+        type: 'project.deletion',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { action: 'requested', due },
+      },
+      note(
+        id,
+        'Deletion scheduled',
+        `${by.id === 'director' ? 'The Director' : by.id} asked for this project to be deleted. On ${when} everything held for it goes: its history, documents, screenshots, credentials, and its own rules and lessons. Lessons it taught other projects stay, without its name. Cancel the deletion in Settings any time before then.`,
+      ),
+    ]);
+    return settled(id);
+  });
+
+  app.delete<P>('/projects/:id/deletion', async (req) => {
+    const id = req.params.id;
+    const s = known(id);
+    if (!s.deletion)
+      throw new CommandError(409, 'no_deletion', `${s.name} isn't scheduled for deletion.`);
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.deletion',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { action: 'cancelled', due: null },
+      },
+      note(
+        id,
+        'Deletion cancelled',
+        `${by.id === 'director' ? 'The Director' : by.id} cancelled the deletion. The project stays archived.`,
+      ),
+    ]);
+    return settled(id);
+  });
+
+  /** The daily purge (Vercel Cron, with CRON_SECRET), or an operator running it by hand. */
+  app.get('/portfolio/purge-due', async (req) => {
+    if (!deps.purge)
+      throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
+    await projections.catchUpAll();
+    return purgeDue(deps.purge, projections.all(), req.operator?.login ?? 'vercel-cron');
+  });
+
+  /** What is left of deleted projects: their tombstones. */
+  app.get('/portfolio/deleted', async () => (deps.purge ? deps.purge.tombstones.list() : []));
+
+  /** Restore: an archived project comes back as completed or cancelled (or not started). */
+  app.post<P>('/projects/:id/restore', async (req) => {
+    const id = req.params.id;
+    const s = known(id);
+    if (s.status !== 'archived')
+      throw new CommandError(409, 'not_archived', `${s.name} isn't archived.`);
+    if (s.deletion)
+      throw new CommandError(
+        409,
+        'deletion_scheduled',
+        `${s.name} is scheduled for deletion. Cancel the deletion first, then restore it.`,
+      );
+    const log = await store.read(id);
+    const archived = [...log]
+      .reverse()
+      .find((e) => e.type === 'project.status' && e.data.status === 'archived');
+    const previous = archived?.type === 'project.status' ? archived.data.previous : undefined;
+    // A paused project was cancelled on its way to the archive.
+    const status = previous === 'completed' || previous === 'intake' ? previous : 'cancelled';
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.status',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { status },
+      },
+      note(
+        id,
+        'Restored',
+        `${by.id === 'director' ? 'The Director' : by.id} restored this project from the archive. It is ${status === 'intake' ? 'back in intake' : status}; to do more work, start a new project from it with Remix.`,
+      ),
+    ]);
+    return settled(id);
   });
 
   app.put<P>('/projects/:id/budgets', async (req) => {

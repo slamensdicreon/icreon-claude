@@ -56,6 +56,8 @@ import { ACTIVE_TASK_STATES } from './task-fsm';
 export interface ProjectState {
   projectId: string;
   seq: number;
+  /** Scheduled for deletion (archived projects only), or being deleted. */
+  deletion: { due: string; requestedBy: string; purging: boolean } | null;
   name: string;
   client: string;
   initials: string;
@@ -166,6 +168,7 @@ export function createProjectState(projectId: string): ProjectState {
   return {
     projectId,
     seq: 0,
+    deletion: null,
     name: '',
     client: '',
     initials: '',
@@ -292,6 +295,18 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       }
       break;
     }
+    case 'project.deletion':
+      s.deletion =
+        e.data.action === 'cancelled'
+          ? null
+          : e.data.action === 'requested'
+            ? { due: e.data.due ?? e.ts, requestedBy: e.actor.id, purging: false }
+            : {
+                due: s.deletion?.due ?? e.ts,
+                requestedBy: s.deletion?.requestedBy ?? e.actor.id,
+                purging: true,
+              };
+      break;
     case 'project.status':
       s.status = e.data.status;
       if (e.data.status === 'running' && !s.startedAt) s.startedAt = e.ts;
@@ -819,6 +834,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     name: s.name,
     client: s.client,
     status: s.status,
+    deletion: s.deletion,
     health,
     healthReason: reason,
     currentPhase: lead

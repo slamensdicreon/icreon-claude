@@ -30,52 +30,55 @@ export function ProjectMenu() {
           </span>
         </button>
         <h3 className={`${s.menuHead} type-label`}>Projects</h3>
-        {projects.map((p) => (
-          <button
-            key={p.id}
-            role="menuitem"
-            className={s.row}
-            aria-current={p.id === projectId || undefined}
-            onClick={() => {
-              closeOverlay();
-              switchProject(p.id);
-            }}
-          >
-            <span className={`${s.tile} type-label`} aria-hidden="true">
-              {p.initials}
-            </span>
-            <span className={s.rowText}>
-              <span className="type-body-small">
-                {p.name}
-                {p.demo && <span className={`${s.tag} type-meta`}>Demo</span>}
+        {/* Archived projects live under the Dashboard's Archived filter, not in the switcher. */}
+        {projects
+          .filter((p) => p.status !== 'archived' || p.id === projectId)
+          .map((p) => (
+            <button
+              key={p.id}
+              role="menuitem"
+              className={s.row}
+              aria-current={p.id === projectId || undefined}
+              onClick={() => {
+                closeOverlay();
+                switchProject(p.id);
+              }}
+            >
+              <span className={`${s.tile} type-label`} aria-hidden="true">
+                {p.initials}
               </span>
-              <span className="type-meta">
-                {p.currentPhase
-                  ? `Phase ${p.currentPhase.number}, ${p.currentPhase.name}`
-                  : p.status === 'intake'
-                    ? 'Ready to start'
-                    : p.status}{' '}
-                · {p.subtitle ?? p.client}
-              </span>
-            </span>
-            <span className={s.rowEnd}>
-              <span
-                className={s.dot}
-                data-tone={p.health}
-                role="img"
-                aria-label={HEALTH[p.health]}
-              />
-              {p.waitingCount > 0 && (
-                <span
-                  className={`${s.badge} type-label`}
-                  aria-label={`${p.waitingCount} waiting on you`}
-                >
-                  {p.waitingCount}
+              <span className={s.rowText}>
+                <span className="type-body-small">
+                  {p.name}
+                  {p.demo && <span className={`${s.tag} type-meta`}>Demo</span>}
                 </span>
-              )}
-            </span>
-          </button>
-        ))}
+                <span className="type-meta">
+                  {p.currentPhase
+                    ? `Phase ${p.currentPhase.number}, ${p.currentPhase.name}`
+                    : p.status === 'intake'
+                      ? 'Ready to start'
+                      : p.status}{' '}
+                  · {p.subtitle ?? p.client}
+                </span>
+              </span>
+              <span className={s.rowEnd}>
+                <span
+                  className={s.dot}
+                  data-tone={p.health}
+                  role="img"
+                  aria-label={HEALTH[p.health]}
+                />
+                {p.waitingCount > 0 && (
+                  <span
+                    className={`${s.badge} type-label`}
+                    aria-label={`${p.waitingCount} waiting on you`}
+                  >
+                    {p.waitingCount}
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
         <div className={s.sep} />
         <button
           role="menuitem"
