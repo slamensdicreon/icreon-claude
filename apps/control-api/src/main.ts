@@ -18,7 +18,9 @@ import {
   PostgresRuleStore,
   MemoryRuleStore,
   MemoryKnowledgeStore,
+  MemoryTombstoneStore,
   PostgresKnowledgeStore,
+  PostgresTombstoneStore,
   PostgresVault,
   Projections,
   type SecretVault,
@@ -149,8 +151,10 @@ const env = z
       .optional()
       .transform((v) => v?.trim() || undefined),
     OPERATOR_EMAIL_TO: z.string().optional(),
-    /** Vercel Cron's secret: the watchdog's scheduled calls carry it. */
+    /** Vercel Cron's secret: the watchdog's and the daily purge's scheduled calls carry it. */
     CRON_SECRET: z.string().optional(),
+    /** Days between asking for a project's deletion and the purge. */
+    DELETE_GRACE_DAYS: z.coerce.number().int().min(0).default(30),
     OPERATOR_EMAIL_FROM: z.string().default('Launchworks Operator <onboarding@resend.dev>'),
   })
   .parse(process.env);
@@ -236,6 +240,8 @@ let commands: (projectId: string) => ProjectCommands | undefined;
 let start: ((input: StartInput) => Promise<void>) | undefined;
 /** Stops a project's run for good, for a reset; only a real orchestrator has one. */
 let stop: ((projectId: string) => Promise<void>) | undefined;
+/** The same, for a project being deleted. */
+let stopForPurge: ((projectId: string) => Promise<void>) | undefined;
 let seedSample: (() => Promise<void>) | null = null;
 
 if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
@@ -381,6 +387,7 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
     });
   };
   stop = (projectId) => stopProject(client, projectId, 'Reset by the Director');
+  stopForPurge = (projectId) => stopProject(client, projectId, 'Project deleted');
   // A sample project for local runs only: deployed instances start cold and in parallel.
   if (env.INLINE_WORKER === 'true' && !(await store.projectIds()).length) {
     seedSample = async () => {
@@ -416,7 +423,8 @@ function openVault(): SecretVault {
       'Credentials can be checked but not stored: CREDENTIALS_KEY is not set on the server.',
     );
   };
-  return { seal: refuse, open: refuse };
+  // Nothing can have been stored, so there is nothing to delete.
+  return { seal: refuse, open: refuse, deleteProject: async () => 0 };
 }
 
 const vault = openVault();
@@ -433,6 +441,12 @@ const rules = opened.sql
   ? new PostgresRuleStore(opened.sql)
   : env.STORE === 'memory'
     ? new MemoryRuleStore()
+    : undefined;
+// Deletion records: what is left of a deleted project. Beside the event log; memory for local runs.
+const tombstones = opened.sql
+  ? new PostgresTombstoneStore(opened.sql)
+  : env.STORE === 'memory'
+    ? new MemoryTombstoneStore()
     : undefined;
 // The team's knowledge across projects; the worker seeds it too, and seeding adds only what's new.
 const knowledge = opened.sql
@@ -565,6 +579,20 @@ const app = await buildApp({
       }
     : null,
   rules,
+  purge: tombstones
+    ? {
+        store,
+        tombstones,
+        stop: stopForPurge,
+        blobs,
+        vault,
+        integrations,
+        rules,
+        knowledge,
+        commands: opened.sql ? new CommandBus(opened.sql) : null,
+      }
+    : undefined,
+  deleteGraceDays: env.DELETE_GRACE_DAYS,
   ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,
   proposalSorter: process.env.ANTHROPIC_API_KEY ? (input) => sortProposals(input) : null,
   // What changed in the product since older proposals were written, so the sort can call them out

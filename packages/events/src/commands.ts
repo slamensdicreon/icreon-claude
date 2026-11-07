@@ -141,6 +141,15 @@ export class CommandBus {
     return r ? { id: r.id, projectId: r.project_id, method: r.method, args: r.args } : null;
   }
 
+  /** Deletes a project's commands, done or waiting (a project being deleted). How many went. */
+  async forget(projectId: string): Promise<number> {
+    const { rows } = await this.sql.query<{ id: string }>(
+      'DELETE FROM lw_commands WHERE project_id = $1 RETURNING id',
+      [projectId],
+    );
+    return rows.length;
+  }
+
   /** Withdraws commands that waited out a restart, and forgets finished ones after a day. */
   private async sweep(maxAgeMs: number): Promise<void> {
     await this.sql.query(

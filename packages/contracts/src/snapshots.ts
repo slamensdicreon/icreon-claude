@@ -96,6 +96,11 @@ export const ProjectSummary = z.object({
   /** The platform the project builds on, named by its pack; absent where no pack names it. */
   platform: z.object({ id: z.string(), name: z.string() }).optional(),
   status: ProjectStatus,
+  /** An archived project scheduled for deletion: when it goes, who asked, and whether it is going. */
+  deletion: z
+    .object({ due: z.iso.datetime(), requestedBy: z.string(), purging: z.boolean() })
+    .nullable()
+    .optional(),
   health: Health,
   /** Why health is not green, in words ("Blocker open: Media upload 403"). */
   healthReason: z.string().nullable(),
