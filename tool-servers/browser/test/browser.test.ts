@@ -206,6 +206,30 @@ describe('crawl', () => {
     expect(small.pages[7]).toMatchObject({ url: 'https://example.com/p7', title: 'Page 7' });
   });
 
+  it('stops for time on a large site and returns the pages it read, not nothing', async () => {
+    // A crawl longer than the gateway's call limit used to come back as a timeout with no pages.
+    const quick = new BrowserToolServer({
+      policy: () => ({ allowedHosts: ['127.0.0.1'], allowPrivateNetworks: true }),
+      blobs: new LocalBlobStore(blobDir),
+      browser: guarded,
+      crawlTimeMs: 1,
+      settleMs: 50,
+    });
+    const r = await quick.call('crawl', { url: `${origin}/` }, ctx);
+    expect(r.code).toBe(200);
+    const body = r.body as {
+      pages: unknown[];
+      truncated: boolean;
+      stoppedForTime?: boolean;
+      sitemapUrls: number;
+    };
+    // The first page is read before the clock is checked again; then it stops.
+    expect(body.pages.length).toBeGreaterThanOrEqual(1);
+    expect(body).toMatchObject({ truncated: true, stoppedForTime: true });
+    expect(body.sitemapUrls).toBeGreaterThan(0);
+    expect(r.summary).toMatch(/Stopped for time after \d+ pages: the sitemap lists \d+ URLs/);
+  }, 60_000);
+
   it('stops at maxPages and says the inventory is incomplete', async () => {
     const r = await browser.call('crawl', { url: `${origin}/`, maxPages: 2 }, ctx);
     const body = r.body as { pages: unknown[]; truncated: boolean };

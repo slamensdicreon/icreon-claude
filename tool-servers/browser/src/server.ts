@@ -23,6 +23,12 @@ export interface BrowserServerOptions {
   assetHosts?: (projectId: string) => Promise<string[]>;
   /** Most characters a crawl result may take (default 400,000, about 100K tokens). */
   crawlBudget?: number;
+  /**
+   * Longest a crawl reads pages before it returns what it has (default 7 minutes). The gateway
+   * gives a call 10 minutes and returns nothing when it runs out, so a large site's crawl must
+   * stop short of that and hand back the pages read.
+   */
+  crawlTimeMs?: number;
 }
 
 /**
@@ -419,13 +425,21 @@ export class BrowserToolServer implements ToolServer {
 
   private async crawl(policy: UrlPolicy, start: string, maxPages: number): Promise<ToolResult> {
     const origin = (await assertNavigable(start, policy)).origin;
-    const queue = [canonical(start), ...(await this.sitemap(policy, origin))];
+    const fromSitemap = await this.sitemap(policy, origin);
+    const queue = [canonical(start), ...fromSitemap];
+    const deadline = Date.now() + (this.opts.crawlTimeMs ?? 7 * 60_000);
+    let outOfTime = false;
     const seen = new Set<string>();
     const pages: (PageExtract & { url: string; status: number })[] = [];
     const excluded: { url: string; reason: string }[] = [];
 
     await this.withPage(policy, async (context) => {
       while (queue.length && pages.length < maxPages) {
+        // The home page is always read, however long the sitemap took.
+        if (pages.length && Date.now() > deadline) {
+          outOfTime = true;
+          break;
+        }
         const next = queue.shift()!;
         if (seen.has(next)) continue;
         seen.add(next);
@@ -488,10 +502,23 @@ export class BrowserToolServer implements ToolServer {
         body: { origin, ...compact, excluded, repeatedRegions, truncated, refusedBySite: true },
         summary: siteRefused(origin, refused[0]!.reason, refused.length, excluded.length),
       };
+    const sitemapUrls = new Set(fromSitemap).size;
     return {
       code: 200,
-      body: { origin, ...compact, excluded, repeatedRegions, truncated },
+      body: {
+        origin,
+        ...compact,
+        excluded,
+        repeatedRegions,
+        truncated,
+        sitemapUrls,
+        ...(outOfTime ? { stoppedForTime: true } : {}),
+      },
       summary: `Crawled ${pages.length} pages from ${origin}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions${
+        outOfTime
+          ? `. Stopped for time after ${pages.length} pages: the sitemap lists ${sitemapUrls} URLs. Use the sitemap for the page count, and read the pages a template still needs with browser.snapshot`
+          : ''
+      }${
         refused.length
           ? `. The site refused ${refused.length} of them (${refused[0]!.reason}): list those pages as not read, they aren't an access problem of ours`
           : ''
