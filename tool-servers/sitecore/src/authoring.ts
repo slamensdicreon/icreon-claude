@@ -431,7 +431,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'media.upload': {
       description:
-        "Upload an image or file into the media library. itemPath is the absolute media item path (under /sitecore/media library/). Give `ref`, the stored file browser.fetch.asset returned (preferred: it may come from the site's CDN or the Blueprint's URL), with `fileName`; or `sourceUrl` on the source site itself.",
+        "Upload an image or file into the media library. itemPath is the absolute media item path (under /sitecore/media library/). Give `ref`, the stored file browser.fetch.asset returned (preferred: it may come from the site's CDN or the Blueprint's URL) or the ref of a file the Director gave the team (listed in your context), with `fileName`; or `sourceUrl` on the source site itself.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -1039,9 +1039,15 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     let name: string;
     let from: string;
     if (a.data.ref) {
-      // A file the browser downloaded for this project; its host was checked there.
-      if (!a.data.ref.startsWith(`blob://${projectId}/assets/`))
-        return rejected(`${a.data.ref} isn't a file downloaded for this project.`);
+      // A file the browser downloaded for this project (its host was checked there), or one the
+      // Director gave the team (the files route, theirs alone to write).
+      if (
+        !a.data.ref.startsWith(`blob://${projectId}/assets/`) &&
+        !a.data.ref.startsWith(`blob://${projectId}/files/`)
+      )
+        return rejected(
+          `${a.data.ref} isn't a file downloaded for this project or one the Director gave it.`,
+        );
       if (!this.opts.blobs)
         return rejected('Stored files are not available here; give sourceUrl.', 501);
       try {

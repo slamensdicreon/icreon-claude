@@ -539,6 +539,7 @@ const app = await buildApp({
       }
     : undefined,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
+  putFile: (projectId, key, bytes, contentType) => blobs.put(projectId, key, bytes, contentType),
   policyDefaults: (projectId) => policyRows(pinnedPlaybook(projectId)),
   autonomyDefaults: (projectId) => pinnedPlaybook(projectId).manifest.defaults.autonomy,
   corsOrigin: env.CORS_ORIGIN,

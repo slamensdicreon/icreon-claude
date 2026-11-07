@@ -353,6 +353,16 @@ export type EditKnowledge = z.infer<typeof EditKnowledge>;
 export const RunRetrospective = z.object({ phase: z.number().int().min(0).max(20) });
 export type RunRetrospective = z.infer<typeof RunRetrospective>;
 
+/** POST /projects/:id/files: a file for the team, as base64 (up to 10 MB). */
+export const AttachFile = z.object({
+  name: z.string().trim().min(1).max(200),
+  contentType: z.string().trim().min(3).max(120),
+  dataBase64: z.string().min(1),
+  note: z.string().trim().max(1000).optional(),
+  about: z.string().max(80).optional(),
+});
+export type AttachFile = z.infer<typeof AttachFile>;
+
 /** POST /proposals/apply: the Director's decisions on waiting proposals, applied in one go. */
 export const ApplyProposals = z.object({
   decisions: z

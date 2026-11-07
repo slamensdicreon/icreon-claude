@@ -656,6 +656,24 @@ export const EventBody = z.discriminatedUnion('type', [
       about: z.string().nullable().default(null),
     }),
   ),
+  /**
+   * A file the Director gave the team (a logo, a brand kit, a content export), stored with the
+   * project: every agent's context lists it, and its ref is what media.upload or artifacts take.
+   */
+  ev(
+    'file.attached',
+    z.object({
+      fileId: z.string(),
+      name: z.string(),
+      contentType: z.string(),
+      bytes: z.number().int().nonnegative(),
+      ref: z.string(),
+      /** What it is for, in the Director's words. */
+      note: z.string().nullable().default(null),
+      /** The card it answers, when attached from one. */
+      about: z.string().nullable().default(null),
+    }),
+  ),
   ev('cos.presence', z.object({ presence: CosPresence })),
   ev(
     'artifact.versioned',

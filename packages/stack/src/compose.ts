@@ -823,6 +823,26 @@ export function directorNotes(
   ];
 }
 
+/**
+ * The files the Director gave the team, for every agent: what each is, and the ref to use. An
+ * image or file for the site goes to media.upload with this ref (and a fileName), the same way a
+ * downloaded asset does.
+ */
+export function attachedFiles(
+  files: { name: string; contentType: string; bytes: number; ref: string; note: string | null }[],
+): string[] {
+  if (!files.length) return [];
+  return [
+    `Files the Director gave the team (use them instead of asking for them again; for the site's media, give media.upload the ref with fileName):\n${files
+      .slice(-20)
+      .map(
+        (f) =>
+          `- ${f.name} (${f.contentType}, ${Math.max(1, Math.round(f.bytes / 1024))} KB): ref ${f.ref}${f.note ? `. ${f.note}` : ''}`,
+      )
+      .join('\n')}`,
+  ];
+}
+
 export function projectContext(projections: Projections, platform: PlatformPack): ContextProvider {
   return {
     async forTask(projectId) {
@@ -862,6 +882,7 @@ export function projectContext(projections: Projections, platform: PlatformPack)
           ? `Documents you can read with artifacts.read:\n${docs.join('\n')}`
           : 'No documents written yet.',
         ...directorNotes(s?.decisions ?? []),
+        ...attachedFiles(s?.files ?? []),
       ].join('\n');
     },
   };
