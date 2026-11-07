@@ -1,191 +1,208 @@
-# Homepage first: the full audit, one page built
+# The homepage demo playbook
 
-Status: **plan**, 2026-11-07, with the Director's decisions (see *Decisions*). Replaces the first draft of this plan (branch
-`claude/ecstatic-noether-cdioit`). Companion to [playbooks.md](playbooks.md) and the commercial
-model (internal deck, slide 6: "One meeting. Their homepage. Signed.").
+Status: **plan**, 2026-11-07, with the Director's decisions (see *Decisions*). Replaces the first
+draft of this plan (branch `claude/ecstatic-noether-cdioit`). Companion to
+[playbooks.md](playbooks.md) and the commercial model (internal deck, slide 6: "One meeting. Their
+homepage. Signed.").
 
-## What changed from the first draft
+## What it is
 
-The first draft built a separate, cut-down playbook. It sampled the site instead of auditing it,
-skipped Foundation and marked every page except the homepage `drop`. This version keeps the team's
-method as it is:
+A sales demo that runs the team's real method on a prospect's site. The team does the full
+Discovery and audit and writes the whole-site Blueprint, then builds only the **homepage, header,
+footer and navigation** on SitecoreAI. The build goes through parity and deploy. The prospect then
+sees their own homepage in Page builder, where a marketer drags components in, edits them and
+publishes without a developer.
 
-- **Same playbook.** `sitecoreai-migration` gains one project setting, **Execution scope**: *Whole
-  site* (today) or *Homepage first*. There's no copy, so roles, prompts and knowledge can't drift
-  apart.
-- **Full Discovery and the full audit.** Phases 0–2 run unchanged: every sitemap URL is crawled or
-  excluded, the full component and page inventories are written, along with the asset manifest and
-  risk list. The Solution Architect writes the whole Blueprint, and the Director approves it at
-  Gate 1.
-- **Only execution narrows.** From Foundation on, the plan builds only what the homepage needs.
-  Everything else stays in the Blueprint as **held for the full build**, not dropped.
-- **The same project continues.** When the client signs, the Director widens the scope. The held
-  items become tasks in the same project, with no new project and no second crawl.
+**The demo stands alone.** It runs on our tenant and closes when the homepage is reviewed. If the
+prospect signs, their build starts from scratch as a new project on `sitecoreai-migration`, on their
+own tenant. Nothing is transferred from the demo.
 
-## Why this works for the team
+## The outcome
 
-- **One method.** Agents, Leads and Cypher do what they always do. The only extra knowledge is "this
-  run builds the homepage slice". No one maintains a second playbook.
-- **Accurate numbers.** Sizing comes from the real inventory and the approved Blueprint, not a
-  30-page sample. The estimate of the remaining build is grounded in the same counts the team will
-  build against, so the first draft's sampling, confidence label and calibration test aren't needed.
-- **No throwaway work.** The homepage's components, template, header and footer are the first real
-  deliverables of the migration. The Blueprint the client saw is the Blueprint the team builds.
-- **The homepage is a better pilot slice.** Today's pilot is 2–4 "representative" components. The
-  homepage exercises the header, footer, hero and the densest mix of components, end to end through
-  publishing and Page builder.
+The playbook's charter, which every agent gets in its role prompt and acceptance is judged against:
 
-## How a Homepage-first run goes
+> **Mission:** Show a prospect their own homepage on SitecoreAI, built the way we would build their
+> whole site, so a marketer can assemble and edit it in Page builder without a developer.
 
-| # | Phase | Whole site (today) | Homepage first |
-| --- | --- | --- | --- |
-| 0 | Intake | Unchanged | Unchanged; the tenant is our demo tenant (see *Where it's built*) |
-| 1 | Discovery | Full crawl and inventories | **Unchanged** |
-| 2 | Blueprint, Gate 1 | Whole Blueprint approved | **Unchanged.** The gate card also shows the slice: what gets built now and what's held |
-| 3 | Foundation | Site, tokens, primitives, hosting | Unchanged (it's site-level and the homepage needs all of it) |
-| 4 | Components | Every Blueprint component | The homepage's components, plus header and footer. They are the pilot slice, proven end to end |
-| 5 | Templates | Every template | The homepage's template; header and footer partial designs |
-| 6 | Migration | Every page and media item | The homepage's content and its media; parity audited on `/` |
-| 7 | Experience | Site-wide SEO, redirects, sitemap, error pages | Homepage SEO fields and dictionary only; site-wide items held |
-| 8 | Deployment | Three verified releases | The same releases; perf and a11y measured on the homepage |
-| 9 | Review | Gate 2: UAT and acceptance, closes the project | **Homepage review**: the Director checks the homepage in Page builder. The project **does not close**; it waits on *Build the rest* |
+| Outcome | Measured by |
+| --- | --- |
+| **Marketer drag and drop** on the homepage | Every homepage component is in the Page builder toolbox and can be dragged into the homepage's placeholders. It edits inline, and a new instance creates its own datasource with starter content. Existing validators: `editor.component-enabled`, `editor.new-datasource`, `structural.renderings` |
+| **Header, footer and navigation are the marketer's** | They live in partial designs on shared datasources. A marketer edits a menu link, a footer column and the logo once, and the change shows on every page using the design (`head.header-footer`) |
+| **Homepage parity** | The homepage and 404 match the live site: render, visual parity at three breakpoints, content parity (`parity.render`, `parity.visual`, `parity.page`) |
+| **Deployed** | The reviewed commit runs on the editing and delivery hosts, the homepage is published to Experience Edge and it resolves on the preview URL (`deploy.commit-matches`, `editing-host.responds`, `edge.published`, `routes.resolve`) |
+| **The audit is real** | Full Discovery and a whole-site Blueprint approved at Gate 1, with every page, template and component listed |
 
-### What's in the slice
+Out of the charter, because the demo doesn't owe them: whole-site content parity, client ownership
+and handover, site-wide SEO, redirects and sitemap, personalization, the perf and accessibility
+audit, and serialization.
 
-The slice is derived from the approved Blueprint and doesn't need its own artifact:
+## Why it stays close to the website playbook
 
-- **Pages**: the page with `attrs.path: "/"` and the 404 page (`attrs.errorPage: 404`). The 404
-  costs little and shows error handling working on SitecoreAI.
-- **Templates**: the homepage's `attrs.template`.
+The team works the way it always does. That keeps the demo honest (the prospect sees our real
+method), and keeps the work light (no second method to learn or maintain):
+
+- **Same phases 0–3.** Intake, full Discovery (every sitemap URL crawled or excluded), the whole
+  Blueprint with Gate 1, and Foundation, all as today.
+- **Same roles, prompts, tools and validators.** The only playbook-specific text is the charter and
+  a paragraph telling the Architect and the Leads what the demo builds.
+- **Same quality bar on what it builds.** Lead reviews, autonomy and escalation work as today. The
+  slice is small, not sloppy.
+
+`playbooks/sitecoreai-homepage-demo/` is a copy of `sitecoreai-migration` with its own charter,
+intake and plan. Roles, prompts and knowledge are copied too, and a **drift test** fails when they
+differ from the website playbook's, except where the demo playbook says so on purpose. When the SDK
+gets a real `extends`, the copy goes.
+
+## Scope
+
+| | Audited (phases 1–2) | Built (phases 3–8) |
+| --- | --- | --- |
+| Pages | Every page, crawled and in the Blueprint | The homepage and the 404 page |
+| Templates | Every template | The homepage's template; the 404's if different |
+| Components | Every component, with its model contract | The homepage's components, the header, the footer and the navigation |
+| Media | Every media item in the manifest | Media the homepage and the header, footer and navigation use |
+| Site-wide | Redirects, forms, languages, integrations listed | Header and footer partial designs, the page design, error page setting |
+
+### The slice
+
+The compiler derives what gets built from the approved Blueprint, so no one picks it by hand:
+
+- **Pages**: `attrs.path: "/"`, and `attrs.errorPage: 404`.
+- **Templates**: those pages' `attrs.template`.
 - **Components**: those with a variant whose `pages` include `/`, those with `datasource: "shared"`
   (header, footer, navigation), and whatever they're merged into.
-- **Media**: the media the homepage's content references.
+- **Media**: what those pages and components reference.
 
-The Solution Architect doesn't choose the slice; the compiler derives it. The Architect's one new
-duty is checking that the homepage's sections each map to a component (acceptance already checks
-this per sampled page; it must always include `/`).
+Everything else stays in the Blueprint exactly as approved, shown as **Audited, not in the demo**.
+It isn't `drop`: `drop` means "won't move", and the Blueprint should read as the prospect's real
+audit.
 
-### Held, not dropped
+**Navigation is its own component.** The Architect often merges navigation into the header. In
+this playbook it stays a component of its own with a shared datasource (menu items as child items
+with a `max`), so a marketer can visibly edit the menu. The demo's Architect prompt says so.
 
-`drop` means "won't move" and is a decision the client sees. The held items are different: they
-will move, just not yet. So the slice is a **filter applied at compile time**, not a Blueprint
-edit:
+## Phases
 
-- The Blueprint stays exactly as approved at Gate 1, so the version the client saw is the version
-  the team builds.
-- The plan compiler expands `forEach` templates in phases 3–8 only over items in the slice. Held
-  items appear on the Floor and in the plan as **Held for the full build**, the way placeholder
-  tasks appear before Gate 1.
-- Widening the scope recompiles against the same Blueprint. The added tasks go through the same
-  path a Blueprint revision's added items already take (`diffBlueprints`, `project.ts:1691`).
+| # | Phase | Runs | Exit |
+| --- | --- | --- | --- |
+| 0 | Intake | Today's intake on our tenant; the site is created by hand first (see *Where it's built*) | Credentials verified, the paths the project owns fixed |
+| 1 | Discovery | **Unchanged** | Full inventories, asset manifest, risk list; every sitemap URL crawled or excluded |
+| 2 | Blueprint, **Gate 1** | **Unchanged**, plus: navigation kept as its own component; acceptance always checks `/` | Whole Blueprint approved; the gate card shows the slice |
+| 3 | Foundation | **Unchanged** | Site, tokens, primitives, hosting; an empty page renders on the editing host |
+| 4 | Components | Slice components ported, registered, integrated and enabled in Page builder. The slice is the pilot, so there's no separate pilot checkpoint | Every slice component passes `structural.renderings`, `editor.component-enabled`, `editor.new-datasource` |
+| 5 | Templates | The homepage's template with insert options and placeholder settings that allow every slice component; header and footer partial designs; the page design | `head.header-footer`; the page design assigned |
+| 6 | Migration | Homepage and 404 content and media; header, footer and navigation datasources filled from the live site; **parity audited on both pages** | `parity.render`, `parity.visual`, `parity.page` on `/` and the 404 |
+| 7 | Experience | Homepage components datasource-driven; homepage SEO fields; the site's 404 setting | `seo.titles` on the homepage |
+| 8 | Deployment | Code deploy to the editing and delivery hosts; publish to Experience Edge | `deploy.commit-matches`, `editing-host.responds`, `edge.published`, `routes.resolve` |
+| 9 | Review, **Gate 2** | A demo summary; the Director runs the drag-and-drop check in Page builder | The Director accepts; the project closes |
+
+The demo has two Director gates, like the website playbook, so the final gate closes it as
+designed. No orchestrator change is needed.
+
+**The drag-and-drop check** (the demo's UAT, since agents have no Page builder sign-in): open the
+homepage in Page builder, drag a component from the toolbox into a placeholder, edit it inline, edit
+a navigation link in the header partial design, publish and see both changes on the preview URL.
+That's also the script for the meeting.
+
+**The demo summary** replaces the handover pack: the audit in numbers (pages, templates,
+components, languages, forms, sites), what was built, known gaps, and the size of the full build
+from the Blueprint's counts. It's what you leave with the prospect.
 
 ## What Cypher says
 
-Cypher is the one who explains the split, so the Director never has to work it out:
-
-- **At Gate 1**, the card: *"Blueprint ready: 62 pages, 7 templates, 41 components, 380 media.
-  Homepage first builds 1 page, 1 template, 11 components and 24 media. The other 61 pages are held
-  for the full build."* The Workbench shows the whole Blueprint, with the slice highlighted.
-- **During the build**, the Floor shows held work dimmed, so no one thinks it's stalled.
-- **At Homepage review**: *"The homepage is on preview and in Page builder. Known gaps: 2. The full
-  build is 34 components, 6 templates and 61 pages, about 6 hours. Build the rest?"* The estimate
-  comes from the remaining task counts and this project's own measured times per task.
-- **Build the rest** is a scope card (the `scope` category always asks the Director). Accepting it
-  widens the scope; the project returns to phase 4 for the held items and runs on to Gate 2 as a
-  normal project.
+- **At Gate 1**: *"Blueprint ready: 62 pages, 7 templates, 41 components, 380 media. The demo builds
+  the homepage and 404, the header, footer and navigation: 11 components, 1 template, 24 media.
+  Everything else is audited, not built."* The Workbench shows the whole Blueprint with the slice
+  highlighted.
+- **During the build**, the Floor shows the audited-only items dimmed, so no one reads them as
+  stalled.
+- **At Gate 2**: *"The homepage is on preview and in Page builder. Parity: 97% visual, content
+  matched. Known gaps: 2. Ready for your drag-and-drop check."*
 
 ## Where it's built
 
 Demos run on **the SitecoreAI tenant we've been using**, through its saved connection
-(`platforms/sitecoreai/pack.ts:153-163`). There's no pool to provision before the first demo:
+(`platforms/sitecoreai/pack.ts:153-163`):
 
-- **Each demo gets its own site** in that tenant, so prospects never share items and our other
-  projects' sites are left alone (Intake already fixes the paths a project owns). Agents can't create
-  SitecoreAI sites (`tool-servers/sitecore/src/authoring.ts:510-525` only verifies them), so the
-  site is created by hand in SitecoreAI Sites before the run. That takes a few minutes.
-- **A build repo and Vercel project per demo**, made by Intake as they are today.
-- **Cleanup**: anything unsigned is deleted after **30 days**: the site's items, the repo and the
-  Vercel project. Signed prospects move to their own tenant (M7).
+- **Each demo gets its own site**, so prospects never share items and our other sites are left
+  alone. Agents can't create SitecoreAI sites (`tool-servers/sitecore/src/authoring.ts:510-525`
+  only verifies them), so the site is created by hand in SitecoreAI Sites before the run. That
+  takes a few minutes.
+- **A build repo and Vercel project per demo**, made by intake as today.
+- **Cleanup after 30 days**: the site's items, the repo and the Vercel project. Whether or not the
+  prospect signs, the demo is deleted; a signed client's build starts fresh on their tenant.
 
-When demos outgrow one person, a small pool of pre-made sites with a reset task replaces the
-by-hand step. That isn't needed to start.
+## The clock
 
-## The clock, honestly
+The full audit doesn't fit in a 45-minute meeting, so the run starts when the meeting is booked:
 
-The full audit doesn't fit in a 45-minute meeting. Discovery on a 60-page site crawls every URL
-sequentially (up to 30 s per navigation), and the Blueprint needs Gate 1. So the meeting no longer
-watches the build start from a URL. Instead:
+1. **Start the run** with the prospect's URL. Discovery and the Blueprint run; you approve Gate 1
+   from Cypher's card.
+2. **The build runs** through deploy, over hours, not minutes.
+3. **Run the drag-and-drop check** and accept Gate 2 before the meeting.
+4. **In the meeting**: the audit, the whole-site Blueprint, then their homepage in Page builder.
+   You drag in a component, edit the menu and publish, live.
 
-1. **The run starts when the meeting is booked** (or right after a first call). Discovery, the
-   Blueprint and the homepage run over hours, not minutes. Cypher asks for Gate 1 like on any
-   project, and the DID approves it ahead of the meeting.
-2. **The meeting shows the finished work**: the audit, the whole-site Blueprint, the homepage in
-   Page builder, a live headline edit published to preview, and the estimate for the rest.
-3. **The close** is a signature. The project then moves to the client's tenant (M7) and *Build the rest*
-   continues it there.
+M0 tells us the real time from URL to Gate 2, which is the lead time to book against.
 
-This is a stronger meeting than a race against the clock. The prospect sees a real audit of their
-whole site and a real page, and none of it depends on a 45-minute run going perfectly.
+## Speed settings
 
-### Speed settings (Homepage first only)
-
-These don't affect *Whole site* runs:
-
-- `canary: 0` on the slice's `forEach` templates. There's one page; a canary adds nothing.
-- `deploy-code` and `publish-edge` count as `standing` approvals **only on our demo tenant**, never on
-  a client tenant.
-- The pilot checkpoint is skipped, because the whole slice is the pilot.
-
-Review counts, autonomy and escalation deadlines stay as they are. The team works the same way.
+- `canary: 0` on the slice's `forEach` templates.
+- No pilot block: the slice is the pilot.
+- `deploy-code` and `publish-edge` are `standing` approvals. This is safe because the target is
+  always our demo tenant, never a client's.
+- Budgets sized for one page (to set from M0; a starting point of 8 hours and $300).
 
 ## Changes in the code
 
 | Change | Where | Size |
 | --- | --- | --- |
-| `executionScope: site \| homepage` on the project, chosen in New project for playbooks that declare it | `packages/playbook-sdk/src/schema.ts`, `apps/control-api/src/intake.ts`, wizard | Small |
-| A `slice` declaration in `plan.yaml`: which phases it applies to (3–8), how each collection is filtered (the rules above) | `playbooks/sitecoreai-migration/plan.yaml`, `schema.ts` | Small |
-| The compiler filters `forEach` expansion by the slice and lists held items | `packages/plan/src/compile.ts:340-354`, `blueprint-view.ts` (a `held` status beside `dropped`) | Medium |
-| **Gate roles**: `gateRole: blueprint \| acceptance \| review`. Today the last Director gate is treated as acceptance and closes the engagement; Homepage review must not | `packages/orchestrator/src/workflows/project.ts:120-122, 700-708, 1513`; both playbooks declare theirs | Medium |
-| **Widening the scope**: recompile without the slice, add the held tasks, and move a finished phase back to in progress | `project.ts` replan path | Medium: the one real orchestrator risk |
-| Architect: always check `/` in acceptance | `prompts/solution-architect.md`, the acceptance check | Small |
-| Cypher's lines: slice summary at Gate 1, held work on the Floor, Homepage review card with the estimate | Chief of Staff prompts, Floor, Workbench | Small |
-| Moving a demo project to the client's tenant | Intake, phase 0 re-verify, serialization replay | Medium; can come last |
+| `playbooks/sitecoreai-homepage-demo/`: charter, intake (URL and optional repo; our tenant), phases 0–9 above, plan cut to the slice's tasks | New folder | Medium |
+| A `slice` declaration in `plan.yaml`: the phases it applies to (3–8) and the rules per collection | `packages/playbook-sdk/src/schema.ts` | Small |
+| The compiler expands `forEach` templates only over the slice in those phases | `packages/plan/src/compile.ts:340-354` | Medium |
+| An "audited, not in the demo" status in the Blueprint view and the Floor | `packages/plan/src/blueprint-view.ts`, web | Small |
+| Architect paragraph: navigation as its own component; `/` and the 404 always in acceptance | The demo's `prompts/solution-architect.md` | Small |
+| The demo summary in place of the handover pack | The demo's `prompts/handover-writer.md` | Small |
+| Drift test against the website playbook's roles, prompts and knowledge | `packages/playbook-sdk` tests | Small |
+| Cypher's Gate 1 and Gate 2 lines | Chief of Staff prompts | Small |
+| The 30-day cleanup | A scheduled job over demo projects | Small |
+
+`sitecoreai-migration` doesn't change.
 
 ## Milestones
 
 | | Work | Done when |
 | --- | --- | --- |
-| **M0 Measure** | Run today's playbook to Gate 1 on three sites (one with a repo, two URL-only), then build only the homepage by hand-holding the scope | A timing table: Discovery, Blueprint, homepage build |
-| **M1 Gate roles** | `gateRole` in the schema and orchestrator; `sitecoreai-migration` and the portal playbook declare theirs | Existing tests green; a run can stop at a `review` gate without closing |
-| **M2 The slice** | `executionScope`, the `slice` declaration, compiler filtering, held items in the plan and Floor, the Architect's `/` check | A Homepage-first run builds exactly the slice; *Whole site* plans are byte-identical to today's |
-| **M3 Build the rest** | Widening the scope in a running project | A Homepage-first project widens and reaches Gate 2 with nothing rebuilt twice |
-| **M4 Cypher** | Gate 1 slice summary, Homepage review card with the estimate, held work in Bliss and Everything | Design review on the demo project |
-| **M5 Demo tenant** | The by-hand checklist for a demo site on our tenant; the 30-day cleanup (site items, repo, Vercel project) | Two demos side by side on our tenant with nothing crossing between them; cleanup leaves nothing behind |
-| **M6 The meeting** | Steve's script as the first DID, presentation view (audit, Blueprint, homepage, estimate), five dry runs | Five varied sites: the homepage on preview before the meeting, every time |
-| **M7 Tenant move** | Move a demo project to the client's tenant | A signed prospect's project continues on their tenant without re-running Discovery |
+| **M0 Measure** | Run `sitecoreai-migration` to Gate 1 on three sites (one with a repo, two URL-only), then have the Architect drop everything outside the slice and run through deploy | A timing table from URL to deploy, and the critical path named |
+| **M1 The playbook** | The new folder, charter and plan; the `slice` declaration and compiler filtering; the drift test | Loads and validates; the plan for the example Blueprint builds exactly the slice; `sitecoreai-migration`'s plans unchanged |
+| **M2 Drag and drop** | Placeholder settings, insert options and navigation as a component; the drag-and-drop check written as the Gate 2 checklist | On one site, the check passes in Page builder |
+| **M3 Cypher and the summary** | Gate 1 and Gate 2 lines, audited-only items on the Floor, the demo summary | Design review on one finished demo |
+| **M4 Our tenant** | The by-hand site checklist; the 30-day cleanup | Two demos side by side with nothing crossing between them; cleanup leaves nothing behind |
+| **M5 Dry runs** | Five varied sites, end to end, plus the meeting script | All five reach Gate 2 with homepage parity and the drag-and-drop check passing |
 
-M0 and M1 can start now. M2 needs M1. M3 needs M2. M5 is a checklist and a cleanup job, so it can start any time. M7 is needed only once a prospect signs.
+M0, M1 and M4 can start now. M2 needs M1. M5 needs everything.
 
 ## Risks
 
-- **Widening a running project.** Phases 4–8 finished on the slice and then reopen. If the
-  orchestrator can't do that cleanly, the fallback is a second project that imports the first's
-  Discovery, Blueprint and Gate 1. That's more moving parts, so M3 tries the in-place route first.
+- **The lead time.** If M0 shows URL to deploy takes more than a working day, meetings have to be
+  booked further out. M0 comes first for that reason.
 - **URL-only parity.** Agents can't view screenshots, so visual parity is the weak spot without a
-  repository. One page keeps the gap small; giving Visual QA image input is the real fix.
+  repository. One page keeps the gap small; giving Visual QA image input is the real fix and helps
+  every playbook.
+- **Drift.** The copy can fall behind the website playbook's fixes. The drift test catches it until
+  the SDK supports `extends`.
 - **Prospect content on our tenant.** Preview isn't indexed, each demo has its own site, and
-  unsigned content is deleted after 30 days. This needs a line in the meeting and in the terms.
-- **Shared components look finished.** The header, footer and navigation are built for the homepage
-  but serve every page. The full build's Lead review must still check them against the other
-  templates, not treat them as done.
+  everything is deleted after 30 days. This needs a line in the meeting.
 
 ## Decisions
 
 Made by the Director on 2026-11-07:
 
-1. **Who runs the demo:** Steve, as the first salesperson and DID. The run starts when the meeting
-   is booked, and Steve approves Gate 1 before the meeting.
-2. **Tenant:** the SitecoreAI tenant we've been using, one site per demo. Signed prospects move to
-   their own tenant.
-3. **404 page:** part of the slice.
-4. **Retention:** 30 days for an unsigned prospect's demo.
+1. **Who runs it:** Steve, as the first salesperson and DID, on the SitecoreAI tenant we've been
+   using.
+2. **No transfer.** The demo closes at Gate 2. A signed client starts from scratch on
+   `sitecoreai-migration`, on their own tenant.
+3. **The outcome:** marketer-friendly drag and drop in Page builder on the homepage, header, footer
+   and navigation, with parity on the homepage, through deploy.
+4. **The 404 page** is part of the slice.
+5. **Retention:** 30 days, then the demo is deleted.
