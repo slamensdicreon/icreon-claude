@@ -31,6 +31,8 @@ const card = (projectId: string) => ({
   answer: 'Use the poster image for Globex',
 });
 
+// A fresh PGlite runs every migration inside the test: 60 s, as the package's other Postgres tests
+// have, since a loaded CI runner takes several times longer than a laptop.
 function behaves(name: string, make: () => Promise<Stores>) {
   describe(name, () => {
     it('forgets a deleted project: its own rules and lessons go, the ones it taught stay without its words', async () => {
@@ -96,7 +98,7 @@ function behaves(name: string, make: () => Promise<Stores>) {
       ]);
       expect(k.used).toBe(1);
       expect(JSON.stringify(await knowledge.history(shared.id))).not.toContain('"t1"');
-    });
+    }, 60_000);
 
     it('deletes only the project’s secrets', async () => {
       const { vault } = await make();
@@ -106,7 +108,7 @@ function behaves(name: string, make: () => Promise<Stores>) {
       expect(await vault.deleteProject('prj-gone')).toBe(2);
       expect(await vault.deleteProject('prj-gone')).toBe(0);
       expect(await vault.open(kept.reference)).toBe('secret-c');
-    });
+    }, 60_000);
 
     it('keeps a purge’s record and resumes it', async () => {
       const { tombstones } = await make();
@@ -125,7 +127,7 @@ function behaves(name: string, make: () => Promise<Stores>) {
       await tombstones.finish('prj-gone', 'vercel-cron');
       expect((await tombstones.list())[0]).toMatchObject({ purgedBy: 'vercel-cron' });
       expect((await tombstones.get('prj-gone'))?.finishedAt).toBeTruthy();
-    });
+    }, 60_000);
   });
 }
 

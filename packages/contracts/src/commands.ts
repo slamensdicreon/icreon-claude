@@ -352,3 +352,29 @@ export type EditKnowledge = z.infer<typeof EditKnowledge>;
 /** POST /projects/:id/retrospectives — run a finished phase's retrospective. */
 export const RunRetrospective = z.object({ phase: z.number().int().min(0).max(20) });
 export type RunRetrospective = z.infer<typeof RunRetrospective>;
+
+/** POST /proposals/apply: the Director's decisions on waiting proposals, applied in one go. */
+export const ApplyProposals = z.object({
+  decisions: z
+    .array(
+      z.object({
+        kind: z.enum(['knowledge', 'rule']),
+        id: z.string(),
+        action: z.enum(['approve', 'edit', 'reject']),
+        edit: z
+          .object({
+            title: z.string().trim().min(3).max(200).optional(),
+            text: z.string().trim().min(3).max(2000).optional(),
+            when: z.string().trim().min(3).max(600).optional(),
+            then: z.string().trim().min(3).max(600).optional(),
+            scope: z.object({ kind: z.string(), id: z.string().min(1).max(120) }).optional(),
+            roles: z.array(z.string().max(120)).max(30).optional(),
+          })
+          .nullable()
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type ApplyProposals = z.infer<typeof ApplyProposals>;

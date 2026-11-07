@@ -9,5 +9,6 @@ export * from './review';
 export * from './triage';
 export * from './visual';
 export * from './rule-draft';
+export * from './proposal-sort';
 export * from './attribute';
 export * from './retrospective';
