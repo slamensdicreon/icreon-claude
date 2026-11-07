@@ -49,6 +49,11 @@ beforeAll(async () => {
         return res.writeHead(403).end('Forbidden');
       path = '/media/hero.png';
     }
+    // A site that answers a URL it doesn't have with 403 and a page (a CDN's bot rules).
+    if (path === '/launchworks-missing-page')
+      return res
+        .writeHead(403, { 'content-type': 'text/html' })
+        .end('<html><body><h1>Access denied</h1><p>Request blocked.</p></body></html>');
     const candidates = path === '/' ? ['index.html'] : [path.slice(1), `${path.slice(1)}.html`];
     for (const c of candidates) {
       try {
@@ -85,6 +90,26 @@ afterAll(async () => {
 const ctx = { projectId: 'p1', token: 'unused' };
 
 describe('crawl', () => {
+  it('says when the site refuses our browser on every page, rather than crawling 0 pages', async () => {
+    // A site behind bot protection: every request answered 403, with a page.
+    const walled = createServer((_req, res) =>
+      res.writeHead(403, { 'content-type': 'text/html' }).end('<h1>Access denied</h1>'),
+    );
+    await new Promise<void>((r) => walled.listen(0, '127.0.0.1', r));
+    const port = (walled.address() as { port: number }).port;
+    try {
+      const r = await browser.call('crawl', { url: `http://127.0.0.1:${port}/` }, ctx);
+      // Not 403: that would read as a refused credential and stop the task on an access card.
+      expect(r.code).toBe(422);
+      expect(r.body).toMatchObject({ refusedBySite: true, pages: [] });
+      expect(r.summary).toMatch(
+        /refused our browser: 1 of 1 pages answered HTTP 403.*bot protection, not our access.*needs_decision/,
+      );
+    } finally {
+      await new Promise((r) => walled.close(r));
+    }
+  }, 30_000);
+
   it('inventories the site from links and the sitemap, and explains what it left out', async () => {
     const r = await browser.call('crawl', { url: `${origin}/` }, ctx);
     expect(r.code).toBe(200);
@@ -317,6 +342,20 @@ describe('snapshot, screenshot, fetch.asset', () => {
       }),
       expect.objectContaining({ tag: 'section', className: 'promo', heading: 'New this season' }),
     ]);
+  }, 30_000);
+
+  it('treats a page the site refuses (403) as the site’s answer, not a refused credential', async () => {
+    const r = await browser.call('snapshot', { url: `${origin}/launchworks-missing-page` }, ctx);
+    // 401/403 from a tool stops the task as an access failure; the site's 403 is the agent's.
+    expect(r.code).toBe(422);
+    expect(r.summary).toMatch(/answered HTTP 403.*not our access.*errorPage as null/);
+    expect((r.body as { status: number }).status).toBe(403);
+    const outline = await browser.call(
+      'page.markup',
+      { url: `${origin}/launchworks-missing-page` },
+      ctx,
+    );
+    expect(outline.code).toBe(422);
   }, 30_000);
 
   it('gives a snapshot the page’s whole text, collapsed answers included', async () => {
