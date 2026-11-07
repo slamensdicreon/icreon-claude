@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { open, PROJECT } from './helpers';
 
-test('archive waits for a pause, and an archived project offers Restore instead of the controls', async ({ page }) => {
+test('archive waits for a pause, and an archived project offers Restore instead of the controls', async ({
+  page,
+}) => {
   const run = await open(page, `/p/${PROJECT}/settings`);
   // A running project can't be archived until it is paused.
   await expect(page.getByRole('button', { name: 'Archive', exact: true })).toBeDisabled();
