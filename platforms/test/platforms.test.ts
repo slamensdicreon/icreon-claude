@@ -190,6 +190,25 @@ describe('SitecoreAI checks', () => {
       "Cards ({BBBB-2}) isn't in Available Renderings: none of Page Content lists that ID.",
     );
 
+    // A component merged into another ships with it: its own rendering isn't asked for (the
+    // UtiliQuest demo's Job Categories, merged into a Card Row nobody built, failed forever).
+    const merged = {
+      collections: {
+        components: [
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero' } },
+          {
+            key: 'jobs',
+            name: 'Job Categories',
+            status: 'merge',
+            attrs: { rendering: 'Card Row', mergedInto: 'card-row' },
+          },
+        ],
+      },
+    };
+    expect(await pack.checks!['structural.renderings']!(ctx(t.read, merged))).toMatchObject({
+      status: 'pass',
+    });
+
     // A registration task is checked on its own component, whose rendering may be a
     // { name, componentName } model contract rather than a plain name.
     const contract = {

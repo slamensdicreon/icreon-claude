@@ -789,7 +789,41 @@ async function teamBoard(projections: Projections, projectId: string, taskId: st
 }
 
 /** What every agent is told about the project: its source site and the documents so far. */
-function projectContext(projections: Projections, platform: PlatformPack): ContextProvider {
+/**
+ * What the Director told the team in the project's conversation (Cypher records each message as a
+ * Decision Log entry): every agent starts its task with the latest notes, in the Director's own
+ * words, so "the site was renamed" or "skip the careers video" reaches the work and not only the
+ * log. Newest last; a later note wins over an earlier one it contradicts.
+ */
+export function directorNotes(
+  decisions: {
+    ref: string;
+    question: string;
+    decidedBy: string;
+    scopeKey: string;
+    escalationId: string | null;
+    ts: string;
+  }[],
+  max = 10,
+): string[] {
+  const notes = decisions
+    .filter(
+      (d) => d.decidedBy === 'director' && !d.escalationId && d.scopeKey.startsWith('directive:'),
+    )
+    .slice(-max);
+  if (!notes.length) return [];
+  const clip = (t: string) => (t.length > 600 ? `${t.slice(0, 599)}…` : t);
+  return [
+    `The Director's notes for this project (newest last; they override documents written before them, and a later note wins over an earlier one):\n${notes
+      .map(
+        (d) =>
+          `- ${d.ref} (${d.ts.slice(0, 16).replace('T', ' ')} UTC): ${clip(d.question.trim())}`,
+      )
+      .join('\n')}`,
+  ];
+}
+
+export function projectContext(projections: Projections, platform: PlatformPack): ContextProvider {
   return {
     async forTask(projectId) {
       const s = projections.get(projectId);
@@ -827,6 +861,7 @@ function projectContext(projections: Projections, platform: PlatformPack): Conte
         docs.length
           ? `Documents you can read with artifacts.read:\n${docs.join('\n')}`
           : 'No documents written yet.',
+        ...directorNotes(s?.decisions ?? []),
       ].join('\n');
     },
   };

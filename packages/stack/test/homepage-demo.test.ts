@@ -271,6 +271,20 @@ describe('blueprint.demo-slice', () => {
     expect(d).toContain('templates landing is dropped with neither attrs.held nor a reason');
   });
 
+  it('wants a merged component to merge into one the demo builds', async () => {
+    const bp = base();
+    bp.collections.components!.push({
+      key: 'jobs',
+      name: 'Job Categories',
+      status: 'merge',
+      pilot: false,
+      attrs: { mergedInto: 'faq', variants: [{ pages: ['/careers'] }] },
+    });
+    expect(await problems(bp)).toContain(
+      "jobs is merged into faq, which the demo doesn't build: hold jobs too",
+    );
+  });
+
   it('keeps the model contract of held components', async () => {
     const bp = base();
     bp.collections.components![3] = { ...bp.collections.components![3]!, attrs: { held: true } };

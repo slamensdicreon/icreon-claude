@@ -368,6 +368,18 @@ describe('snapshot, screenshot, fetch.asset', () => {
     ]);
   }, 30_000);
 
+  it('hands the agent a not-found page’s content, not just an error line', async () => {
+    // The site's own 404 page is what the missing-page probe wants: its title, heading and text.
+    const r = await browser.call('snapshot', { url: `${origin}/no-such-page` }, ctx);
+    expect(r.code).toBe(200);
+    expect(r.summary).toMatch(/answered HTTP 404: this is its not-found page, read as served/);
+    const page = r.body as { status: number; blocks: { heading: string | null }[] };
+    expect(page.status).toBe(404);
+    expect(JSON.stringify(r.body)).toContain('Not found');
+    const outline = await browser.call('page.markup', { url: `${origin}/no-such-page` }, ctx);
+    expect(outline.code).toBe(200);
+  }, 30_000);
+
   it('treats a page the site refuses (403) as the site’s answer, not a refused credential', async () => {
     const r = await browser.call('snapshot', { url: `${origin}/launchworks-missing-page` }, ctx);
     // 401/403 from a tool stops the task as an access failure; the site's 403 is the agent's.

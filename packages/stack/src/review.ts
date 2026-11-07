@@ -368,6 +368,13 @@ export const CHECKS: Record<string, Check> = {
         problems.push(
           `${c.key} isn't on the homepage or 404 and isn't shared: mark it held, or list the pages it's on`,
         );
+      // A merged component ships with the one it's merged into: that one must be built too.
+      const into = merged(c) ? String(c.attrs!.mergedInto) : null;
+      const target = into ? components.find((x) => x.key === into) : null;
+      if (into && kept(c) && (!target || !kept(target)))
+        problems.push(
+          `${c.key} is merged into ${into}, which the demo doesn't build: hold ${c.key} too, or merge it into a kept component`,
+        );
       const fields = c.attrs?.fields;
       if (held(c) && (!Array.isArray(fields) || !fields.length))
         problems.push(`${c.key} is held but has no fields: the audit keeps every model contract`);
