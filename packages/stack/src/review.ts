@@ -305,6 +305,97 @@ export const CHECKS: Record<string, Check> = {
         );
   },
 
+  // The homepage demo's slice (homepage demo playbook, Gate 1): the whole site in the Blueprint,
+  // only the homepage, the 404 page and what they use kept, everything else held. The plan builds
+  // the kept items, so this is what keeps the demo to its slice.
+  'blueprint.demo-slice': async (ctx) => {
+    const bp = (await readJson(ctx, 'blueprint')) as {
+      collections?: Record<string, Item[]>;
+    } | null;
+    if (!bp?.collections) return failed(['No Blueprint has been written']);
+    const all = (c: string) => bp.collections![c] ?? [];
+    const kept = (i: Item) => i.status !== 'drop';
+    const held = (i: Item) => i.status === 'drop' && i.attrs?.held === true;
+    const merged = (i: Item) => i.status === 'merge' && Boolean(i.attrs?.mergedInto);
+    const pathOf = (p: Item) => String(p.attrs?.path ?? '').replace(/\/$/, '') || '/';
+    const strings = (v: unknown) =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    /** The pages an item says it's on: attrs.pages, attrs.usedOn and its variants' pages. */
+    const pagesOf = (i: Item) => {
+      const a = i.attrs ?? {};
+      const variants = Array.isArray(a.variants) ? (a.variants as { pages?: unknown }[]) : [];
+      return [
+        ...strings(a.pages),
+        ...strings(a.usedOn),
+        ...variants.flatMap((v) => strings(v?.pages)),
+      ].map((p) => p.replace(/\/$/, '') || '/');
+    };
+    const problems: string[] = [];
+
+    const pages = all('pages');
+    const home = pages.find((p) => pathOf(p) === '/');
+    const notFound = pages.find((p) => Number(p.attrs?.errorPage) === 404 || pathOf(p) === '/404');
+    if (!home) problems.push('no homepage: a page with attrs.path "/"');
+    else if (!kept(home)) problems.push(`the homepage (${home.key}) is dropped; it is the demo`);
+    if (!notFound) problems.push('no 404 page: a page with attrs.errorPage 404');
+    else if (!kept(notFound)) problems.push(`the 404 page (${notFound.key}) is dropped`);
+    const slice = [home, notFound].filter((p): p is Item => Boolean(p));
+    const slicePaths = new Set(slice.map(pathOf));
+    const onSlice = (i: Item) => pagesOf(i).some((p) => slicePaths.has(p));
+    for (const p of pages)
+      if (!slice.includes(p) && kept(p))
+        problems.push(`page ${p.key} (${pathOf(p)}) is kept; only the homepage and 404 are built`);
+
+    const neededTemplates = new Set(slice.map((p) => String(p.attrs?.template ?? '')));
+    for (const t of all('templates')) {
+      if (neededTemplates.has(t.key) && !kept(t))
+        problems.push(`template ${t.key} is used by the homepage or 404 but dropped`);
+      else if (!neededTemplates.has(t.key) && kept(t))
+        problems.push(`template ${t.key} isn't used by the homepage or 404: mark it held`);
+    }
+
+    const components = all('components');
+    const nav = components.find((c) => /nav/i.test(c.key) || /nav/i.test(c.name));
+    if (!nav)
+      problems.push('no navigation component: keep the navigation as its own shared component');
+    else if (!kept(nav) || merged(nav))
+      problems.push(`the navigation (${nav.key}) must be its own kept component, not merged`);
+    for (const c of components) {
+      const needed = c.attrs?.datasource === 'shared' || onSlice(c);
+      if (needed && !kept(c))
+        problems.push(`${c.key} is on the homepage or 404 (or shared) but dropped`);
+      else if (!needed && kept(c) && !merged(c))
+        problems.push(
+          `${c.key} isn't on the homepage or 404 and isn't shared: mark it held, or list the pages it's on`,
+        );
+      const fields = c.attrs?.fields;
+      if (held(c) && (!Array.isArray(fields) || !fields.length))
+        problems.push(`${c.key} is held but has no fields: the audit keeps every model contract`);
+    }
+
+    for (const m of all('media')) {
+      const needed = m.attrs?.shared === true || onSlice(m);
+      if (needed && held(m)) problems.push(`media ${m.key} is used by the demo but held`);
+      else if (!needed && kept(m))
+        problems.push(
+          `media ${m.key} isn't used on the homepage, 404, header, footer or navigation: mark it held, or list its pages`,
+        );
+    }
+
+    for (const [name, items] of Object.entries(bp.collections))
+      for (const i of items)
+        if (i.status === 'drop' && i.attrs?.held !== true && !i.attrs?.reason)
+          problems.push(`${name} ${i.key} is dropped with neither attrs.held nor a reason`);
+
+    const count = (c: string) => all(c).filter(kept).length;
+    const heldCount = Object.values(bp.collections).flat().filter(held).length;
+    return problems.length
+      ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))
+      : pass(
+          `The demo builds ${count('pages')} pages, ${count('templates')} templates, ${count('components')} components and ${count('media')} media; ${heldCount} items are audited, not in the demo.`,
+        );
+  },
+
   // A portal's people (customer portal playbook, Gate 1): each persona a demo account with a role,
   // an audience personalization can match, navigation to real pages and a presentation path.
   'blueprint.personas': async (ctx) => {

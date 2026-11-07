@@ -26,6 +26,8 @@ const text = (v: unknown, fallback = '–'): string => {
 };
 
 function statusOf(item: BlueprintItem, tasks: TaskView[]): BlueprintRow['status'] {
+  // Dropped for now, not for good: audited, but not built in this project (the homepage demo).
+  if (item.status === 'drop' && item.attrs?.held === true) return 'held';
   if (item.status === 'drop') return 'dropped';
   if (item.status === 'merge') return 'merged';
   const mine = tasks.filter((t) => t.itemKeys.includes(item.key) && t.state !== 'cancelled');

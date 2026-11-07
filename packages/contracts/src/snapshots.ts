@@ -1032,7 +1032,8 @@ export const BlueprintRow = z.object({
   params: z.string(),
   placeholders: z.string(),
   variants: z.string(),
-  status: z.enum(['done', 'in_progress', 'planned', 'dropped', 'merged']),
+  /** `held`: audited and kept in the Blueprint, but not built in this project (the homepage demo). */
+  status: z.enum(['done', 'in_progress', 'planned', 'dropped', 'merged', 'held']),
   /** Changed since the approved version, and what it was. */
   changed: z.boolean(),
   was: z.string().nullable(),

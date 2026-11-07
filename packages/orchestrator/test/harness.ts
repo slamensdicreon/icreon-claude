@@ -64,6 +64,8 @@ export interface Harness {
   store: InMemoryEventStore;
   projections: Projections;
   playbook: Playbook;
+  /** The playbook's folder, for its fixtures. */
+  playbookDir: string;
   projects: Map<string, Activities>;
   /** What the worker serves (every project's, routed): for a second worker on the same queue. */
   activities: Activities;
@@ -77,14 +79,16 @@ export async function startHarness(
   opts: Pick<Parameters<typeof createWorker>[0], 'draining' | 'shutdownGraceTime'> & {
     /** A server to use instead of a new time-skipping one; the caller tears it down. */
     env?: TestWorkflowEnvironment;
+    /** Another playbook than the website playbook (its folder). */
+    playbookDir?: string;
   } = {},
 ): Promise<Harness> {
-  const { env: given, ...shutdown } = opts;
+  const { env: given, playbookDir = PLAYBOOK_DIR, ...shutdown } = opts;
   const env = given ?? (await TestWorkflowEnvironment.createTimeSkipping());
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
-  const playbook = await loadPlaybook(PLAYBOOK_DIR);
+  const playbook = await loadPlaybook(playbookDir);
   const projects = new Map<string, Activities>();
   const route = (projectId: string) => projects.get(projectId)!;
   const activities: Activities = {
@@ -105,7 +109,18 @@ export async function startHarness(
     ...shutdown,
   });
   const run = worker.run();
-  return { env, worker, store, projections, playbook, projects, activities, run, ownsEnv: !given };
+  return {
+    env,
+    worker,
+    store,
+    projections,
+    playbook,
+    playbookDir,
+    projects,
+    activities,
+    run,
+    ownsEnv: !given,
+  };
 }
 
 export async function stopHarness(h: Harness) {
@@ -137,7 +152,7 @@ export async function launch(
   } = {},
 ) {
   const projectId = `p${++counter}`;
-  const { outputs } = await loadFixtures(PLAYBOOK_DIR);
+  const { outputs } = await loadFixtures(h.playbookDir);
   const stubs = createStubActivities({
     store: h.store,
     playbook: h.playbook,

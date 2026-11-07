@@ -65,17 +65,24 @@ gets a real `extends`, the copy goes.
 
 ### The slice
 
-The compiler derives what gets built from the approved Blueprint, so no one picks it by hand:
+The Architect writes the whole Blueprint, then keeps the slice and holds the rest:
 
 - **Pages**: `attrs.path: "/"`, and `attrs.errorPage: 404`.
 - **Templates**: those pages' `attrs.template`.
-- **Components**: those with a variant whose `pages` include `/`, those with `datasource: "shared"`
-  (header, footer, navigation), and whatever they're merged into.
-- **Media**: what those pages and components reference.
+- **Components**: those with a variant whose `pages` include `/` or the 404, those with
+  `datasource: "shared"` (header, footer, navigation), and whatever they're merged into.
+- **Media**: items whose `attrs.pages` include those pages, or `attrs.shared: true`.
 
-Everything else stays in the Blueprint exactly as approved, shown as **Audited, not in the demo**.
-It isn't `drop`: `drop` means "won't move", and the Blueprint should read as the prospect's real
-audit.
+Everything else is `status: "drop"` with `attrs.held: true`. The Workbench shows these as
+**audited, not built**, not as dropped. Dropped (without `held`) still means "won't move", with a
+reason.
+
+**Nobody has to trust the Architect on this.** `blueprint.demo-slice` runs at Gate 1 with the other
+Blueprint checks. It derives the slice from the Blueprint and fails on any mismatch: a page kept
+outside the slice, a homepage component held, the navigation merged, a template or media item kept
+that nothing in the slice uses, a held component without its model contract, a drop with neither
+`held` nor a reason. Because held items are `drop` to everything else, the plan compiler, the
+acceptance checks and the agents' context all work unchanged and build only the slice.
 
 **Navigation is its own component.** The Architect often merges navigation into the header. In
 this playbook it stays a component of its own with a shared datasource (menu items as child items
@@ -110,14 +117,14 @@ from the Blueprint's counts. It's what you leave with the prospect.
 
 ## What Cypher says
 
-- **At Gate 1**: *"Blueprint ready: 62 pages, 7 templates, 41 components, 380 media. The demo builds
-  the homepage and 404, the header, footer and navigation: 11 components, 1 template, 24 media.
-  Everything else is audited, not built."* The Workbench shows the whole Blueprint with the slice
-  highlighted.
-- **During the build**, the Floor shows the audited-only items dimmed, so no one reads them as
-  stalled.
-- **At Gate 2**: *"The homepage is on preview and in Page builder. Parity: 97% visual, content
-  matched. Known gaps: 2. Ready for your drag-and-drop check."*
+- **At Gate 1**: *"62 pages, 7 templates, 41 components, 380 media. The demo builds the homepage and
+  404, the header, footer and navigation: 11 components, 1 template, 24 media; the rest is
+  audited, not built."* The Architect's prompt makes this the opening of its summary, and
+  `blueprint.demo-slice` reports the same counts. The Workbench shows the whole Blueprint, with
+  held items marked audited, not built. The gate card itself is the standard one.
+- **During the build**, held items have no tasks, so the plan and the Floor show only the slice.
+- **At Gate 2**: the demo summary carries the parity results, the known gaps and the
+  drag-and-drop checklist; the manual card points at it.
 
 ## Where it's built
 
@@ -155,32 +162,30 @@ M0 tells us the real time from URL to Gate 2, which is the lead time to book aga
 
 ## Changes in the code
 
-| Change | Where | Size |
-| --- | --- | --- |
-| `playbooks/sitecoreai-homepage-demo/`: charter, intake (URL and optional repo; our tenant), phases 0–9 above, plan cut to the slice's tasks | New folder | Medium |
-| A `slice` declaration in `plan.yaml`: the phases it applies to (3–8) and the rules per collection | `packages/playbook-sdk/src/schema.ts` | Small |
-| The compiler expands `forEach` templates only over the slice in those phases | `packages/plan/src/compile.ts:340-354` | Medium |
-| An "audited, not in the demo" status in the Blueprint view and the Floor | `packages/plan/src/blueprint-view.ts`, web | Small |
-| Architect paragraph: navigation as its own component; `/` and the 404 always in acceptance | The demo's `prompts/solution-architect.md` | Small |
-| The demo summary in place of the handover pack | The demo's `prompts/handover-writer.md` | Small |
-| Drift test against the website playbook's roles, prompts and knowledge | `packages/playbook-sdk` tests | Small |
-| Cypher's Gate 1 and Gate 2 lines | Chief of Staff prompts | Small |
-| The 30-day cleanup | A scheduled job over demo projects | Small |
+Built (M1). `sitecoreai-migration` doesn't change.
 
-`sitecoreai-migration` doesn't change.
+| Change | Where |
+| --- | --- |
+| The playbook: charter, intake on our tenant, phases 0–9, the plan over the slice (canary 0, standing deploy and publish, the drag-and-drop check), the demo's Definition of Done, fixtures | `playbooks/sitecoreai-homepage-demo/` |
+| Prompts: the Architect's slice rules and Gate 1 summary; the Content Analyst re-crawls only the homepage and 404; the Experience Enabler skips redirects, sitemap and robots; the Handover Writer writes the demo summary and the drag-and-drop checklist | The demo's `prompts/`, `roles/handover-writer.yaml` |
+| `blueprint.demo-slice` | `packages/stack/src/review.ts` |
+| A `held` status ("audited, not built") in the Blueprint view and the Workbench | `packages/contracts/src/snapshots.ts`, `packages/plan/src/blueprint-view.ts`, `apps/web/src/surfaces/workbench/` |
+| Tests: the playbook loads; the plan of the example Blueprint is exactly the slice; the slice check; the drift test against the website playbook; check coverage; a whole demo project through the orchestrator with stub agents, from intake to Gate 2 | `packages/stack/test/homepage-demo.test.ts`, `packages/stack/test/coverage.test.ts`, `packages/orchestrator/test/homepage-demo.test.ts` |
+
+Still to do: the 30-day cleanup (M4).
 
 ## Milestones
 
 | | Work | Done when |
 | --- | --- | --- |
 | **M0 Measure** | Run `sitecoreai-migration` to Gate 1 on three sites (one with a repo, two URL-only), then have the Architect drop everything outside the slice and run through deploy | A timing table from URL to deploy, and the critical path named |
-| **M1 The playbook** | The new folder, charter and plan; the `slice` declaration and compiler filtering; the drift test | Loads and validates; the plan for the example Blueprint builds exactly the slice; `sitecoreai-migration`'s plans unchanged |
-| **M2 Drag and drop** | Placeholder settings, insert options and navigation as a component; the drag-and-drop check written as the Gate 2 checklist | On one site, the check passes in Page builder |
-| **M3 Cypher and the summary** | Gate 1 and Gate 2 lines, audited-only items on the Floor, the demo summary | Design review on one finished demo |
+| **M1 The playbook** ✅ | The playbook folder, charter and plan; `blueprint.demo-slice`; the `held` status; the drift test | Done: it loads and validates, the example Blueprint's plan is exactly the slice, and a whole demo project runs to Gate 2 with stub agents |
+| **M2 Drag and drop** | A first real run on our tenant with live agents; fix what the drag-and-drop check finds (placeholder settings, insert options, the navigation's datasource) | On one site, the check passes in Page builder |
+| **M3 Cypher and the summary** | The demo summary and Gate 1 summary as written by live agents; audited-only items on the Floor | Design review on one finished demo |
 | **M4 Our tenant** | The by-hand site checklist; the 30-day cleanup | Two demos side by side with nothing crossing between them; cleanup leaves nothing behind |
 | **M5 Dry runs** | Five varied sites, end to end, plus the meeting script | All five reach Gate 2 with homepage parity and the drag-and-drop check passing |
 
-M0, M1 and M4 can start now. M2 needs M1. M5 needs everything.
+M0, M2 and M4 can start now. M5 needs everything.
 
 ## Risks
 
