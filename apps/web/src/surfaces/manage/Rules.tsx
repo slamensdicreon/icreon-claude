@@ -22,6 +22,7 @@ import {
   useResource,
   type CatalogNames,
 } from './shared';
+import { ProposalReview } from './ProposalReview';
 import s from './manage.module.css';
 
 const HISTORY: Record<RuleHistoryItem['kind'], string> = {
@@ -64,6 +65,7 @@ export function Rules({ projects }: { projects: PortfolioItem[] }) {
         aren’t asked the same thing twice; proposed rules apply nowhere until you approve them.
       </Lead>
       {error && <Notice tone="bad">{error}</Notice>}
+      <ProposalReview waiting={proposed.length} onDone={reload} />
       {harvest}
       {rules.length === 0 && (
         <Panel title="No rules yet" padded>

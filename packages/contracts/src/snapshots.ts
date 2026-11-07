@@ -1370,3 +1370,75 @@ export const PortfolioOverview = z.object({
   }),
 });
 export type PortfolioOverview = z.infer<typeof PortfolioOverview>;
+
+// ---------------------------------------------------------------------------
+// What the next build knows, and the proposals waiting to join it
+// ---------------------------------------------------------------------------
+
+/** A lesson or procedure that can reach a playbook's agents. */
+export const InForceEntry = z.object({
+  id: z.string(),
+  ref: z.string(),
+  kind: z.enum(['lesson', 'procedure']),
+  title: z.string(),
+  text: z.string(),
+  scope: KnowledgeScope,
+  /** The playbook's roles it can reach; empty for every role. */
+  roles: z.array(z.string()),
+  /** Briefs it has been put in, on any project. */
+  used: z.number().int(),
+  updatedAt: z.iso.datetime(),
+});
+export type InForceEntry = z.infer<typeof InForceEntry>;
+
+/**
+ * GET /playbooks/:id/in-force: what a new project on the playbook starts with. The rules its Leads
+ * apply, the lessons and procedures its agents can be given (each brief carries the few that fit
+ * the task), and the known gaps, which are engineering's and reach no agent. Project-scoped
+ * entries are left out: they apply to their own project only.
+ */
+export const InForceSnapshot = z.object({
+  playbook: z.object({ id: z.string(), name: z.string(), version: z.string() }),
+  platform: z.object({ id: z.string(), name: z.string() }),
+  roles: z.array(z.object({ role: z.string(), name: z.string() })),
+  rules: z.array(RuleView),
+  entries: z.array(InForceEntry),
+  gaps: z.array(z.object({ id: z.string(), ref: z.string(), title: z.string(), text: z.string() })),
+  /** Proposals that would apply here once approved. */
+  pending: z.object({ knowledge: z.number().int(), rules: z.number().int() }),
+});
+export type InForceSnapshot = z.infer<typeof InForceSnapshot>;
+
+/** A change Cypher suggests to a proposal before it's approved. */
+export const ProposalEdit = z.object({
+  title: z.string().optional(),
+  text: z.string().optional(),
+  when: z.string().optional(),
+  then: z.string().optional(),
+  scope: z.object({ kind: z.string(), id: z.string() }).optional(),
+  roles: z.array(z.string()).optional(),
+});
+export type ProposalEdit = z.infer<typeof ProposalEdit>;
+
+/** Cypher's read of one proposal: approve it, approve it changed, or reject it, and why. */
+export const ProposalRecommendation = z.object({
+  kind: z.enum(['knowledge', 'rule']),
+  id: z.string(),
+  ref: z.string(),
+  /** The proposal as it stands, for the list: a title, or a rule's "when". */
+  label: z.string(),
+  action: z.enum(['approve', 'edit', 'reject']),
+  reason: z.string(),
+  edit: ProposalEdit.nullable(),
+  /** The ref of an entry or rule it repeats, when that's why it's rejected. */
+  duplicateOf: z.string().nullable(),
+});
+export type ProposalRecommendation = z.infer<typeof ProposalRecommendation>;
+
+/** POST /proposals/sort: every waiting proposal with Cypher's recommendation. */
+export const ProposalReview = z.object({
+  /** False when no model is set up: the proposals are listed without recommendations. */
+  available: z.boolean(),
+  recommendations: z.array(ProposalRecommendation),
+});
+export type ProposalReview = z.infer<typeof ProposalReview>;

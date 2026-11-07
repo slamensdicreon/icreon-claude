@@ -1,12 +1,13 @@
 /*
  * The pages above any project (Everything only), opened from Settings in the sidebar: Global
- * settings, Connections, Playbooks, Rules, Knowledge and Diagnostics. The top bar carries each
+ * settings, Connections, Playbooks, In force, Rules, Knowledge and Diagnostics. The top bar carries each
  * page's title and line (MANAGE in state.tsx), so a page starts with its own sentence.
  */
 import type { ManagePage as Page } from '../../state';
 import { Connections } from './Connections';
 import { Diagnostics } from './Diagnostics';
 import { GithubAppPanel } from './GithubApp';
+import { InForce } from './InForce';
 import { Knowledge } from './Knowledge';
 import { Playbooks } from './Playbooks';
 import { Rules } from './Rules';
@@ -32,6 +33,7 @@ export function ManagePage({ page }: { page: Page }) {
       )}
       {page === 'connections' && <Connections projects={projects} />}
       {page === 'playbooks' && <Playbooks projects={projects} />}
+      {page === 'in-force' && <InForce />}
       {page === 'rules' && <Rules projects={projects} />}
       {page === 'knowledge' && <Knowledge projects={projects} />}
       {page === 'diagnostics' && <Diagnostics />}
