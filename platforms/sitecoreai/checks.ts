@@ -79,6 +79,15 @@ const inScope = (ctx: PlatformCheckContext, collection: string) => {
   return own ? kept.filter((i) => own.includes(i.key)) : kept;
 };
 
+/**
+ * The components a check looks for on the tenant: the kept ones with work of their own. One merged
+ * into another (`status: 'merge'` naming it in `attrs.mergedInto`) gets no tasks and ships as part
+ * of that one, which is checked instead; looking for its own rendering asks for something nobody
+ * builds, and the check can never pass.
+ */
+const builtComponents = (ctx: PlatformCheckContext) =>
+  inScope(ctx, 'components').filter((c) => !(c.status === 'merge' && c.attrs?.mergedInto));
+
 /** The rendering item's name from a component's model contract: a name, or { name, componentName }. */
 export function renderingName(c: { name: string; attrs?: Record<string, unknown> }): string {
   const r = c.attrs?.rendering;
@@ -296,7 +305,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
 
     // Every component has its rendering, and the site offers it in Available Renderings.
     'structural.renderings': async (ctx) => {
-      const components = inScope(ctx, 'components');
+      const components = builtComponents(ctx);
       if (!components.length) return pending('The Blueprint has no components to check.');
       const r = await renderingsOf(ctx, components);
       return r.problems.length
@@ -307,7 +316,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     // What Page builder needs to offer a component and add it to a page: its rendering, offered
     // in Available Renderings, named for the head's component, and its datasource template there.
     'editor.component-enabled': async (ctx) => {
-      const components = inScope(ctx, 'components');
+      const components = builtComponents(ctx);
       if (!components.length) return pending('The Blueprint has no components to check.');
       const r = await renderingsOf(ctx, components);
       const problems = [...r.problems];
@@ -335,7 +344,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     // Page builder's "create new content" needs a datasource template and a location to create
     // it in; a location given as a path must exist.
     'editor.new-datasource': async (ctx) => {
-      const components = inScope(ctx, 'components');
+      const components = builtComponents(ctx);
       if (!components.length) return pending('The Blueprint has no components to check.');
       const r = await renderingsOf(ctx, components);
       const problems = [...r.problems];
@@ -650,7 +659,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     // A component whose model has child items gets them only through a GraphQL Component Query on
     // its rendering: without one the head receives its own fields and an empty list.
     'structural.component-queries': async (ctx) => {
-      const lists = inScope(ctx, 'components').filter((c) => c.attrs?.children);
+      const lists = builtComponents(ctx).filter((c) => c.attrs?.children);
       if (!lists.length) return pass('No component in scope lists child items.');
       const b = sitecoreBindings(ctx.target);
       const root = `/sitecore/layout/Renderings/Project/${b.module}`;
