@@ -344,3 +344,61 @@ describe("a template's bulk import", () => {
     expect(spread([1, 2, 3, 4, 5], 3)).toEqual([1, 3, 5]);
   });
 });
+
+describe('the end-of-project checks on a large site', () => {
+  // Edge answers for every page; the editing host and the source render the same words.
+  const asked: string[] = [];
+  const fetchAll = (async (u: string | URL | Request, init?: RequestInit) => {
+    if (init?.body) {
+      const { variables } = JSON.parse(String(init.body)) as { variables: { path: string } };
+      asked.push(variables.path);
+      return new Response(
+        JSON.stringify({
+          data: {
+            layout: {
+              item: {
+                rendered: { sitecore: { route: { fields: { Title: { value: 'one two' } } } } },
+              },
+            },
+          },
+        }),
+      );
+    }
+    const res = new Response('<html><body><main><p>alpha beta gamma</p></main></body></html>');
+    Object.defineProperty(res, 'url', { value: String(u) });
+    return res;
+  }) as typeof fetch;
+  const checks = createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fetchAll } }).get(
+    'sitecoreai',
+  )!.checks!;
+  const imported = Array.from({ length: 50 }, (_, i) => ({ path: `/resources/learn/a-${i}` }));
+  const end = {
+    ...ctx(largeBlueprint, {}),
+    credential: async () => ({ contextId: 'ctx' }),
+    document: async (id: string) =>
+      id === 'template-import-resources-learn'
+        ? { status: 'done', imported }
+        : id === 'page-inventory'
+          ? { origin: 'https://src.example', pages: [{ path: '/', words: 2 }] }
+          : null,
+  };
+
+  it('checks a spread of the bulk-imported pages resolve, beside the Blueprint pages', async () => {
+    asked.length = 0;
+    const res = await checks['routes.resolve']!(end);
+    expect(res.status).toBe('pass');
+    expect(res.detail).toMatch(
+      /routes resolve on Experience Edge \(live\), 20 of them a spread of the bulk-imported pages/,
+    );
+    expect(asked).toContain('/resources/learn/a-0');
+    expect(asked).toContain('/resources/learn/a-49');
+  });
+
+  it('measures content parity on a spread of them too, as both sites render them', async () => {
+    const res = await checks['parity.page']!(end);
+    expect(res.status).toBe('pass');
+    expect(res.detail).toMatch(
+      /Content parity 100% across 11 pages, 10 of them a spread of the bulk-imported pages/,
+    );
+  });
+});

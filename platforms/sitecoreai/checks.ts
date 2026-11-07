@@ -1,6 +1,7 @@
 import { mapLimit, type VerifyConfig } from '@lw/connectors';
 import type { CheckResult, PlatformCheck, PlatformCheckContext } from '../src/index';
 import { ownedPaths, sitecoreBindings, sitecoreTarget } from './pack';
+import { spread } from './page-templates';
 
 /**
  * SitecoreAI acceptance checks: read-only looks at the tenant and at Experience Edge, judged
@@ -207,6 +208,22 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       (p) => String(p.attrs?.path ?? '').replace(/\/$/, '') || '/',
     );
     return paths.length ? [...new Set(paths)] : ['/'];
+  };
+
+  /**
+   * A large site's bulk-imported pages aren't Blueprint pages: a spread of each imported
+   * template's pages (from its template-import report), so the end-of-project checks see them.
+   */
+  const importedSample = async (ctx: PlatformCheckContext, perTemplate: number) => {
+    const out: string[] = [];
+    for (const t of inScope(ctx, 'page-templates')) {
+      const doc = (await ctx.document(`template-import-${t.key}`)) as {
+        imported?: { path?: string }[];
+      } | null;
+      const paths = (doc?.imported ?? []).map((p) => String(p.path ?? '')).filter(Boolean);
+      out.push(...spread(paths, perTemplate));
+    }
+    return out;
   };
 
   return {
@@ -700,12 +717,15 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
 
     // Every page the Blueprint keeps resolves on the live endpoint.
     'routes.resolve': async (ctx) => {
-      const paths = pagePaths(ctx);
+      const imported = await importedSample(ctx, 20);
+      const paths = [...new Set([...pagePaths(ctx), ...imported])];
       const r = await routes(ctx, paths, 'edge-live');
       if (!r.missing) return pending(`Can't check routes: ${r.why}.`);
       return r.missing.length
         ? fail(r.missing.map((p) => `${p} doesn't resolve`))
-        : pass(`${paths.length} routes resolve on Experience Edge (live).`);
+        : pass(
+            `${paths.length} routes resolve on Experience Edge (live)${imported.length ? `, ${imported.length} of them a spread of the bulk-imported pages` : ''}.`,
+          );
     },
 
     // Content parity: each kept page, on Experience Edge (preview), against the source re-crawl.
@@ -717,9 +737,13 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       } | null;
       if (!inv?.pages?.length) return pending('No source inventory to compare with.');
       const kept = new Set(pagePaths(ctx));
-      const source = inv.pages
+      const source: { path: string; words: number; imported?: boolean }[] = inv.pages
         .map((p) => ({ path: inventoryPath(p), words: p.words ?? 0 }))
         .filter((p) => kept.has(p.path));
+      // A large site's bulk-imported pages: a spread of each template, measured as both sites
+      // render them (the inventory lists only their examples, so it has no word counts for them).
+      for (const path of await importedSample(ctx, 10))
+        if (!source.some((p) => p.path === path)) source.push({ path, words: 0, imported: true });
       if (!source.length) return pending('No kept page appears in the source inventory.');
       const r = await routes(
         ctx,
@@ -754,7 +778,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         source.map(async (p) => {
           const text = textOf(r.rendered.get(p.path));
           const words = count(text);
-          let enough = !p.words || words >= p.words * 0.9;
+          let enough = p.imported ? false : !p.words || words >= p.words * 0.9;
           let rendered: { have: number; want: number } | null = null;
           if (!enough && r.rendered.has(p.path)) {
             rendered = await asRendered(p.path);
@@ -778,10 +802,13 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         }),
       );
       const parity = Math.round((pages.filter((p) => p.ok).length / pages.length) * 1000) / 10;
+      const sampled = source.filter((p) => p.imported).length;
       const bad = pages.filter((p) => !p.ok).map((p) => `${p.path}: ${p.problem}`);
       return {
         ...(parity >= 98
-          ? pass(`Content parity ${parity}% across ${pages.length} pages.`)
+          ? pass(
+              `Content parity ${parity}% across ${pages.length} pages${sampled ? `, ${sampled} of them a spread of the bulk-imported pages` : ''}.`,
+            )
           : fail([`Content parity ${parity}% (98% needed)`, ...bad])),
         data: { parity, pages },
       };
