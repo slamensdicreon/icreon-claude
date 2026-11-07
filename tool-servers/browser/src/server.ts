@@ -274,9 +274,9 @@ export class BrowserToolServer implements ToolServer {
           return await this.withPage(policy, async (context) => {
             const r = await this.load(context, policy, String(args.url), true);
             return {
-              code: r.status,
+              code: pageCode(r.status),
               body: r.page,
-              summary: `Snapshot of ${r.page.url}: ${r.page.blocks.length} blocks, ${r.page.content?.length ?? 0} text items in full`,
+              summary: `Snapshot of ${r.page.url}: ${r.page.blocks.length} blocks, ${r.page.content?.length ?? 0} text items in full${refusedNote(r.status)}`,
             };
           });
         case 'screenshot':
@@ -324,6 +324,8 @@ export class BrowserToolServer implements ToolServer {
         timeout: this.opts.navigationTimeoutMs ?? 30_000,
       });
       const status = response?.status() ?? 0;
+      const code = pageCode(status);
+      const refused = refusedNote(status);
       const run = <T>(fn: (...a: never[]) => T, ...a: unknown[]) =>
         page.evaluate(
           `(${fn.toString()})(${a.map((x) => JSON.stringify(x)).join(',')})`,
@@ -333,17 +335,17 @@ export class BrowserToolServer implements ToolServer {
           const selectors = ((args.selectors as string[] | undefined) ?? []).slice(0, 20);
           const styles = await run(readStyles, selectors, STYLE_PROPS);
           return {
-            code: status,
+            code,
             body: { url: canonical(page.url()), width: page.viewportSize()?.width, ...styles },
-            summary: `Styles of ${canonical(page.url())} at ${page.viewportSize()?.width}px wide: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties`,
+            summary: `Styles of ${canonical(page.url())} at ${page.viewportSize()?.width}px wide: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties${refused}`,
           };
         }
         if (typeof args.selector !== 'string' || !args.selector) {
           const sections = await run(outlineSections);
           return {
-            code: status,
+            code,
             body: { url: canonical(page.url()), sections },
-            summary: `${sections.length} sections on ${canonical(page.url())}`,
+            summary: `${sections.length} sections on ${canonical(page.url())}${refused}`,
           };
         }
         const markup = await run(cleanMarkup, args.selector, Number(args.maxChars ?? 30_000));
@@ -354,9 +356,9 @@ export class BrowserToolServer implements ToolServer {
             summary: `No element matches ${args.selector}`,
           };
         return {
-          code: status,
+          code,
           body: { url: canonical(page.url()), selector: args.selector, ...markup },
-          summary: `Markup of ${args.selector}: ${markup.html.length} characters${markup.truncated ? ' (truncated)' : ''}`,
+          summary: `Markup of ${args.selector}: ${markup.html.length} characters${markup.truncated ? ' (truncated)' : ''}${refused}`,
         };
       } finally {
         await page.close();
@@ -729,3 +731,18 @@ const plainText = (html: string) =>
 /** The served HTML with its scripts removed, resolving links against the page's own URL. */
 const withoutScripts = (html: string, url: string) =>
   `<base href="${url.replace(/"/g, '&quot;')}">${html.replace(/<script[\s\S]*?<\/script>/gi, '')}`;
+
+/**
+ * A tool result's code for a page the browser loaded. The page's own HTTP status passes through,
+ * except a refusal: a source site answering 401 or 403 (often bot protection at its CDN, or how
+ * it answers a URL it doesn't have) says nothing about our access, and a 401 or 403 from a tool
+ * means a credential was refused, which stops the task for the Director. So it's a 422: the
+ * agent's to work around.
+ */
+export const pageCode = (status: number) => (status === 401 || status === 403 ? 422 : status);
+
+/** What the agent is told about a page the site refused. */
+const refusedNote = (status: number) =>
+  status === 401 || status === 403
+    ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access: for the missing-page probe, record errorPage as null; otherwise leave the page out and say so`
+    : '';
