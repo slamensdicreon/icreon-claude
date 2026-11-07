@@ -2,10 +2,15 @@ import { createHash } from 'node:crypto';
 import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/tool-gateway';
 import type { BrowserContext, Page } from 'playwright-core';
 import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
-import { extractContent, extractPage, type PageExtract } from './extract';
+import type { PageExtract } from './extract';
+import { canonical, loadPage, safeCanonical } from './page-load';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
 import { layoutData } from './layout-data';
 import { assertNavigable, BlockedUrlError, type UrlPolicy } from './ssrf';
+import { Crawler, CRAWL_LIMITS } from './crawl/crawler';
+import { CrawlReports } from './crawl/report';
+import { discover } from './crawl/sitemap';
+import { MemoryCrawlStore, type CrawlJob, type CrawlStore } from './crawl/store';
 
 export interface BrowserServerOptions {
   /** Source-site hosts per project; the browser goes nowhere else. */
@@ -29,6 +34,13 @@ export interface BrowserServerOptions {
    * stop short of that and hand back the pages read.
    */
   crawlTimeMs?: number;
+  /**
+   * Background crawls (crawl.start and the rest). Share one across servers in a process so each
+   * crawl runs once; without it, one is made over `crawls` (or memory).
+   */
+  crawler?: Crawler;
+  /** Where background crawls are kept when this server makes its own crawler. */
+  crawls?: CrawlStore;
 }
 
 /**
@@ -38,7 +50,7 @@ export interface BrowserServerOptions {
  * then blocks, then all but the main headings. `browser.snapshot` reads any page in full.
  */
 export function compactCrawl(
-  pages: (PageExtract & { url: string; status: number })[],
+  pages: (Omit<PageExtract, 'layout'> & { url: string; status: number })[],
   budget: number,
 ) {
   const imageCount = new Map<string, { src: string; alt: string | null; pages: number }>();
@@ -109,10 +121,87 @@ const BROWSER_HEADERS = {
   'accept-language': 'en-US,en;q=0.9',
 };
 
+const crawlId = {
+  type: 'string',
+  description: "The crawl's id from crawl.start; the project's latest crawl when left out.",
+};
+
 const CATALOG: OperationCatalog = {
+  'crawl.start': {
+    description:
+      "Start crawling the source site in the background, however large it is; returns at once with a crawlId. It finds the pages from the site's robots.txt, sitemaps and links, reads them several at a time at the pace the site allows (in a real browser only when a page needs one), and groups them into templates. Follow it with crawl.status. A crawl of the same site still running, or finished within a day, is returned instead of starting another: pass fresh: true to crawl again (the phase 6 re-crawl), with changedOnly: true to keep pages the sitemap says haven't changed. robots.txt is respected unless respectRobots is false, which only the Director may decide.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Where to start: the home page.' },
+        maxPages: { type: 'integer', minimum: 1, maximum: CRAWL_LIMITS.maxPages },
+        concurrency: { type: 'integer', minimum: 1, maximum: CRAWL_LIMITS.concurrency },
+        respectRobots: { type: 'boolean' },
+        fresh: { type: 'boolean' },
+        changedOnly: { type: 'boolean' },
+      },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+  },
+  'crawl.status': {
+    description:
+      "A background crawl's progress and what it has found: pages found, read, left and the pace (with an estimate of the time left), how they were read, redirects, what was excluded and why, the header/nav/footer regions repeated across pages, and its templates (kinds of page: URL patterns, page count, layout, average words, and three example pages each). Give waitSeconds (up to 300) to wait for the crawl to finish before answering: call it again until status is no longer running. Templates appear early, so you can start reading examples while it runs.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        crawlId,
+        waitSeconds: { type: 'integer', minimum: 0, maximum: 300 },
+      },
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'crawl.query': {
+    description:
+      'Pages of a crawl, up to 200 rows at a time (url, path, title, description, h1, words, images, template), filtered by template (an id from crawl.status), path prefix, words in the title or URL (text), or state: read (default), excluded or failed (with the reason), queued. Page through with offset: the answer gives the total and the next offset.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        crawlId,
+        template: { type: 'string' },
+        path: { type: 'string' },
+        text: { type: 'string' },
+        state: { type: 'string', enum: ['read', 'excluded', 'failed', 'queued'] },
+        limit: { type: 'integer', minimum: 1, maximum: 200 },
+        offset: { type: 'integer', minimum: 0 },
+      },
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'crawl.page': {
+    description:
+      'One page as the crawl read it, without visiting the site again: title, description, headings, content blocks (with excerpts), images with alt text, links, regions and layout, and how it was read. For its whole text word for word, use snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: { crawlId, url: { type: 'string' } },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'crawl.stop': {
+    description: 'Stop a background crawl, keeping the pages it has read.',
+    inputSchema: {
+      type: 'object',
+      properties: { crawlId },
+      additionalProperties: false,
+    },
+    mutates: false,
+  },
   crawl: {
     description:
-      'Crawl the source site from a start URL (plus its sitemap): page inventory with titles, headings, word counts, images and alt text, internal links, and header/nav/footer regions repeated across pages. Same host only.',
+      'Crawl a small site in one call (up to 500 pages and about 7 minutes) from a start URL plus its sitemap: page inventory with titles, headings, word counts, images and alt text, internal links, and header/nav/footer regions repeated across pages. Same host only. For a site of more than a few hundred pages, use crawl.start instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -217,48 +306,43 @@ const CATALOG: OperationCatalog = {
 };
 
 /** Tool server for everything that needs a real browser against the source site. */
-/** Words and images on a page as it stands, the measure of whether it has rendered yet. */
-const PAGE_SIZE = `(() => {
-  const words = (document.body ? document.body.innerText : '').split(/\\s+/).filter(Boolean).length;
-  return words + 10 * document.images.length;
-})()`;
-
-/**
- * A page built in the browser (client-side rendering) is nearly empty when its HTML has loaded:
- * its copy and images arrive once its scripts and their requests run. For such a page, wait for
- * the network to go quiet and the page to stop growing, up to `maxMs`. A page that arrived with
- * its content (server-rendered) is read at once.
- */
-async function settle(page: Page, maxMs: number): Promise<void> {
-  let size = (await page.evaluate(PAGE_SIZE)) as number;
-  if (size >= 80 || maxMs <= 0) return;
-  const deadline = Date.now() + maxMs;
-  await page.waitForLoadState('networkidle', { timeout: maxMs }).catch(() => {});
-  let steady = 0;
-  while (steady < 2 && Date.now() < deadline) {
-    await page.waitForTimeout(300);
-    const next = (await page.evaluate(PAGE_SIZE)) as number;
-    steady = next === size ? steady + 1 : 0;
-    size = next;
-  }
-}
-
 export class BrowserToolServer implements ToolServer {
   readonly name = 'browser';
   readonly catalog = CATALOG;
   private readonly browser: GuardedBrowser;
   private readonly ownsBrowser: boolean;
+  private readonly ownsCrawler: boolean;
+  readonly crawler: Crawler;
+  private readonly reports: CrawlReports;
 
   constructor(private readonly opts: BrowserServerOptions) {
     this.ownsBrowser = !opts.browser;
     this.browser = opts.browser ?? new GuardedBrowser();
+    this.ownsCrawler = !opts.crawler;
+    this.crawler =
+      opts.crawler ??
+      new Crawler({
+        store: opts.crawls ?? new MemoryCrawlStore(),
+        browser: this.browser,
+        policy: opts.policy,
+        settleMs: opts.settleMs,
+        navigationTimeoutMs: opts.navigationTimeoutMs,
+      });
+    this.reports = new CrawlReports(this.crawler.store);
   }
+
+  /**
+   * crawl.status waits up to 5 minutes, and the gateway's default is 10; nothing here runs
+   * longer than the gateway allows.
+   */
 
   target(projectId: string): string {
     return this.opts.policy(projectId).allowedHosts[0] ?? projectId;
   }
 
   async close(): Promise<void> {
+    // Crawls stay running in their store; another worker (or this one, restarted) resumes them.
+    if (this.ownsCrawler) await this.crawler.shutdown();
     if (this.ownsBrowser) await this.browser.close();
   }
 
@@ -274,6 +358,12 @@ export class BrowserToolServer implements ToolServer {
     const policy = this.opts.policy(ctx.projectId);
     try {
       switch (op) {
+        case 'crawl.start':
+        case 'crawl.status':
+        case 'crawl.query':
+        case 'crawl.page':
+        case 'crawl.stop':
+          return await this.background(op, args, ctx.projectId);
         case 'crawl':
           return await this.crawl(policy, String(args.url), Number(args.maxPages ?? 200));
         case 'snapshot':
@@ -308,6 +398,119 @@ export class BrowserToolServer implements ToolServer {
         return { code: 422, body: { error: err.message }, summary: `Blocked: ${err.message}` };
       throw err;
     }
+  }
+
+  /** The background crawl operations. */
+  private async background(
+    op: string,
+    args: Record<string, unknown>,
+    projectId: string,
+  ): Promise<ToolResult> {
+    if (op === 'crawl.start') {
+      const { job, existing } = await this.crawler.start(projectId, {
+        url: String(args.url),
+        maxPages: num(args.maxPages),
+        concurrency: num(args.concurrency),
+        respectRobots: typeof args.respectRobots === 'boolean' ? args.respectRobots : undefined,
+        fresh: args.fresh === true,
+        changedOnly: args.changedOnly === true,
+      });
+      const lead =
+        existing === 'running'
+          ? `A crawl of ${job.origin} is already running (${job.id}): follow it`
+          : existing === 'recent'
+            ? `${job.origin} was crawled ${ago(job.finishedAt)} (${job.id}): its pages are used. Pass fresh: true to crawl again`
+            : `Crawling ${job.origin} in the background (${job.id}), up to ${job.options.maxPages} pages`;
+      return {
+        code: existing ? 200 : 202,
+        body: {
+          crawlId: job.id,
+          status: job.status,
+          origin: job.origin,
+          existing,
+          options: job.options,
+          next: 'crawl.status with waitSeconds: 240, again until status is not running',
+        },
+        summary: `${lead}. Next: crawl.status with waitSeconds`,
+      };
+    }
+    const job = await this.findCrawl(projectId, args.crawlId);
+    if (!job)
+      return {
+        code: 404,
+        body: {
+          error: args.crawlId
+            ? `No crawl ${String(args.crawlId)} for this project`
+            : 'This project has no crawl yet: start one with crawl.start',
+        },
+        summary: 'No crawl found',
+      };
+    switch (op) {
+      case 'crawl.status': {
+        const wait = Math.min(300, Math.max(0, num(args.waitSeconds) ?? 0)) * 1000;
+        const current = (await this.crawler.wait(job.id, wait)) ?? job;
+        const r = await this.reports.status(current);
+        return { code: 200, ...r };
+      }
+      case 'crawl.query': {
+        const r = await this.reports.query(job, {
+          template: str(args.template),
+          path: str(args.path),
+          text: str(args.text),
+          state: str(args.state) as 'read' | undefined,
+          limit: num(args.limit),
+          offset: num(args.offset),
+        });
+        return { code: 200, ...r };
+      }
+      case 'crawl.page': {
+        const found = await this.crawler.store.page(job.id, canonical(String(args.url)));
+        if (!found)
+          return {
+            code: 404,
+            body: {
+              error: `Crawl ${job.id} has no ${String(args.url)}: use snapshot to read it live`,
+            },
+            summary: `Not in crawl ${job.id}: ${String(args.url)}`,
+          };
+        if (!found.page)
+          return {
+            code: 200,
+            body: { url: found.url.url, state: found.url.state, reason: found.url.reason },
+            summary: `${found.url.url}: ${found.url.state}${found.url.reason ? ` (${found.url.reason})` : ''}`,
+          };
+        const { links, ...page } = found.page;
+        const own = new URL(job.origin).origin;
+        const internal = [...new Set(links.filter((l) => l.startsWith(own)))];
+        return {
+          code: 200,
+          body: {
+            ...page,
+            links: {
+              internal: internal.slice(0, 150),
+              internalCount: internal.length,
+              external: links.length - links.filter((l) => l.startsWith(own)).length,
+            },
+          },
+          summary: `${found.page.url} from crawl ${job.id}: ${found.page.blocks.length} blocks, ${found.page.wordCount} words (read ${found.page.via === 'browser' ? 'in a browser' : found.page.via === 'reused' ? 'in the last crawl, unchanged since' : 'directly'})`,
+        };
+      }
+      default: {
+        const stopped = (await this.crawler.stop(job.id)) ?? job;
+        this.reports.invalidate(job.id);
+        const r = await this.reports.status(stopped);
+        return { code: 200, ...r };
+      }
+    }
+  }
+
+  private async findCrawl(projectId: string, id: unknown): Promise<CrawlJob | null> {
+    if (typeof id === 'string' && id) {
+      const j = await this.crawler.store.get(id);
+      // Another project's crawl reads as no crawl at all.
+      return j && j.projectId === projectId ? j : null;
+    }
+    return this.crawler.store.latest(projectId);
   }
 
   /** Section outline, one section's markup, or styles: read as rendered at desktop width, or styles at another `width`. */
@@ -372,55 +575,12 @@ export class BrowserToolServer implements ToolServer {
     });
   }
 
-  private async load(context: BrowserContext, policy: UrlPolicy, raw: string, full = false) {
-    const url = await assertNavigable(raw, policy);
-    const page = await context.newPage();
-    const response = await page.goto(url.toString(), {
-      waitUntil: 'domcontentloaded',
-      timeout: this.opts.navigationTimeoutMs ?? 30_000,
+  private load(context: BrowserContext, policy: UrlPolicy, raw: string, full = false) {
+    return loadPage(context, policy, raw, {
+      full,
+      settleMs: this.opts.settleMs,
+      navigationTimeoutMs: this.opts.navigationTimeoutMs,
     });
-    const status = response?.status() ?? 0;
-    const contentType = response?.headers()['content-type'] ?? '';
-    if (!contentType.includes('html')) {
-      await page.close();
-      return { status, page: null as never, contentType };
-    }
-    await settle(page, this.opts.settleMs ?? 6_000);
-    const extract = (await page.evaluate(`(${extractPage.toString()})()`)) as PageExtract;
-    // The full text only where it's asked for (a snapshot): a crawl keeps the short form.
-    let text = full
-      ? ((await page.evaluate(`(${extractContent.toString()})()`)) as ReturnType<
-          typeof extractContent
-        > & { from?: 'served-html' })
-      : null;
-    // Some page builders take the copy out of the page once their scripts run (sliders, reveal
-    // effects), though the server sent it. When the page as served holds far more words than
-    // the page as rendered, read the served HTML with its scripts removed.
-    if (text && response) {
-      const served = await response.text().catch(() => '');
-      const rendered = text.content.reduce((n, c) => n + words(c.text), 0);
-      if (words(plainText(served)) > Math.max(150, rendered * 2.5)) {
-        const copy = await context.newPage();
-        try {
-          await copy.setContent(withoutScripts(served, url.toString()), {
-            waitUntil: 'domcontentloaded',
-          });
-          const fromServed = (await copy.evaluate(
-            `(${extractContent.toString()})()`,
-          )) as ReturnType<typeof extractContent>;
-          if (fromServed.content.reduce((n, c) => n + words(c.text), 0) > rendered)
-            text = { ...fromServed, from: 'served-html' };
-        } finally {
-          await copy.close();
-        }
-      }
-    }
-    await page.close();
-    return {
-      status,
-      contentType,
-      page: { url: canonical(page.url()), status, ...extract, ...(text ?? {}) },
-    };
   }
 
   private async crawl(policy: UrlPolicy, start: string, maxPages: number): Promise<ToolResult> {
@@ -526,15 +686,10 @@ export class BrowserToolServer implements ToolServer {
     };
   }
 
+  /** The sitemaps' page URLs (robots.txt's sitemaps, indexes and gzipped ones included). */
   private async sitemap(policy: UrlPolicy, origin: string): Promise<string[]> {
     try {
-      const url = await assertNavigable(`${origin}/sitemap.xml`, policy);
-      const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) return [];
-      const xml = await res.text();
-      return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)]
-        .map((m) => safeCanonical(m[1]!))
-        .filter((u): u is string => Boolean(u) && new URL(u!).origin === origin);
+      return (await discover(`${origin}/`, policy)).entries.map((e) => e.url);
     } catch {
       return [];
     }
@@ -716,23 +871,6 @@ export class BrowserToolServer implements ToolServer {
   }
 }
 
-/** Same page, one spelling: no fragment, no trailing slash (except the root). */
-export function canonical(raw: string): string {
-  const u = new URL(raw);
-  u.hash = '';
-  if (u.pathname.length > 1 && u.pathname.endsWith('/')) u.pathname = u.pathname.slice(0, -1);
-  return u.toString();
-}
-
-function safeCanonical(raw: string): string | null {
-  try {
-    const u = new URL(raw);
-    return u.protocol === 'http:' || u.protocol === 'https:' ? canonical(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Readies a page for a full-page comparison: scrolls through it so lazy images and reveal-on-scroll
  * sections load, then hides overlays fixed mid-screen (cookie and chat banners), which otherwise
@@ -761,16 +899,6 @@ async function settleForScreenshot(page: {
   });
 }
 
-const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
-
-/** A page's text as served, without its markup, scripts or styles. */
-const plainText = (html: string) =>
-  html.replace(/<(script|style|noscript|template)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
-
-/** The served HTML with its scripts removed, resolving links against the page's own URL. */
-const withoutScripts = (html: string, url: string) =>
-  `<base href="${url.replace(/"/g, '&quot;')}">${html.replace(/<script[\s\S]*?<\/script>/gi, '')}`;
-
 /**
  * A tool result's code for a page the browser loaded. The page's own HTTP status passes through,
  * except a refusal: a source site answering 401 or 403 (often bot protection at its CDN, or how
@@ -795,3 +923,15 @@ export const siteRefused = (origin: string, reason: string, refused: number, tri
   `${origin} refused our browser: ${refused} of ${tried} pages answered ${reason}, so no page could be read. ` +
   `That is the site's bot protection, not our access, and retrying won't change it. ` +
   `Stop and submit needs_decision for the Director: the client allows our crawler, or gives the source repository, or the project uses another site`;
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+
+/** "12 minutes ago", "3 hours ago". */
+function ago(iso: string | null): string {
+  if (!iso) return 'recently';
+  const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+  return m < 60
+    ? `${m} minute${m === 1 ? '' : 's'} ago`
+    : `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? '' : 's'} ago`;
+}

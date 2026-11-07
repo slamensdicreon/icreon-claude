@@ -113,16 +113,24 @@ export function sourceNotice(s: ProjectState, recent: LwEvent[], now: Date): Ope
       e.data.toolServer === 'browser' &&
       minutes(e.ts, now) <= SOURCE_WINDOW_MINUTES,
   );
-  const throttled = steps.filter((e) => e.data.resultCode === 429).length;
-  const refused = steps.filter(
-    (e) =>
-      e.data.resultCode === 422 && /refused our browser|answered HTTP 40[13]/.test(e.data.summary),
-  ).length;
-  const slow = steps.filter(
-    (e) =>
-      e.data.operation === 'crawl' &&
-      (e.data.resultCode === 504 || /Stopped for time/.test(e.data.summary)),
-  ).length;
+  // A background crawl reads the site on its own, so its 429s and refusals aren't steps: its
+  // progress (crawl.status) says when the site throttles or refuses it, and when the site is large.
+  const crawling = steps.filter((e) => e.data.operation.startsWith('crawl.'));
+  const said = (re: RegExp) => crawling.some((e) => re.test(e.data.summary));
+  const throttled =
+    steps.filter((e) => e.data.resultCode === 429).length + (said(/is throttling us/) ? 2 : 0);
+  const refused =
+    steps.filter(
+      (e) =>
+        e.data.resultCode === 422 &&
+        /refused our browser|answered HTTP 40[13]/.test(e.data.summary),
+    ).length + (said(/found no page it could read|The site refused \d+ pages/) ? 2 : 0);
+  const slow =
+    steps.filter(
+      (e) =>
+        e.data.operation === 'crawl' &&
+        (e.data.resultCode === 504 || /Stopped for time/.test(e.data.summary)),
+    ).length + (said(/A large site/) ? 1 : 0);
   const site = siteName(s.sourceUrl);
   const told = (title: string) =>
     s.conversation.some(
@@ -140,12 +148,12 @@ export function sourceNotice(s: ProjectState, recent: LwEvent[], now: Date): Ope
   if (throttled >= 2)
     return heads(
       `${site} is throttling the team`,
-      `Just so you know: ${site} is throttling the team (it answered "too many requests" ${word(throttled)} times in the last ${SOURCE_WINDOW_MINUTES} minutes), so ${s.name} will take a little longer than usual. The team keeps going at the pace the site allows. Nothing for you to do.`,
+      `Just so you know: ${site} is throttling the team (it answered "too many requests" ${crawling.some((e) => /is throttling us/.test(e.data.summary)) ? 'repeatedly' : `${word(throttled)} times`} in the last ${SOURCE_WINDOW_MINUTES} minutes), so ${s.name} will take a little longer than usual. The team keeps going at the pace the site allows. Nothing for you to do.`,
     );
   if (slow >= 1)
     return heads(
       `${site} is a large site`,
-      `Just so you know: ${site} is large, so the crawl ran past its time limit and the team is reading it in parts. Discovery will take a little longer than usual. Nothing for you to do.`,
+      `Just so you know: ${site} is large, so the team is reading it in the background and working from its page templates. Discovery will take a little longer than usual. Nothing for you to do.`,
     );
   return null;
 }

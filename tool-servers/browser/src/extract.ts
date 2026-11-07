@@ -43,8 +43,42 @@ export function extractPage() {
     })),
     regions: { header: region('header'), nav: region('nav'), footer: region('footer') },
     blocks,
+    layout: layoutOf(main),
     wordCount: clean(main.textContent).split(' ').filter(Boolean).length,
   };
+
+  /**
+   * The page's layout as a short list of section tokens (`section.hero`, `div.card-grid`), for
+   * telling templates apart. Looks through single wrappers (page builders nest the content in
+   * one or two divs), and keeps class names without digits, which are usually generated.
+   */
+  function layoutOf(root: Element): string[] {
+    let el = root;
+    for (let i = 0; i < 4; i++) {
+      const kids = Array.from(el.children).filter(
+        (c) => !['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'LINK'].includes(c.tagName),
+      );
+      if (kids.length !== 1) break;
+      el = kids[0]!;
+    }
+    const out: string[] = [];
+    for (const c of Array.from(el.children)) {
+      if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'LINK'].includes(c.tagName)) continue;
+      const hint =
+        c.getAttribute('data-component') ??
+        c.getAttribute('data-block') ??
+        (c.getAttribute('class') ?? '')
+          .split(/\s+/)
+          .filter((t) => t && !/\d/.test(t))
+          .slice(0, 2)
+          .join('.');
+      const token = `${c.tagName.toLowerCase()}${hint ? `.${hint.slice(0, 60)}` : ''}`;
+      // A run of the same section (cards, list items) is one token.
+      if (out[out.length - 1] !== token) out.push(token);
+      if (out.length >= 40) break;
+    }
+    return out;
+  }
 }
 
 export type PageExtract = ReturnType<typeof extractPage>;

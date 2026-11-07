@@ -16,7 +16,7 @@ import {
   type Attribution,
 } from '@lw/agent-runtime';
 import { autonomyFor } from '@lw/domain';
-import type { EventStore, KnowledgeStore, Projections, RuleStore } from '@lw/events';
+import type { EventStore, KnowledgeStore, Projections, RuleStore, SqlClient } from '@lw/events';
 import {
   createStubActivities,
   loadFixtures,
@@ -32,7 +32,14 @@ import { lessonsFor } from './knowledge';
 import { blueprintEntries, leadTriageInput } from './lead-triage';
 import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
-import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
+import {
+  BrowserToolServer,
+  Crawler,
+  GuardedBrowser,
+  MemoryCrawlStore,
+  PostgresCrawlStore,
+  type UrlPolicy,
+} from '@lw/tool-browser';
 export { GuardedBrowser } from '@lw/tool-browser';
 import {
   LocalBlobStore,
@@ -98,6 +105,53 @@ export interface StackOptions {
    * launches and closes its own.
    */
   browser?: GuardedBrowser;
+  /**
+   * Background crawls (browser.crawl.start), shared by every stack in the process so each crawl
+   * runs once; see createCrawler. Without one, the stack keeps its crawls in memory.
+   */
+  crawler?: Crawler;
+}
+
+/**
+ * The hosts a project's browser may visit: its source site (both spellings: one usually
+ * redirects to the other) and its new site, for visual QA and parity.
+ */
+export function sourcePolicy(
+  projections: Projections,
+  allowPrivateNetworks?: boolean,
+): (projectId: string) => UrlPolicy {
+  return (projectId) => {
+    const s = projections.get(projectId);
+    const url = s?.sourceUrl;
+    const host = url ? new URL(url).hostname : null;
+    return {
+      allowedHosts: [
+        ...(host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : []),
+        // The new site: its production URL, its fixed editing address, and the provider's other
+        // addresses for it (team and per-deployment URLs).
+        ...projectHosts(s?.hosting ?? null),
+      ],
+      allowPrivateNetworks,
+    };
+  };
+}
+
+/**
+ * The process's background crawler: crawls kept in Postgres when there is one (they survive a
+ * restart and any worker resumes them), in memory otherwise. Call `resumeAll()` once the worker
+ * is up, and `shutdown()` when it stops.
+ */
+export function createCrawler(opts: {
+  projections: Projections;
+  browser: GuardedBrowser;
+  sql?: SqlClient | null;
+  allowPrivateNetworks?: boolean;
+}): Crawler {
+  return new Crawler({
+    store: opts.sql ? new PostgresCrawlStore(opts.sql) : new MemoryCrawlStore(),
+    browser: opts.browser,
+    policy: sourcePolicy(opts.projections, opts.allowPrivateNetworks),
+  });
 }
 
 export interface Stack {
@@ -163,21 +217,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   // One Chromium behind one egress proxy for every browser-driven server.
   const chromium =
     opts.browser ?? new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });
-  const policy = (projectId: string): UrlPolicy => {
-    const s = opts.projections.get(projectId);
-    const url = s?.sourceUrl;
-    const host = url ? new URL(url).hostname : null;
-    return {
-      allowedHosts: [
-        // The site and its www form: one usually redirects to the other.
-        ...(host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : []),
-        // The new site, for visual QA and parity: its production URL, its fixed editing address,
-        // and the provider's other addresses for it (team and per-deployment URLs).
-        ...projectHosts(s?.hosting ?? null),
-      ],
-      allowPrivateNetworks: opts.allowPrivateNetworks,
-    };
-  };
+  const policy = sourcePolicy(opts.projections, opts.allowPrivateNetworks);
   // Acceptance checks read the project's systems, never change them.
   const readOnly = async (
     projectId: string,
@@ -367,13 +407,15 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   // Hosts the project's documents point media at, by the documents' versions.
   const hostsSeen = new Map<string, { key: string; hosts: string[] }>();
   const STRUCTURE = ['site', 'templates', 'renderings'] as const;
+  const browserServer = new BrowserToolServer({
+    blobs,
+    policy,
+    browser: chromium,
+    crawler: opts.crawler,
+    assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
+  });
   const servers: ToolServer[] = [
-    new BrowserToolServer({
-      blobs,
-      policy,
-      browser: chromium,
-      assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
-    }),
+    browserServer,
     new ValidatorsToolServer({
       blobs,
       policy,
@@ -689,6 +731,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     gateway,
     library,
     close: async () => {
+      // Its own crawler, if it made one, lets go of its crawls; a shared one is its owner's.
+      await browserServer.close();
       if (!opts.browser) await chromium.close();
     },
   };
