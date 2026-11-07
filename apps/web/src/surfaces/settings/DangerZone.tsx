@@ -1,7 +1,8 @@
 /*
  * The danger zone: pause or resume the whole project, roll back the current phase, reset to
- * intake (with or without a new build repository), archive. Everything but Resume asks first in a
- * TypedConfirm; what can't be undone asks for a typed word.
+ * intake (with or without a new build repository), archive and restore. Everything but Resume and
+ * Restore asks first in a TypedConfirm; what changes the most asks for a typed word. An archived
+ * project shows only Restore: the API refuses everything else while it is archived.
  */
 import type { ProjectSummary, SettingsSnapshot } from '@lw/contracts';
 import type { ReactNode } from 'react';
@@ -36,6 +37,8 @@ export function DangerZone({
   const { projectId, run, openOverlay, closeOverlay } = useApp();
   const base = `/projects/${projectId}`;
   const paused = p.status === 'paused';
+  const archived = p.status === 'archived';
+  const live = p.status === 'running';
   const control = (verb: 'pause' | 'resume') =>
     run(
       () => post(`${base}/control`, { verb, scope: { kind: 'project', id: projectId } }),
@@ -101,21 +104,56 @@ export function DangerZone({
     openOverlay(
       <TypedConfirm
         title="Archive this project?"
-        body="The project becomes read-only with its audit trail, artifacts and handover pack. This cannot be undone."
+        body={`${paused ? 'Its open tasks are cancelled first. ' : ''}Nothing runs from then on and nothing can be changed. Its history, documents and handover pack stay, and you can restore it.`}
         confirmLabel="Archive project"
         typed={p.name}
         onConfirm={() => {
           closeOverlay();
-          void run(() => post(`${base}/archive`, { confirmation: p.name }), `${p.name} archived`);
+          void run(
+            () => post(`${base}/archive`, { confirmation: p.name }),
+            { title: `${p.name} archived`, detail: 'Read-only. Restore it here at any time.' },
+            'Archiving the project',
+          );
         }}
       />,
+    );
+  const restore = () =>
+    run(
+      () => post(`${base}/restore`, {}),
+      {
+        title: `${p.name} restored`,
+        detail: 'Back as it was before the archive, to read and export.',
+      },
+      'Restoring the project',
+    );
+
+  if (archived)
+    return (
+      <div className={s.danger}>
+        <Panel title="Archived">
+          <p className={`${s.lead} ${s.sentence}`}>
+            This project is archived and read-only. Nothing runs and nothing can be changed.
+          </p>
+          <ul className={s.dangerRows}>
+            <Row
+              title="Restore the project"
+              note="Brings it back as completed or cancelled, to read and export. To do more work, start a new project from it with Remix."
+            >
+              <Action kind="primary" onClick={() => void restore()}>
+                Restore project
+              </Action>
+            </Row>
+          </ul>
+        </Panel>
+      </div>
     );
 
   return (
     <div className={s.danger}>
       <Panel title="Danger zone">
         <p className={`${s.lead} ${s.sentence}`}>
-          Each of these asks you to confirm first. Pausing can be undone; nothing else here can.
+          Each of these asks you to confirm first. Pausing and archiving can be undone; rolling back
+          and resetting can’t.
         </p>
         <ul className={s.dangerRows}>
           <Row
@@ -158,9 +196,13 @@ export function DangerZone({
           )}
           <Row
             title="Archive project"
-            note="Read-only from then on, with its audit trail, artifacts and handover pack."
+            note={
+              live
+                ? 'Pause the project first. A project is archived only once nothing is running.'
+                : 'Stops it for good and makes it read-only, with its history, documents and handover pack. You can restore it.'
+            }
           >
-            <Action kind="danger" onClick={archive}>
+            <Action kind="danger" onClick={archive} disabled={live}>
               Archive
             </Action>
           </Row>

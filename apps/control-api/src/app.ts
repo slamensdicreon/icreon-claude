@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import {
   ApproveGate,
@@ -41,6 +42,7 @@ import {
   type AutonomyLevel,
   type DecisionCategory,
   type CommandResult,
+  type NewEvent,
   type PortfolioDiagnostics,
   type PlaybookScorecard,
   type RuleDraftView,
@@ -86,7 +88,7 @@ import type {
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
 import { harvestRules, type OperatorNotice } from '@lw/stack';
-import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
@@ -308,6 +310,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.addHook('preHandler', async (req) => {
     const id = (req.params as { id?: unknown } | undefined)?.id;
     if (typeof id === 'string' && req.url.startsWith('/projects/')) await projections.catchUp(id);
+  });
+
+  // An archived project is read-only: only restoring it changes it. Reads and downloads still work.
+  const OPEN_WHEN_ARCHIVED = /^\/projects\/[^/]+\/(restore|archive)$/;
+  app.addHook('preHandler', async (req) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
+    const id = (req.params as { id?: unknown } | undefined)?.id;
+    if (typeof id !== 'string' || !req.url.startsWith('/projects/')) return;
+    if (OPEN_WHEN_ARCHIVED.test(req.url.split('?')[0]!)) return;
+    const s = projections.get(id);
+    if (s?.status === 'archived')
+      throw new CommandError(
+        409,
+        'archived',
+        `${s.name} is archived and read-only. Restore it from Settings to change anything.`,
+      );
   });
 
   const project = (id: string): ProjectState | null => projections.get(id) ?? null;
@@ -1819,15 +1837,91 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
+  /** Who did it: the signed-in operator's login, so the log says who archived or restored. */
+  const operatorActor = (req: FastifyRequest) =>
+    ({ kind: 'director', id: req.operator?.login ?? 'director' }) as const;
+  const note = (projectId: string, title: string, body: string): NewEvent => ({
+    type: 'cos.message',
+    actor: { kind: 'chief_of_staff', id: 'chief-of-staff' },
+    subject: { kind: 'project', id: projectId },
+    severity: 'notable',
+    data: { messageId: randomUUID(), kind: 'text', title, body },
+  });
+
+  /**
+   * Archive: the project stops for good, leaves the active lists and becomes read-only (the hook
+   * above). Only once nothing runs: a running project is paused first. A paused project is
+   * cancelled the normal way (open tasks cancelled, cards superseded) before it is archived.
+   */
   app.post<P>('/projects/:id/archive', async (req) => {
     const { confirmation } = ArchiveProject.parse(req.body);
-    if (confirmation !== known(req.params.id).name)
+    const id = req.params.id;
+    const s = known(id);
+    if (confirmation !== s.name)
       throw new CommandError(
         422,
         'confirmation_mismatch',
         'Type the project name exactly to archive it.',
       );
-    return command(req.params.id, (o) => supported(o, 'archive')());
+    if (s.status === 'archived')
+      throw new CommandError(409, 'archived', `${s.name} is already archived.`);
+    if (s.status === 'running')
+      throw new CommandError(
+        409,
+        'not_paused',
+        `Pause ${s.name} first. A project is archived only once nothing is running.`,
+      );
+    if (s.mode !== 'live') return command(id, (o) => supported(o, 'archive')());
+    const previous = s.status;
+    if (previous === 'paused')
+      await orchestrator(id).control({ verb: 'cancel', scope: { kind: 'project', id } });
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.status',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { status: 'archived', previous },
+      },
+      note(
+        id,
+        'Archived',
+        `${by.id === 'director' ? 'The Director' : by.id} archived this project. It is read-only: nothing runs and nothing can be changed. Its history, documents and handover pack stay. Restore it from Settings to read it as ${previous === 'completed' ? 'completed' : previous === 'intake' ? 'not started' : 'cancelled'}.`,
+      ),
+    ]);
+    return settled(id);
+  });
+
+  /** Restore: an archived project comes back as completed or cancelled (or not started). */
+  app.post<P>('/projects/:id/restore', async (req) => {
+    const id = req.params.id;
+    const s = known(id);
+    if (s.status !== 'archived')
+      throw new CommandError(409, 'not_archived', `${s.name} isn't archived.`);
+    const log = await store.read(id);
+    const archived = [...log]
+      .reverse()
+      .find((e) => e.type === 'project.status' && e.data.status === 'archived');
+    const previous = archived?.type === 'project.status' ? archived.data.previous : undefined;
+    // A paused project was cancelled on its way to the archive.
+    const status = previous === 'completed' || previous === 'intake' ? previous : 'cancelled';
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.status',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { status },
+      },
+      note(
+        id,
+        'Restored',
+        `${by.id === 'director' ? 'The Director' : by.id} restored this project from the archive. It is ${status === 'intake' ? 'back in intake' : status}; to do more work, start a new project from it with Remix.`,
+      ),
+    ]);
+    return settled(id);
   });
 
   app.put<P>('/projects/:id/budgets', async (req) => {

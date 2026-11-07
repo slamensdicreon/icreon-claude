@@ -442,7 +442,14 @@ export const EventBody = z.discriminatedUnion('type', [
         .optional(),
     }),
   ),
-  ev('project.status', z.object({ status: ProjectStatus })),
+  ev(
+    'project.status',
+    z.object({
+      status: ProjectStatus,
+      /** On `archived`: the status it had before, so a restore knows what to return to. */
+      previous: ProjectStatus.optional(),
+    }),
+  ),
   ev('phase.entered', z.object({ phase: z.number().int() })),
   ev('phase.exited', z.object({ phase: z.number().int() })),
   ev(
