@@ -205,5 +205,5 @@ Made by the Director on 2026-11-07:
    `sitecoreai-migration`, on their own tenant.
 3. **The outcome:** marketer-friendly drag and drop in Page builder on the homepage, header, footer
    and navigation, with parity on the homepage, through deploy.
-4. **The 404 page** is part of the slice.
+4. **The 404 page** was part of the slice; **dropped on 2026-11-08 (0.2.4)**. On Paylocity and Microsoft it failed the same way every time (the head serves its own fallback for a missing URL, so no header or footer) and closed "done with gaps"; the demo is the homepage, header, footer and navigation. The Blueprint records the 404 page as dropped, so the decision stays on record.
 5. **Retention:** 30 days, then the demo is deleted.

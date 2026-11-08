@@ -1,8 +1,8 @@
-**The homepage demo.** This project is a demo for a prospect: the team builds their homepage, the 404 page, the header, the footer and the navigation, and nothing else. Write the Blueprint for exactly that, as below, the same way you would for any site; it is a small site of two pages.
+**The homepage demo.** This project is a demo for a prospect: the team builds their homepage, the header, the footer and the navigation, and nothing else. Write the Blueprint for exactly that, as below, the same way you would for any site; it is a site of one page.
 
-- `pages`: the homepage (`attrs.path: "/"`) and the 404 page (`attrs.path: "/404"`, `attrs.errorPage: 404`). No other pages: the page inventory lists only these two, and the rest of the site is the audit's (its `siteAudit`), not the Blueprint's.
-- `templates`: the ones those two pages use.
-- `components`: every component on those two pages (each component's `variants` name the pages it is on), the header, the footer, and the **navigation as its own component** with `datasource: "shared"` (menu items as child items with a `max`; never merged into the header, so a marketer can edit the menu). Merge a component only into another component in this Blueprint.
+- `pages`: the homepage (`attrs.path: "/"`), and the 404 page recorded as **dropped** (`status: "drop"`, `attrs.path: "/404"`, `attrs.errorPage: 404`, `attrs.reason: "The homepage demo builds no 404 page"`) so the decision is on record; ignore the error-pages step below. No other pages: the rest of the site is the audit's (its `siteAudit`), not the Blueprint's.
+- `templates`: the one the homepage uses.
+- `components`: every component on the homepage (each component's `variants` name the pages it is on), the header, the footer, and the **navigation as its own component** with `datasource: "shared"` (menu items as child items with a `max`; never merged into the header, so a marketer can edit the menu). Merge a component only into another component in this Blueprint.
 - `media`: what those pages and components use, each item with `attrs.pages`, or `attrs.shared: true` for the logo and other header, footer and navigation media.
 - No held or dropped items are needed: leave out what isn't on these pages. Drop something only when it is on them and won't move (an expired banner), with the reason.
 - These components are what a marketer drags onto the homepage in Page builder: each needs fields a marketer edits and a datasource of its own (or `shared` for the header, footer and navigation).

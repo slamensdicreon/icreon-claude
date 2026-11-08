@@ -144,6 +144,8 @@ async function ownedFiles(
 /** The plan task that fills the shared header, footer and navigation content, once, before pages. */
 export const SHARED_CHROME_TASK = 'migrate-shared-chrome';
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 export const CHECKS: Record<string, Check> = {
   // Built green after the last change, and that state committed.
   // Committing first and then building is as good as building first: what counts is that the
@@ -319,9 +321,9 @@ export const CHECKS: Record<string, Check> = {
         );
   },
 
-  // The homepage demo's Blueprint (homepage demo playbook, Gate 1): the homepage, the 404 page and
-  // what they use, with the navigation its own component. The plan builds every kept item, so this
-  // is what keeps the demo to two pages. (Items held from a whole-site Blueprint, as version 0.1.0
+  // The homepage demo's Blueprint (homepage demo playbook, Gate 1): the homepage and what it uses,
+  // with the navigation its own component (and, up to 0.2.3, the 404 page). The plan builds every
+  // kept item, so this is what keeps the demo to the homepage. (Items held from a whole-site Blueprint, as version 0.1.0
   // wrote them, are still accepted.)
   'blueprint.demo-slice': async (ctx) => {
     const bp = (await readJson(ctx, 'blueprint')) as {
@@ -352,23 +354,25 @@ export const CHECKS: Record<string, Check> = {
     const notFound = pages.find((p) => Number(p.attrs?.errorPage) === 404 || pathOf(p) === '/404');
     if (!home) problems.push('no homepage: a page with attrs.path "/"');
     else if (!kept(home)) problems.push(`the homepage (${home.key}) is dropped; it is the demo`);
-    if (!notFound) problems.push('no 404 page: a page with attrs.errorPage 404');
-    else if (!kept(notFound)) problems.push(`the 404 page (${notFound.key}) is dropped`);
-    const slice = [home, notFound].filter((p): p is Item => Boolean(p));
+    // The 404 page was in the slice until 0.2.4, which builds the homepage alone: a 404 page may
+    // be kept (older versions) or recorded as dropped, never required.
+    const slice = [home, notFound && kept(notFound) ? notFound : undefined].filter((p): p is Item =>
+      Boolean(p),
+    );
     const slicePaths = new Set(slice.map(pathOf));
     const onSlice = (i: Item) => pagesOf(i).some((p) => slicePaths.has(p));
     for (const p of pages)
       if (!slice.includes(p) && kept(p))
         problems.push(
-          `page ${p.key} (${pathOf(p)}) is in the Blueprint; only the homepage and 404 are built, so leave it out (the audit counts it)`,
+          `page ${p.key} (${pathOf(p)}) is in the Blueprint; only the homepage is built, so leave it out (the audit counts it)`,
         );
 
     const neededTemplates = new Set(slice.map((p) => String(p.attrs?.template ?? '')));
     for (const t of all('templates')) {
       if (neededTemplates.has(t.key) && !kept(t))
-        problems.push(`template ${t.key} is used by the homepage or 404 but dropped`);
+        problems.push(`template ${t.key} is used by a page the demo builds but dropped`);
       else if (!neededTemplates.has(t.key) && kept(t))
-        problems.push(`template ${t.key} isn't used by the homepage or 404: leave it out`);
+        problems.push(`template ${t.key} isn't used by the pages the demo builds: leave it out`);
     }
 
     const components = all('components');
@@ -380,10 +384,10 @@ export const CHECKS: Record<string, Check> = {
     for (const c of components) {
       const needed = c.attrs?.datasource === 'shared' || onSlice(c);
       if (needed && !kept(c))
-        problems.push(`${c.key} is on the homepage or 404 (or shared) but dropped`);
+        problems.push(`${c.key} is on a page the demo builds (or shared) but dropped`);
       else if (!needed && kept(c) && !merged(c))
         problems.push(
-          `${c.key} isn't on the homepage or 404 and isn't shared: leave it out, or list the pages it's on`,
+          `${c.key} isn't on a page the demo builds and isn't shared: leave it out, or list the pages it's on`,
         );
       // A merged component ships with the one it's merged into: that one must be built too.
       const into = merged(c) ? String(c.attrs!.mergedInto) : null;
@@ -399,7 +403,7 @@ export const CHECKS: Record<string, Check> = {
       if (needed && held(m)) problems.push(`media ${m.key} is used by the demo but held`);
       else if (!needed && kept(m))
         problems.push(
-          `media ${m.key} isn't used on the homepage, 404, header, footer or navigation: leave it out, or list its pages`,
+          `media ${m.key} isn't used on the pages the demo builds, header, footer or navigation: leave it out, or list its pages`,
         );
     }
 
@@ -413,7 +417,7 @@ export const CHECKS: Record<string, Check> = {
     return problems.length
       ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))
       : pass(
-          `The demo builds ${count('pages')} pages, ${count('templates')} templates, ${count('components')} components and ${count('media')} media${heldCount ? `; ${heldCount} items are held, not built` : ''}.`,
+          `The demo builds ${plural(count('pages'), 'page')}, ${plural(count('templates'), 'template')}, ${plural(count('components'), 'component')} and ${count('media')} media${heldCount ? `; ${heldCount} items are held, not built` : ''}.`,
         );
   },
 
