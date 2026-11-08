@@ -373,6 +373,13 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       policy,
       browser: chromium,
       assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
+      // The source site's pages are read once and reused for six hours; the new site's never.
+      sourceHosts: (projectId) => {
+        const url = opts.projections.get(projectId)?.sourceUrl;
+        if (!url) return [];
+        const host = new URL(url).hostname;
+        return [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`];
+      },
     }),
     new ValidatorsToolServer({
       blobs,

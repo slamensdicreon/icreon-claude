@@ -774,3 +774,62 @@ describe('blueprint.personas', () => {
     expect(r).toMatchObject({ status: 'fail', detail: 'no personas.' });
   });
 });
+
+describe('blueprint.coverage on a sampled site', () => {
+  const run = (blueprint: unknown, inventory: unknown) =>
+    CHECKS['blueprint.coverage']!({
+      projectId: 'p1',
+      library: {
+        read: async (_p: string, id: string) =>
+          id === 'blueprint'
+            ? { content: JSON.stringify(blueprint) }
+            : id === 'page-inventory'
+              ? { content: JSON.stringify(inventory) }
+              : null,
+      },
+    } as never);
+  const component = {
+    key: 'hero',
+    name: 'Hero',
+    pilot: true,
+    attrs: { fields: ['title'], rendering: 'Hero', queryBudget: 1 },
+  };
+  const blueprint = (scope?: unknown) => ({
+    version: 1,
+    collections: {
+      pages: [{ key: 'home', name: 'Home', attrs: { path: '/', template: 'home' } }],
+      templates: [{ key: 'home', name: 'Home' }],
+      components: [component],
+    },
+    ...(scope ? { scope } : {}),
+  });
+  // Paylocity: the crawl read 64 pages of the 2,693 the sitemap lists.
+  const inventory = {
+    pages: [{ path: '/' }],
+    crawl: { pagesFound: 2693, pagesInventoried: 1, partial: true },
+  };
+
+  it('asks for the scope decision when Discovery read only part of the site, and shows it', async () => {
+    const missing = await run(blueprint(), inventory);
+    expect(missing.status).toBe('fail');
+    expect(missing.detail).toContain('the inventory covers 1 of 2693 pages found');
+    const decided = await run(
+      blueprint({
+        pagesFound: 2693,
+        approach: 'Blog and resources (2,400 pages) are imported in bulk after launch.',
+      }),
+      inventory,
+    );
+    expect(decided.status).toBe('pass');
+    expect(decided.detail).toContain('Covers 1 of 2693 pages found: Blog and resources');
+    // A site read whole needs no scope.
+    expect(
+      (
+        await run(blueprint(), {
+          pages: [{ path: '/' }],
+          crawl: { pagesFound: 1, pagesInventoried: 1 },
+        })
+      ).status,
+    ).toBe('pass');
+  });
+});
