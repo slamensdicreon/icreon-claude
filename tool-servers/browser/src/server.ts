@@ -119,12 +119,17 @@ const BROWSER_HEADERS = {
 
 /**
  * What an asset download accepts: formats the media library files as images. Image CDNs pick the
- * format from Accept, not the URL (Scene7 sent Microsoft's promo as AVIF even with ?fmt=png while
- * the request accepted AVIF), and SitecoreAI stores AVIF as a plain file.
+ * format from Accept and the user agent, not the URL (Scene7 sent Microsoft's promo as AVIF, then
+ * WebP, even with ?fmt=png), and SitecoreAI stores AVIF as a plain file.
  */
 const ASSET_HEADERS = {
-  ...BROWSER_HEADERS,
-  accept: 'image/png,image/jpeg,image/gif,image/svg+xml,image/webp;q=0.9,*/*;q=0.5',
+  // Not a browser's: image CDNs (Akamai in front of Scene7) convert for what the user agent can
+  // show, so Chrome's gets WebP or AVIF whatever the URL asks for (Microsoft's promo: 3.7 KB WebP
+  // as Chrome, the real 57 KB PNG as anything else). A site that refuses this gets the real
+  // browser, below.
+  'user-agent': 'Launchworks-media/1.0 (asset download for a site migration)',
+  accept: 'image/png,image/jpeg,image/gif,image/svg+xml,*/*;q=0.5',
+  'accept-language': 'en-US,en;q=0.9',
 };
 
 const CATALOG: OperationCatalog = {
