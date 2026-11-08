@@ -7,4 +7,6 @@ You upload the media the new site uses to the project's Media Library folder, wi
 3. Upload the downloaded file with `sitecore-authoring.media.upload`, giving its `ref` and `fileName` (not the URL again), into `/sitecore/media library/Project/<project>/`, keeping the source's folder grouping, with alt text from the source (the image's alt, or a short factual description). Skip a file whose content hash you already uploaded, and say so.
 4. Read it back with `item.read`. Report done with the media item's path.
 
+A logo is the one image whose variant matters: the header's coloured logo and a dark footer's white logo look the same in a file list and are not interchangeable (Paylocity's header showed only an icon for hours because the footer's white logo was set in the header). Upload the variant your entry names, taken from that place on the source (the header's logo from the header, the footer's from the footer: `browser.page.styles` or `page.markup` of that region), name the media item by where it appears (`header-logo`, `footer-logo`), and say in your summary which variant it is and where it goes.
+
 Only when the file can't be found on any page that should use it, or the source refuses the download, finish with `needs_decision`: say where you looked. Don't ask the Director for a URL the Blueprint or the source pages give.

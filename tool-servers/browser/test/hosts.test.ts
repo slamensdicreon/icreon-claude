@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { afterEach, vi } from 'vitest';
-import { fetchPolitely, hostAllowed, pause, retryDelayMs, siteOf, withSibling } from '../src';
+import {
+  BrowserToolServer,
+  fetchPolitely,
+  hostAllowed,
+  layoutData,
+  looksLikeBotCheck,
+  pause,
+  retryDelayMs,
+  siteOf,
+  withSibling,
+} from '../src';
 
 describe('hostAllowed', () => {
   const policy = {
@@ -63,5 +73,64 @@ describe('slowing down when a site asks', () => {
     fetchMock.mockImplementation(async () => new Response('', { status: 429 }));
     expect((await fetchPolitely('https://www.paylocity.com/pricing/', {})).status).toBe(429);
     expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+});
+
+describe('reading the source once', () => {
+  it('reuses a source page read, reads the new site fresh, and never keeps a bot check', async () => {
+    const server = new BrowserToolServer({
+      policy: () => ({ allowedHosts: ['www.paylocity.com', 'paylocity-editing.vercel.app'] }),
+      blobs: {} as never,
+      browser: {} as never,
+      sourceHosts: () => ['www.paylocity.com', 'paylocity.com'],
+    });
+    let body: unknown = { title: 'Pricing', content: ['Plans'] };
+    const fresh = vi
+      .spyOn(server as unknown as { callFresh: () => Promise<unknown> }, 'callFresh')
+      .mockImplementation(async () => ({ code: 200, body, summary: 'Snapshot of pricing' }));
+    const ctx = { projectId: 'p1' };
+    const pricing = { url: 'https://www.paylocity.com/pricing/' };
+    expect((await server.call('snapshot', pricing, ctx)).code).toBe(200);
+    const again = await server.call('snapshot', pricing, ctx);
+    expect(again.summary).toContain('read earlier, not re-read');
+    expect(fresh).toHaveBeenCalledTimes(1);
+    // The new site is always read fresh.
+    await server.call('snapshot', { url: 'https://paylocity-editing.vercel.app/pricing' }, ctx);
+    await server.call('snapshot', { url: 'https://paylocity-editing.vercel.app/pricing' }, ctx);
+    expect(fresh).toHaveBeenCalledTimes(3);
+    // Paylocity's Cloudflare check: not the page, and not kept.
+    body = { title: 'Just a moment...', content: ['Verify you are human'] };
+    const check = await server.call(
+      'snapshot',
+      { url: 'https://www.paylocity.com/benefits/' },
+      ctx,
+    );
+    expect(check.code).toBe(422);
+    expect(check.summary).toContain('bot check');
+    expect(looksLikeBotCheck({ title: 'Benefits' })).toBe(false);
+    await server.call('snapshot', { url: 'https://www.paylocity.com/benefits/' }, ctx);
+    expect(fresh).toHaveBeenCalledTimes(5);
+  });
+
+  it('marks a component the layout service could not fill', () => {
+    const push = (v: unknown) =>
+      `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify(v))}])</script>`;
+    const html =
+      push({
+        uid: '11111111-1111-1111-1111-111111111111',
+        componentName: 'SiteHeader',
+        dataSource: '{A}',
+        isContentResolved: true,
+        fields: { title: { value: 'x' } },
+      }) +
+      push({
+        uid: '22222222-2222-2222-2222-222222222222',
+        componentName: 'SiteFooter',
+        dataSource: '{B}',
+        isContentResolved: false,
+      });
+    const comps = layoutData(html);
+    expect(comps.find((c) => c.name === 'SiteHeader')?.contentResolved).toBeUndefined();
+    expect(comps.find((c) => c.name === 'SiteFooter')?.contentResolved).toBe(false);
   });
 });

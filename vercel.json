@@ -144,6 +144,12 @@
       }
     },
     {
+      "source": "/proposals/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/cypher",
       "destination": {
         "service": "api"

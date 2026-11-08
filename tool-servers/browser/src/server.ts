@@ -29,6 +29,14 @@ export interface BrowserServerOptions {
    * stop short of that and hand back the pages read.
    */
   crawlTimeMs?: number;
+  /**
+   * The source site's hosts per project. Reads of their pages are kept for `readCacheMs` and
+   * answered again without going back to the site: a large site throttles, then bot-checks, a team
+   * that re-reads the same pages on every attempt. The new site's pages are always read fresh.
+   */
+  sourceHosts?: (projectId: string) => string[];
+  /** How long a source page read is reused (default 6 hours; 0 turns reuse off). */
+  readCacheMs?: number;
 }
 
 /**
@@ -184,7 +192,7 @@ const CATALOG: OperationCatalog = {
   },
   'page.data': {
     description:
-      "A page's content as its CMS delivered it, when the page embeds its layout data (Next.js sites on Sitecore, SitecoreAI or XM Cloud do): each component in order, with its datasource and fields (text, rich text, images with src and alt, links with href, child items with their fields). It includes what the page renders only in the browser (carousels, tabs, team and award lists) and link targets a snapshot shows only as button text. Without `component`, every component up to `maxChars` (default 40000); give `component` (a name from the list) for that one in full. Returns no components when the page embeds no layout data: use snapshot and page.markup then.",
+      "A page's content as its CMS delivered it, when the page embeds its layout data (Next.js sites on Sitecore, SitecoreAI or XM Cloud do): each component in order, with its datasource and fields (text, rich text, images with src and alt, links with href, child items with their fields). It includes what the page renders only in the browser (carousels, tabs, team and award lists) and link targets a snapshot shows only as button text. Without `component`, every component up to `maxChars` (default 40000); give `component` (a name from the list) for that one in full. Returns no components when the page embeds no layout data: use snapshot and page.markup then. A component with `contentResolved: false` got no content at all: its rendering's Component Query failed (a field or template it names doesn't exist) or its datasource didn't resolve; adding content won't fix it.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -266,7 +274,50 @@ export class BrowserToolServer implements ToolServer {
     return this.browser.withContext(policy, fn);
   }
 
+  /** Source page reads, by project, operation and arguments: reused, not re-read (see `sourceHosts`). */
+  private readonly reads = new Map<string, { at: number; result: ToolResult }>();
+
   async call(
+    op: string,
+    args: Record<string, unknown>,
+    ctx: { projectId: string },
+  ): Promise<ToolResult> {
+    if (!SOURCE_READS.has(op)) return this.callFresh(op, args, ctx);
+    const host = (() => {
+      try {
+        return new URL(String(args.url)).hostname.toLowerCase();
+      } catch {
+        return '';
+      }
+    })();
+    const fromSource =
+      !!host &&
+      (this.opts.sourceHosts?.(ctx.projectId) ?? []).some((h) => h.toLowerCase() === host);
+    if (!fromSource) return this.callFresh(op, args, ctx);
+    const ttl = this.opts.readCacheMs ?? 6 * 60 * 60 * 1000;
+    const key = `${ctx.projectId}|${op}|${JSON.stringify(args)}`;
+    const kept = this.reads.get(key);
+    if (ttl > 0 && kept && Date.now() - kept.at < ttl)
+      return {
+        ...kept.result,
+        summary: `${kept.result.summary ?? ''} (read earlier, not re-read)`,
+      };
+    const result = await this.callFresh(op, args, ctx);
+    // A bot check or a challenge page is not the page: say so, and never keep it.
+    if (result.code < 400 && looksLikeBotCheck(result.body))
+      return {
+        code: 422,
+        body: { error: 'The site answered with a bot check, not the page.', url: args.url },
+        summary: `${host} answered with a bot check (a Cloudflare or captcha challenge), not the page: don't build or compare from it; use what Discovery captured, or try later`,
+      };
+    if (ttl > 0 && result.code === 200) {
+      this.reads.set(key, { at: Date.now(), result });
+      if (this.reads.size > 500) this.reads.delete(this.reads.keys().next().value!);
+    }
+    return result;
+  }
+
+  private async callFresh(
     op: string,
     args: Record<string, unknown>,
     ctx: { projectId: string },
@@ -942,4 +993,15 @@ export async function gotoPolitely(
     res = await page.goto(url, opts);
   }
   return res;
+}
+
+/** Read-only page operations whose source-site results are reused (see `sourceHosts`). */
+const SOURCE_READS = new Set(['snapshot', 'page.markup', 'page.styles', 'page.data']);
+
+/** A challenge page in place of the site: Cloudflare's, a captcha, a "checking your browser". */
+export function looksLikeBotCheck(body: unknown): boolean {
+  const text = JSON.stringify(body ?? '').slice(0, 20_000);
+  return /Just a moment\.\.\.|Verify you are human|Checking your browser|cf-chl-|Attention Required! \| Cloudflare|challenges\.cloudflare\.com|captcha-delivery|Please enable JS and disable any ad blocker/i.test(
+    text,
+  );
 }
