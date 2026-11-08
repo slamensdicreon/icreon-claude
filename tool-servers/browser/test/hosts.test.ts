@@ -150,8 +150,10 @@ describe('naming a downloaded file', () => {
     });
     let type = 'image/png';
     const accepts: string[] = [];
+    const agents: string[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_u, init) => {
       accepts.push(String((init?.headers as Record<string, string>)?.accept));
+      agents.push(String((init?.headers as Record<string, string>)?.['user-agent']));
       return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': type } });
     });
     // Microsoft's Scene7 images: no extension in the URL.
@@ -161,7 +163,9 @@ describe('naming a downloaded file', () => {
     expect(png.summary).toContain('png');
     // Image CDNs choose the format from Accept: the download never offers AVIF.
     expect(accepts.at(-1)).toMatch(/^image\/png/);
-    expect(accepts.at(-1)).not.toContain('avif');
+    expect(accepts.at(-1)).not.toMatch(/avif|webp/);
+    // Nor a browser's user agent, which image CDNs convert for (Scene7 sent Chrome WebP).
+    expect(agents.at(-1)).not.toMatch(/Chrome|Safari/);
     type = 'image/avif';
     const avif = await server.call('fetch.asset', { url }, { projectId: 'p1' });
     expect(keys.at(-1)).toMatch(/\.avif$/);
