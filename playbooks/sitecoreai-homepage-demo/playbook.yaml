@@ -3,7 +3,7 @@
 # homepage, the 404 page, the header, the footer and the navigation, through parity and deploy. It runs on our own tenant and closes at Gate 2; a signed
 # client's build starts from scratch on sitecoreai-migration. Plan: docs/architecture/homepage-demo-playbook.md.
 id: sitecoreai-homepage-demo
-version: 0.2.2
+version: 0.2.3
 name: SitecoreAI homepage demo
 description: >-
   Audits a prospect's whole site in numbers, then blueprints and builds their homepage, 404 page,
@@ -186,7 +186,7 @@ phases:
     shortName: Components
     exitCriteria: >-
       Every component in the demo slice ported, registered, integrated into the editing host and
-      offered in Page builder with its own datasource; the site on its own editing host.
+      offered in Page builder with its own datasource; the site on its own editing host. The header, footer and navigation first: their partial designs on the page designs and their shared content filled, before templates and pages.
   - number: 5
     name: Templates, layouts, and designs
     shortName: Templates

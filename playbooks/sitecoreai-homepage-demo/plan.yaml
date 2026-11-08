@@ -138,7 +138,8 @@ templates:
     phase: 4
     role: structural-validator
     title: Prove the homepage components are ready for drag and drop
-    dependsOn: [switch-editing-host]
+    # With the header and footer on the editing host: their faults surface here, not on the pages.
+    dependsOn: [switch-editing-host, partial-designs]
     # What Page builder needs to offer each slice component in the toolbox and create its content
     # when it's dragged onto a page. The Director drags and drops in Page builder at Gate 2.
     acceptance:
@@ -146,6 +147,7 @@ templates:
         validator:structural.renderings,
         validator:editor.component-enabled,
         validator:editor.new-datasource,
+        validator:head.header-footer,
       ]
   - id: validate-components
     phase: 4
@@ -156,11 +158,14 @@ templates:
 
   # 5 — Templates, layouts and designs
   - id: partial-designs
-    phase: 5
+    phase: 4
     role: rendering-registrar
     title: Create header and footer partial designs, with the navigation
-    # Partial designs bind the header's and footer's renderings: they must be registered first.
-    dependsOn: [register-*]
+    # The header, footer and navigation come first: every page and template check looks at them.
+    # Their partial designs need only those components registered and on the editing host, not
+    # every component (`{shared}`: the shared items' tasks; before 0.14.0/0.2.3 this waited on
+    # register-* in phase 5, so the header appeared after the whole component build).
+    dependsOn: ['register-{shared}', 'integrate-{shared}']
     acceptance: [validator:head.header-footer]
   - id: template-{key}
     phase: 5
@@ -181,9 +186,11 @@ templates:
   # The shared header, footer and navigation are filled once, before the pages (as on the website
   # playbook): the demo's outcome includes them, and the homepage and 404 page both show them.
   - id: migrate-shared-chrome
-    phase: 6
+    phase: 4
     role: content-migrator
     title: Fill the shared header, footer and navigation
+    # Real header and footer content as soon as their designs exist, before templates and pages.
+    dependsOn: [partial-designs]
     acceptance: [validator:head.header-footer, validator:parity.chrome]
   - id: migrate-pages-{key}
     phase: 6
