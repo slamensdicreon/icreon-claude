@@ -487,9 +487,12 @@ export class BrowserToolServer implements ToolServer {
   }
 
   private async crawl(policy: UrlPolicy, start: string, maxPages: number): Promise<ToolResult> {
-    const origin = (await assertNavigable(start, policy)).origin;
+    // The site is where the start URL lands: microsoft.com sends every visitor to
+    // www.microsoft.com, whose links all point there. Crawling the first address kept one page.
+    const landed = await this.landing(policy, (await assertNavigable(start, policy)).toString());
+    const origin = landed.origin;
     const fromSitemap = await this.sitemap(policy, origin);
-    const queue = [canonical(start), ...fromSitemap];
+    const queue = [canonical(landed.toString()), ...fromSitemap];
     const deadline = Date.now() + (this.opts.crawlTimeMs ?? 7 * 60_000);
     let outOfTime = false;
     const seen = new Set<string>();
@@ -589,18 +592,84 @@ export class BrowserToolServer implements ToolServer {
     };
   }
 
-  private async sitemap(policy: UrlPolicy, origin: string): Promise<string[]> {
+  /** Where a URL lands after its redirects, each hop checked like the first; the URL itself if not. */
+  private async landing(policy: UrlPolicy, raw: string): Promise<URL> {
+    let url = new URL(raw);
     try {
-      const url = await assertNavigable(`${origin}/sitemap.xml`, policy);
-      const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) return [];
-      const xml = await res.text();
-      return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)]
-        .map((m) => safeCanonical(m[1]!))
-        .filter((u): u is string => Boolean(u) && new URL(u!).origin === origin);
+      for (let hop = 0; hop < 5; hop++) {
+        const res = await fetchPolitely(url, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: BROWSER_HEADERS,
+          signal: AbortSignal.timeout(10_000),
+        });
+        await res.body?.cancel().catch(() => {});
+        const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+        if (!to) break;
+        url = await assertNavigable(new URL(to, url).toString(), policy);
+      }
     } catch {
-      return [];
+      /* unreachable or off the project's hosts: crawl from where we are */
     }
+    return url;
+  }
+
+  /**
+   * The site's page URLs from its sitemaps: /sitemap.xml and every sitemap robots.txt lists,
+   * following redirects on the project's hosts and opening sitemap indexes (Microsoft lists one
+   * index per section in robots.txt and has no /sitemap.xml), within a URL and time budget.
+   */
+  private async sitemap(policy: UrlPolicy, origin: string): Promise<string[]> {
+    const deadline = Date.now() + 60_000;
+    const MAX_URLS = 20_000;
+    const MAX_FILES = 40;
+    const read = async (raw: string): Promise<string | null> => {
+      try {
+        let url = await assertNavigable(raw, policy);
+        for (let hop = 0; hop < 5; hop++) {
+          const res = await fetchPolitely(url, {
+            redirect: 'manual',
+            headers: BROWSER_HEADERS,
+            signal: AbortSignal.timeout(10_000),
+          });
+          const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+          if (to) {
+            await res.body?.cancel().catch(() => {});
+            url = await assertNavigable(new URL(to, url).toString(), policy);
+            continue;
+          }
+          return res.ok ? await res.text() : null;
+        }
+      } catch {
+        /* unreachable, refused, or off the project's hosts */
+      }
+      return null;
+    };
+    const robots = (await read(`${origin}/robots.txt`)) ?? '';
+    const queue = [
+      `${origin}/sitemap.xml`,
+      ...[...robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)].map((m) => m[1]!),
+    ];
+    const seen = new Set<string>();
+    const urls = new Set<string>();
+    while (queue.length && seen.size < MAX_FILES && urls.size < MAX_URLS && Date.now() < deadline) {
+      const next = queue.shift()!;
+      if (seen.has(next)) continue;
+      seen.add(next);
+      const xml = await read(next);
+      if (!xml) continue;
+      const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map((m) =>
+        m[1]!.replace(/&amp;/g, '&'),
+      );
+      if (/<sitemapindex[\s>]/i.test(xml)) queue.push(...locs);
+      else
+        for (const u of locs) {
+          const c = safeCanonical(u);
+          if (c && new URL(c).origin === origin) urls.add(c);
+          if (urls.size >= MAX_URLS) break;
+        }
+    }
+    return [...urls];
   }
 
   private async screenshot(

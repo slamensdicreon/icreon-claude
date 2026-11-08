@@ -396,3 +396,18 @@ describe('scheduling', () => {
     ]);
   });
 });
+
+describe('Blueprint scope', () => {
+  it('keeps a proper scope, and sets aside one in another shape instead of rejecting the Blueprint', () => {
+    const base = { version: 1, collections: { pages: [] } };
+    const kept = Blueprint.parse({
+      ...base,
+      scope: { pagesFound: 2693, approach: 'Blog posts are imported in bulk after launch.' },
+    });
+    expect(kept.scope).toMatchObject({ pagesFound: 2693, sections: [] });
+    // Microsoft's demo Solution Architect wrote a scope naming its two pages, with no approach.
+    const odd = Blueprint.safeParse({ ...base, scope: { pages: ['/', '/404'], note: 'demo' } });
+    expect(odd.success).toBe(true);
+    expect(odd.success && odd.data.scope).toBeUndefined();
+  });
+});
