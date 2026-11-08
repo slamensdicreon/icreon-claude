@@ -2,7 +2,7 @@
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
 # SitecoreAI platform pack in platforms/sitecoreai.
 id: sitecoreai-migration
-version: 0.13.0
+version: 0.14.0
 name: Build a SitecoreAI website
 description: >-
   Rebuilds a client's site from its Next.js repository as a Content SDK site on SitecoreAI,
@@ -210,7 +210,9 @@ phases:
       Pilot slice proven end to end first: its components ported and registered, a page composed, a
       scoped publish tracked to completion, the layout read back from Experience Edge, and a real Page
       builder edit (including a new page whose datasource is its own). Then 100% of Blueprint components
-      ported, registered and enabled in Page builder on the preview editing host.
+      ported, registered and enabled in Page builder on the preview editing host. The header, footer
+      and navigation are in the pilot: their partial designs on the page designs and their shared
+      content filled before templates and pages.
   - number: 5
     name: Templates, layouts, and designs
     shortName: Templates

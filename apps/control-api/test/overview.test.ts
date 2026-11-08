@@ -180,10 +180,9 @@ describe('GET /projects/:id/mission-control', () => {
       expect(row.read).toMatch(/\.$/);
       expect(row.reports!.length).toBeGreaterThan(0);
     }
-    expect(lead('content-lead')).toMatchObject({
-      read: 'Standing by until migration, phase six.',
-      readTone: 'quiet',
-    });
+    // In phase 4 the Content Lead fills the shared header, footer and navigation (0.14.0), so it
+    // isn't standing by until migration any more.
+    expect(lead('content-lead')).toMatchObject({ read: 'One migrating.', readTone: 'normal' });
     expect(lead('discovery-lead').read).toMatch(/^Done\./);
     expect(lead('engineering-lead').read).toMatch(/^\w+ building/);
     expect(lead('engineering-lead').face!.name).toBe('Marcus Reyes');
