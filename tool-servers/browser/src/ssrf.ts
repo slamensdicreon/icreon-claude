@@ -74,6 +74,57 @@ export function hostAllowed(host: string, policy: UrlPolicy): boolean {
   });
 }
 
+/**
+ * Domains many unrelated customers get subdomains of: two hosts under one of these are not the
+ * same organisation, so neither stands for the other.
+ */
+const SHARED_SUFFIXES = [
+  'vercel.app',
+  'netlify.app',
+  'github.io',
+  'herokuapp.com',
+  'cloudfront.net',
+  'amazonaws.com',
+  'azureedge.net',
+  'azurewebsites.net',
+  'blob.core.windows.net',
+  'web.app',
+  'firebaseapp.com',
+  'pages.dev',
+  'workers.dev',
+  'sitecorecloud.io',
+  'akamaized.net',
+  'fastly.net',
+  'googleusercontent.com',
+  'cdn.jsdelivr.net',
+];
+
+/** A host's site: its last two labels, or three under a two-letter country code (`acme.co.uk`). */
+export function siteOf(host: string): string | null {
+  const h = host.toLowerCase().replace(/\.$/, '');
+  if (isIP(h) || !h.includes('.')) return null;
+  if (SHARED_SUFFIXES.some((s) => h === s || h.endsWith(`.${s}`))) return null;
+  const labels = h.split('.');
+  const tld = labels.at(-1)!;
+  const second = labels.at(-2)!;
+  const n = tld.length === 2 && /^(co|com|net|org|gov|ac|edu)$/.test(second) ? 3 : 2;
+  return labels.length >= n ? labels.slice(-n).join('.') : null;
+}
+
+/**
+ * The policy plus `host` when it is a sibling of an exactly allowed host, on the same site
+ * (`play.vidyard.com` allowed, so `cdn.vidyard.com` too: a media host and its CDN). Used for asset
+ * downloads only, which stay checked for private addresses.
+ */
+export function withSibling(policy: UrlPolicy, host: string): UrlPolicy {
+  const h = host.toLowerCase();
+  if (hostAllowed(h, policy)) return policy;
+  const site = siteOf(h);
+  if (!site) return policy;
+  const sibling = policy.allowedHosts.some((e) => !e.includes('*') && siteOf(e) === site);
+  return sibling ? { ...policy, allowedHosts: [...policy.allowedHosts, h] } : policy;
+}
+
 /** Checks a URL the agent asked for: scheme, declared host, and every address it resolves to. */
 export async function assertNavigable(raw: string, policy: UrlPolicy): Promise<URL> {
   let url: URL;
