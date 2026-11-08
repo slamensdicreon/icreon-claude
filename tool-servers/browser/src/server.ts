@@ -117,6 +117,16 @@ const BROWSER_HEADERS = {
   'accept-language': 'en-US,en;q=0.9',
 };
 
+/**
+ * What an asset download accepts: formats the media library files as images. Image CDNs pick the
+ * format from Accept, not the URL (Scene7 sent Microsoft's promo as AVIF even with ?fmt=png while
+ * the request accepted AVIF), and SitecoreAI stores AVIF as a plain file.
+ */
+const ASSET_HEADERS = {
+  ...BROWSER_HEADERS,
+  accept: 'image/png,image/jpeg,image/gif,image/svg+xml,image/webp;q=0.9,*/*;q=0.5',
+};
+
 const CATALOG: OperationCatalog = {
   crawl: {
     description:
@@ -829,7 +839,7 @@ export class BrowserToolServer implements ToolServer {
     for (let hop = 0; hop < 5; hop++) {
       res = await fetchPolitely(url, {
         redirect: 'manual',
-        headers: BROWSER_HEADERS,
+        headers: ASSET_HEADERS,
         signal: AbortSignal.timeout(30_000),
       });
       const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
@@ -1110,4 +1120,4 @@ export function sniffExt(b: Uint8Array): string | null {
 
 /** SitecoreAI doesn't file AVIF as an image: no alt text, no size. */
 const AVIF_NOTE =
-  '. AVIF: the media library would store it as a plain file, not an image. Ask the image server for PNG or JPEG instead (Scene7: add ?fmt=png-alpha or ?fmt=jpg; others: an Accept or format parameter) and upload that';
+  '. AVIF: the media library would store it as a plain file, not an image. The download already asks for PNG or JPEG; this server sent AVIF anyway, so add a format parameter (Scene7: ?fmt=png-alpha or ?fmt=jpg) and fetch it again';
