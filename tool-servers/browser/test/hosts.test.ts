@@ -149,15 +149,19 @@ describe('naming a downloaded file', () => {
       browser: {} as never,
     });
     let type = 'image/png';
-    vi.spyOn(globalThis, 'fetch').mockImplementation(
-      async () =>
-        new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': type } }),
-    );
+    const accepts: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_u, init) => {
+      accepts.push(String((init?.headers as Record<string, string>)?.accept));
+      return new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': type } });
+    });
     // Microsoft's Scene7 images: no extension in the URL.
     const url = 'http://127.0.0.1/is/image/microsoftcorp/Promo-Card-Vertical-Xbox-Series-S-White';
     const png = await server.call('fetch.asset', { url }, { projectId: 'p1' });
     expect(keys.at(-1)).toMatch(/\.png$/);
     expect(png.summary).toContain('png');
+    // Image CDNs choose the format from Accept: the download never offers AVIF.
+    expect(accepts.at(-1)).toMatch(/^image\/png/);
+    expect(accepts.at(-1)).not.toContain('avif');
     type = 'image/avif';
     const avif = await server.call('fetch.asset', { url }, { projectId: 'p1' });
     expect(keys.at(-1)).toMatch(/\.avif$/);
