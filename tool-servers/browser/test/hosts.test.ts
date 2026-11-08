@@ -9,6 +9,7 @@ import {
   pause,
   retryDelayMs,
   siteOf,
+  sniffExt,
   withSibling,
 } from '../src';
 
@@ -132,5 +133,34 @@ describe('reading the source once', () => {
     const comps = layoutData(html);
     expect(comps.find((c) => c.name === 'SiteHeader')?.contentResolved).toBeUndefined();
     expect(comps.find((c) => c.name === 'SiteFooter')?.contentResolved).toBe(false);
+  });
+});
+
+describe('naming a downloaded file', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('names an extensionless image by what the server sent, and warns about AVIF', async () => {
+    expect(sniffExt(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('jpg');
+    expect(sniffExt(new TextEncoder().encode('<?xml version="1.0"?><svg></svg>'))).toBe('svg');
+    expect(sniffExt(new Uint8Array([1, 2, 3]))).toBeNull();
+    const keys: string[] = [];
+    const server = new BrowserToolServer({
+      policy: () => ({ allowedHosts: ['127.0.0.1'], allowPrivateNetworks: true }),
+      blobs: { put: async (_p: string, k: string) => (keys.push(k), `blob://p1/${k}`) } as never,
+      browser: {} as never,
+    });
+    let type = 'image/png';
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': type } }),
+    );
+    // Microsoft's Scene7 images: no extension in the URL.
+    const url = 'http://127.0.0.1/is/image/microsoftcorp/Promo-Card-Vertical-Xbox-Series-S-White';
+    const png = await server.call('fetch.asset', { url }, { projectId: 'p1' });
+    expect(keys.at(-1)).toMatch(/\.png$/);
+    expect(png.summary).toContain('png');
+    type = 'image/avif';
+    const avif = await server.call('fetch.asset', { url }, { projectId: 'p1' });
+    expect(keys.at(-1)).toMatch(/\.avif$/);
+    expect(avif.summary).toContain('fmt=png-alpha');
   });
 });

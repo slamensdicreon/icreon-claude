@@ -68,6 +68,19 @@ const MEDIA_TYPES: Record<string, string> = {
   mp4: 'video/mp4',
 };
 
+/** An image's type from its first bytes. */
+function sniffImage(b: Uint8Array): string | null {
+  const at = (i: number, ...v: number[]) => v.every((x, j) => b[i + j] === x);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'png';
+  if (at(0, 0xff, 0xd8, 0xff)) return 'jpg';
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'gif';
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'webp';
+  if (at(4, 0x66, 0x74, 0x79, 0x70) && at(8, 0x61, 0x76, 0x69, 0x66)) return 'avif';
+  const head = new TextDecoder().decode(b.slice(0, 256)).trimStart();
+  if (/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(head)) return 'svg';
+  return null;
+}
+
 const Path = z.string().startsWith('/sitecore/').max(500);
 const Field = z.object({ name: z.string().min(1), value: z.string() });
 const ReadArgs = z.object({
@@ -1058,9 +1071,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           404,
         );
       }
-      const ext = /\.([a-z0-9]{2,5})$/i.exec(a.data.ref)?.[1]?.toLowerCase() ?? 'bin';
+      let ext = /\.([a-z0-9]{2,5})$/i.exec(a.data.ref)?.[1]?.toLowerCase() ?? 'bin';
+      // A file stored before its type was known (an image server's URL with no extension).
+      if (!MEDIA_TYPES[ext]) ext = sniffImage(bytes) ?? ext;
+      if (ext === 'avif')
+        return rejected(
+          'SitecoreAI stores AVIF as a plain file, not an image (no alt text, no size). Download it as PNG or JPEG instead (Scene7: add ?fmt=png-alpha or ?fmt=jpg to the URL) with browser.fetch.asset, and upload that ref.',
+        );
       type = MEDIA_TYPES[ext] ?? 'application/octet-stream';
-      name = a.data.fileName ?? `${a.data.itemPath.split('/').pop() || 'file'}.${ext}`;
+      // The file name's extension is what the media library files it by: keep it true to the bytes.
+      const given = a.data.fileName?.replace(/\.[a-z0-9]{2,5}$/i, '');
+      name = `${given || a.data.itemPath.split('/').pop() || 'file'}.${ext}`;
       from = a.data.ref;
     } else {
       const source = new URL(a.data.sourceUrl!);

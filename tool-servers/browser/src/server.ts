@@ -876,12 +876,19 @@ export class BrowserToolServer implements ToolServer {
         summary: `Couldn't download ${url.pathname}: HTTP ${status} from ${url.host}${status === 403 ? ' (the site refused it, also to a real browser)' : ''}`,
       };
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const ext = (/\.([a-z0-9]{2,5})$/i.exec(url.pathname)?.[1] ?? 'bin').toLowerCase();
+    // An image server's URL often has no extension (Scene7: /is/image/microsoftcorp/Promo-Card):
+    // name the file from what the server says it sent, so the media library files it as an image.
+    const ext = (
+      /\.([a-z0-9]{2,5})$/i.exec(url.pathname)?.[1] ??
+      TYPE_EXT[contentType.split(';')[0]!.trim().toLowerCase()] ??
+      sniffExt(bytes) ??
+      'bin'
+    ).toLowerCase();
     const ref = await this.opts.blobs.put(projectId, `assets/${sha256}.${ext}`, bytes, contentType);
     return {
       code: 200,
       body: { url: url.toString(), contentType, bytes: bytes.length, sha256, ref },
-      summary: `Fetched ${url.pathname} (${bytes.length} bytes)`,
+      summary: `Fetched ${url.pathname} (${bytes.length} bytes, ${ext})${ext === 'avif' ? AVIF_NOTE : ''}`,
     };
   }
 }
@@ -1074,3 +1081,33 @@ export function looksLikeBotCheck(body: unknown): boolean {
     text,
   );
 }
+
+/** File extensions by the type a server reports, for URLs that carry none. */
+const TYPE_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'application/pdf': 'pdf',
+  'video/mp4': 'mp4',
+};
+
+/** An image's type from its first bytes, when neither the URL nor the server says. */
+export function sniffExt(b: Uint8Array): string | null {
+  const at = (i: number, ...v: number[]) => v.every((x, j) => b[i + j] === x);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'png';
+  if (at(0, 0xff, 0xd8, 0xff)) return 'jpg';
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'gif';
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'webp';
+  if (at(4, 0x66, 0x74, 0x79, 0x70) && at(8, 0x61, 0x76, 0x69, 0x66)) return 'avif';
+  const head = new TextDecoder().decode(b.slice(0, 256)).trimStart();
+  if (/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(head)) return 'svg';
+  return null;
+}
+
+/** SitecoreAI doesn't file AVIF as an image: no alt text, no size. */
+const AVIF_NOTE =
+  '. AVIF: the media library would store it as a plain file, not an image. Ask the image server for PNG or JPEG instead (Scene7: add ?fmt=png-alpha or ?fmt=jpg; others: an Accept or format parameter) and upload that';
