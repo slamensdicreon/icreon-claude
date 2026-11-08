@@ -853,7 +853,11 @@ export function discoveryChecks(cfg: VerifyConfig): Record<string, PlatformCheck
         (p) => p.status !== 'drop' && (itemPath(p) === '/404' || errorStatusOf(p) === 404),
       );
       const misplaced = errorPages.filter((p) => itemPath(p) !== '/404');
-      if (!errorPages.length)
+      // A 404 page recorded as dropped is a decision too (the homepage demo builds none).
+      const decidedOut = all('pages').some(
+        (p) => p.status === 'drop' && (itemPath(p) === '/404' || errorStatusOf(p) === 404),
+      );
+      if (!errorPages.length && !decidedOut)
         problems.push(
           `the Blueprint plans no 404 page: add a page with attrs.path "/404" and attrs.errorPage: 404 (copy from the inventory's errorPage). Next.js reserves /404, so the page never renders at its own path: the site's error-handling setting points at it, and it is checked at a URL that doesn't exist`,
         );

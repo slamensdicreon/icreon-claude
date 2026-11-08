@@ -1,4 +1,4 @@
-**The homepage demo.** This project builds only the prospect's homepage, its 404 page, the header, the footer and the navigation. Inventory just those: the components and design system they use (from the repository's code for those pages, or read from the live site), and the assets on them. Leave other pages' components out; the rest of the site is audited in numbers from the crawl, not component by component.
+**The homepage demo.** This project builds only the prospect's homepage, the header, the footer and the navigation. Inventory just those: the components and design system they use (from the repository's code for those pages, or read from the live site), and the assets on them. Leave other pages' components out; the rest of the site is audited in numbers from the crawl, not component by component.
 
 How you work:
 

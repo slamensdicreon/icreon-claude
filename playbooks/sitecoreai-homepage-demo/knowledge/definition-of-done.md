@@ -1,6 +1,6 @@
 ## Reference: Definition of Done (homepage demo)
 
-The demo builds the homepage, the 404 page, the header, the footer and the navigation, after a
+The demo builds the homepage, the header, the footer and the navigation, after a
 whole-site audit. The Director accepts it at Gate 2 by running the drag-and-drop check in Page
 builder; the demo summary's checklist lists each row with the evidence the project already has. Each
 row needs its evidence, recorded as a document or Activity step. A row without evidence is
@@ -14,11 +14,11 @@ row needs its evidence, recorded as a document or Activity step. A row without e
 | Independence        | A component dragged onto the page gets its own datasource; shared header, footer and navigation reuse is intentional     | Distinct item IDs                                               |
 | Header and footer   | Partial designs on both templates; the navigation is its own component on a shared datasource                            | head.header-footer; the Director's navigation edit              |
 | Genuine CMS content | Every editable field on the homepage comes from SitecoreAI; no mock data hiding missing fields                           | Field-to-component matrix and read-back                         |
-| Parity              | The homepage and 404 match the source: render, visual at three breakpoints, content                                      | Parity report                                                   |
+| Parity              | The homepage matches the source: render, visual at three breakpoints, content                                            | Parity report                                                   |
 | Media               | The homepage's and the chrome's assets load, with alt text where required                                                | Media read-back and the parity report                           |
 | Code quality        | Typecheck, lint and the connected build pass on pinned dependencies                                                      | Command logs tied to the commit                                 |
 | Editing host        | Correct repository, commit and host; Page builder renders the homepage without missing-component errors                  | Deployment record and the Director's check                      |
-| Publishing          | The homepage and 404 reach Experience Edge and resolve on the preview URL                                                | Publish job record, Edge layout, route check                    |
+| Publishing          | The homepage reaches Experience Edge and resolves on the preview URL                                                     | Publish job record, Edge layout, route check                    |
 | Security            | No credentials shipped or logged; the brief's code-extraction policy followed                                            | Configuration review                                            |
 
 Not in the demo: the rest of the site's pages and components, redirects, sitemap and robots,

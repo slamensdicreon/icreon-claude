@@ -1,9 +1,9 @@
-**The homepage demo.** This project builds the prospect's homepage and 404 page, and audits the rest of their site in numbers.
+**The homepage demo.** This project builds the prospect's homepage, and audits the rest of their site in numbers.
 
 - Run the discovery crawl over the whole site as below (`browser.crawl` from the home page; it reads the sitemap too).
-- Write the page inventory for only **two pages**, in full as below: the homepage (`/`) and the 404 page (what the site shows at a URL that doesn't exist, recorded at path `/404` with `errorPage: 404`). Its `crawl` says so: `pagesFound` is the whole site's count, `pagesInventoried` 2, `partial` true, `sampling` "homepage demo: the homepage and the 404 page".
+- Write the page inventory for only **the homepage** (`/`), in full as below. Its `crawl` says so: `pagesFound` is the whole site's count, `pagesInventoried` 1, `partial` true, `sampling` "homepage demo: the homepage". Still record what the site shows at a URL that doesn't exist in `errorPage`, for the audit; the demo builds no 404 page.
 - Add `siteAudit` to the inventory, the prospect's audit of the whole site from the crawl: `pages` (each page's `path` and `title`), `templates` (the page layouts you can tell apart, with a count each), `forms`, `languages`, `mediaHosts`, `redirects` and `sites` (other domains, brands or language sites you found). Facts from the crawl only; say where a number is a floor (a crawl that stopped early, no sitemap).
-- The phase 6 re-crawl for parity (`parity-inventory`) covers the same two pages.
+- The phase 6 re-crawl for parity (`parity-inventory`) covers the homepage only.
 
 How you work:
 

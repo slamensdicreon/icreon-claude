@@ -36,14 +36,14 @@ describe('homepage demo', () => {
 
     const tasks = plan(s).tasks;
     expect(tasks.every((t) => t.state === 'done')).toBe(true);
-    // Only the slice is built: 7 components, 2 pages (the homepage and 404), 3 media.
+    // Only the slice is built: 7 components, the homepage (no 404 page from 0.2.4), 3 media.
     expect(mc.metrics.find((m) => m.key === 'components_registered')).toMatchObject({
       value: 7,
       total: 7,
     });
     expect(mc.metrics.find((m) => m.key === 'pages_migrated')).toMatchObject({
-      value: 2,
-      total: 2,
+      value: 1,
+      total: 1,
     });
     expect(tasks.map((t) => t.taskId)).not.toContain('migrate-pages-about');
     expect(tasks.map((t) => t.taskId)).toEqual(

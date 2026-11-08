@@ -59,8 +59,9 @@ describe('sitecoreai-homepage-demo playbook', () => {
       'stats-strip',
       'rich-text',
     ]);
-    expect(keys('template-')).toEqual(['home', 'content']);
-    expect(keys('migrate-pages-')).toEqual(['home', 'not-found']);
+    // From 0.2.4 the demo builds the homepage alone: the 404 page is recorded as dropped.
+    expect(keys('template-')).toEqual(['home']);
+    expect(keys('migrate-pages-')).toEqual(['home']);
     expect(keys('upload-media-')).toEqual(['logo', 'hero-home', 'card-1']);
     // No pilot checkpoint, no serialization or perf audit; the drag-and-drop check closes it.
     expect(plan.tasks.map((t) => t.taskId)).not.toContain('pilot-checkpoint');
@@ -74,7 +75,7 @@ describe('sitecoreai-homepage-demo playbook', () => {
     const { blueprint } = await loadFixtures(DEMO);
     expect(await sliceCheck(blueprint)).toMatchObject({
       status: 'pass',
-      detail: 'The demo builds 2 pages, 2 templates, 7 components and 3 media.',
+      detail: 'The demo builds 1 page, 1 template, 7 components and 3 media.',
     });
     // Projects started on 0.1.0 wrote whole-site Blueprints with the rest held.
     const old = {
@@ -103,7 +104,8 @@ describe('sitecoreai-homepage-demo playbook', () => {
     });
     expect(Object.fromEntries(snap.collections[0]!.rows.map((r) => [r.key, r.status]))).toEqual({
       home: 'planned',
-      'not-found': 'planned',
+      // The 404 page is recorded as dropped from 0.2.4; the 0.1.0 page beside it reads as held.
+      'not-found': 'dropped',
       about: 'held',
     });
   });
@@ -230,7 +232,7 @@ describe('blueprint.demo-slice', () => {
     return r.status === 'pass' ? [] : r.detail;
   };
 
-  it('passes the homepage, 404, chrome and their media kept, the rest held', async () => {
+  it('passes the homepage, chrome and their media kept (and a 0.2.3 404 page), the rest held', async () => {
     const r = await sliceCheck(base());
     expect(r).toMatchObject({ status: 'pass' });
     expect(r.detail).toContain('2 pages, 2 templates, 3 components and 1 media');
@@ -245,10 +247,8 @@ describe('blueprint.demo-slice', () => {
       attrs: { held: true, fields: [{ name: 'heading' }], variants: [{ pages: ['/'] }] },
     };
     const d = await problems(bp);
-    expect(d).toContain(
-      'page about (/about) is in the Blueprint; only the homepage and 404 are built',
-    );
-    expect(d).toContain('hero is on the homepage or 404 (or shared) but dropped');
+    expect(d).toContain('page about (/about) is in the Blueprint; only the homepage is built');
+    expect(d).toContain('hero is on a page the demo builds (or shared) but dropped');
   });
 
   it('wants the navigation as its own component, not merged into the header', async () => {
@@ -265,7 +265,7 @@ describe('blueprint.demo-slice', () => {
     expect(await problems(bp)).toContain('no navigation component');
   });
 
-  it('wants the 404 page, unused templates and media held, and a reason for every drop', async () => {
+  it('needs no 404 page (0.2.4), wants unused templates and media held, and a reason for every drop', async () => {
     const bp = base();
     bp.collections.pages!.splice(1, 1);
     bp.collections.media!.push({
@@ -283,9 +283,9 @@ describe('blueprint.demo-slice', () => {
       attrs: {},
     });
     const d = await problems(bp);
-    expect(d).toContain('no 404 page');
-    expect(d).toContain("template content isn't used by the homepage or 404");
-    expect(d).toContain("media team isn't used on the homepage");
+    expect(d).not.toContain('404');
+    expect(d).toContain("template content isn't used by the pages the demo builds");
+    expect(d).toContain("media team isn't used on the pages the demo builds");
     expect(d).toContain('templates landing is dropped with neither attrs.held nor a reason');
   });
 

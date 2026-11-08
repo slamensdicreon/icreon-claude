@@ -1,12 +1,12 @@
-# Playbook manifest for the homepage demo: the website playbook's team and method on a two-page
+# Playbook manifest for the homepage demo: the website playbook's team and method on a one-page
 # scope. Discovery audits the whole site in numbers; the Blueprint and the build cover only the
-# homepage, the 404 page, the header, the footer and the navigation, through parity and deploy. It runs on our own tenant and closes at Gate 2; a signed
+# homepage, the header, the footer and the navigation, through parity and deploy (the 404 page too, up to 0.2.3). It runs on our own tenant and closes at Gate 2; a signed
 # client's build starts from scratch on sitecoreai-migration. Plan: docs/architecture/homepage-demo-playbook.md.
 id: sitecoreai-homepage-demo
-version: 0.2.3
+version: 0.2.4
 name: SitecoreAI homepage demo
 description: >-
-  Audits a prospect's whole site in numbers, then blueprints and builds their homepage, 404 page,
+  Audits a prospect's whole site in numbers, then blueprints and builds their homepage,
   header, footer and navigation on SitecoreAI, through parity and deploy, so a marketer can drag, drop and
   edit it in Page builder. Runs on our demo tenant and closes when the homepage is reviewed.
 platform: sitecoreai
@@ -14,7 +14,7 @@ charter:
   mission: >-
     Show a prospect their own homepage on SitecoreAI, built the way we would build their whole
     site, so a marketer can assemble and edit it in Page builder without a developer. Audit the
-    whole site; build only the homepage, the 404 page, the header, the footer and the navigation.
+    whole site; build only the homepage, the header, the footer and the navigation.
   outcomes:
     - id: drag-and-drop
       title: Marketers drag, drop and edit components on the homepage
@@ -31,7 +31,7 @@ charter:
     - id: homepage-parity
       title: The homepage looks and reads like the live site
       measure: >-
-        The homepage and the 404 page pass render, visual parity at three breakpoints, and content
+        The homepage passes render, visual parity at three breakpoints, and content
         parity against the source (parity.render, parity.visual, parity.page).
     - id: deployed
       title: Deployed and published
@@ -131,7 +131,7 @@ defaults:
         icon: application,
         note: Registered in SitecoreAI,
       }
-    - { metric: pages_migrated, label: Pages, icon: document, note: Homepage and 404 }
+    - { metric: pages_migrated, label: Pages, icon: document, note: The homepage }
     - { metric: media_uploaded, label: Media, icon: image, note: Uploaded with alt text }
     - { metric: qa_pass, label: QA pass, icon: task--complete, note: Of renderings registered }
   toolLabels:
@@ -162,15 +162,15 @@ phases:
     shortName: Discovery
     exitCriteria: >-
       The whole site crawled and audited in numbers (the page inventory's siteAudit); the homepage
-      and the 404 page inventoried in full; the components, design system and assets of the
-      homepage, 404 page, header, footer and navigation inventoried.
+      inventoried in full; the components, design system and assets of the homepage, header,
+      footer and navigation inventoried.
   - number: 2
     name: Blueprint
     shortName: Blueprint
     gate: director
     gateLabel: 'Gate 1: Director approves the Blueprint'
     exitCriteria: >-
-      A Blueprint for the homepage and the 404 page only: their templates, every component on them
+      A Blueprint for the homepage only: its template, every component on it
       with its model contract, the header, footer and the navigation as its own shared component,
       and their media. No other pages.
   - number: 3
@@ -193,7 +193,7 @@ phases:
     dependsOn:
       - 3
     exitCriteria: >-
-      The homepage's and 404's templates have standard values, insert options and placeholder settings
+      The homepage's template has standard values, insert options and placeholder settings
       that allow every slice component, and an assigned page design; header and footer partial
       designs, with the navigation, render on both.
   - number: 6
@@ -203,19 +203,19 @@ phases:
       - 4
       - 5
     exitCriteria: >-
-      Homepage and 404 content and their media in SitecoreAI; header, footer and navigation
+      Homepage content and its media in SitecoreAI; header, footer and navigation
       datasources filled from the source; render, visual and content parity pass on both pages.
   - number: 7
     name: Experience enablement
     shortName: Experience
     exitCriteria: >-
-      Homepage components datasource-driven; the homepage's SEO fields set; the site's 404 page set.
+      Homepage components datasource-driven; the homepage's SEO fields set.
   - number: 8
     name: Deployment and publishing
     shortName: Deployment
     exitCriteria: >-
       The deployed commit is the reviewed commit on the registered editing and delivery hosts; the
-      publish job finished and the homepage and 404 resolve on Experience Edge.
+      publish job finished and the homepage resolves on Experience Edge.
   # The demo closes on the Director's drag-and-drop check in Page builder (agents have no Pages
   # sign-in), which is also the script for the meeting.
   - number: 9

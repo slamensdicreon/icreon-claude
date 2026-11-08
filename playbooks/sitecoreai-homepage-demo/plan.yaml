@@ -1,5 +1,5 @@
 # Task templates for the homepage demo: the website playbook's tasks over a two-page Blueprint. The
-# Architect writes the Blueprint for the homepage, the 404 page, their templates, the components on
+# Architect writes the Blueprint for the homepage (from 0.2.4 no 404 page), its template, the components on
 # them, the header, footer and navigation, and their media; blueprint.demo-slice checks it. The rest
 # of the site is audited in numbers in the page inventory, not blueprinted.
 #
@@ -47,7 +47,8 @@ templates:
     title: Draft the Implementation Blueprint
     dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
     # discovery.blueprint: every source form placed (a Director item when Form is the SDK's
-    # built-in), redirects decided, the 404 page at /404, source components mapped, media hosts named.
+    # built-in), redirects decided, the 404 page planned or recorded as dropped (0.2.4 builds none),
+    # source components mapped, media hosts named.
     # blueprint.demo-slice: the slice kept, the navigation its own component, the rest held.
     acceptance:
       [validator:blueprint.coverage, validator:discovery.blueprint, validator:blueprint.demo-slice]
@@ -184,7 +185,7 @@ templates:
 
   # 6 — Content and media migration
   # The shared header, footer and navigation are filled once, before the pages (as on the website
-  # playbook): the demo's outcome includes them, and the homepage and 404 page both show them.
+  # playbook): the demo's outcome includes them, and the homepage shows them.
   - id: migrate-shared-chrome
     phase: 4
     role: content-migrator
@@ -219,7 +220,7 @@ templates:
   - id: recrawl-source
     phase: 6
     role: content-analyst
-    title: Re-crawl the homepage and 404 for parity
+    title: Re-crawl the homepage for parity
   - id: audit-parity
     phase: 6
     role: parity-auditor
@@ -231,7 +232,7 @@ templates:
   - id: enable-experience
     phase: 7
     role: experience-enabler
-    title: Homepage SEO fields, dictionary and the 404 page setting
+    title: Homepage SEO fields and dictionary
     # Sitecore items only: it runs while Page builder (for the proof variant) isn't connected.
     uses: [sitecore-authoring, blackboard, artifacts]
     acceptance: [validator:seo.titles]
@@ -254,7 +255,7 @@ templates:
   - id: publish-edge
     phase: 8
     role: deployment-engineer
-    title: Publish to Experience Edge and verify the homepage and 404
+    title: Publish to Experience Edge and verify the homepage
     dependsOn: [deploy-code]
     release:
       # Always our demo tenant: approved once, here.
@@ -278,6 +279,6 @@ templates:
       Follow the checklist in the demo summary. In Page builder, on the homepage: drag a component
       from the toolbox into a placeholder, give it new content and edit a field inline; open the
       header partial design and change a navigation link. Publish, then open the preview URL and
-      see both changes, and open a URL that doesn't exist to see the 404 page. Mark it done naming
+      see both changes. Mark it done naming
       anything that failed, send each failure back to its task, and remove your test component
       before you accept at Gate 2.

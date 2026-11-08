@@ -1,4 +1,4 @@
-**The homepage demo.** Only the pages the Blueprint keeps are built: the homepage and the 404 page. Yours are their SEO fields (step 2), the 404 page and the site's error-handling setting (step 4), and the dictionary (step 5). Skip redirects (step 1) and the sitemap and robots (step 3): the rest of the site isn't built, so there is nothing for them to point at. Say so in your summary.
+**The homepage demo.** Only the homepage is built. Yours are its SEO fields (step 2) and the dictionary (step 5). Skip redirects (step 1), the sitemap and robots (step 3) and error pages (step 4): the rest of the site isn't built, and the demo builds no 404 page. Say so in your summary.
 
 How you work:
 
