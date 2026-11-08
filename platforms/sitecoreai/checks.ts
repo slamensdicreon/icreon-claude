@@ -558,8 +558,17 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         const placeholders = PLACEHOLDERS.filter((p) => text.includes(p));
         if (placeholders.length)
           problems.push(`${path} shows placeholder copy: "${placeholders.join('", "')}"`);
+        // A component whose datasource never resolved has no fields at all: its rendering is
+        // broken, and "add items" would send every page to fix content that is already there.
+        const broken = unresolvedComponents(page.body);
+        for (const name of broken) problems.push(`${path}: ${name} ${UNRESOLVED}`);
         for (const c of layoutComponents(page.body))
-          if (lists.has(c.name) && !itemCount(c.fields) && !loadsOwnItems(c.fields))
+          if (
+            !broken.includes(c.name) &&
+            lists.has(c.name) &&
+            !itemCount(c.fields) &&
+            !loadsOwnItems(c.fields)
+          )
             problems.push(
               `${path}: ${c.name} renders no items (its rendering needs a Component Query returning its children, and its datasource needs child items)`,
             );
@@ -623,9 +632,16 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       if (empty('header')) problems.push('the home page has no header');
       if (empty('footer')) problems.push('the home page has no footer');
       const seen: string[] = [];
+      const broken = unresolvedComponents(page.body);
+      for (const name of broken) {
+        const bp = byName.get(name);
+        if (!bp) continue;
+        seen.push(name);
+        problems.push(`${bp.name} ${UNRESOLVED}`);
+      }
       for (const c of layoutComponents(page.body)) {
         const bp = byName.get(c.name);
-        if (!bp) continue;
+        if (!bp || broken.includes(c.name)) continue;
         seen.push(c.name);
         const text = textOf(c.fields);
         if (bp.attrs?.children && !itemCount(c.fields) && !loadsOwnItems(c.fields))
@@ -907,6 +923,9 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
 }
 
 /** Copy a component shows when its fields are empty or its datasource is missing. */
+const UNRESOLVED =
+  "gets no content: the layout service couldn't resolve its datasource (isContentResolved: false). Its rendering is broken, not its content: check the rendering's Component Query names only fields and templates that exist, and that its datasource item resolves. Adding content won't fix it.";
+
 const PLACEHOLDERS = [
   'Section heading',
   'Describe this section',
@@ -1005,6 +1024,29 @@ export const headingsOf = (html: string) =>
  * The components in a Content SDK page's layout data, with the fields each received: read from
  * the React Server Components payload the page carries.
  */
+/**
+ * Components the layout service couldn't fill: `isContentResolved: false` and no fields. Their
+ * datasource never reached the head: the rendering's Component Query fails (a field or template it
+ * names doesn't exist), or the datasource item doesn't resolve. Adding content never fixes it.
+ */
+export function unresolvedComponents(html: string): string[] {
+  const payload = [...html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)]
+    .map((m) => {
+      try {
+        return JSON.parse(m[1]!) as string;
+      } catch {
+        return '';
+      }
+    })
+    .join('');
+  const out = new Set<string>();
+  for (const m of payload.matchAll(
+    /"componentName":"([A-Za-z0-9]+)"(?:,"dataSource":"[^"]*")?,"isContentResolved":false/g,
+  ))
+    out.add(m[1]!);
+  return [...out];
+}
+
 export function layoutComponents(html: string): { name: string; fields: unknown }[] {
   const payload = [...html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)]
     .map((m) => {

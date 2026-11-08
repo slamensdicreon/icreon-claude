@@ -5,7 +5,7 @@ import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
 import { extractContent, extractPage, type PageExtract } from './extract';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
 import { layoutData } from './layout-data';
-import { assertNavigable, BlockedUrlError, type UrlPolicy } from './ssrf';
+import { assertNavigable, BlockedUrlError, type UrlPolicy, withSibling } from './ssrf';
 
 export interface BrowserServerOptions {
   /** Source-site hosts per project; the browser goes nowhere else. */
@@ -306,6 +306,9 @@ export class BrowserToolServer implements ToolServer {
       // A refused URL is the agent's to correct (another URL), not an access problem.
       if (err instanceof BlockedUrlError)
         return { code: 422, body: { error: err.message }, summary: `Blocked: ${err.message}` };
+      // A selector the page can't use is the agent's to correct, not the browser being down.
+      if (err instanceof BadSelector)
+        return { code: 422, body: { error: err.message }, summary: err.message };
       throw err;
     }
   }
@@ -325,7 +328,7 @@ export class BrowserToolServer implements ToolServer {
           ? { width, height: BREAKPOINTS.desktop.height }
           : BREAKPOINTS.desktop,
       );
-      const response = await page.goto(url.toString(), {
+      const response = await gotoPolitely(page, url.toString(), {
         waitUntil: 'load',
         timeout: this.opts.navigationTimeoutMs ?? 30_000,
       });
@@ -339,7 +342,10 @@ export class BrowserToolServer implements ToolServer {
       try {
         if (op === 'page.styles') {
           const selectors = ((args.selectors as string[] | undefined) ?? []).slice(0, 20);
-          const styles = await run(readStyles, selectors, STYLE_PROPS);
+          const styles = await run(readStyles, selectors, STYLE_PROPS).catch((err: Error) => {
+            const bad = /'([^']+)' is not a valid selector/.exec(err.message)?.[1];
+            throw bad !== undefined ? new BadSelector(bad) : err;
+          });
           return {
             code,
             body: { url: canonical(page.url()), width: page.viewportSize()?.width, ...styles },
@@ -354,7 +360,13 @@ export class BrowserToolServer implements ToolServer {
             summary: `${sections.length} sections on ${canonical(page.url())}${refused}`,
           };
         }
-        const markup = await run(cleanMarkup, args.selector, Number(args.maxChars ?? 30_000));
+        const markup = await run(cleanMarkup, args.selector, Number(args.maxChars ?? 30_000)).catch(
+          (err: Error) => {
+            throw /is not a valid selector/.test(err.message)
+              ? new BadSelector(args.selector as string)
+              : err;
+          },
+        );
         if (!markup.found)
           return {
             code: 404,
@@ -375,7 +387,7 @@ export class BrowserToolServer implements ToolServer {
   private async load(context: BrowserContext, policy: UrlPolicy, raw: string, full = false) {
     const url = await assertNavigable(raw, policy);
     const page = await context.newPage();
-    const response = await page.goto(url.toString(), {
+    const response = await gotoPolitely(page, url.toString(), {
       waitUntil: 'domcontentloaded',
       timeout: this.opts.navigationTimeoutMs ?? 30_000,
     });
@@ -582,7 +594,7 @@ export class BrowserToolServer implements ToolServer {
     let url = await assertNavigable(String(args.url), policy);
     let res: Response | null = null;
     for (let hop = 0; hop < 5; hop++) {
-      res = await fetch(url, {
+      res = await fetchPolitely(url, {
         redirect: 'manual',
         headers: BROWSER_HEADERS,
         signal: AbortSignal.timeout(30_000),
@@ -677,22 +689,34 @@ export class BrowserToolServer implements ToolServer {
   private async fetchAsset(projectId: string, base: UrlPolicy, raw: string): Promise<ToolResult> {
     if (/^\s*(url\(\s*['"]?)?data:/i.test(raw)) return this.storeDataUri(projectId, raw.trim());
     const extra = (await this.opts.assetHosts?.(projectId)) ?? [];
-    const policy: UrlPolicy = {
+    let policy: UrlPolicy = {
       ...base,
       allowedHosts: [...new Set([...base.allowedHosts, ...extra].map((h) => h.toLowerCase()))],
     };
+    // A media host's sibling on the same site (its CDN) is allowed too, asked for directly or
+    // reached by a redirect: Paylocity's play.vidyard.com thumbnails redirect to cdn.vidyard.com.
+    const hostOf = (u: string) => {
+      try {
+        return new URL(u).hostname;
+      } catch {
+        return '';
+      }
+    };
+    policy = withSibling(policy, hostOf(raw));
     let url = await assertNavigable(raw, policy);
     let res: Response | null = null;
     // Follow redirects one hop at a time, each checked like the first.
     for (let hop = 0; hop < 5; hop++) {
-      res = await fetch(url, {
+      res = await fetchPolitely(url, {
         redirect: 'manual',
         headers: BROWSER_HEADERS,
         signal: AbortSignal.timeout(30_000),
       });
       const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
       if (!to) break;
-      url = await assertNavigable(new URL(to, url).toString(), policy);
+      const next = new URL(to, url).toString();
+      policy = withSibling(policy, hostOf(next));
+      url = await assertNavigable(next, policy);
     }
     let bytes: Uint8Array | null = null;
     let contentType = 'application/octet-stream';
@@ -869,3 +893,53 @@ export const siteRefused = (origin: string, reason: string, refused: number, tri
   `${origin} refused our browser: ${refused} of ${tried} pages answered ${reason}, so no page could be read. ` +
   `That is the site's bot protection, not our access, and retrying won't change it. ` +
   `Stop and submit needs_decision for the Director: the client allows our crawler, or gives the source repository, or the project uses another site`;
+
+/** A selector in another tool's dialect (`:has-text`, `:-soup-contains`, `:contains`) or malformed. */
+class BadSelector extends Error {
+  constructor(selector: string) {
+    super(
+      `"${selector}" is not a valid CSS selector: use standard CSS (tags, classes, ids, attributes, :nth-of-type, :has()), not Playwright's :has-text or BeautifulSoup's :-soup-contains. To find a section by its heading, call page.markup without a selector for the outline, then use the selector it gives.`,
+    );
+  }
+}
+
+/** How long to wait before asking again after a 429 or 503: the site's Retry-After, capped. */
+export function retryDelayMs(retryAfter: string | null | undefined, attempt: number): number {
+  const fallback = [4_000, 10_000][attempt] ?? 10_000;
+  if (!retryAfter) return fallback;
+  const secs = Number(retryAfter);
+  const ms = Number.isFinite(secs) ? secs * 1000 : Date.parse(retryAfter) - Date.now();
+  return Number.isFinite(ms) && ms > 0 ? Math.min(ms, 15_000) : fallback;
+}
+
+/** Test seam: how the polite helpers wait. */
+export const pause = { ms: (n: number) => new Promise<void>((r) => setTimeout(r, n)) };
+
+const SLOW_DOWN = [429, 503];
+
+/**
+ * fetch that slows down when the site asks: on 429 or 503 it waits the Retry-After (at most 15 s;
+ * 4 s then 10 s without one) and asks again, twice. The last answer is returned as it is.
+ */
+export async function fetchPolitely(url: URL | string, init: RequestInit): Promise<Response> {
+  let res = await fetch(url, init);
+  for (let attempt = 0; attempt < 2 && SLOW_DOWN.includes(res.status); attempt++) {
+    await pause.ms(retryDelayMs(res.headers.get('retry-after'), attempt));
+    res = await fetch(url, init);
+  }
+  return res;
+}
+
+/** page.goto with the same slow-down: a throttled page is asked for again, twice. */
+export async function gotoPolitely(
+  page: Page,
+  url: string,
+  opts: Parameters<Page['goto']>[1],
+): ReturnType<Page['goto']> {
+  let res = await page.goto(url, opts);
+  for (let attempt = 0; attempt < 2 && res && SLOW_DOWN.includes(res.status()); attempt++) {
+    await pause.ms(retryDelayMs(res.headers()['retry-after'], attempt));
+    res = await page.goto(url, opts);
+  }
+  return res;
+}

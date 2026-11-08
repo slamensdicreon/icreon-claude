@@ -764,11 +764,17 @@ export async function routeFailures(a: {
   if (!byKey.size && !sharedFixes.length) return null;
   const nameOf = (key: string) => components.find((c) => c.key === key)?.name ?? key;
   const names = [...byKey.keys()].map(nameOf);
+  // The rendering registrar owns a component's Component Query and datasource settings: it gets
+  // a failure only when that's what is broken (content that never resolves), not code fixes.
+  const registration =
+    /Component\s*Query|isContentResolved|resolve its datasource|datasource (?:didn't|does not|doesn't|never) resolve/i;
   const sendBack = [...byKey].flatMap(([key, fixes]) =>
-    owners(key).map((t) => ({
-      taskId: t.taskId,
-      fixes: `${a.task.title} fails on ${nameOf(key)}: ${fixes.join(' ')}`,
-    })),
+    owners(key)
+      .filter((t) => t.role !== 'rendering-registrar' || fixes.some((f) => registration.test(f)))
+      .map((t) => ({
+        taskId: t.taskId,
+        fixes: `${a.task.title} fails on ${nameOf(key)}: ${fixes.join(' ')}`,
+      })),
   );
   if (sharedTask && sharedFixes.length)
     sendBack.push({
@@ -1004,8 +1010,13 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
               role,
               lead,
               fails,
+              // The roles that build a component: its code (the sandbox) and its rendering
+              // registration, which owns the Component Query. A page's failure on a rendering
+              // whose content never resolves is the registrar's (Paylocity's footer), not code's.
               codeRoles: new Set(
-                [...roles.values()].filter((r) => r.tools?.sandbox).map((r) => r.role),
+                [...roles.values()]
+                  .filter((r) => r.tools?.sandbox || r.role === 'rendering-registrar')
+                  .map((r) => r.role),
               ),
             })
           : null;

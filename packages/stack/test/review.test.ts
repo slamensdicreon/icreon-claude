@@ -522,7 +522,7 @@ describe('routing failed checks to the components that own them', () => {
       component: string;
       fix: string;
     }[],
-    opts: { sharedTask?: boolean } = { sharedTask: true },
+    opts: { sharedTask?: boolean; registrar?: boolean } = { sharedTask: true },
   ) {
     const store = new InMemoryEventStore();
     const library = new ArtifactLibrary(store, new MemoryBlobStore());
@@ -584,7 +584,11 @@ describe('routing failed checks to the components that own them', () => {
         { id: 'parity.visual', status: 'fail', detail: 'Hero: grey band shows black.' },
         { id: 'parity.render', status: 'fail', detail: '/ shows 80% of the text.' },
       ],
-      codeRoles: new Set(['component-engineer', 'head-integrator']),
+      codeRoles: new Set([
+        'component-engineer',
+        'head-integrator',
+        ...(opts.registrar ? ['rendering-registrar'] : []),
+      ]),
     });
     return { routed, seen, shared };
   }
@@ -605,6 +609,41 @@ describe('routing failed checks to the components that own them', () => {
       /Hero Banner needs fixing in code.*Yours to fix when it runs again/,
     );
     expect(routed!.tokens).toBe(50);
+  });
+
+  it('sends a rendering whose content never resolves to its registrar, and code fixes only to code', async () => {
+    const code = await route(
+      [
+        {
+          check: 'parity.visual',
+          owner: 'component',
+          component: 'hero',
+          fix: 'Make the band grey.',
+        },
+      ],
+      { sharedTask: true, registrar: true },
+    );
+    expect(code.routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual([
+      'port-hero',
+      'integrate-hero',
+    ]);
+    // Paylocity's footer: isContentResolved false, the Component Query was broken.
+    const query = await route(
+      [
+        {
+          check: 'parity.render',
+          owner: 'component',
+          component: 'hero',
+          fix: 'Hero gets no content (isContentResolved: false): fix its Component Query.',
+        },
+      ],
+      { sharedTask: true, registrar: true },
+    );
+    expect(query.routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual([
+      'port-hero',
+      'register-hero',
+      'integrate-hero',
+    ]);
   });
 
   it('re-checks without the agent when everything failed was a component’s', async () => {

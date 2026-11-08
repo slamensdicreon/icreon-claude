@@ -597,6 +597,16 @@ describe('SitecoreAI checks', () => {
     expect(res.detail).toContain('Site Header shows placeholder copy: "Section heading"');
     home = `<div id="header">${rsc('SiteHeader', { tagline: { value: 'HR and payroll' } })}</div><div id="footer">${rsc('SiteFooter', { data: { datasource: { children: { results: [{ name: 'Products' }] } } } })}</div>`;
     expect(await run()).toMatchObject({ status: 'pass' });
+    // Paylocity's real fault: the footer's Component Query failed, so the layout service gave it
+    // isContentResolved: false and no fields. The check says the rendering is broken, not "add items".
+    const unresolved = `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ uid: '8a05f372-0060-42f5-8391-6d0cca7464da', componentName: 'SiteFooter', dataSource: '{0848C112-80C4-4B6C-B66F-783A2FA29923}', isContentResolved: false }))}])</script>`;
+    home = `<div id="header">${rsc('SiteHeader', { tagline: { value: 'HR and payroll' } })}</div><div id="footer">${unresolved}</div>`;
+    const broken = await run();
+    expect(broken.status).toBe('fail');
+    expect(broken.detail).toContain(
+      "Site Footer gets no content: the layout service couldn't resolve its datasource",
+    );
+    expect(broken.detail).not.toContain('renders no items');
     // A home page with neither shared component placed fails, saying which are missing.
     home = '<div id="header"><nav>x</nav></div><div id="footer"><p>y</p></div>';
     expect((await run()).detail).toContain(

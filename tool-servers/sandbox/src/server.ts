@@ -110,17 +110,36 @@ const ReadArgs = z.object({
     z.array(z.string().min(1).max(300)).min(1).max(20),
   ),
 });
+/**
+ * Models sometimes send the file list as JSON text, or one file as a bare object: read either as
+ * the list it means rather than refusing the write (Paylocity: 19 refusals of "expected array").
+ */
+const asList = (v: unknown) => {
+  let x = v;
+  if (typeof x === 'string') {
+    try {
+      x = JSON.parse(x);
+    } catch {
+      return v;
+    }
+  }
+  return x && typeof x === 'object' && !Array.isArray(x) ? [x] : x;
+};
+
 const WriteArgs = z.object({
-  files: z
-    .array(
-      z.object({
-        path: z.string().min(1).max(300),
-        /** UTF-8 text; null deletes the file. */
-        content: z.string().max(MAX_FILE).nullable(),
-      }),
-    )
-    .min(1)
-    .max(50),
+  files: z.preprocess(
+    asList,
+    z
+      .array(
+        z.object({
+          path: z.string().min(1).max(300),
+          /** UTF-8 text; null deletes the file. */
+          content: z.string().max(MAX_FILE).nullable(),
+        }),
+      )
+      .min(1)
+      .max(50),
+  ),
 });
 const CliArgs = z.object({
   command: z.enum(['generate-map', 'scaffold']),

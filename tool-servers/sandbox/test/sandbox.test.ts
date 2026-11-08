@@ -406,6 +406,13 @@ describe('working copies', () => {
       ctx,
     );
     expect(ok.code).toBe(200);
+    // The file list sent as JSON text, or one file on its own, is read as the list it means.
+    for (const files of [
+      JSON.stringify([{ path: 'examples/basic-nextjs/src/Hero.tsx', content: 'export {}' }]),
+      { path: 'examples/basic-nextjs/src/Hero.tsx', content: 'export {}' },
+    ])
+      expect((await s.call('fs.write', { files }, ctx)).code).toBe(200);
+    expect((await s.call('fs.write', { files: 'not json' }, ctx)).code).toBe(422);
     const r = await s.call('fs.read', { paths: 'examples/basic-nextjs/out.txt' }, ctx);
     expect(JSON.stringify(r.body)).toBe(
       JSON.stringify({
