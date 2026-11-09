@@ -502,6 +502,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     const recommended = options.find((o) => o.recommended)?.id ?? options[0]!.id;
     if (out.level === 'agents') {
       const id = await raise(tagged, resolver);
+      // The Director may have answered it while it was being raised: their answer stands.
+      if (patched('settle-once') && !unresolved(escalations.get(id)!)) return id;
       await settle(
         id,
         recommended,
@@ -567,6 +569,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       },
       resolver,
     );
+    // The Director may have answered it while it was being raised: their answer stands.
+    if (patched('settle-once') && !unresolved(escalations.get(id)!)) return id;
     await settle(
       id,
       lead.optionId,
