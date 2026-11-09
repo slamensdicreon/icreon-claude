@@ -45,7 +45,7 @@ it('waits for the Director once a rejected task fails again after a default retr
   const bot = directorBot(p, (x) => (x.sourceTaskId === PAGE ? 'leave' : null));
   const first = await until(() => cards()[0], 60_000);
   expect(first.defaultOptionId).toBe('retry');
-  expect(first.options.map((o) => o.id)).toEqual(['retry', 'accept', 'hold']);
+  expect(first.options.map((o) => o.id)).toEqual(['retry', 'accept', 'waive', 'hold']);
   const second = await until(() => cards()[1], 60_000);
   expect(second.defaultOptionId).toBeNull();
   expect(second.options.find((o) => o.recommended)?.id).toBe('accept');
@@ -64,6 +64,60 @@ it('waits for the Director once a rejected task fails again after a default retr
   // Run again from the plan, it goes back through the same checks.
   await p.commands.rerunTask(PAGE, '');
   await until(() => runs.filter((r) => r.task.taskId === PAGE).length > ran, 60_000);
+  await bot.stop();
+  await p.handle.terminate();
+}, 180_000);
+
+/**
+ * Ervin Cable's SEO titles raised three cards for one decision, each answered "retry". The same
+ * failing checks again make the next card the same decision: it waits for the Director and offers
+ * to waive those checks for the task, which re-checks it without them and without its agent.
+ */
+it('makes the same failure a card that waits, and waives its checks for the task', async () => {
+  const runs: RunRequest[] = [];
+  const runner = {
+    async run(req: RunRequest) {
+      runs.push(req);
+      return { kind: 'done' as const, summary: 'ok', metrics: {}, spent: { tokens: 1, usd: 0 } };
+    },
+  };
+  let projectId = '';
+  const waived = async () =>
+    (await h.store.read(projectId)).some(
+      (e) => e.type === 'decision.recorded' && e.data.scopeKey === `waiver:${PAGE}:seo.titles`,
+    );
+  const validate = async (req: { task: { taskId: string } }): Promise<ValidationResult> =>
+    req.task.taskId === PAGE && !(await waived())
+      ? {
+          pass: false,
+          reason: 'seo.titles: the head renders the site name.',
+          checks: [
+            { id: 'seo.titles', status: 'fail' },
+            { id: 'parity.render', status: 'pass' },
+          ],
+        }
+      : { pass: true, reason: null };
+  const p = await launch(h, { runner, validate });
+  projectId = p.projectId;
+  const cards = () =>
+    Object.values(p.state()?.escalations ?? {}).filter((x) => x.sourceTaskId === PAGE);
+  // The first card is answered "retry" by the Director; the second is left to the test.
+  const bot = directorBot(p, (x) =>
+    x.sourceTaskId === PAGE ? (cards().length === 1 ? { optionId: 'retry' } : 'leave') : null,
+  );
+  const first = await until(() => cards()[0], 60_000);
+  expect(first.defaultOptionId).toBe('retry');
+  expect(first.options.map((o) => o.id)).toEqual(['retry', 'accept', 'waive', 'hold']);
+  const second = await until(() => cards()[1], 60_000);
+  expect(second.defaultOptionId).toBeNull();
+  expect(second.options.find((o) => o.recommended)?.id).toBe('accept');
+  expect(second.context).toContain('same checks as its last card (seo.titles)');
+  const ran = runs.filter((r) => r.task.taskId === PAGE).length;
+  await p.commands.resolve(second.escalationId, 'waive', 'The head owns the title', undefined);
+  await until(() => p.state()?.tasks[PAGE]?.state === 'done', 60_000);
+  // Checked again without its agent.
+  expect(runs.filter((r) => r.task.taskId === PAGE)).toHaveLength(ran);
+  expect(await waived()).toBe(true);
   await bot.stop();
   await p.handle.terminate();
 }, 180_000);

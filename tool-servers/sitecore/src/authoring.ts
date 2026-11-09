@@ -774,6 +774,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         asImage.push(`${f.name} (rich-text images as media links)`);
       }
     }
+    const notItems: string[] = [];
     const isIdList = (v: string) => !!v.trim() && v.split('|').every((p) => HEX_ID.test(p.trim()));
     const adds = a.data.fields.filter((f) => f.add);
     if (adds.some((f) => !isIdList(f.value)))
@@ -801,10 +802,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           .map((p) => p.trim())
           .filter((id) => !had.has(bare(id)));
         const missing = fresh.length ? await this.missingIds(q, fresh) : [];
-        if (missing.length)
-          return rejected(
-            `${f.name}: no item has the ID ${missing.join(', ')}. Copy IDs from an item.read rather than typing them; nothing was written`,
-          );
+        if (!missing.length) continue;
+        // One ID-shaped value in a field that isn't a known item reference may be another
+        // system's ID (a HubSpot form GUID in a text field, Paylocity): written, with a warning.
+        // Lists, added IDs and reference fields still have to name items.
+        if (!f.add && !f.value.includes('|') && !ITEM_REFERENCE.test(f.name)) {
+          notItems.push(`${f.name} (${missing.join(', ')})`);
+          continue;
+        }
+        return rejected(
+          `${f.name}: no item has the ID ${missing.join(', ')}. Copy IDs from an item.read rather than typing them; nothing was written`,
+        );
       }
     }
     let reconciled = false;
@@ -844,10 +852,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         verified: !mismatches.length,
         mismatches,
         reconciled,
+        ...(notItems.length ? { notItems } : {}),
       },
       summary: mismatches.length
         ? `Updated ${a.data.path}, but ${mismatches.join(', ')} read back differently`
-        : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back${asImage.length ? `; ${asImage.join(', ')} given a media path, stored as Sitecore XML by the media item's ID` : ''}`,
+        : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back${asImage.length ? `; ${asImage.join(', ')} given a media path, stored as Sitecore XML by the media item's ID` : ''}${notItems.length ? `; ${notItems.join(', ')} kept as text: no Sitecore item has that ID, so if the field should link to an item, that link is broken` : ''}`,
     };
   }
 
@@ -1536,6 +1545,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 }
 
 type Lang = (l?: string) => string;
+
+/**
+ * Fields that hold item references by name: a value there must name an item. Others may hold an
+ * ID-shaped value from another system (a HubSpot form GUID).
+ */
+const ITEM_REFERENCE =
+  /^(__.*|renderings|allowed controls|partialdesigns|page design|parameters template|datasource template|datasource location|componentquery|fieldnames|.*(template|datasource|link|image|item|items|list|reference|target|source|variant|design)s?)$/i;
 
 const bare = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
 

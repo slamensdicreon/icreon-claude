@@ -121,6 +121,55 @@ describe('acceptance on live projects', () => {
     });
   });
 
+  it('counts a check the Director waived for this task as passed, and still names its failure', async () => {
+    let asked = 0;
+    const { store, write, validate } = await setup(async () => {
+      asked++;
+      return { verdict: 'accept', reason: 'ok', tokens: 10 };
+    });
+    await write('page-inventory', { pages: [{ path: '/' }, { path: '/about' }] });
+    await write('blueprint', {
+      version: 1,
+      collections: {
+        components: [component('hero')],
+        templates: [{ key: 'content', name: 'Content' }],
+        pages: [{ key: 'home', name: 'Home', attrs: { path: '/', template: 'content' } }],
+        media: [],
+      },
+    });
+    expect((await validate(task({}))).pass).toBe(false);
+    const waive = (taskId: string) =>
+      store.append('p1', [
+        {
+          type: 'decision.recorded',
+          actor: { kind: 'director', id: 'director' },
+          subject: { kind: 'escalation', id: 'esc-1' },
+          severity: 'notable',
+          data: {
+            decisionId: `d-${taskId}`,
+            question: 'Waive blueprint.coverage?',
+            answer: 'Waived',
+            rationale: '/about is out of scope',
+            decidedBy: 'director',
+            scopeKey: `waiver:${taskId}:blueprint.coverage`,
+            escalationId: null,
+          },
+        },
+      ]);
+    // Another task's waiver changes nothing here.
+    await waive('another-task');
+    expect((await validate(task({}))).pass).toBe(false);
+    await waive('draft-blueprint');
+    const r = await validate(task({}));
+    expect(r.pass).toBe(true);
+    expect(asked).toBe(1);
+    const step = (await store.read('p1')).findLast(
+      (e) => e.type === 'step.recorded' && e.data.operation === 'blueprint.coverage',
+    ) as Extract<LwEvent, { type: 'step.recorded' }>;
+    expect(step.data.summary).toContain('Waived by the Director (/about is out of scope)');
+    expect(step.data.summary).toContain('page /about is neither mapped nor dropped');
+  });
+
   it("judges a task on its template's current checks too, so checks added later apply to running projects", async () => {
     const { write, validate } = await setup(async () => ({
       verdict: 'accept',

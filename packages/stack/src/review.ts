@@ -1017,13 +1017,28 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
       );
       // 1. Automated checks.
       const acceptance = acceptanceOf(task);
-      const results = await runChecks(deps, {
+      const checked = await runChecks(deps, {
         projectId: req.projectId,
         state,
         steps,
         task,
         acceptance,
       });
+      // The Director's waivers for this task (a card's "Waive"): a waived check that fails counts
+      // as passed, says so, and the Lead doesn't reject for it (UtiliQuest's renderings check).
+      const waived = new Map<string, string>();
+      for (const e of log)
+        if (e.type === 'decision.recorded' && e.data.scopeKey.startsWith(`waiver:${task.taskId}:`))
+          waived.set(e.data.scopeKey.slice(`waiver:${task.taskId}:`.length), e.data.rationale);
+      const results = checked.map((r) =>
+        r.status === 'fail' && waived.has(r.id)
+          ? {
+              ...r,
+              status: 'pass' as const,
+              detail: `Waived by the Director (${waived.get(r.id)}). Still failing: ${r.detail}`,
+            }
+          : r,
+      );
       const events: NewEvent[] = results.map((r) => ({
         type: 'step.recorded',
         actor: { kind: 'agent', id: reviewerId },

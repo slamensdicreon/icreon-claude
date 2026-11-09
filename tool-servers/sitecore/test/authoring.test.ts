@@ -328,6 +328,30 @@ describe('SitecoreAuthoringToolServer', () => {
     );
     expect(typed.code).toBe(422);
     expect(JSON.stringify(typed.body)).toContain('a1b2c3d4-0000-4000-8000-00000000000c');
+    // Another system's ID in a text field (a HubSpot form GUID) is written, with a warning.
+    const hubspot = await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [{ name: 'formId', value: '3f1c2a9e-5b7d-4e2f-9a01-6c8d7e5f4b3a' }],
+      },
+      ctx,
+    );
+    expect(hubspot.code).toBe(200);
+    expect(hubspot.body).toMatchObject({
+      notItems: ['formId (3f1c2a9e-5b7d-4e2f-9a01-6c8d7e5f4b3a)'],
+    });
+    expect(hubspot.summary).toContain('kept as text');
+    // In a field that references items it is still refused.
+    const ds = await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [{ name: 'Datasource Template', value: '3f1c2a9e-5b7d-4e2f-9a01-6c8d7e5f4b3a' }],
+      },
+      ctx,
+    );
+    expect(ds.code).toBe(422);
     const masters = await s3.call(
       'item.read',
       { path: `${home}/Contact`, fields: ['__Masters', 'Nope'] },
