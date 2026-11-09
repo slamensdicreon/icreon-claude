@@ -368,3 +368,161 @@
 .nowrap {
   white-space: nowrap;
 }
+
+/* ---- Bliss past six projects: a line per state, and the book by platform. */
+.lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  overflow: hidden;
+}
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--mist-2);
+}
+.line:first-child {
+  border-top: 0;
+}
+.lineDot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--text-3);
+}
+.lineDot[data-tone='moving'] {
+  background: var(--green);
+}
+.lineDot[data-tone='paused'] {
+  background: var(--gold);
+}
+.lineDot[data-tone='done'] {
+  background: var(--mist);
+}
+.lineText {
+  flex: 1 1 calc(var(--sidebar) * 1.4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.lineSay {
+  color: var(--text-2);
+}
+.lineTiles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.miniTile {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--on-ink);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.miniTile:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 2px;
+}
+.miniMore {
+  padding: 0 var(--space-2);
+  color: var(--text-3);
+}
+.book {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--sidebar) * 1.1), 1fr));
+  gap: var(--space-4);
+}
+.bookCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+}
+.bookCard > :global(.type-label) {
+  color: var(--text-3);
+}
+.bookNumber {
+  color: var(--ink);
+}
+
+/* ---- Several projects at once (BulkActions). */
+.pickHead,
+.pickCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.pick {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+.projectRow[data-picked] td {
+  background: var(--iris-tint, var(--mist-2));
+}
+.bulk {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--shell);
+  color: var(--on-shell);
+}
+.bulkCount {
+  margin-right: var(--space-3);
+  font-weight: 700;
+}
+.bulkButton,
+.bulkQuiet {
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--ink-3);
+  background: var(--ink-2);
+  color: var(--on-ink);
+  cursor: pointer;
+}
+.bulkButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.bulkButton:focus-visible,
+.bulkQuiet:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 50%, transparent);
+  outline-offset: 2px;
+}
+.bulkDanger {
+  border-color: var(--coral-text);
+  background: var(--coral-text);
+}
+.bulkQuiet {
+  border-color: transparent;
+  background: none;
+  color: var(--on-ink-muted);
+}

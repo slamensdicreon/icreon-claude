@@ -28,7 +28,7 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
         })}
       </section>
 
-      <ProjectsTable o={o} />
+      <ProjectsTable o={o} refresh={refresh} />
 
       <div id="needs">
         <Panel title="Needs you" count={o.yours.length} meta="By clock, then type">

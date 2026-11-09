@@ -27,9 +27,21 @@ were built for a handful; this is what changed so they hold fifty.
 Tests: `apps/web/e2e/projects-at-scale.e2e.ts`, and the overview case in
 `apps/control-api/test/overview.test.ts`.
 
-## Next
+- **Bliss** (`DashboardBliss.tsx`). Up to six projects keep a tile each. Past six, what's yours
+  stays as cards, and the rest fold into a line per state: *moving* (naming any that want a
+  look), *ready to start*, *paused*, *finished*. Each line has its projects' tiles (they open the
+  project) and a button that opens Everything's table on that view. Below them, *Your book*: the
+  projects by platform, counted by playbook.
+- **Several projects at once** (`BulkActions.tsx`). Tick rows, or every row shown from the
+  header. The bar then offers Pause, Resume, Archive, Export CSV and Delete now. Each counts only
+  the projects it applies to ("Archive 1" when one of two is running) and the dialog says what it
+  leaves out. Archive and Delete now ask for the number typed; Delete now can keep the build
+  repositories and Vercel projects. The projects then go one by one through the same calls as
+  their Settings; anything refused is named in the toast and the rest still go. Export CSV saves
+  the selected rows in the browser.
 
-- **Bliss**: what's yours as cards, then one line per state ("28 moving, 3 ready to start…")
-  instead of a tile per project.
-- **Bulk actions**: tick rows, then pause, archive, export or delete several at once (delete-now
-  confirmed by typing how many).
+Tests: `apps/web/e2e/bliss-and-bulk.e2e.ts`.
+
+## Later
+
+- Bulk actions on the server, in one call, if fifty at a time proves slow.
