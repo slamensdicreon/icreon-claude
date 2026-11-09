@@ -134,10 +134,15 @@ describe('sitecoreai-homepage-demo playbook', () => {
   // the files below, each on purpose. Copy the fix across, or add the file here with the reason.
   it("keeps the website playbook's roles, prompts and knowledge, except where it says why", async () => {
     const DIFFERS: Record<string, string> = {
-      'prompts/solution-architect.md': 'a Blueprint for the homepage and the 404 page only',
-      'prompts/content-analyst.md': 'inventory two pages in full, audit the whole site in numbers',
-      'prompts/repo-analyst.md': 'inventory the homepage, 404, header, footer and navigation only',
-      'prompts/experience-enabler.md': 'only the kept pages; no redirects, sitemap or robots',
+      'prompts/solution-architect.md': 'a Blueprint for the homepage only, the 404 page dropped',
+      'prompts/content-analyst.md':
+        'inventory the homepage in full, audit the whole site in numbers',
+      'prompts/repo-analyst.md': 'inventory the homepage, header, footer and navigation only',
+      'prompts/experience-enabler.md':
+        'SEO fields and dictionary only; no redirects, sitemap, robots or error pages',
+      'roles/experience-enabler.yaml':
+        'its mandate names no redirects, sitemap, robots or error pages',
+      'prompts/head-integrator.md': 'no 404 page to serve at unknown URLs',
       'prompts/handover-writer.md': 'the demo summary and drag-and-drop checklist',
       'roles/handover-writer.yaml': 'writes the demo summary, not the handover pack',
       'knowledge/definition-of-done.md': "the demo's own Definition of Done",
@@ -161,9 +166,10 @@ describe('sitecoreai-homepage-demo playbook', () => {
   });
 });
 
-const sliceCheck = (blueprint: unknown) =>
+const sliceCheck = (blueprint: unknown, version?: string) =>
   CHECKS['blueprint.demo-slice']!({
     projectId: 'p1',
+    state: { playbook: version ? { id: 'sitecoreai-homepage-demo', version } : null },
     library: {
       read: async (_p: string, id: string) =>
         id === 'blueprint' ? { content: JSON.stringify(blueprint) } : null,
@@ -287,6 +293,22 @@ describe('blueprint.demo-slice', () => {
     expect(d).toContain("template content isn't used by the pages the demo builds");
     expect(d).toContain("media team isn't used on the pages the demo builds");
     expect(d).toContain('templates landing is dropped with neither attrs.held nor a reason');
+  });
+
+  it('fails a kept 404 page from 0.2.5, and still accepts one on older versions', async () => {
+    const kept404 = 'the 404 page (not-found) is kept; the homepage demo builds no 404 page';
+    for (const v of ['0.2.5', '0.3.0', '1.0.0'])
+      expect((await sliceCheck(base(), v)).detail).toContain(kept404);
+    for (const v of ['0.2.3', '0.2.4', '0.1.0'])
+      expect(await sliceCheck(base(), v)).toMatchObject({ status: 'pass' });
+    const dropped = base();
+    dropped.collections.pages![1] = {
+      ...dropped.collections.pages![1]!,
+      status: 'drop',
+      attrs: { path: '/404', errorPage: 404, reason: 'The homepage demo builds no 404 page' },
+    };
+    dropped.collections.templates!.splice(1, 1);
+    expect(await sliceCheck(dropped, '0.2.5')).toMatchObject({ status: 'pass' });
   });
 
   it('wants a merged component to merge into one the demo builds', async () => {

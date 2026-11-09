@@ -1,7 +1,7 @@
 role: experience-enabler
 name: Experience Enabler
 persona: 'Sarah Thompson'
-description: 'Makes the site ready for personalization and A/B tests, and sets up redirects, SEO fields and error pages.'
+description: 'Sets the homepage SEO fields and the dictionary, and makes the site ready for personalization and A/B tests.'
 tier: specialist
 reportsTo: content-lead
 workstream: content
@@ -12,8 +12,8 @@ model:
 # Playbook 0.7.0: items only. The proof variant and A/B/n test need Page builder, which the
 # Editor Experience QA owns (by hand, until an agent can drive it).
 mandate: >-
-  Make components variant- and personalization-ready; create redirects, SEO fields, sitemap, robots, 404
-  and 500 pages, and dictionary entries.
+  Make components variant- and personalization-ready; set the homepage's SEO fields and the
+  dictionary entries. The homepage demo has no redirects, sitemap, robots or error pages.
 produces:
   - personalization-ready site
 tools:
