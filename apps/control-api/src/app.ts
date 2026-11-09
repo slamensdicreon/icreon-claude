@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import {
   ApproveGate,
   ArchiveProject,
+  DeleteProjectNow,
   ChangeSetting,
   ChangeBrief,
   ChangeBudgets,
@@ -108,7 +109,7 @@ import { applyProposals, inForce, unsorted } from './knowledge-review';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { zip, type ZipEntry } from './zip';
-import { purgeDue, type PurgeDeps } from './purge';
+import { purgeDue, purgeProject, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
 import { withDocumentFacts, workbenchStory } from './story';
@@ -342,7 +343,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // An archived project is read-only: only restoring it changes it. Reads and downloads still work.
   // A project being deleted answers 410 to everything: nothing may read or write it while it goes.
-  const OPEN_WHEN_ARCHIVED = /^\/projects\/[^/]+\/(restore|archive|deletion)$/;
+  const OPEN_WHEN_ARCHIVED = /^\/projects\/[^/]+\/(restore|archive|deletion|delete-now)$/;
   app.addHook('preHandler', async (req) => {
     const id = (req.params as { id?: unknown } | undefined)?.id;
     if (typeof id !== 'string' || !req.url.startsWith('/projects/')) return;
@@ -2184,6 +2185,39 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       ),
     ]);
     return settled(id);
+  });
+
+  /**
+   * Delete now: for a project made by mistake, a test, or a demo nobody will open again. No archive
+   * and no grace period: the same purge as the daily run, started at once by the operator. Refused
+   * while the project runs (pause it first). A purge cut off part way is finished by the daily run.
+   */
+  app.post<P>('/projects/:id/delete-now', async (req) => {
+    const { confirmation, keepRepository, keepHosting } = DeleteProjectNow.parse(req.body);
+    const id = req.params.id;
+    const s = known(id);
+    if (confirmation !== s.name)
+      throw new CommandError(
+        422,
+        'confirmation_mismatch',
+        'Type the project name exactly to delete it.',
+      );
+    if (s.status === 'running')
+      throw new CommandError(
+        409,
+        'not_paused',
+        `Pause ${s.name} first. A project is deleted only once nothing is running.`,
+      );
+    if (!deps.purge)
+      throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
+    const keep = [
+      ...(keepRepository ? (['repository'] as const) : []),
+      ...(keepHosting ? (['hosting'] as const) : []),
+    ];
+    const tombstone = await purgeProject(deps.purge, s, operatorActor(req).id, { now: true, keep });
+    // The log is gone: this instance's read model lets the project go too.
+    await projections.catchUp(id);
+    return tombstone;
   });
 
   /** The daily purge (Vercel Cron, with CRON_SECRET), or an operator running it by hand. */

@@ -7,7 +7,8 @@ test('archive waits for a pause, and an archived project offers Restore instead 
   const run = await open(page, `/p/${PROJECT}/settings`);
   // A running project can't be archived until it is paused.
   await expect(page.getByRole('button', { name: 'Archive', exact: true })).toBeDisabled();
-  await expect(page.getByText('Pause the project first.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Pause the project first.', { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete now', exact: true })).toBeDisabled();
 
   // The same page once the project is archived (the API's own snapshot, with its status changed).
   await page.route(new RegExp(`/projects/${PROJECT}/mission-control(\\?.*)?$`), async (r) => {
@@ -56,7 +57,7 @@ test('an archived project can be scheduled for deletion, and the deletion cancel
     await page.request.get('http://localhost:4000/projects').then((r) => r.json())
   ).find((p: { id: string }) => p.id === PROJECT).name as string;
 
-  await page.getByRole('button', { name: 'Delete project' }).click();
+  await page.getByRole('button', { name: 'Delete in 30 days' }).click();
   const dialog = page.getByRole('dialog');
   const schedule = dialog.getByRole('button', { name: 'Schedule deletion' });
   await expect(schedule).toBeDisabled();
@@ -73,7 +74,42 @@ test('an archived project can be scheduled for deletion, and the deletion cancel
   await expect.poll(() => deletion).toBeNull();
   await page.reload();
   await page.waitForLoadState('networkidle');
-  await expect(page.getByRole('button', { name: 'Delete project' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete in 30 days' })).toBeVisible();
+  run.clean();
+});
+
+test('a paused project can be deleted now, keeping nothing unless asked', async ({ page }) => {
+  await page.route(new RegExp(`/projects/${PROJECT}/mission-control(\\?.*)?$`), async (r) => {
+    const res = await r.fetch();
+    const body = await res.json();
+    body.project.status = 'paused';
+    await r.fulfill({ response: res, json: body });
+  });
+  let sent: unknown = null;
+  await page.route(new RegExp(`/projects/${PROJECT}/delete-now$`), (r) => {
+    sent = r.request().postDataJSON();
+    return r.fulfill({ json: { projectId: PROJECT, finishedAt: '2026-11-09T12:00:00.000Z' } });
+  });
+  const run = await open(page, `/p/${PROJECT}/settings`);
+  const name = (
+    await page.request.get('http://localhost:4000/projects').then((r) => r.json())
+  ).find((p: { id: string }) => p.id === PROJECT).name as string;
+
+  await page.getByRole('button', { name: 'Delete now', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(
+    dialog.getByRole('link', { name: 'Download everything first (.zip)' }),
+  ).toBeVisible();
+  const go = dialog.getByRole('button', { name: 'Delete now' });
+  await expect(go).toBeDisabled();
+  await dialog.getByLabel('Confirm').fill(name);
+  await go.click();
+  await expect
+    .poll(() => sent)
+    .toEqual({ confirmation: name, keepRepository: false, keepHosting: false });
+  // Back on the Dashboard: the project is gone.
+  await expect(page).not.toHaveURL(new RegExp(`/p/${PROJECT}/settings`));
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
   run.clean();
 });
 

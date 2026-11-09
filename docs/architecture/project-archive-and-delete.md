@@ -115,6 +115,23 @@ flowchart LR
 Dashboard can show "Deleted projects" from it. Rules and lessons that came from the project point
 at it, so "learned on a deleted project" still reads.
 
+### Delete now
+
+Added after the four milestones, at the Director's request (2026-11-09): some projects should go
+at once, not in 30 days: one made by mistake, a test, a demo nobody will open again.
+
+- **Allowed from:** any state but running (pause it first, as for archive). No archive step; an
+  archived project already counting down can be deleted now instead.
+- **Request:** `POST /projects/:id/delete-now` with the typed name, and `keepRepository` /
+  `keepHosting` to keep the build repository or the Vercel project (both deleted by default).
+- **Purge:** the same steps as the daily run, started at once by the operator
+  (`purgeProject(…, { now: true, keep })`). What the operator chose to keep is written to the
+  tombstone as `kept` before anything runs, so a purge cut off part way and finished by the daily
+  run keeps it too. The tombstone records the operator as who asked and who purged.
+- **UI:** *Delete now* in the danger zone (disabled while running), and beside *Delete in 30 days*
+  and *Cancel deletion* on an archived project. The dialog has the keep choices and a download
+  link; the typed name is the lock. After it, the Control Center goes back to the Dashboard.
+
 ### Global rules and lessons
 
 Rules and lessons that were promoted out of a project are the product's memory and serve every
@@ -158,6 +175,8 @@ Each result goes in the tombstone, so "what happened to the repo" has an answer.
 | **M2 Delete inside our stores** (built) | `POST`/`DELETE /projects/:id/deletion` (archived only, typed name; restore waits until it's cancelled); `project.deletion` events and `deletion` on the project summary; the daily purge `GET /portfolio/purge-due` (Vercel Cron 07:41 UTC, `CRON_SECRET`), resumable step by step; 410 while a purge is under way; `lw_project_tombstones` and `GET /portfolio/deleted`; `SecretVault.deleteProject`, `CommandBus.forget`, `forgetProject` on rules and knowledge; `DELETE_GRACE_DAYS` (default 30); the danger zone's Delete and Cancel deletion | `packages/events/test/forget.test.ts` (Postgres and memory), `apps/control-api/test/archive.test.ts` (purge leaves only the tombstone; a failed purge resumes), `apps/web/e2e/settings-archive.e2e.ts` |
 | **M3 Outside resources** (built) | Purge steps `repository` (`GithubApp.deleteBuildRepo`: only in `GITHUB_BUILD_ORG`, a transferred repo is left), `hosting` (`deleteHostingProject`: only in our Vercel team) and `connection` (the saved connection and its secrets, when unused). Anything another project still uses is skipped. GitHub's or Vercel's refusal is recorded and the purge carries on; an outage throws and the next run retries. The delete dialog names the repo and the Vercel project | `packages/connectors/test/delete-repo.test.ts`, `packages/stack/test/delete-hosting.test.ts`, `apps/control-api/test/purge.test.ts` |
 | **M4 Exports and housekeeping** (built) | `GET /projects/:id/documents.zip` (every document's latest stored version, the activity CSV and a README; a dependency-free zip writer in `apps/control-api/src/zip.ts`) and download links on an archived project; *Deleted projects* under the Dashboard's Archived filter, from the tombstones, with what happened to the build repository and the hosting project; the runbook in `docs/deploy/vercel.md` (*Archiving and deleting a project*). The first real archive (Lambert's Cable, Star LLC) stays the Director's | `apps/control-api/test/zip.test.ts`, the zip case in `archive.test.ts`, two more cases in `settings-archive.e2e.ts` |
+
+| **Delete now** (built) | `POST /projects/:id/delete-now` (typed name, not while running, `keepRepository`/`keepHosting`); `purgeProject` with `{ now, keep }`, kept steps recorded first; the danger zone's *Delete now* and its dialog; `kept` under *Deleted projects* | `apps/control-api/test/purge.test.ts` (two cases), `apps/control-api/test/archive.test.ts` (two cases), `apps/web/e2e/settings-archive.e2e.ts` |
 
 Later, not in this plan: cleaning a project's owned paths on a shared SitecoreAI tenant;
 crypto-shredding with per-client keys (`backend-plan.md`); Temporal history retention, which is a

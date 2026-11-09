@@ -233,6 +233,18 @@ export type RollbackPhase = z.infer<typeof RollbackPhase>;
 export const ArchiveProject = z.object({ confirmation: z.string() });
 export type ArchiveProject = z.infer<typeof ArchiveProject>;
 
+/**
+ * POST /projects/:id/delete-now: deletes a project at once, with no grace period, from any state
+ * but running. For a project made by mistake, a test, or a demo nobody will open again. The build
+ * repository and the hosting project can be kept (handed over, or wanted for reference).
+ */
+export const DeleteProjectNow = z.object({
+  confirmation: z.string(),
+  keepRepository: z.boolean().default(false),
+  keepHosting: z.boolean().default(false),
+});
+export type DeleteProjectNow = z.infer<typeof DeleteProjectNow>;
+
 /** PUT /projects/:id/settings/:key */
 export const ChangeSetting = z.object({ value: z.json() });
 

@@ -26,6 +26,7 @@ const OUTCOME: Record<string, string> = {
   handed_over: 'Handed over, left',
   refused: 'Refused',
   skipped: 'Left',
+  kept: 'Kept',
 };
 const day = (t: string) =>
   new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });

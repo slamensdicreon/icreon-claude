@@ -317,6 +317,57 @@ describe('archive and restore', () => {
     ]);
   });
 
+  it('deletes a project now, with no archive and no grace period, once nothing runs', async () => {
+    const t = await start();
+    const { store, projectId: id } = t;
+    const now = (payload: unknown) => post(`/projects/${id}/delete-now`, payload);
+    await t.vault.seal(id, 'extra', 'a-secret-value');
+    await store.append(id, [status(id, 'running')]);
+
+    expect((await now({ confirmation: 'nope' })).statusCode).toBe(422);
+    expect((await now({ confirmation: 'Globex site' })).json()).toMatchObject({
+      error: { code: 'not_paused' },
+    });
+    await store.append(id, [status(id, 'paused')]);
+    const done = await now({ confirmation: 'Globex site', keepRepository: true });
+    expect(done.statusCode, done.body).toBe(200);
+    expect(done.json()).toMatchObject({
+      projectId: id,
+      name: 'Globex site',
+      requestedBy: 'director',
+    });
+    expect(done.json().finishedAt).toBeTruthy();
+    expect(done.json().steps.repository.result).toMatchObject({ outcome: 'kept' });
+
+    // Gone at once: off the list, its log, its secrets; only the tombstone is left.
+    expect(await statusOf(id)).toBeUndefined();
+    expect(await store.head(id)).toBe(0);
+    expect(t.stopped).toEqual([id]);
+    expect(await t.vault.deleteProject(id)).toBe(0);
+    const deleted = (await app!.inject({ method: 'GET', url: '/portfolio/deleted' })).json() as {
+      projectId: string;
+    }[];
+    expect(deleted.map((d) => d.projectId)).toEqual([id]);
+    expect((await now({ confirmation: 'Globex site' })).statusCode).toBe(404);
+  });
+
+  it('deletes an archived project now instead of waiting out its grace period', async () => {
+    const t = await start();
+    const { store, projectId: id } = t;
+    await store.append(id, [status(id, 'running'), status(id, 'completed')]);
+    await post(`/projects/${id}/archive`, { confirmation: 'Globex site' });
+    await post(`/projects/${id}/deletion`, { confirmation: 'Globex site' });
+    const done = await post(`/projects/${id}/delete-now`, { confirmation: 'Globex site' });
+    expect(done.statusCode, done.body).toBe(200);
+    expect(await store.head(id)).toBe(0);
+    // The daily run finds nothing left to do.
+    t.clock.t = Date.parse('2026-12-08T00:00:00Z');
+    expect((await app!.inject({ method: 'GET', url: '/portfolio/purge-due' })).json()).toEqual({
+      purged: [],
+      failed: [],
+    });
+  });
+
   it('resumes a purge that failed part way, and refuses the project meanwhile', async () => {
     const t = await start();
     const { store, projectId: id } = t;
