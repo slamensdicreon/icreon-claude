@@ -250,6 +250,14 @@ Vercel project by hand:
 - **Vercel refused:** the owner of `VERCEL_PREVIEWS_TOKEN` needs a role in the team that can delete
   projects (an Owner can).
 
+**Deleting now, without the 30 days.** For a project made by mistake, a test or a throwaway demo,
+the danger zone has **Delete now** (and *Delete now instead* on a project already scheduled). Pause
+it first if it's running; it needn't be archived. Type the name, and tick *Keep the build
+repository* or *Keep the Vercel project* to leave either one (both are deleted otherwise). The
+same purge runs at once (`POST /projects/:id/delete-now`); the project is gone when the dialog
+closes, and its tombstone shows under *Deleted projects* with *Kept* for anything left on purpose.
+There is no undo.
+
 ## Deploying while projects run
 
 Push at any time; nothing needs pausing. Every deployment replaces the `worker` daemon, and agent

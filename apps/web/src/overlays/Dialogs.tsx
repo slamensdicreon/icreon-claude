@@ -72,6 +72,7 @@ export function TypedConfirm({
   typed,
   danger = true,
   onConfirm,
+  children,
 }: {
   title: string;
   body: string;
@@ -79,6 +80,8 @@ export function TypedConfirm({
   typed?: string | null;
   danger?: boolean;
   onConfirm: () => void;
+  /** Choices between the explanation and the typed confirmation. */
+  children?: ReactNode;
 }) {
   const { closeOverlay } = useApp();
   const [value, setValue] = useState('');
@@ -96,6 +99,7 @@ export function TypedConfirm({
           {title}
         </h2>
         <p className="type-body-small">{body}</p>
+        {children}
         {typed && (
           <Field
             label="Confirm"

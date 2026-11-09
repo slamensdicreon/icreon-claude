@@ -147,19 +147,39 @@ async function run(
   }
 }
 
+/** How a purge was asked for. */
+export interface PurgeOptions {
+  /**
+   * Deleted now, by an operator: no archive and no grace period needed (the project must not be
+   * running). The daily purge never sets this.
+   */
+  now?: boolean;
+  /** Outside resources the operator chose to keep. Recorded before anything runs, so a resumed purge keeps them too. */
+  keep?: ('repository' | 'hosting')[];
+}
+
+const KEPT: Record<'repository' | 'hosting', string> = {
+  repository: 'Kept: the operator chose to keep the build repository.',
+  hosting: 'Kept: the operator chose to keep the hosting project.',
+};
+
 /**
- * Purges one project. It must be archived with a deletion requested (or be a purge resumed: its
- * log may already be partly gone). `by` is who ran it: "vercel-cron" for the daily run.
+ * Purges one project. It must be archived with a deletion requested, or be deleted now by an
+ * operator (`opts.now`), or be a purge resumed: its log may already be partly gone. `by` is who ran
+ * it: "vercel-cron" for the daily run, the operator's login otherwise.
  */
 export async function purgeProject(
   deps: PurgeDeps,
   s: ProjectState,
   by: string,
+  opts: PurgeOptions = {},
 ): Promise<Tombstone> {
   const id = s.projectId;
   const existing = await deps.tombstones.get(id);
   if (!existing) {
-    if (s.status !== 'archived' || !s.deletion)
+    if (opts.now) {
+      if (s.status === 'running') throw new Error(`${id} is running: pause it before deleting it.`);
+    } else if (s.status !== 'archived' || !s.deletion)
       throw new Error(`${id} is not an archived project scheduled for deletion.`);
   }
   const tombstone =
@@ -168,9 +188,17 @@ export async function purgeProject(
       projectId: id,
       name: s.name,
       client: s.client,
-      requestedBy: s.deletion!.requestedBy,
+      requestedBy: s.deletion?.requestedBy ?? by,
       requestedAt: new Date(deps.now?.() ?? Date.now()).toISOString(),
     }));
+  // What the operator chose to keep is written down first: a purge cut off and resumed by the
+  // daily run (which knows nothing of the choice) still keeps it.
+  for (const step of opts.keep ?? []) {
+    if (tombstone.steps[step]) continue;
+    const result = { outcome: 'kept', detail: KEPT[step] };
+    await deps.tombstones.step(id, step, result);
+    tombstone.steps[step] = { at: new Date(deps.now?.() ?? Date.now()).toISOString(), result };
+  }
   // From here on the project answers 410: nothing may write to it while it goes.
   if (!s.deletion?.purging && (await deps.store.head(id)) > 0) {
     const purging: NewEvent = {

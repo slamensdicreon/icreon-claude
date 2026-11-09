@@ -1,14 +1,16 @@
 /*
  * The danger zone: pause or resume the whole project, roll back the current phase, reset to
- * intake (with or without a new build repository), archive and restore. Everything but Resume and
- * Restore asks first in a TypedConfirm; what changes the most asks for a typed word. An archived
- * project shows only Restore: the API refuses everything else while it is archived.
+ * intake (with or without a new build repository), archive and restore, and delete: in 30 days
+ * from the archive, or now (for a mistake or a test). Everything but Resume and Restore asks first
+ * in a TypedConfirm; what changes the most asks for a typed word. An archived project shows only
+ * Restore and Delete: the API refuses everything else while it is archived.
  */
 import type { ProjectSummary, SettingsSnapshot } from '@lw/contracts';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { API, del, post } from '../../lib/api';
 import { TypedConfirm } from '../../overlays/Dialogs';
 import { useApp } from '../../state';
+import { Checkbox } from '../../ui/cypher/forms';
 import { Panel } from '../../ui/cypher/parts';
 import { Action, Actions } from '../intake/shared';
 import s from './settings.module.css';
@@ -25,6 +27,49 @@ function Row({ title, note, children }: { title: string; note?: string; children
   );
 }
 
+/** Delete now: the typed name, plus whether to keep the build repository and the hosting project. */
+function DeleteNow({
+  project: p,
+  zip,
+  onConfirm,
+}: {
+  project: ProjectSummary;
+  zip: string;
+  onConfirm: (keep: { keepRepository: boolean; keepHosting: boolean }) => void;
+}) {
+  const [keepRepository, setKeepRepository] = useState(false);
+  const [keepHosting, setKeepHosting] = useState(false);
+  return (
+    <TypedConfirm
+      title="Delete this project now?"
+      body="Everything held for it goes right away, with no grace period: its history, documents, screenshots, credentials, and its own rules and lessons. Lessons it taught other projects stay, without its name, and a saved connection another project uses is kept. This can’t be undone."
+      confirmLabel="Delete now"
+      typed={p.name}
+      onConfirm={() => onConfirm({ keepRepository, keepHosting })}
+    >
+      {p.buildRepo && (
+        <Checkbox
+          label="Keep the build repository"
+          hint={p.buildRepo.repo}
+          checked={keepRepository}
+          onChange={setKeepRepository}
+        />
+      )}
+      {p.hosting && (
+        <Checkbox
+          label="Keep the Vercel project"
+          hint={`${p.hosting.project}: its preview links keep working`}
+          checked={keepHosting}
+          onChange={setKeepHosting}
+        />
+      )}
+      <a className={s.download} href={zip} download>
+        Download everything first (.zip)
+      </a>
+    </TypedConfirm>
+  );
+}
+
 export function DangerZone({
   project: p,
   rollback,
@@ -34,7 +79,7 @@ export function DangerZone({
   rollback: SettingsSnapshot['rollback'];
   running: number;
 }) {
-  const { projectId, run, openOverlay, closeOverlay } = useApp();
+  const { projectId, run, openOverlay, closeOverlay, home } = useApp();
   const base = `/projects/${projectId}`;
   const paused = p.status === 'paused';
   const archived = p.status === 'archived';
@@ -155,6 +200,24 @@ export function DangerZone({
         }}
       />,
     );
+  const deleteNow = () =>
+    openOverlay(
+      <DeleteNow
+        project={p}
+        zip={`${API}${base}/documents.zip`}
+        onConfirm={(keep) => {
+          closeOverlay();
+          void run(
+            () => post(`${base}/delete-now`, { confirmation: p.name, ...keep }),
+            {
+              title: `${p.name} deleted`,
+              detail: 'Only its record under Deleted projects is left.',
+            },
+            'Deleting the project',
+          ).then((ok) => ok && home());
+        }}
+      />,
+    );
   const cancelDeletion = () =>
     run(
       () => del(`${base}/deletion`),
@@ -198,6 +261,9 @@ export function DangerZone({
                 <Action kind="primary" onClick={() => void cancelDeletion()}>
                   Cancel deletion
                 </Action>
+                <Action kind="danger" onClick={deleteNow}>
+                  Delete now instead
+                </Action>
               </Row>
             ) : (
               <>
@@ -214,7 +280,10 @@ export function DangerZone({
                   note={`After a 30-day grace period, everything held for it is deleted for good${created.length ? ', with its build repository and hosting project' : ''}. You can cancel until then.`}
                 >
                   <Action kind="danger" onClick={deleteProject}>
-                    Delete project
+                    Delete in 30 days
+                  </Action>
+                  <Action kind="danger" onClick={deleteNow}>
+                    Delete now
                   </Action>
                 </Row>
               </>
@@ -229,8 +298,8 @@ export function DangerZone({
     <div className={s.danger}>
       <Panel title="Danger zone">
         <p className={`${s.lead} ${s.sentence}`}>
-          Each of these asks you to confirm first. Pausing and archiving can be undone; rolling back
-          and resetting can’t.
+          Each of these asks you to confirm first. Pausing and archiving can be undone; rolling
+          back, resetting and deleting can’t.
         </p>
         <ul className={s.dangerRows}>
           <Row
@@ -281,6 +350,18 @@ export function DangerZone({
           >
             <Action kind="danger" onClick={archive} disabled={live}>
               Archive
+            </Action>
+          </Row>
+          <Row
+            title="Delete now"
+            note={
+              live
+                ? 'Pause the project first. A project is deleted only once nothing is running.'
+                : 'For a project made by mistake, a test, or a demo you won’t open again: everything goes at once, with no archive and no grace period. This can’t be undone.'
+            }
+          >
+            <Action kind="danger" onClick={deleteNow} disabled={live}>
+              Delete now
             </Action>
           </Row>
         </ul>

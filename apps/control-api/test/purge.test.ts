@@ -109,4 +109,45 @@ describe('purging what we created outside our stores', () => {
       detail: expect.stringContaining('No GitHub App'),
     });
   });
+
+  it('deletes now from any state but running, keeping what the operator chose to keep', async () => {
+    const mistake = project('prj-mistake', { status: 'intake', deletion: null });
+    const t = deps([mistake]);
+    const tomb = await purgeProject(t.d, mistake, 'steve', { now: true, keep: ['repository'] });
+    expect(t.deletedRepos).toEqual([]);
+    expect(t.deletedHosting).toEqual(['prj-mistake-website']);
+    expect(tomb.steps.repository?.result).toMatchObject({ outcome: 'kept' });
+    expect(tomb).toMatchObject({ requestedBy: 'steve', purgedBy: 'steve' });
+    expect(tomb.finishedAt).toBeTruthy();
+
+    const live = project('prj-live', { status: 'running', deletion: null });
+    await expect(purgeProject(deps([live]).d, live, 'steve', { now: true })).rejects.toThrow(
+      'pause it',
+    );
+    // The daily run never deletes a project that wasn't archived and scheduled.
+    const fresh = project('prj-fresh', { status: 'intake', deletion: null });
+    await expect(purgeProject(deps([fresh]).d, fresh, 'vercel-cron')).rejects.toThrow(
+      'not an archived project',
+    );
+  });
+
+  it('keeps what the operator kept when the daily run finishes a purge cut off part way', async () => {
+    const cut = project('prj-cut', { status: 'paused', deletion: null });
+    const t = deps([cut]);
+    t.d.hosting = {
+      deleteProject: async () => {
+        throw new Error('Vercel unavailable');
+      },
+    };
+    await expect(
+      purgeProject(t.d, cut, 'steve', { now: true, keep: ['repository'] }),
+    ).rejects.toThrow('Vercel unavailable');
+    t.d.hosting = { deleteProject: async (name) => ({ outcome: 'deleted', detail: name }) };
+    // The log is still there (it goes last), so the daily run resumes with the project's state.
+    const tomb = await purgeProject(t.d, cut, 'vercel-cron');
+    expect(t.deletedRepos).toEqual([]);
+    expect(tomb.steps.repository?.result).toMatchObject({ outcome: 'kept' });
+    expect(tomb.steps.hosting?.result).toMatchObject({ outcome: 'deleted' });
+    expect(tomb.finishedAt).toBeTruthy();
+  });
 });
