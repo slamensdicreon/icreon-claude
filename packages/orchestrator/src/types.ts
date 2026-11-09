@@ -116,6 +116,8 @@ export interface ProjectSnapshot {
   attempts: Record<string, number>;
   instructions: Record<string, string | null>;
   retryFromBlocked: string[];
+  /** Tasks whose last rejected-work card retried by default (absent before such cards waited). */
+  defaultedRetry?: string[];
   reruns: string[];
   waitingOn: [string, { ids: string[]; what: string; prior: string | null; note?: string }][];
   /** Absent in snapshots taken before capability gaps existed. */

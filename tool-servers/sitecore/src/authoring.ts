@@ -223,6 +223,8 @@ const PageDesignsArgs = z.object({
     .array(z.object({ templatePath: Path, pageDesignPath: Path }))
     .min(1)
     .max(50),
+  /** Keep every other template's page design as stored now, and map only these. */
+  add: z.boolean().optional(),
 });
 const LanguageArgs = z.object({
   /** e.g. "es-US" */
@@ -290,7 +292,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'item.update': {
       description:
-        "Set field values on an item (by absolute path) in one language. For a field that lists item IDs and that other tasks also write (an Available Renderings group's Renderings, __Masters), pass add: true with the IDs to add: they join the value stored at the moment of the write, and every ID already there stays. Writing back a list you read earlier drops whatever another task added since.",
+        "Set field values on an item (by absolute path) in one language. For a field that lists item IDs and that other tasks also write (an Available Renderings group's Renderings, __Masters), pass add: true with the IDs to add: they join the value stored at the moment of the write, and every ID already there stays. Writing back a list you read earlier drops whatever another task added since. A write whose every field has add: true never waits for another task's session (a placeholder settings item's Allowed Controls too).",
       inputSchema: {
         type: 'object',
         properties: {
@@ -313,6 +315,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         additionalProperties: false,
       },
       mutates: true,
+      // Every field adds IDs to what is stored when it writes: it can't drop another task's IDs.
+      merges: (a) =>
+        Array.isArray(a.fields) &&
+        a.fields.length > 0 &&
+        a.fields.every((f) => (f as { add?: unknown })?.add === true),
       pathArgs: ['path'],
     },
     'item.rename': {
@@ -341,11 +348,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'page-designs.map': {
       description:
-        "Map page templates to page designs on the project's site (Sitecore's configurePageDesigns): each page template's pages then show its page design's partial designs (header, footer). Give every page template: the mapping replaces the site's whole mapping. Reads the Page Designs item back to confirm each pair. Don't write TemplatesMapping by hand: Sitecore ignores a value not in its URL-encoded form.",
+        "Map page templates to page designs on the project's site (Sitecore's configurePageDesigns): each page template's pages then show its page design's partial designs (header, footer). Give every page template, or pass add: true to map only the templates you give and keep every other template's page design as stored at the moment of the write (a template task mapping its own template; it then never waits for another task's session). Reads the Page Designs item back to confirm each pair. Don't write TemplatesMapping by hand: Sitecore ignores a value not in its URL-encoded form.",
       inputSchema: {
         type: 'object',
         properties: {
           pageDesignsPath: { type: 'string' },
+          add: { type: 'boolean' },
           mappings: {
             type: 'array',
             items: {
@@ -359,6 +367,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         additionalProperties: false,
       },
       mutates: true,
+      merges: (a) => a.add === true,
       pathArgs: ['pageDesignsPath'],
     },
     'template.create': {
@@ -926,6 +935,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         pageDesignId: sitecoreId(await this.idOf(q, m.pageDesignPath)),
       });
     }
+    let kept = 0;
+    if (a.data.add) {
+      // The mapping replaces the site's whole mapping: keep each template's design as stored now.
+      const now = await readBack(q, root, 'en', ['TemplatesMapping']);
+      const given = new Set(pairs.map((p) => bare(p.templateId)));
+      for (const [t, d] of templatesMapping(now?.fields.get('templatesmapping') ?? ''))
+        if (!given.has(t) && /^[0-9a-f]{32}$/.test(t) && /^[0-9a-f]{32}$/.test(d)) {
+          pairs.push({ templateId: sitecoreId(t), pageDesignId: sitecoreId(d) });
+          kept++;
+        }
+    }
     await q.run<{ configurePageDesigns: boolean }>(
       `mutation { configurePageDesigns(input: { siteName: ${gql(facts.site)}, mapping: [${pairs
         .map((p) => `{ templateId: ${gql(p.templateId)}, pageDesignId: ${gql(p.pageDesignId)} }`)
@@ -940,13 +960,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     return missing.length
       ? {
           code: 409,
-          body: { mapped: pairs.length - missing.length, missing },
+          body: { mapped: a.data.mappings.length - missing.length, missing },
           summary: `Mapped page designs, but ${missing.map((m) => m.templatePath).join(', ')} doesn't read back`,
         }
       : {
           code: 200,
-          body: { mapped: pairs.length },
-          summary: `Mapped ${pairs.length} page template${pairs.length === 1 ? '' : 's'} to their page designs, read back`,
+          body: { mapped: a.data.mappings.length, ...(a.data.add ? { kept } : {}) },
+          summary: `Mapped ${a.data.mappings.length} page template${a.data.mappings.length === 1 ? '' : 's'} to their page designs${a.data.add ? `, kept ${kept} other${kept === 1 ? '' : 's'}` : ''}, read back`,
         };
   }
 

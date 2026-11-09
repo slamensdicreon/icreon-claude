@@ -80,9 +80,13 @@ const last = (steps: StepEvent[], server: string, op: string) =>
   steps.filter((s) => s.data.toolServer === server && s.data.operation === op).at(-1);
 const after = (steps: StepEvent[], a: StepEvent) => steps.slice(steps.indexOf(a) + 1);
 /** Working-copy operations that change files. */
-/** Components that are their own full-width band (hero, header, footer) and the app's plumbing. */
+/**
+ * Components that are their own full-width band (any hero: HeroBanner, HeroWithTabs; header,
+ * footer) and the app's plumbing. Only HeroBanner was exempt until Microsoft's HeroWithTabs was
+ * rejected for following the prompt, which exempts every hero.
+ */
 const SECTION_EXEMPT =
-  /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(HeroBanner|SiteHeader|SiteFooter|Header|Footer|Nav)[^/]*\.tsx$/i;
+  /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(Hero|SiteHeader|SiteFooter|Header|Footer|Nav)[^/]*\.tsx$/i;
 const CHANGES = new Set(['fs.write', 'exec.content-sdk-cli']);
 
 /**
@@ -313,6 +317,23 @@ export const CHECKS: Record<string, Check> = {
       if (children && typeof children.max !== 'number')
         problems.push(`${c.key}'s child items have no limit`);
       if (!a.queryBudget) problems.push(`${c.key} has no query budget`);
+    }
+    // A media entry names one file: a folder (Microsoft's CDN folder for two promo images) leaves
+    // the media migrator guessing, and ended in a Director card.
+    const mediaUrls = inScope('media').map((m) => ({
+      key: m.key,
+      url: String(m.attrs?.url ?? ''),
+    }));
+    for (const m of mediaUrls) {
+      if (!/^https?:\/\//.test(m.url)) continue;
+      const bare = m.url.replace(/[?#].*$/, '');
+      const folder =
+        bare.endsWith('/') ||
+        mediaUrls.some((o) => o !== m && o.url.replace(/[?#].*$/, '').startsWith(`${bare}/`));
+      if (folder)
+        problems.push(
+          `media ${m.key}'s url is a folder (${m.url}): give the full URL of the one file it is`,
+        );
     }
     return problems.length
       ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))

@@ -112,7 +112,7 @@ export class HostingToolServer implements ToolServer {
     },
     'project.read': {
       description:
-        'The Vercel project as it stands: link, root directory, protection, environment variable names (never values), production URL and the latest deployments.',
+        'The Vercel project as it stands: link, root directory, protection, environment variables (names and targets, never values) with the ones the head needs that are missing for production and preview, production URL and the latest deployments. This is how to confirm what is set.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       mutates: false,
     },
@@ -342,23 +342,45 @@ export class HostingToolServer implements ToolServer {
           ref: ready.meta?.githubCommitRef ?? '',
         },
       });
+    // The variables as Vercel holds them (names and targets, never values), against the ones the
+    // head needs: a configuration task proves what is set from here, not from a deployment list.
+    const envs =
+      env.status === 200
+        ? ((env.body as { envs?: { key: string; target?: string[] }[] }).envs ?? []).map((e) => ({
+            key: e.key,
+            target: e.target ?? [],
+          }))
+        : null;
+    const variables: Record<string, { set: string[]; missing: string[] }> = {};
+    if (envs)
+      for (const target of ['production', 'preview'] as const) {
+        const set = envs.filter((e) => e.target.includes(target)).map((e) => e.key);
+        let expected: string[] = [];
+        try {
+          expected = (await this.opts.env(projectId, target)).vars.map((x) => x.key);
+        } catch {
+          // What the head needs couldn't be worked out: report what is set, nothing missing.
+        }
+        variables[target] = { set, missing: expected.filter((k) => !set.includes(k)) };
+      }
+    const envLine = envs
+      ? Object.entries(variables)
+          .map(
+            ([t, x]) =>
+              `${t} ${x.set.length} set${x.missing.length ? ` (missing: ${x.missing.join(', ')})` : ''}`,
+          )
+          .join(', ')
+      : `environment variables couldn't be listed (HTTP ${env.status}): don't report any as set`;
     return {
       code: 200,
       body: {
+        variables: envs ? variables : null,
         project: v.name,
         repository: v.link ? `${v.link.org}/${v.link.repo}` : null,
         rootDirectory: v.rootDirectory,
         protection: v.ssoProtection ? 'on' : 'off',
         productionUrl: productionUrl(v),
-        env:
-          env.status === 200
-            ? ((env.body as { envs?: { key: string; target?: string[] }[] }).envs ?? []).map(
-                (e) => ({
-                  key: e.key,
-                  target: e.target ?? [],
-                }),
-              )
-            : [],
+        env: envs ?? [],
         deployments: deployments.map((x) => ({
           id: x.uid,
           state: x.state ?? x.readyState,
@@ -368,7 +390,7 @@ export class HostingToolServer implements ToolServer {
           sha: x.meta?.githubCommitSha ?? null,
         })),
       },
-      summary: `${v.name}: ${deployments.length} recent deployment${deployments.length === 1 ? '' : 's'}`,
+      summary: `${v.name}: variables ${envLine}; ${deployments.length} recent deployment${deployments.length === 1 ? '' : 's'}`,
     };
   }
 
