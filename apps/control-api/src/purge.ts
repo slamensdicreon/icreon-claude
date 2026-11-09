@@ -1,5 +1,5 @@
 import type { BuildRepo, NewEvent } from '@lw/contracts';
-import type { CleanupResult } from '@lw/connectors';
+import type { CleanupResult, ReadinessCheck } from '@lw/connectors';
 import type {
   EventStore,
   IntegrationStore,
@@ -30,13 +30,42 @@ export interface PurgeDeps {
   knowledge?: KnowledgeStore;
   commands?: { forget(projectId: string): Promise<number> } | null;
   /** Deletes the build repository in our GitHub organization (`buildOrg`). */
-  github?: { deleteBuildRepo(org: string, repo: BuildRepo): Promise<CleanupResult> } | null;
+  github?: {
+    deleteBuildRepo(org: string, repo: BuildRepo): Promise<CleanupResult>;
+    canDeleteRepos?(org: string): Promise<ReadinessCheck>;
+  } | null;
   buildOrg?: string | null;
   /** Deletes the hosting project in our Vercel team. */
-  hosting?: { deleteProject(name: string): Promise<CleanupResult> } | null;
+  hosting?: {
+    deleteProject(name: string): Promise<CleanupResult>;
+    canDelete?(): Promise<ReadinessCheck>;
+  } | null;
   /** Every project: what another project still uses is left alone. */
   projects?: () => ProjectState[];
   now?: () => number;
+}
+
+/**
+ * Whether deleting a project would also get its build repository and hosting project, asked of
+ * GitHub and Vercel without deleting anything. Shown before anyone deletes, so a missing
+ * permission is fixed first rather than found as "Refused" afterwards.
+ */
+export async function deletionReadiness(
+  deps: PurgeDeps,
+): Promise<{ repository: ReadinessCheck; hosting: ReadinessCheck; checkedAt: string }> {
+  const repository: ReadinessCheck = !deps.github
+    ? { state: 'off', detail: 'No GitHub App is connected here.' }
+    : !deps.buildOrg
+      ? { state: 'off', detail: 'No build organization is set (GITHUB_BUILD_ORG).' }
+      : deps.github.canDeleteRepos
+        ? await deps.github.canDeleteRepos(deps.buildOrg)
+        : { state: 'unknown', detail: 'This GitHub connection can’t be checked.' };
+  const hosting: ReadinessCheck = !deps.hosting
+    ? { state: 'off', detail: 'No Vercel token is connected here.' }
+    : deps.hosting.canDelete
+      ? await deps.hosting.canDelete()
+      : { state: 'unknown', detail: 'This Vercel connection can’t be checked.' };
+  return { repository, hosting, checkedAt: new Date(deps.now?.() ?? Date.now()).toISOString() };
 }
 
 /** The steps, in order. Each is idempotent: running one twice removes nothing more. */

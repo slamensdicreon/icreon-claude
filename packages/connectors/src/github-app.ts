@@ -75,6 +75,16 @@ export interface GithubDeps {
  * What happened to something outside our stores when a project was deleted: removed, already gone,
  * the client's now (left), or refused (recorded; the purge carries on).
  */
+/**
+ * Whether a deletion would get through, found without deleting anything: `ok`, `missing` (a
+ * permission or setting to change, named in the detail), `off` (nothing connected), `unknown`
+ * (the service couldn't be asked).
+ */
+export interface ReadinessCheck {
+  state: 'ok' | 'missing' | 'off' | 'unknown';
+  detail: string;
+}
+
 export interface CleanupResult {
   outcome: 'deleted' | 'not_found' | 'handed_over' | 'refused' | 'skipped';
   detail: string;
@@ -551,6 +561,45 @@ export class GithubApp {
    * about the repository come back as an outcome rather than an error, so a refusal is recorded
    * and the purge carries on; a GitHub outage throws, so the purge tries again next run.
    */
+  /**
+   * Can the purge delete build repositories in `org`? Reads the app's installation there (read
+   * only): it must be installed and hold Administration: Read and write.
+   */
+  async canDeleteRepos(org: string): Promise<ReadinessCheck> {
+    const c = await this.config();
+    if (!c) return { state: 'off', detail: 'The GitHub App is not set up.' };
+    let inst: { status: number; body: unknown };
+    try {
+      inst = await this.call(
+        'GET',
+        `/orgs/${encodeURIComponent(org)}/installation`,
+        await this.jwt(c),
+      );
+    } catch (err) {
+      return { state: 'unknown', detail: `GitHub couldn't be reached: ${(err as Error).message}` };
+    }
+    if (inst.status === 404)
+      return {
+        state: 'missing',
+        detail: `The GitHub App isn't installed on ${org}, so build repositories there can't be deleted.`,
+      };
+    if (inst.status !== 200)
+      return {
+        state: 'unknown',
+        detail: `GitHub answered ${inst.status} looking up the app on ${org}.`,
+      };
+    const perms = (inst.body as { permissions?: Record<string, string> }).permissions ?? {};
+    if (perms.administration !== 'write')
+      return {
+        state: 'missing',
+        detail: `The app needs Administration: Read and write on ${org} to delete repositories. Add it in the app's settings, then accept it on the ${org} installation.`,
+      };
+    return {
+      state: 'ok',
+      detail: `The app holds Administration: Read and write on ${org}, so it can delete build repositories there.`,
+    };
+  }
+
   async deleteBuildRepo(org: string, repo: BuildRepo): Promise<CleanupResult> {
     const [owner] = repo.repo.split('/');
     if (owner?.toLowerCase() !== org.toLowerCase())

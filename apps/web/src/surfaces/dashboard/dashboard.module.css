@@ -526,3 +526,71 @@
   background: none;
   color: var(--on-ink-muted);
 }
+.readyWrap {
+  padding: 0 var(--space-4);
+}
+.readyWrap {
+  padding: 0 var(--space-4);
+}
+
+/* ---- Phones: the projects come first. */
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.filtersToggle {
+  display: none;
+  flex: none;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.filtersToggle[aria-expanded='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+}
+.projectName b {
+  white-space: nowrap;
+}
+.projectName {
+  min-width: calc(var(--sidebar) * 0.75);
+}
+@media (max-width: 760px) {
+  .filtersToggle {
+    display: inline-flex;
+    align-items: center;
+  }
+  .search {
+    flex: 1 1 auto;
+    width: auto;
+    margin-bottom: 0;
+  }
+  .filters:not([data-open]) .filterRow {
+    display: none;
+  }
+  .filterLabel {
+    width: 100%;
+  }
+  /* The views scroll sideways in one row instead of stacking three deep. */
+  .viewChips {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .viewChips > span {
+    flex-wrap: nowrap;
+  }
+  .viewChips button {
+    white-space: nowrap;
+  }
+  .bulkCount {
+    flex: 1 1 100%;
+  }
+}

@@ -108,6 +108,8 @@ export function ProjectsTable({ o, refresh }: { o: PortfolioOverview; refresh: (
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  // On a phone the filters fold behind a button, so the projects come first.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const setPrefs = (patch: Partial<Prefs>) =>
     setPrefsState((cur) => {
       const next = { ...cur, ...patch };
@@ -238,12 +240,14 @@ export function ProjectsTable({ o, refresh }: { o: PortfolioOverview; refresh: (
       <Panel
         title="Projects"
         chips={
-          <Chips<View>
-            label="Show projects"
-            value={prefs.view}
-            onChange={(view) => setPrefs({ view })}
-            options={model.views}
-          />
+          <span className={s.viewChips}>
+            <Chips<View>
+              label="Show projects"
+              value={prefs.view}
+              onChange={(view) => setPrefs({ view })}
+              options={model.views}
+            />
+          </span>
         }
         meta={
           <span className={s.headRight}>
@@ -253,18 +257,29 @@ export function ProjectsTable({ o, refresh }: { o: PortfolioOverview; refresh: (
           </span>
         }
       >
-        <div className={s.filters}>
-          <label className={s.search}>
-            <Icon name="search" size={18} />
-            <input
-              className="type-body-small"
-              type="search"
-              placeholder="Search projects, clients, playbooks"
-              aria-label="Search projects"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
+        <div className={s.filters} data-open={filtersOpen || undefined}>
+          <div className={s.searchRow}>
+            <label className={s.search}>
+              <Icon name="search" size={18} />
+              <input
+                className="type-body-small"
+                type="search"
+                placeholder="Search projects, clients, playbooks"
+                aria-label="Search projects"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className={`${s.filtersToggle} type-button`}
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((v) => !v)}
+            >
+              Filters
+              {(filtered && !query.trim()) || prefs.group !== DEFAULTS.group ? ' •' : ''}
+            </button>
+          </div>
           <div className={s.filterRow}>
             <span className={`${s.filterLabel} type-label`}>Platform</span>
             <Chips<string>

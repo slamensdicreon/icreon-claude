@@ -109,7 +109,7 @@ import { applyProposals, inForce, unsorted } from './knowledge-review';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
 import { zip, type ZipEntry } from './zip';
-import { purgeDue, purgeProject, type PurgeDeps } from './purge';
+import { deletionReadiness, purgeDue, purgeProject, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
 import { withDocumentFacts, workbenchStory } from './story';
@@ -2237,6 +2237,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
     await projections.catchUpAll();
     return purgeDue(deps.purge, projections.all(), req.operator?.login ?? 'vercel-cron');
+  });
+
+  /**
+   * Whether a deletion would also get the build repository and the hosting project: GitHub's and
+   * Vercel's answers, asked read-only. Kept a few minutes so the Danger zone doesn't ask each time.
+   */
+  let readiness: { at: number; value: Awaited<ReturnType<typeof deletionReadiness>> } | null = null;
+  app.get('/portfolio/deletion-readiness', async () => {
+    if (!deps.purge)
+      throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
+    if (!readiness || now() - readiness.at > 5 * 60_000)
+      readiness = { at: now(), value: await deletionReadiness(deps.purge) };
+    return readiness.value;
   });
 
   /** What is left of deleted projects: their tombstones. */

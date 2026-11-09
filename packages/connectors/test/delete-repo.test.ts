@@ -18,7 +18,11 @@ const repo: BuildRepo = {
 };
 
 /** A GitHub that answers the repository read with `read` and the delete with `del`. */
-function setup(read: { status: number; fullName?: string }, del = 204) {
+function setup(
+  read: { status: number; fullName?: string },
+  del = 204,
+  installation: { status: number; permissions?: Record<string, string> } = { status: 404 },
+) {
   const calls: string[] = [];
   const json = (status: number, b: unknown) =>
     status === 204 ? new Response(null, { status }) : new Response(JSON.stringify(b), { status });
@@ -31,6 +35,8 @@ function setup(read: { status: number; fullName?: string }, del = 204) {
         token: 'ghs_org',
         expires_at: new Date(Date.now() + 3.6e6).toISOString(),
       });
+    if (p === '/orgs/lw-build/installation')
+      return json(installation.status, { id: 77, permissions: installation.permissions ?? {} });
     if (p === `/repos/${repo.repo}` && method === 'GET')
       return json(read.status, { full_name: read.fullName ?? repo.repo });
     if (p === `/repos/${repo.repo}` && method === 'DELETE')
@@ -96,5 +102,34 @@ describe('deleting a build repository', () => {
     await expect(setup({ status: 502 }).app.deleteBuildRepo('lw-build', repo)).rejects.toThrow(
       'GitHub answered 502',
     );
+  });
+});
+
+describe('checking a deletion would get the build repository, without deleting', () => {
+  it('is ready when the app holds Administration: write on the organization', async () => {
+    const { app, calls } = setup({ status: 200 }, 204, {
+      status: 200,
+      permissions: { administration: 'write', contents: 'write' },
+    });
+    expect(await app.canDeleteRepos('lw-build')).toMatchObject({ state: 'ok' });
+    expect(calls).toEqual(['GET /orgs/lw-build/installation']);
+  });
+
+  it('names what is missing: the permission, or the installation', async () => {
+    const read = setup({ status: 200 }, 204, {
+      status: 200,
+      permissions: { administration: 'read' },
+    });
+    expect(await read.app.canDeleteRepos('lw-build')).toMatchObject({
+      state: 'missing',
+      detail: expect.stringContaining('Administration: Read and write'),
+    });
+    expect(await setup({ status: 200 }).app.canDeleteRepos('lw-build')).toMatchObject({
+      state: 'missing',
+      detail: expect.stringContaining("isn't installed on lw-build"),
+    });
+    expect(
+      await setup({ status: 200 }, 204, { status: 500 }).app.canDeleteRepos('lw-build'),
+    ).toMatchObject({ state: 'unknown' });
   });
 });

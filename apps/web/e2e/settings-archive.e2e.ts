@@ -166,3 +166,28 @@ test('the Dashboard lists deleted projects under Archived, with what happened ou
   await expect(deleted.getByText('Dec 8, 2026')).toBeVisible();
   run.clean();
 });
+
+test('the Danger zone says up front whether a deletion will get the repository and the Vercel project', async ({
+  page,
+}) => {
+  await page.route(/\/portfolio\/deletion-readiness$/, (r) =>
+    r.fulfill({
+      json: {
+        repository: { state: 'ok', detail: 'The app holds Administration: Read and write.' },
+        hosting: {
+          state: 'missing',
+          detail: "The token's owner is a Developer in our-team, which can't delete projects.",
+        },
+        checkedAt: '2026-11-09T12:00:00.000Z',
+      },
+    }),
+  );
+  const run = await open(page, `/p/${PROJECT}/settings`);
+  const ready = page.getByRole('status', { name: 'Deletion readiness' });
+  await expect(ready).toContainText('Deleting a project won’t get everything yet');
+  await expect(ready).toContainText('Build repositories (GitHub): Can delete');
+  await expect(ready).toContainText('Hosting projects (Vercel): Can’t delete yet');
+  await expect(ready).toContainText('a Developer in our-team');
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  run.clean();
+});

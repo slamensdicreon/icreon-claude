@@ -190,3 +190,26 @@ test('a long project list makes the switcher search first, with Needs you and Re
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   run.errors.length = 0; // The padded project has no API behind it.
 });
+
+test('on a phone the projects come first: filters fold behind a button, nothing scrolls sideways', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await padOverview(page);
+  const run = await open(page, '/');
+  const table = page.getByRole('region', { name: 'Projects', exact: true });
+  const toggle = table.getByRole('button', { name: /^Filters/ });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(table.getByRole('group', { name: 'Platform' })).toBeHidden();
+  await expect(table.getByLabel('Search projects')).toBeVisible();
+  await toggle.click();
+  await table
+    .getByRole('group', { name: 'Platform' })
+    .getByRole('button', { name: /Optimizely/ })
+    .click();
+  await toggle.click();
+  await expect(toggle).toHaveText('Filters •');
+  await fitsWidth(page);
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  run.clean();
+});

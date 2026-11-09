@@ -214,6 +214,50 @@ export function hostingStatus(w: HostingWiring, projectId: string, deploymentId:
  * our team (moved to the client's, or already gone) is left. Vercel's refusal comes back as an
  * outcome, so the purge records it and carries on; an outage throws, so it tries again next run.
  */
+/** Vercel team roles that can delete projects. */
+const DELETERS = new Set(['OWNER', 'MEMBER']);
+
+/**
+ * Can the purge delete hosting projects in our Vercel team? Reads the token owner's role in the
+ * team (read only): an Owner or a Member can delete projects; a Developer, Viewer or Billing role
+ * can't.
+ */
+export async function canDeleteHostingProjects(
+  w: Pick<HostingWiring, 'token' | 'teamId' | 'fetch'>,
+): Promise<{ state: 'ok' | 'missing' | 'off' | 'unknown'; detail: string }> {
+  const doFetch = w.fetch ?? fetch;
+  let res: Response;
+  try {
+    res = await doFetch(`https://api.vercel.com/v2/teams/${encodeURIComponent(w.teamId)}`, {
+      headers: { authorization: `Bearer ${w.token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    return { state: 'unknown', detail: `Vercel couldn't be reached: ${(err as Error).message}` };
+  }
+  if (res.status === 403 || res.status === 404)
+    return {
+      state: 'missing',
+      detail: "The Vercel token can't see our team, so hosting projects can't be deleted.",
+    };
+  if (!res.ok)
+    return { state: 'unknown', detail: `Vercel answered ${res.status} reading the team.` };
+  const team = (await res.json()) as { slug?: string; membership?: { role?: string } };
+  const role = team.membership?.role;
+  const where = team.slug ? ` in ${team.slug}` : '';
+  if (!role) return { state: 'unknown', detail: `Vercel didn't say the token's role${where}.` };
+  const named = role.charAt(0) + role.slice(1).toLowerCase();
+  return DELETERS.has(role)
+    ? {
+        state: 'ok',
+        detail: `The token's owner is ${/^[AEIOU]/.test(named) ? 'an' : 'a'} ${named}${where}, so it can delete hosting projects.`,
+      }
+    : {
+        state: 'missing',
+        detail: `The token's owner is ${/^[AEIOU]/.test(named) ? 'an' : 'a'} ${named}${where}, which can't delete projects. Make them a Member or an Owner, or use another person's token.`,
+      };
+}
+
 export async function deleteHostingProject(
   w: Pick<HostingWiring, 'token' | 'teamId' | 'fetch'>,
   name: string,

@@ -7,7 +7,7 @@ import {
   MemoryVault,
 } from '@lw/events';
 import { describe, expect, it } from 'vitest';
-import { purgeProject, type PurgeDeps } from '../src/purge';
+import { deletionReadiness, purgeProject, type PurgeDeps } from '../src/purge';
 
 const repo = (name: string): BuildRepo => ({
   repo: `lw-build/${name}`,
@@ -149,5 +149,20 @@ describe('purging what we created outside our stores', () => {
     expect(tomb.steps.repository?.result).toMatchObject({ outcome: 'kept' });
     expect(tomb.steps.hosting?.result).toMatchObject({ outcome: 'deleted' });
     expect(tomb.finishedAt).toBeTruthy();
+  });
+});
+
+describe('deletion readiness', () => {
+  it('asks GitHub and Vercel, and says what is not connected', async () => {
+    const t = deps([]);
+    t.d.github!.canDeleteRepos = async (org) => ({ state: 'ok', detail: `ok on ${org}` });
+    t.d.hosting!.canDelete = async () => ({ state: 'missing', detail: 'a Developer' });
+    expect(await deletionReadiness(t.d)).toMatchObject({
+      repository: { state: 'ok', detail: 'ok on lw-build' },
+      hosting: { state: 'missing', detail: 'a Developer' },
+    });
+    expect(
+      await deletionReadiness({ ...t.d, github: null, hosting: null, buildOrg: null }),
+    ).toMatchObject({ repository: { state: 'off' }, hosting: { state: 'off' } });
   });
 });

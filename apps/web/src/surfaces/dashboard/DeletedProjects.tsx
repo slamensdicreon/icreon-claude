@@ -4,6 +4,7 @@
  */
 import { usePoll } from '../../lib/poll';
 import { Panel } from '../../ui/cypher/parts';
+import { DeletionReady } from '../settings/DeletionReady';
 import s from './dashboard.module.css';
 
 /** A purge step's record, as `GET /portfolio/deleted` serves it. */
@@ -46,6 +47,9 @@ export function DeletedProjects() {
   if (error || !data?.length) return null;
   return (
     <Panel title="Deleted projects" meta={`${data.length} · what is left after a deletion`}>
+      <div className={s.readyWrap}>
+        <DeletionReady />
+      </div>
       <div className={s.tableWrap}>
         <table className={`${s.table} type-table`}>
           <thead>
