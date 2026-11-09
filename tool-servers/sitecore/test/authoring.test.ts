@@ -518,6 +518,39 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(
       (await s2.call('page-designs.map', { pageDesignsPath: designs, mappings }, ctx)).code,
     ).toBe(409);
+    // add: true maps only the template given and keeps every other template's design as stored.
+    const tpl2 = '/sitecore/templates/Project/Brands/ansco/Pages/Error Page';
+    const both = fakeCm({ ...items, [tpl2]: 'd1d2d3d4e5e5f6f6a7a7b8b8b8b8b8b8' });
+    const s3 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: both.fetch });
+    await s3.call('page-designs.map', { pageDesignsPath: designs, mappings }, ctx);
+    const added = await s3.call(
+      'page-designs.map',
+      {
+        pageDesignsPath: designs,
+        mappings: [{ templatePath: tpl2, pageDesignPath: `${designs}/Default` }],
+        add: true,
+      },
+      ctx,
+    );
+    expect(added).toMatchObject({ code: 200, body: { mapped: 1, kept: 1 } });
+    const sent = both.queries.filter((q) => q.includes('configurePageDesigns')).at(-1)!;
+    expect(sent).toContain('{D1D2D3D4-E5E5-F6F6-A7A7-B8B8B8B8B8B8}');
+    expect(sent).toContain('{C029D916-F6ED-4CBA-9BCB-2C679FD14800}');
+    expect(s3.catalog['page-designs.map']!.merges?.({ add: true })).toBe(true);
+    expect(s3.catalog['page-designs.map']!.merges?.({})).toBe(false);
+    expect(
+      s3.catalog['item.update']!.merges?.({
+        fields: [{ name: 'Renderings', value: 'x', add: true }],
+      }),
+    ).toBe(true);
+    expect(
+      s3.catalog['item.update']!.merges?.({
+        fields: [
+          { name: 'Renderings', value: 'x', add: true },
+          { name: 'Title', value: 'y' },
+        ],
+      }),
+    ).toBe(false);
     // Page designs come from the site's own Page Designs item.
     const elsewhere = [{ templatePath: tpl, pageDesignPath: '/sitecore/content/Other/Default' }];
     expect(

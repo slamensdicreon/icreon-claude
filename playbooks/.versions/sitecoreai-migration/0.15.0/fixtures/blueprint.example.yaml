@@ -1,0 +1,389 @@
+# Example Blueprint for demos and tests: a mid-size corporate site with a blog.
+version: 1
+collections:
+  components:
+    - key: hero
+      name: Hero
+      pilot: true
+    - key: promo-card
+      name: PromoCard
+      pilot: true
+    - key: rich-text
+      name: RichText
+      pilot: true
+    - key: header
+      name: Header
+    - key: footer
+      name: Footer
+    - key: card-grid
+      name: CardGrid
+    - key: testimonial
+      name: Testimonial
+    - key: cta-banner
+      name: CtaBanner
+    - key: accordion
+      name: Accordion
+    - key: tabs
+      name: Tabs
+    - key: image-gallery
+      name: ImageGallery
+    - key: video-embed
+      name: VideoEmbed
+    - key: navigation
+      name: Navigation
+      status: merge
+    - key: breadcrumb
+      name: Breadcrumb
+    - key: stats-strip
+      name: StatsStrip
+    - key: logo-wall
+      name: LogoWall
+  templates:
+    - key: home
+      name: Home Page
+    - key: landing
+      name: Landing Page
+    - key: article
+      name: Article Page
+    - key: listing
+      name: Listing Page
+    - key: blog-post
+      name: Blog Post
+  pages:
+    - key: page-1
+      name: Page 1
+    - key: page-2
+      name: Page 2
+    - key: page-3
+      name: Page 3
+    - key: page-4
+      name: Page 4
+    - key: page-5
+      name: Page 5
+    - key: page-6
+      name: Page 6
+    - key: page-7
+      name: Page 7
+    - key: page-8
+      name: Page 8
+    - key: page-9
+      name: Page 9
+    - key: page-10
+      name: Page 10
+    - key: page-11
+      name: Page 11
+    - key: page-12
+      name: Page 12
+    - key: page-13
+      name: Page 13
+    - key: page-14
+      name: Page 14
+    - key: page-15
+      name: Page 15
+    - key: page-16
+      name: Page 16
+    - key: page-17
+      name: Page 17
+    - key: page-18
+      name: Page 18
+    - key: page-19
+      name: Page 19
+    - key: page-20
+      name: Page 20
+    - key: page-21
+      name: Page 21
+    - key: page-22
+      name: Page 22
+    - key: page-23
+      name: Page 23
+    - key: page-24
+      name: Page 24
+    - key: page-25
+      name: Page 25
+    - key: page-26
+      name: Page 26
+    - key: page-27
+      name: Page 27
+    - key: page-28
+      name: Page 28
+    - key: page-29
+      name: Page 29
+    - key: page-30
+      name: Page 30
+    - key: page-31
+      name: Page 31
+    - key: page-32
+      name: Page 32
+    - key: page-33
+      name: Page 33
+    - key: page-34
+      name: Page 34
+    - key: page-35
+      name: Page 35
+    - key: page-36
+      name: Page 36
+    - key: page-37
+      name: Page 37
+    - key: page-38
+      name: Page 38
+    - key: page-39
+      name: Page 39
+    - key: page-40
+      name: Page 40
+    - key: blog-1
+      name: Blog post 1
+    - key: blog-2
+      name: Blog post 2
+    - key: blog-3
+      name: Blog post 3
+    - key: blog-4
+      name: Blog post 4
+    - key: blog-5
+      name: Blog post 5
+    - key: blog-6
+      name: Blog post 6
+    - key: blog-7
+      name: Blog post 7
+    - key: blog-8
+      name: Blog post 8
+  media:
+    - key: media-1
+      name: Media item 1
+    - key: media-2
+      name: Media item 2
+    - key: media-3
+      name: Media item 3
+    - key: media-4
+      name: Media item 4
+    - key: media-5
+      name: Media item 5
+    - key: media-6
+      name: Media item 6
+    - key: media-7
+      name: Media item 7
+    - key: media-8
+      name: Media item 8
+    - key: media-9
+      name: Media item 9
+    - key: media-10
+      name: Media item 10
+    - key: media-11
+      name: Media item 11
+    - key: media-12
+      name: Media item 12
+    - key: media-13
+      name: Media item 13
+    - key: media-14
+      name: Media item 14
+    - key: media-15
+      name: Media item 15
+    - key: media-16
+      name: Media item 16
+    - key: media-17
+      name: Media item 17
+    - key: media-18
+      name: Media item 18
+    - key: media-19
+      name: Media item 19
+    - key: media-20
+      name: Media item 20
+    - key: media-21
+      name: Media item 21
+    - key: media-22
+      name: Media item 22
+    - key: media-23
+      name: Media item 23
+    - key: media-24
+      name: Media item 24
+    - key: media-25
+      name: Media item 25
+    - key: media-26
+      name: Media item 26
+    - key: media-27
+      name: Media item 27
+    - key: media-28
+      name: Media item 28
+    - key: media-29
+      name: Media item 29
+    - key: media-30
+      name: Media item 30
+    - key: media-31
+      name: Media item 31
+    - key: media-32
+      name: Media item 32
+    - key: media-33
+      name: Media item 33
+    - key: media-34
+      name: Media item 34
+    - key: media-35
+      name: Media item 35
+    - key: media-36
+      name: Media item 36
+    - key: media-37
+      name: Media item 37
+    - key: media-38
+      name: Media item 38
+    - key: media-39
+      name: Media item 39
+    - key: media-40
+      name: Media item 40
+    - key: media-41
+      name: Media item 41
+    - key: media-42
+      name: Media item 42
+    - key: media-43
+      name: Media item 43
+    - key: media-44
+      name: Media item 44
+    - key: media-45
+      name: Media item 45
+    - key: media-46
+      name: Media item 46
+    - key: media-47
+      name: Media item 47
+    - key: media-48
+      name: Media item 48
+    - key: media-49
+      name: Media item 49
+    - key: media-50
+      name: Media item 50
+    - key: media-51
+      name: Media item 51
+    - key: media-52
+      name: Media item 52
+    - key: media-53
+      name: Media item 53
+    - key: media-54
+      name: Media item 54
+    - key: media-55
+      name: Media item 55
+    - key: media-56
+      name: Media item 56
+    - key: media-57
+      name: Media item 57
+    - key: media-58
+      name: Media item 58
+    - key: media-59
+      name: Media item 59
+    - key: media-60
+      name: Media item 60
+    - key: media-61
+      name: Media item 61
+    - key: media-62
+      name: Media item 62
+    - key: media-63
+      name: Media item 63
+    - key: media-64
+      name: Media item 64
+    - key: media-65
+      name: Media item 65
+    - key: media-66
+      name: Media item 66
+    - key: media-67
+      name: Media item 67
+    - key: media-68
+      name: Media item 68
+    - key: media-69
+      name: Media item 69
+    - key: media-70
+      name: Media item 70
+    - key: media-71
+      name: Media item 71
+    - key: media-72
+      name: Media item 72
+    - key: media-73
+      name: Media item 73
+    - key: media-74
+      name: Media item 74
+    - key: media-75
+      name: Media item 75
+    - key: media-76
+      name: Media item 76
+    - key: media-77
+      name: Media item 77
+    - key: media-78
+      name: Media item 78
+    - key: media-79
+      name: Media item 79
+    - key: media-80
+      name: Media item 80
+    - key: media-81
+      name: Media item 81
+    - key: media-82
+      name: Media item 82
+    - key: media-83
+      name: Media item 83
+    - key: media-84
+      name: Media item 84
+    - key: media-85
+      name: Media item 85
+    - key: media-86
+      name: Media item 86
+    - key: media-87
+      name: Media item 87
+    - key: media-88
+      name: Media item 88
+    - key: media-89
+      name: Media item 89
+    - key: media-90
+      name: Media item 90
+    - key: media-91
+      name: Media item 91
+    - key: media-92
+      name: Media item 92
+    - key: media-93
+      name: Media item 93
+    - key: media-94
+      name: Media item 94
+    - key: media-95
+      name: Media item 95
+    - key: media-96
+      name: Media item 96
+    - key: media-97
+      name: Media item 97
+    - key: media-98
+      name: Media item 98
+    - key: media-99
+      name: Media item 99
+    - key: media-100
+      name: Media item 100
+    - key: media-101
+      name: Media item 101
+    - key: media-102
+      name: Media item 102
+    - key: media-103
+      name: Media item 103
+    - key: media-104
+      name: Media item 104
+    - key: media-105
+      name: Media item 105
+    - key: media-106
+      name: Media item 106
+    - key: media-107
+      name: Media item 107
+    - key: media-108
+      name: Media item 108
+    - key: media-109
+      name: Media item 109
+    - key: media-110
+      name: Media item 110
+    - key: media-111
+      name: Media item 111
+    - key: media-112
+      name: Media item 112
+    - key: media-113
+      name: Media item 113
+    - key: media-114
+      name: Media item 114
+    - key: media-115
+      name: Media item 115
+    - key: media-116
+      name: Media item 116
+    - key: media-117
+      name: Media item 117
+    - key: media-118
+      name: Media item 118
+    - key: media-119
+      name: Media item 119
+    - key: media-120
+      name: Media item 120

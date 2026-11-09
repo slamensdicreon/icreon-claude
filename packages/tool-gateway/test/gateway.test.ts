@@ -378,6 +378,70 @@ describe('call handling', () => {
     expect((await g.call(update('migrate-pages-about'))).ok).toBe(true);
   });
 
+  it('holds an item for one call only when the write merges into what is stored', async () => {
+    const locks = new MemoryWriteLocks();
+    let inFlight = 0;
+    let most = 0;
+    const server = fakeServer(
+      'sitecore-authoring',
+      {
+        'item.update': {
+          mutates: true,
+          pathArgs: ['path'],
+          merges: (a) => (a.fields as { add?: boolean }[]).every((f) => f.add === true),
+        },
+      },
+      async () => {
+        inFlight++;
+        most = Math.max(most, inFlight);
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight--;
+        return { code: 200, body: {} };
+      },
+    );
+    const g = new ToolGateway({
+      playbook: pb,
+      servers: [server],
+      bindings: () => BINDINGS,
+      credentials: { tokenFor: async () => TOKEN },
+      idempotency: new MemoryIdempotencyStore(),
+      rollback: { hasRecipe: async () => false },
+      locks,
+      limiter: new TokenBucketLimiter(1000, 1000),
+      store: new InMemoryEventStore(),
+    });
+    const path = '/sitecore/content/Acme/Corporate/Home';
+    const add = (taskId: string) =>
+      call(
+        'content-migrator',
+        'sitecore-authoring',
+        'item.update',
+        { path, fields: [{ name: 'Renderings', value: '{A}', add: true }] },
+        { taskId },
+      );
+    const set = (taskId: string) =>
+      call(
+        'content-migrator',
+        'sitecore-authoring',
+        'item.update',
+        { path, fields: [{ name: 'Title', value: 'x' }] },
+        { taskId },
+      );
+    // Three tasks adding at once all succeed, one after another, and none keeps the item.
+    const rs = await Promise.all(
+      ['register-a', 'register-b', 'register-c'].map((t) => g.call(add(t))),
+    );
+    expect(rs.every((r) => r.ok)).toBe(true);
+    expect(most).toBe(1);
+    expect((await g.call(set('register-d'))).ok).toBe(true);
+    // A session that replaces the value still keeps others, adders included, out until it ends.
+    const r = await g.call(add('register-e'));
+    expect(r).toMatchObject({ denied: 'locked' });
+    expect('message' in r && r.message).toContain('register-d');
+    await locks.release('p1', 'register-d');
+    expect((await g.call(add('register-e'))).ok).toBe(true);
+  });
+
   it('gives up on a call that never answers, so the agent can go on', async () => {
     const hung = fakeServer('github', catalogs['github']!, () => new Promise<never>(() => {}));
     const store = new InMemoryEventStore();

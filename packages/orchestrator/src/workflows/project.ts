@@ -146,6 +146,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const attempts: Record<string, number> = {};
   const instructions: Record<string, string | null> = {};
   const retryFromBlocked = new Set<string>();
+  /**
+   * Tasks whose last rejected-work card retried by default (nobody answered). If such a task is
+   * rejected again, its next card waits for the Director: Microsoft's 404 raised the same card
+   * every hour overnight, each defaulting to a retry that could not change the result.
+   */
+  const defaultedRetry = new Set<string>();
   /** Tasks the Director sent back: they run even if their phase has already exited. */
   const reruns = new Set<string>();
   /** Tasks parked until other tasks make what they need, and how often each has waited. */
@@ -672,6 +678,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         id,
       ),
     );
+    if (e.resolver.kind === 'blocked' && patched('repeat-card-waits')) {
+      if (by === 'default' && optionId === 'retry') defaultedRetry.add(e.resolver.taskId);
+      else defaultedRetry.delete(e.resolver.taskId);
+    }
     await applyResolution(e.resolver, optionId, notes);
     poke();
   }
@@ -700,6 +710,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             taskMove(t, 'done', 'Accepted as is'),
             agentRefresh(t.role),
           );
+        } else if (optionId === 'hold') {
+          // Parked: it stays blocked, with no retry and no further card, until the Director runs
+          // it again from the plan (once the task that owns its cause has landed).
+          instructions[r.taskId] = notes;
         } else {
           instructions[r.taskId] = notes;
           retryFromBlocked.add(r.taskId);
@@ -1284,6 +1298,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       events.push(agentRefresh(t.role));
       await send(...events);
       // Rejected and retries didn't fix it: the Lead may send it back once more.
+      const holdable = patched('repeat-card-waits');
+      const repeat = holdable && defaultedRetry.has(t.taskId);
       const raiser = (
         card: Omit<EscalationCardInput, 'escalationId' | 'deadline'>,
         resolver: Resolver,
@@ -1332,15 +1348,28 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
                 context: [
                   `The Lead rejected this output and retries did not fix it. ${outcome.reason}`,
                   outcome.outcome === 'escalate' ? checksLine(outcome.checks) : '',
+                  repeat
+                    ? 'It failed again after the last card retried it by default, with nobody answering. Retrying again changes nothing unless what it depends on changed, so this card waits for you: accept it (it is listed as a gap), hold it until the cause is fixed, or retry with a note.'
+                    : '',
                 ]
                   .filter(Boolean)
                   .join(' '),
                 impact: `${t.title} and its dependents wait. Other work continues.`,
                 options: [
-                  { id: 'retry', label: 'Retry with the Lead feedback', recommended: true },
-                  { id: 'accept', label: 'Accept the current output', recommended: false },
+                  { id: 'retry', label: 'Retry with the Lead feedback', recommended: !repeat },
+                  { id: 'accept', label: 'Accept the current output', recommended: repeat },
+                  ...(holdable
+                    ? [
+                        {
+                          id: 'hold',
+                          label:
+                            'Hold it: no more retries or cards until I run it again from the plan',
+                          recommended: false,
+                        },
+                      ]
+                    : []),
                 ],
-                defaultOptionId: 'retry',
+                defaultOptionId: repeat ? null : 'retry',
                 evidence: [{ kind: 'log', label: 'Rejections', ref: `task:${t.taskId}` }],
                 sourceTaskId: t.taskId,
                 gate: null,
@@ -2480,6 +2509,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const id of r.pastLimitRerun ?? []) pastLimitRerun.add(id);
     skipMerged = r.skipMerged ?? false;
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
+    for (const id of r.defaultedRetry ?? []) defaultedRetry.add(id);
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
     for (const [id, c] of r.capabilityWait ?? []) capabilityWait.set(id, c);
@@ -2517,6 +2547,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       attempts: { ...attempts },
       instructions: { ...instructions },
       retryFromBlocked: [...retryFromBlocked],
+      defaultedRetry: [...defaultedRetry],
       reruns: [...reruns],
       waitingOn: [...waitingOn],
       capabilityWait: [...capabilityWait],
