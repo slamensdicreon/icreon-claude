@@ -283,7 +283,7 @@ export function ProjectSwitcher({ onInk = false }: { onInk?: boolean }) {
     <button
       className={onInk ? styles.switcher : styles.switcherPill}
       onClick={() => openOverlay(<ProjectMenu />)}
-      aria-haspopup="menu"
+      aria-haspopup="dialog"
       aria-label={`Switch project: ${p?.name ?? 'All projects'}`}
     >
       <span className={`${styles.tile} type-label`} data-all={!p || undefined} aria-hidden="true">

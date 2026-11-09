@@ -244,6 +244,9 @@ export function projectRow(s: ProjectState, yours: EscalationView[]): PortfolioP
     readTone: tone,
     faces: (working.length ? working : leads).slice(0, 5).map(faceOf),
     workingWord: archived ? 'resting' : workingWord(working.length, yours.length),
+    client: s.client,
+    platform: null,
+    playbook: null,
   };
 }
 

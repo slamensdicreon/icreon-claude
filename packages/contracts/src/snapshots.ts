@@ -1291,6 +1291,11 @@ export const PortfolioProject = z.object({
   faces: z.array(Face),
   /** "nine working", "waiting on you", "resting". */
   workingWord: z.string(),
+  /** Who it's for, to find a project by its client. */
+  client: z.string().default(''),
+  /** The platform it builds on and the playbook it runs, by name: the Dashboard filters and groups by them. */
+  platform: z.object({ id: z.string(), name: z.string() }).nullable().default(null),
+  playbook: z.object({ id: z.string(), name: z.string() }).nullable().default(null),
 });
 export type PortfolioProject = z.infer<typeof PortfolioProject>;
 

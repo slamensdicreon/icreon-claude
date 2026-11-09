@@ -105,6 +105,13 @@ describe('GET /portfolio/overview', () => {
 
     // Ansell first (it needs the Director), the accepted engagement last.
     const [ansell, acme] = o.projects;
+    // Client and playbook for the Dashboard's search, filters and groups (no intake here: the
+    // playbook goes by its id, and no pack names the platform).
+    expect(acme).toMatchObject({
+      client: 'Acme Corp',
+      playbook: { id: 'sitecoreai-migration' },
+      platform: null,
+    });
     expect(ansell).toMatchObject({
       projectId: 'prj-ansell',
       archived: false,
