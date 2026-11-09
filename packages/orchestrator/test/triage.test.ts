@@ -65,7 +65,9 @@ it('lets the Lead settle a question it may decide: the task retries with its ans
     runner: heroAsks(1, seen),
     triage: async (req) => (asked.push(req), answer(req)),
   });
-  const bot = directorBot(p, () => null);
+  // The Lead answers the Hero's question: the Director bot leaves it (answering it in the same
+  // instant raced the Lead, and its answer then stood).
+  const bot = directorBot(p, (x) => (x.title === HERO_Q ? 'leave' : null));
   await p.handle.result();
   await bot.stop();
   const s = p.state()!;

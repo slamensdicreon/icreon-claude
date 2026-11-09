@@ -76,7 +76,8 @@ export type Resolver =
       question: string;
       options: { id: string; label: string }[];
     }
-  | { kind: 'blocked'; taskId: string }
+  /** `waivable`: the checks it failed, which the card can waive for this task. */
+  | { kind: 'blocked'; taskId: string; waivable?: string[] }
   | { kind: 'budget' }
   | {
       kind: 'gate';
@@ -118,6 +119,8 @@ export interface ProjectSnapshot {
   retryFromBlocked: string[];
   /** Tasks whose last rejected-work card retried by default (absent before such cards waited). */
   defaultedRetry?: string[];
+  /** The failing checks on each task's last rejected-work card (absent before such cards compared). */
+  lastFailure?: Record<string, string>;
   reruns: string[];
   waitingOn: [string, { ids: string[]; what: string; prior: string | null; note?: string }][];
   /** Absent in snapshots taken before capability gaps existed. */

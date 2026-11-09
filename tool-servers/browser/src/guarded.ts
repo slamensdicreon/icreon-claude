@@ -1,4 +1,6 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { EgressProxy } from './egress';
 import { hostAllowed, isBlockedSubresource, type UrlPolicy } from './ssrf';
@@ -10,16 +12,50 @@ export const BREAKPOINTS = {
 } as const;
 export type Breakpoint = keyof typeof BREAKPOINTS;
 
-/** Chromium's path: CHROMIUM_PATH, the image's pre-installed browser, or Playwright's download. */
+/**
+ * Chromium's path: CHROMIUM_PATH, the image's pre-installed browser, Playwright's download, or
+ * Playwright's headless shell. The worker image installs only the shell (`--only-shell`):
+ * Playwright finds it by itself, but Lighthouse launches Chrome from a path, and without one it
+ * looked for a system Chrome and never ran (Ervin Cable's and Ansco's audits).
+ */
 export function chromiumPath(): string | undefined {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   if (existsSync('/opt/pw-browsers/chromium')) return '/opt/pw-browsers/chromium';
   try {
     const bundled = chromium.executablePath();
-    return existsSync(bundled) ? bundled : undefined;
+    if (existsSync(bundled)) return bundled;
   } catch {
-    return undefined;
+    // No bundled browser: try the headless shell.
   }
+  return headlessShellPath();
+}
+
+/** Playwright's headless shell, wherever its browsers are installed. */
+export function headlessShellPath(): string | undefined {
+  const roots = [
+    process.env.PLAYWRIGHT_BROWSERS_PATH,
+    '/ms-playwright',
+    '/opt/pw-browsers',
+    join(homedir(), '.cache', 'ms-playwright'),
+  ].filter((r): r is string => Boolean(r) && r !== '0');
+  for (const root of roots) {
+    let dirs: string[];
+    try {
+      dirs = readdirSync(root)
+        .filter((d) => d.startsWith('chromium_headless_shell-'))
+        .sort()
+        .reverse();
+    } catch {
+      continue;
+    }
+    for (const d of dirs)
+      for (const exe of [
+        join(root, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'),
+        join(root, d, 'chrome-linux', 'headless_shell'),
+      ])
+        if (existsSync(exe)) return exe;
+  }
+  return undefined;
 }
 
 export interface GuardedBrowserOptions {

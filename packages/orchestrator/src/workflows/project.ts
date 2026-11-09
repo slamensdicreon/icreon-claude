@@ -152,6 +152,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
    * every hour overnight, each defaulting to a retry that could not change the result.
    */
   const defaultedRetry = new Set<string>();
+  /**
+   * The failing checks on each task's last rejected-work card. The same failure again is the same
+   * decision: the next card says so and waits for the Director (Ervin Cable's SEO titles raised
+   * three cards for one decision).
+   */
+  const lastFailure: Record<string, string> = {};
   /** Tasks the Director sent back: they run even if their phase has already exited. */
   const reruns = new Set<string>();
   /** Tasks parked until other tasks make what they need, and how often each has waited. */
@@ -496,6 +502,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     const recommended = options.find((o) => o.recommended)?.id ?? options[0]!.id;
     if (out.level === 'agents') {
       const id = await raise(tagged, resolver);
+      // The Director may have answered it while it was being raised: their answer stands.
+      if (patched('settle-once') && !unresolved(escalations.get(id)!)) return id;
       await settle(
         id,
         recommended,
@@ -561,6 +569,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       },
       resolver,
     );
+    // The Director may have answered it while it was being raised: their answer stands.
+    if (patched('settle-once') && !unresolved(escalations.get(id)!)) return id;
     await settle(
       id,
       lead.optionId,
@@ -710,6 +720,24 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             taskMove(t, 'done', 'Accepted as is'),
             agentRefresh(t.role),
           );
+        } else if (optionId === 'waive' && r.waivable?.length) {
+          // The Director's waiver, on record: the task's checks treat these as passed from now
+          // on, and its Lead no longer rejects it for them. It is checked again without its agent.
+          await send(
+            ...r.waivable.map((check) =>
+              decision(
+                `Waive ${check} for ${t.title}?`,
+                'Waived',
+                notes ?? 'The Director accepted this check failing for this task.',
+                'director',
+                `waiver:${r.taskId}:${check}`,
+                null,
+              ),
+            ),
+          );
+          instructions[r.taskId] = notes;
+          revalidate.add(r.taskId);
+          retryFromBlocked.add(r.taskId);
         } else if (optionId === 'hold') {
           // Parked: it stays blocked, with no retry and no further card, until the Director runs
           // it again from the plan (once the task that owns its cause has landed).
@@ -1299,7 +1327,20 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       await send(...events);
       // Rejected and retries didn't fix it: the Lead may send it back once more.
       const holdable = patched('repeat-card-waits');
-      const repeat = holdable && defaultedRetry.has(t.taskId);
+      const compared = patched('same-failure-waits');
+      const failing =
+        outcome.outcome === 'escalate'
+          ? (outcome.checks ?? [])
+              .filter((c) => c.status === 'fail')
+              .map((c) => c.id)
+              .sort()
+          : [];
+      const signature = failing.join(',');
+      const sameAgain = compared && Boolean(signature) && lastFailure[t.taskId] === signature;
+      if (compared && signature) lastFailure[t.taskId] = signature;
+      const defaulted = holdable && defaultedRetry.has(t.taskId);
+      const repeat = defaulted || sameAgain;
+      const waivable = compared && failing.length ? failing : [];
       const raiser = (
         card: Omit<EscalationCardInput, 'escalationId' | 'deadline'>,
         resolver: Resolver,
@@ -1348,9 +1389,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
                 context: [
                   `The Lead rejected this output and retries did not fix it. ${outcome.reason}`,
                   outcome.outcome === 'escalate' ? checksLine(outcome.checks) : '',
-                  repeat
+                  defaulted
                     ? 'It failed again after the last card retried it by default, with nobody answering. Retrying again changes nothing unless what it depends on changed, so this card waits for you: accept it (it is listed as a gap), hold it until the cause is fixed, or retry with a note.'
-                    : '',
+                    : sameAgain
+                      ? `It failed on the same checks as its last card (${failing.join(', ')}): this is the same decision again, so it waits for you. Accept it, waive those checks for this task, hold it until the cause is fixed, or retry with a note saying what changed.`
+                      : '',
                 ]
                   .filter(Boolean)
                   .join(' '),
@@ -1358,6 +1401,15 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
                 options: [
                   { id: 'retry', label: 'Retry with the Lead feedback', recommended: !repeat },
                   { id: 'accept', label: 'Accept the current output', recommended: repeat },
+                  ...(waivable.length
+                    ? [
+                        {
+                          id: 'waive',
+                          label: `Waive ${waivable.join(', ')} for this task, and check it again without them`,
+                          recommended: false,
+                        },
+                      ]
+                    : []),
                   ...(holdable
                     ? [
                         {
@@ -1374,7 +1426,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
                 sourceTaskId: t.taskId,
                 gate: null,
               },
-        { kind: 'blocked', taskId: t.taskId },
+        { kind: 'blocked', taskId: t.taskId, ...(waivable.length ? { waivable } : {}) },
       );
       // A Lead may have settled it already; then the task is retrying, not waiting on a card.
       if (unresolved(escalations.get(escalationId)!)) taskEscalation.set(t.taskId, escalationId);
@@ -2510,6 +2562,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     skipMerged = r.skipMerged ?? false;
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
     for (const id of r.defaultedRetry ?? []) defaultedRetry.add(id);
+    Object.assign(lastFailure, r.lastFailure ?? {});
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
     for (const [id, c] of r.capabilityWait ?? []) capabilityWait.set(id, c);
@@ -2548,6 +2601,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       instructions: { ...instructions },
       retryFromBlocked: [...retryFromBlocked],
       defaultedRetry: [...defaultedRetry],
+      lastFailure: { ...lastFailure },
       reruns: [...reruns],
       waitingOn: [...waitingOn],
       capabilityWait: [...capabilityWait],
