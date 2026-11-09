@@ -148,8 +148,9 @@ describe('role prompts', () => {
       fileURLToPath(new URL('../../../playbooks', import.meta.url)),
     );
     const entry = catalog.get('sitecoreai-migration')!;
-    // Lambert's Cable runs 0.5.1 and Star LLC 0.6.3, Paylocity 0.11.0 (0.12.0 to 0.14.0 kept too): their teams stay as they were.
+    // Lambert's Cable runs 0.5.1 and Star LLC 0.6.3, Paylocity 0.11.0 (0.12.0 to 0.15.0 kept too): their teams stay as they were.
     expect(entry.older?.map((o) => o.playbook.manifest.version)).toEqual([
+      '0.15.0',
       '0.14.0',
       '0.13.0',
       '0.12.0',

@@ -23,6 +23,12 @@ export interface OperationSpec {
    * create changes `parentPath/name`, not the parent).
    */
   lockPaths?: (args: Record<string, unknown>) => string[];
+  /**
+   * Whether this call merges into what is stored at the moment it writes (IDs added to a list,
+   * one template's page design), so it can't drop another task's change. It then holds its items
+   * for the call only, not for the session: parallel tasks adding to one list stop queueing.
+   */
+  merges?: (args: Record<string, unknown>) => boolean;
 }
 
 export type OperationCatalog = Record<string, OperationSpec>;

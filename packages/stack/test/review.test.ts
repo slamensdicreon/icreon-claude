@@ -440,9 +440,11 @@ describe('head.sections', () => {
       'RichText.tsx': '<div className="w-full">',
       'Stats.tsx': "import { Section } from './ui/Section';\n<Section>",
       'HeroBanner.tsx': '<section>',
+      'hero-with-tabs/HeroWithTabs.tsx': '<section>',
       'ui/Section.tsx': 'export const Section',
     });
     expect(r.status).toBe('fail');
+    expect(r.detail).not.toContain('HeroWithTabs');
     expect(r.detail).toContain("RichText.tsx doesn't render inside ui/Section");
     expect(r.detail).toContain("Stats.tsx doesn't pass a tone");
     expect(r.detail).not.toContain('CardGrid');
@@ -830,6 +832,34 @@ describe('blueprint.coverage on a sampled site', () => {
           crawl: { pagesFound: 1, pagesInventoried: 1 },
         })
       ).status,
+    ).toBe('pass');
+  });
+
+  it('wants each media entry to name one file, not a folder', async () => {
+    const whole = { pages: [{ path: '/' }], crawl: { pagesFound: 1, pagesInventoried: 1 } };
+    const withMedia = (media: { key: string; url: string }[]) => ({
+      ...blueprint(),
+      collections: {
+        ...blueprint().collections,
+        media: media.map((m) => ({ key: m.key, name: m.key, attrs: { url: m.url } })),
+      },
+    });
+    const cdn = 'https://cdn-dynmedia-1.microsoft.com/is/image/microsoftcorp';
+    const r = await run(
+      withMedia([
+        { key: 'promo', url: `${cdn}/` },
+        { key: 'banner', url: cdn },
+        { key: 'xbox', url: `${cdn}/Xbox-Series-S?fmt=png` },
+      ]),
+      whole,
+    );
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain("media promo's url is a folder");
+    expect(r.detail).toContain("media banner's url is a folder");
+    expect(r.detail).not.toContain('media xbox');
+    // A file without an extension (Scene7) is a file.
+    expect(
+      (await run(withMedia([{ key: 'xbox', url: `${cdn}/Xbox-Series-S?fmt=png` }]), whole)).status,
     ).toBe('pass');
   });
 });
