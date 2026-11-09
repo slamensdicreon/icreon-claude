@@ -245,6 +245,12 @@ answers `410`; the next daily run resumes from the first step it hasn't recorded
 a failure: it's recorded and the purge goes on, so fix the permission and delete the repository or
 Vercel project by hand:
 
+**Before the first deletion,** look at the note at the top of any project's Danger zone (and above
+*Deleted projects*). It asks GitHub and Vercel, without deleting anything, whether a deletion
+would get the build repository and the Vercel project (`GET /portfolio/deletion-readiness`,
+checked every few minutes). *Can delete* on both means you're set; otherwise it names what to
+change:
+
 - **GitHub refused:** the app needs **Administration: Read and write** on the build organization's
   installation, and the organization must allow it to delete repositories.
 - **Vercel refused:** the owner of `VERCEL_PREVIEWS_TOKEN` needs a role in the team that can delete

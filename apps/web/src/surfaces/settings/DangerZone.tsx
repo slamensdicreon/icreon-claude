@@ -13,6 +13,7 @@ import { useApp } from '../../state';
 import { Checkbox } from '../../ui/cypher/forms';
 import { Panel } from '../../ui/cypher/parts';
 import { Action, Actions } from '../intake/shared';
+import { DeletionReady } from './DeletionReady';
 import s from './settings.module.css';
 
 function Row({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
@@ -241,6 +242,7 @@ export function DangerZone({
               ? `This project is archived and will be deleted on ${due}.`
               : 'This project is archived and read-only. Nothing runs and nothing can be changed.'}
           </p>
+          <DeletionReady />
           <ul className={s.dangerRows}>
             <Row
               title="Download everything"
@@ -301,6 +303,7 @@ export function DangerZone({
           Each of these asks you to confirm first. Pausing and archiving can be undone; rolling
           back, resetting and deleting can’t.
         </p>
+        <DeletionReady />
         <ul className={s.dangerRows}>
           <Row
             title={paused ? 'Resume the project' : 'Pause the whole project'}

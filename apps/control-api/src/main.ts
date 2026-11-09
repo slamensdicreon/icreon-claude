@@ -38,6 +38,7 @@ import { createPlatforms } from '@lw/platforms';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import {
   composeStack,
+  canDeleteHostingProjects,
   deleteHostingProject,
   hostingStatus,
   recipients,
@@ -594,7 +595,12 @@ const app = await buildApp({
         commands: opened.sql ? new CommandBus(opened.sql) : null,
         github,
         buildOrg: env.GITHUB_BUILD_ORG ?? null,
-        hosting: hosting ? { deleteProject: (name) => deleteHostingProject(hosting, name) } : null,
+        hosting: hosting
+          ? {
+              deleteProject: (name) => deleteHostingProject(hosting, name),
+              canDelete: () => canDeleteHostingProjects(hosting),
+            }
+          : null,
         projects: () => projections.all(),
       }
     : undefined,

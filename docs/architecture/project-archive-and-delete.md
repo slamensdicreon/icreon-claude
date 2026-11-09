@@ -132,6 +132,16 @@ at once, not in 30 days: one made by mistake, a test, a demo nobody will open ag
   and *Cancel deletion* on an archived project. The dialog has the keep choices and a download
   link; the typed name is the lock. After it, the Control Center goes back to the Dashboard.
 
+### Deletion readiness
+
+`GET /portfolio/deletion-readiness` asks, read-only, whether a purge would get the outside
+resources: GitHub's installation on `GITHUB_BUILD_ORG` must hold Administration: write
+(`GithubApp.canDeleteRepos`), and the Vercel token's owner must be an Owner or a Member of the
+team (`canDeleteHostingProjects`, from `GET /v2/teams/:id`'s membership). Each answer is `ok`,
+`missing` (with what to change), `off` (not connected) or `unknown`; it's kept five minutes. The
+Danger zone and *Deleted projects* show it, so a missing permission is fixed before a deletion
+rather than found as *Refused* after one.
+
 ### Global rules and lessons
 
 Rules and lessons that were promoted out of a project are the product's memory and serve every
