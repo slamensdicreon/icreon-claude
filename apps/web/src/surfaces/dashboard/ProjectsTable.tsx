@@ -11,7 +11,9 @@ import { useApp } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Bar, Button, Chips, hueOf, Panel } from '../../ui/cypher/parts';
 import s from './dashboard.module.css';
+import { BulkBar } from './BulkActions';
 import { DeletedProjects } from './DeletedProjects';
+import { platformOf, playbookShort } from './projectNames';
 
 export type View = 'active' | 'yours' | 'running' | 'intake' | 'paused' | 'archived' | 'all';
 type Group = 'playbook' | 'platform' | 'state' | 'none';
@@ -78,17 +80,13 @@ function savePrefs(p: Prefs) {
 }
 
 /**
- * "Build a SitecoreAI website" → "Website": the platform sits beside it, so the playbook is named
- * by what it builds.
+ * Opens the table on a view, with the platform and playbook cleared: what Bliss's "See them" lines
+ * do before switching to Everything. The table reads its choices when it mounts.
  */
-export function playbookShort(p: PortfolioProject): string {
-  if (!p.playbook) return 'No playbook';
-  let name = p.playbook.name.replace(/^build an? /i, '');
-  if (p.platform && name.toLowerCase().startsWith(`${p.platform.name.toLowerCase()} `))
-    name = name.slice(p.platform.name.length + 1);
-  return name.charAt(0).toUpperCase() + name.slice(1);
+export function showProjectsView(view: View) {
+  savePrefs({ ...loadPrefs(), view, platform: 'all', playbook: 'all' });
 }
-const platformOf = (p: PortfolioProject) => p.platform?.name ?? 'Other';
+
 const stateOf = (p: PortfolioProject): (typeof STATES)[number] =>
   p.yours > 0
     ? 'Needs you'
@@ -104,11 +102,12 @@ const stateOf = (p: PortfolioProject): (typeof STATES)[number] =>
               ? 'Archived'
               : 'Accepted';
 
-export function ProjectsTable({ o }: { o: PortfolioOverview }) {
+export function ProjectsTable({ o, refresh }: { o: PortfolioOverview; refresh: () => void }) {
   const { switchProject, newProject } = useApp();
   const [prefs, setPrefsState] = useState<Prefs>(loadPrefs);
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const setPrefs = (patch: Partial<Prefs>) =>
     setPrefsState((cur) => {
       const next = { ...cur, ...patch };
@@ -207,6 +206,27 @@ export function ProjectsTable({ o }: { o: PortfolioOverview }) {
     };
   }, [o.projects, prefs, query]);
 
+  // What's ticked, among the projects that still exist; and the rows on show, for "select all".
+  const selected = o.projects.filter((p) => picked.has(p.projectId));
+  const shownIds = model.groups.flatMap(([, ps]) => ps.map((p) => p.projectId));
+  const allPicked = shownIds.length > 0 && shownIds.every((id) => picked.has(id));
+  const toggle = (id: string) =>
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setPicked((cur) => {
+      const next = new Set(cur);
+      for (const id of shownIds) {
+        if (allPicked) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+
   const filtered = model.platformKey !== 'all' || model.playbookKey !== 'all' || !!query.trim();
   const clear = () => {
     setPrefs({ platform: 'all', playbook: 'all' });
@@ -285,11 +305,28 @@ export function ProjectsTable({ o }: { o: PortfolioOverview }) {
           </div>
         </div>
 
+        {selected.length > 0 && (
+          <BulkBar selected={selected} onClear={() => setPicked(new Set())} onDone={refresh} />
+        )}
         <div className={s.tableWrap}>
           <table className={`${s.table} type-table`}>
             <thead>
               <tr>
-                <th>Project</th>
+                <th>
+                  <span className={s.pickHead}>
+                    <input
+                      type="checkbox"
+                      className={s.pick}
+                      aria-label={
+                        allPicked ? 'Clear the projects shown' : 'Select every project shown'
+                      }
+                      checked={allPicked}
+                      disabled={shownIds.length === 0}
+                      onChange={toggleAll}
+                    />
+                    Project
+                  </span>
+                </th>
                 <th>Platform · playbook</th>
                 <th>Phase</th>
                 <th className={s.progressCol}>Progress</th>
@@ -334,6 +371,8 @@ export function ProjectsTable({ o }: { o: PortfolioOverview }) {
                         p={p}
                         hm={hm}
                         tz={tz}
+                        picked={picked.has(p.projectId)}
+                        onPick={() => toggle(p.projectId)}
                         onOpen={() => switchProject(p.projectId)}
                       />
                     ))}
@@ -369,38 +408,57 @@ function ProjectRow({
   p,
   hm,
   tz,
+  picked,
+  onPick,
   onOpen,
 }: {
   p: PortfolioProject;
   hm: (at: string) => string;
   tz: string;
+  picked: boolean;
+  onPick: () => void;
   onOpen: () => void;
 }) {
   const today = p.lastEvent && localDate(p.lastEvent.at, tz) === localDate(Date.now(), tz);
   return (
-    <tr data-yours={p.yours > 0 || undefined} className={s.projectRow}>
+    <tr
+      data-yours={p.yours > 0 || undefined}
+      data-picked={picked || undefined}
+      className={s.projectRow}
+    >
       <td>
-        <button type="button" className={s.projectCell} onClick={onOpen}>
-          <span
-            className={`${s.tile} type-label`}
-            style={{ background: p.archived ? 'var(--text-3)' : hueOf(p.hue) }}
-            aria-hidden="true"
-          >
-            {p.initials}
-          </span>
-          <span className={s.projectName}>
-            <b>
-              {p.name}
-              {p.yours > 0 && <span className={`${s.yoursBadge} type-label`}>{p.yours} yours</span>}
-            </b>
-            <span className="type-meta">
-              <span style={{ color: HEALTH_TONE[p.healthWord] ?? 'var(--text-3)' }}>
-                {p.healthWord}
-              </span>
-              {p.client && <span className={s.quiet}> · {p.client}</span>}
+        <span className={s.pickCell}>
+          <input
+            type="checkbox"
+            className={s.pick}
+            aria-label={`Select ${p.name}`}
+            checked={picked}
+            onChange={onPick}
+          />
+          <button type="button" className={s.projectCell} onClick={onOpen}>
+            <span
+              className={`${s.tile} type-label`}
+              style={{ background: p.archived ? 'var(--text-3)' : hueOf(p.hue) }}
+              aria-hidden="true"
+            >
+              {p.initials}
             </span>
-          </span>
-        </button>
+            <span className={s.projectName}>
+              <b>
+                {p.name}
+                {p.yours > 0 && (
+                  <span className={`${s.yoursBadge} type-label`}>{p.yours} yours</span>
+                )}
+              </b>
+              <span className="type-meta">
+                <span style={{ color: HEALTH_TONE[p.healthWord] ?? 'var(--text-3)' }}>
+                  {p.healthWord}
+                </span>
+                {p.client && <span className={s.quiet}> · {p.client}</span>}
+              </span>
+            </span>
+          </button>
+        </span>
       </td>
       <td className={s.secondary}>
         <span className={s.stack}>
