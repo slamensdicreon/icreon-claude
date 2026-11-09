@@ -141,6 +141,7 @@ export function scheduleSnapshot(s: ProjectState, now: number): ScheduleSnapshot
       start: iso(w.start),
       end: iso(w.end),
       basis: w.basis,
+      gaps: t.gaps ?? null,
     };
   });
 

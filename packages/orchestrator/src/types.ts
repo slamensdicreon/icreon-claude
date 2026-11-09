@@ -108,6 +108,8 @@ export interface EscalationSnapshot {
  */
 export interface ProjectSnapshot {
   startedAt: number;
+  /** Working time so far (some agent session running); absent before the hours budget counted it. */
+  busyMs?: number;
   blueprint: Blueprint | null;
   plan: Plan;
   states: Record<string, TaskState>;

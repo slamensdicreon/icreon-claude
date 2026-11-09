@@ -53,7 +53,7 @@ export function PlanPhone({
             {a?.persona ?? t.agentId}
           </span>
         </span>
-        <StateWord state={t.state} />
+        <StateWord state={t.state} gaps={t.gaps} />
       </button>
     );
   };

@@ -1596,3 +1596,26 @@ describe('Optimizely pack', () => {
     });
   });
 });
+
+describe('reading the source fairly', () => {
+  it('compares a page moved under a locale, and never compares with a challenge page', async () => {
+    const { redirectedAway, isChallengePage } = await import('../sitecoreai/checks');
+    // Microsoft: / lands on /en-us, the same page; Ansco: /services lands on the home page.
+    expect(redirectedAway('https://www.microsoft.com/', 'https://www.microsoft.com/en-us')).toBe(
+      false,
+    );
+    expect(redirectedAway('https://x.com/about/', 'https://x.com/en-gb/about')).toBe(false);
+    expect(redirectedAway('https://src.example/services/', 'https://src.example/')).toBe(true);
+    // Paylocity's answer to a plain request: a cookie script and a reload, status 200.
+    expect(
+      isChallengePage(
+        '<html><body><script>document.cookie = "cf_bypass=1";location.reload();</script><noscript>Continue to Paylocity</noscript></body></html>',
+      ),
+    ).toBe(true);
+    expect(
+      isChallengePage(
+        '<html><body><h1>Payroll</h1><p>' + 'word '.repeat(80) + '</p></body></html>',
+      ),
+    ).toBe(false);
+  });
+});

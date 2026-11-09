@@ -114,6 +114,20 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** The previous run's state, when this run continues one. */
   const resume = input.resume;
   const startedAt = resume?.startedAt ?? Date.now();
+  /**
+   * Working time: hours with at least one agent session running. The hours budget counted the
+   * calendar, so a project waiting overnight on a card (Microsoft's demo) "used" its hours asleep.
+   * A run continued from one that counted the calendar starts from what it had counted.
+   */
+  let busyMs = resume?.busyMs ?? (resume ? Date.now() - startedAt : 0);
+  let busySince: number | null = null;
+  const workingHours = () =>
+    Math.round(((busyMs + (busySince === null ? 0 : Date.now() - busySince)) / 3_600_000) * 100) /
+    100;
+  const hoursUsed = () =>
+    patched('working-hours')
+      ? workingHours()
+      : Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100;
   const phaseInfo = new Map(playbook.manifest.phases.map((p) => [p.number, p]));
   const roles = new Map(playbook.roles.map((r) => [r.role, r]));
   const templates = new Map(playbook.plan.templates.map((t) => [t.id, t]));
@@ -823,6 +837,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const t of batch) {
       revalidate.delete(t.taskId);
       dispatchedAt[t.taskId] = finishedCount;
+      if (!children.size && busySince === null) busySince = Date.now();
       children.set(t.taskId, handle);
       // The child owns these tasks' transitions now; marking them in flight means they are
       // never dispatched twice.
@@ -869,6 +884,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         : [];
     for (const id of followers) redoPending.add(id);
     children.delete(t.taskId);
+    if (!children.size && busySince !== null) {
+      busyMs += Date.now() - busySince;
+      busySince = null;
+    }
     running.get(t.role)?.delete(t.taskId);
     states[t.taskId] = outcome.state;
     attempts[t.taskId] = outcome.attempt;
@@ -1337,7 +1356,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   async function account(result: Pick<AgentResult, 'tokens' | 'usd'>, events: NewEvent[]) {
     spent.tokens += result.tokens;
     spent.usd = Math.round((spent.usd + result.usd) * 100) / 100;
-    const hours = Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100;
+    const hours = hoursUsed();
     events.push({
       type: 'budget.updated',
       actor: SYSTEM,
@@ -1408,8 +1427,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** A signal to a task workflow that has already finished changes nothing: ignore it. */
   function ignoreGone(): void {}
 
-  /** The largest share of any budget used: tokens, dollars or hours since start. */
-  function budgetRatio(hours = Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100) {
+  /** The largest share of any budget used: tokens, dollars or working hours. */
+  function budgetRatio(hours = hoursUsed()) {
     const { budgets } = policy;
     return Math.max(spent.tokens / budgets.tokens, spent.usd / budgets.usd, hours / budgets.hours);
   }
@@ -2491,6 +2510,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   function snapshot(): ProjectSnapshot {
     return {
       startedAt,
+      busyMs: busyMs + (busySince === null ? 0 : Date.now() - busySince),
       blueprint,
       plan,
       states: { ...states },

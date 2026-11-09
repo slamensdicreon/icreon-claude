@@ -211,6 +211,22 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(create).toContain('value: "About \\"us\\""');
   });
 
+  it('cleans an item name Sitecore would refuse, keeping the original as its display name', async () => {
+    const home = '/sitecore/content/Brands/ansco/Home';
+    const tpl = '/sitecore/templates/Project/Brands/Page';
+    const cm = fakeCm({ [home]: 'home-id', [tpl]: 'tpl-id' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    // Microsoft: a card named after its product, '03 Surface Laptop 13"'.
+    await s.call(
+      'item.create',
+      { parentPath: home, name: '03 Surface Laptop 13"', templatePath: tpl },
+      ctx,
+    );
+    const create = cm.queries.find((q) => q.includes('createItem'))!;
+    expect(create).toContain('name: "03 Surface Laptop 13"');
+    expect(create).toContain('__Display name');
+  });
+
   it('reads every write back, reuses an existing item, and reconciles a dropped request', async () => {
     const home = '/sitecore/content/Brands/ansco/Home';
     const tpl = '/sitecore/templates/Project/Brands/Page';
