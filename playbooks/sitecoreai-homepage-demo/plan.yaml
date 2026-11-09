@@ -47,7 +47,7 @@ templates:
     title: Draft the Implementation Blueprint
     dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
     # discovery.blueprint: every source form placed (a Director item when Form is the SDK's
-    # built-in), redirects decided, the 404 page planned or recorded as dropped (0.2.4 builds none),
+    # built-in), redirects decided, the 404 page recorded as dropped (0.2.4 builds none; from 0.2.5 demo-slice fails a kept one),
     # source components mapped, media hosts named.
     # blueprint.demo-slice: the slice kept, the navigation its own component, the rest held.
     acceptance:

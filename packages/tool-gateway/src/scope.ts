@@ -11,7 +11,11 @@ export class ScopeError extends Error {}
 /** Canonical form of a path, or a ScopeError. `.` and `..` segments are refused, never resolved. */
 export function normalizePath(path: string): string {
   if (typeof path !== 'string' || !path.startsWith('/'))
-    throw new ScopeError(`not an absolute path: ${String(path)}`);
+    throw new ScopeError(
+      /^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i.test(String(path))
+        ? `${String(path)} is an item ID, and this takes a path (what your role may touch is checked by path). Find the item's path: read its parent with children: true, or use the path the step that created it reported`
+        : `not an absolute path: ${String(path)}`,
+    );
   if (/[\\\u0000-\u001f]/.test(path))
     throw new ScopeError('path contains a backslash or control character');
   const segments = path.split('/').filter(Boolean);

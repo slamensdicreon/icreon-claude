@@ -191,6 +191,8 @@ const MediaArgs = z
     ref: z.string().startsWith('blob://').max(500).optional(),
     fileName: z.string().min(1).max(200).optional(),
     alt: z.string().max(500).optional(),
+    /** Replace a media item already at itemPath (a wrong upload): it goes to the recycle bin first. */
+    replace: z.boolean().optional(),
   })
   .refine((a) => Boolean(a.sourceUrl) !== Boolean(a.ref), 'give either ref or sourceUrl');
 const PublishStatusArgs = z.object({
@@ -444,7 +446,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'media.upload': {
       description:
-        "Upload an image or file into the media library. itemPath is the absolute media item path (under /sitecore/media library/). Give `ref`, the stored file browser.fetch.asset returned (preferred: it may come from the site's CDN or the Blueprint's URL) or the ref of a file the Director gave the team (listed in your context), with `fileName`; or `sourceUrl` on the source site itself.",
+        'Upload an image or file into the media library. itemPath is the absolute media item path (under /sitecore/media library/). Give `ref`, the stored file browser.fetch.asset returned (preferred: it may come from the site\'s CDN or the Blueprint\'s URL) or the ref of a file the Director gave the team (listed in your context), with `fileName`; or `sourceUrl` on the source site itself. An item already at itemPath is refused ("already defined on this level"); to replace a wrong upload (a plain File where an Image belongs), give `replace: true` and it goes to the recycle bin first.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -453,6 +455,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           fileName: { type: 'string' },
           sourceUrl: { type: 'string' },
           alt: { type: 'string' },
+          replace: { type: 'boolean' },
         },
         required: ['itemPath'],
         additionalProperties: false,
@@ -666,6 +669,19 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
   private async create(q: Gql, a: Parsed<typeof CreateArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return rejected(a.error.issues[0]!.message);
+    // Sitecore refuses \/:?"<>|[] in item names (InvalidItemNameChars). A name taken from the
+    // source's copy ("03 Surface Laptop 13\"") is cleaned, and the original kept as its display name.
+    const given = a.data.name;
+    const clean =
+      given
+        .replace(/[\\/:?"<>|[\]]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || 'item';
+    if (clean !== given) {
+      a.data.name = clean;
+      if (!(a.data.fields ?? []).some((f) => f.name === '__Display name'))
+        a.data.fields = [...(a.data.fields ?? []), { name: '__Display name', value: given }];
+    }
     const path = `${a.data.parentPath.replace(/\/$/, '')}/${a.data.name}`;
     const language = lang(a.data.language);
     const fields = a.data.fields ?? [];
@@ -1102,6 +1118,21 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       from = source.href;
     }
     if (bytes.length > MAX_MEDIA_BYTES) return rejected(`${from} is larger than 25 MB.`);
+    // Replacing a wrong upload: Sitecore won't upload over an item, so the old one goes to the
+    // recycle bin first (Microsoft's Xbox promo, stored as a File, had no way to become an Image).
+    if (a.data.replace) {
+      type Found = { item: { itemId: string; children: { nodes: unknown[] } } | null };
+      const old = await q.run<Found>(
+        `query { item(where: { database: "master", path: ${gql(a.data.itemPath)} }) { itemId children { nodes { itemId } } } }`,
+      );
+      if (old.item) {
+        if (old.item.children.nodes.length)
+          return rejected(`${a.data.itemPath} has child items; it can't be replaced.`);
+        await q.run(
+          `mutation { deleteItem(input: { database: "master", itemId: ${gql(old.item.itemId)}, permanently: false }) { successful } }`,
+        );
+      }
+    }
     const relative = a.data.itemPath.slice(MEDIA_ROOT.length);
     const d = await q.run<{ uploadMedia: { presignedUploadUrl: string } }>(
       `mutation { uploadMedia(input: { itemPath: ${gql(relative)} }) { presignedUploadUrl } }`,

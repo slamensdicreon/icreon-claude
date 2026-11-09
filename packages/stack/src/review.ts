@@ -322,7 +322,7 @@ export const CHECKS: Record<string, Check> = {
   },
 
   // The homepage demo's Blueprint (homepage demo playbook, Gate 1): the homepage and what it uses,
-  // with the navigation its own component (and, up to 0.2.3, the 404 page). The plan builds every
+  // with the navigation its own component (and, up to 0.2.3, the 404 page; from 0.2.5 a kept one fails). The plan builds every
   // kept item, so this is what keeps the demo to the homepage. (Items held from a whole-site Blueprint, as version 0.1.0
   // wrote them, are still accepted.)
   'blueprint.demo-slice': async (ctx) => {
@@ -354,8 +354,18 @@ export const CHECKS: Record<string, Check> = {
     const notFound = pages.find((p) => Number(p.attrs?.errorPage) === 404 || pathOf(p) === '/404');
     if (!home) problems.push('no homepage: a page with attrs.path "/"');
     else if (!kept(home)) problems.push(`the homepage (${home.key}) is dropped; it is the demo`);
-    // The 404 page was in the slice until 0.2.4, which builds the homepage alone: a 404 page may
-    // be kept (older versions) or recorded as dropped, never required.
+    // The 404 page was in the slice until 0.2.3. From 0.2.4 the demo builds the homepage alone:
+    // the 404 page is recorded as dropped. From 0.2.5 a kept one fails; projects pinned to older
+    // versions (or with no version on record) may still keep it.
+    const version = (ctx.state?.playbook?.version ?? '').split('.').map(Number);
+    const atLeast025 =
+      version.length === 3 &&
+      version.every(Number.isFinite) &&
+      (version[0]! > 0 || version[1]! > 2 || (version[1] === 2 && version[2]! >= 5));
+    if (atLeast025 && notFound && kept(notFound))
+      problems.push(
+        `the 404 page (${notFound.key}) is kept; the homepage demo builds no 404 page: record it as dropped with its reason`,
+      );
     const slice = [home, notFound && kept(notFound) ? notFound : undefined].filter((p): p is Item =>
       Boolean(p),
     );

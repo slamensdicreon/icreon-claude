@@ -563,3 +563,11 @@ describe('idempotency', () => {
     expect(await idem.get('p1:t10:1:0:aa')).toBe(r);
   });
 });
+
+describe('an item ID where a path belongs', () => {
+  it('says to find the path, not just that the path is wrong', async () => {
+    const { normalizePath } = await import('../src/scope');
+    expect(() => normalizePath('{190AD58B-8125-46D6-9C7D-DC3EE1F66789}')).toThrow(/is an item ID/);
+    expect(() => normalizePath('relative/path')).toThrow(/not an absolute path/);
+  });
+});

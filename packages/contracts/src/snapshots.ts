@@ -276,6 +276,11 @@ export const TaskView = z.object({
   /** Set when blocked: the escalation it waits on. */
   escalationId: z.string().nullable(),
   lastReason: z.string().nullable(),
+  /**
+   * Done with known gaps: finished past the send-back limit with differences handed on, or
+   * accepted as is by the Director. Its reason; null when it passed.
+   */
+  gaps: z.string().nullable().default(null),
   /** The roster agent that runs this task. */
   agentId: z.string(),
   groupTitle: z.string().nullable(),
@@ -830,6 +835,8 @@ export const ScheduledTask = z.object({
   end: z.iso.datetime(),
   /** actual = from task events; planned = a Lead's window; forecast = the scheduler's estimate. */
   basis: z.enum(['actual', 'planned', 'forecast']),
+  /** Done with known gaps (see TaskView.gaps). */
+  gaps: z.string().nullable().default(null),
 });
 export type ScheduledTask = z.infer<typeof ScheduledTask>;
 
