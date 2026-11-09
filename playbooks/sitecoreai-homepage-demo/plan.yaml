@@ -59,6 +59,15 @@ templates:
     phase: 3
     role: deployment-engineer
     title: Verify the demo site; create languages and module folders
+  # The site's face in the SitecoreAI Sites dashboard: a thumbnail of its brand, not a screenshot
+  # of the top of its home page.
+  - id: site-thumbnail
+    phase: 3
+    role: deployment-engineer
+    title: Brand the site's thumbnail in the Sites dashboard
+    dependsOn: [create-site]
+    uses: [browser, sitecore-authoring]
+    acceptance: [validator:site.thumbnail]
   - id: design-system
     phase: 3
     role: component-engineer

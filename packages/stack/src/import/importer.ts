@@ -786,20 +786,38 @@ export class TemplateImporter {
         }
         let value = ctx.media.get(v);
         if (!value) {
-          const asset = await call('browser', 'fetch.asset', { url: v });
           const file = decodeURIComponent(new URL(v).pathname.split('/').pop() || 'image');
           const base =
             file
               .replace(/\.[a-z0-9]+$/i, '')
               .replace(/[^A-Za-z0-9 _-]+/g, '-')
               .slice(0, 80) || 'image';
-          const up = await call('sitecore-authoring', 'media.upload', {
-            itemPath: `${plan.mediaFolder!.replace(/\/$/, '')}/${base}`,
-            ref: asset.ref,
-            fileName: file,
-          });
-          if (!up.itemId) throw new CallFailed(`media.upload gave no item ID for ${v}`, false, 500);
-          value = `<image mediaid="${braced(String(up.itemId))}" />`;
+          const mediaPath = `${plan.mediaFolder!.replace(/\/$/, '')}/${base}`;
+          // Already in the media library (an earlier run, or another page): Sitecore won't upload
+          // over it, and there is no need to.
+          const there = await this.deps.call(
+            job.projectId,
+            plan.role,
+            job.taskId,
+            k++,
+            'sitecore-authoring',
+            'item.read',
+            { path: mediaPath },
+          );
+          let mediaId = there.ok ? String((there.body as { itemId?: string }).itemId ?? '') : '';
+          if (!mediaId) {
+            const asset = await call('browser', 'fetch.asset', { url: v });
+            const up = await call('sitecore-authoring', 'media.upload', {
+              itemPath: mediaPath,
+              ref: asset.ref,
+              fileName: file,
+            });
+            if (!up.itemId)
+              throw new CallFailed(`media.upload gave no item ID for ${v}`, false, 500);
+            mediaId = String(up.itemId);
+            ctx.stats.uploads++;
+          }
+          value = `<image mediaid="${braced(mediaId)}" />`;
           ctx.media.set(v, value);
           ctx.stats.uploads++;
         }

@@ -227,6 +227,56 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
   };
 
   return {
+    // The site's thumbnail in the Sites dashboard is set, to an image of its brand: the one
+    // site.thumbnail uploaded (checked for size), or one the Director set there by hand.
+    'site.thumbnail': async (ctx) => {
+      const b = sitecoreBindings(ctx.target);
+      const site = await ctx.read('sitecore-authoring', 'item.read', {
+        path: b.sitePath,
+        fields: ['__Thumbnail'],
+      });
+      if (site.code !== 200) return pending(`Can't read the site item ${b.sitePath}.`);
+      const value =
+        (
+          site.body as { fields?: { nodes?: { name: string; value: string }[] } }
+        ).fields?.nodes?.find((f) => f.name.toLowerCase() === '__thumbnail')?.value ?? '';
+      const id = /mediaid=['"]\{?([0-9a-f-]{32,36})/i.exec(value)?.[1];
+      if (!id)
+        return fail([
+          'The site has no thumbnail of its own, so the Sites dashboard shows a screenshot of the top of its home page: make one with browser.brand.thumbnail and set it with sitecore-authoring.site.thumbnail',
+        ]);
+      // The thumbnails site.thumbnail uploads are named site-thumbnail-<hash> in the site's System
+      // media folder; any other image is one set by hand in the Sites dashboard.
+      const folder = `/sitecore/media library/Project/${b.project}/System`;
+      const hexOf = (x: string) => x.replace(/[^0-9a-f]/gi, '').toLowerCase();
+      const listed = await ctx.read('sitecore-authoring', 'item.read', {
+        path: folder,
+        children: true,
+      });
+      const ours = (
+        (listed.body as { children?: { nodes?: { name: string; path: string; itemId: string }[] } })
+          ?.children?.nodes ?? []
+      ).find((n) => /^site-thumbnail/i.test(n.name) && hexOf(n.itemId) === hexOf(id));
+      if (listed.code !== 200 || !ours)
+        return pass(
+          'The site has a thumbnail of its own in the Sites dashboard (set there by hand).',
+        );
+      const media = await ctx.read('sitecore-authoring', 'item.read', {
+        path: ours.path,
+        fields: ['Width', 'Height'],
+      });
+      const nodes = (media.body as { fields?: { nodes?: { name: string; value: string }[] } })
+        .fields?.nodes;
+      const dim = (n: string) => Number(nodes?.find((f) => f.name === n)?.value ?? 0);
+      if (dim('Width') && dim('Width') < 1000)
+        return fail([
+          `The site's thumbnail is ${dim('Width')}×${dim('Height')}: make it again with browser.brand.thumbnail (1200×640), so it stays sharp in the dashboard`,
+        ]);
+      return pass(
+        `The site's thumbnail is its brand image (${ours.path}, ${dim('Width')}×${dim('Height')}).`,
+      );
+    },
+
     // The site and the project's own folders exist, with routes under Home.
     'structural.site': async (ctx) => {
       const b = sitecoreBindings(ctx.target);

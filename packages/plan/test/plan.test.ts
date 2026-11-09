@@ -204,6 +204,16 @@ describe('compilePlan', () => {
     expect(after.tasks.filter((t) => t.templateId === 'migrate-pages-{key}')).toHaveLength(25);
   });
 
+  it("brands the site's dashboard thumbnail once the site exists", () => {
+    const plan = compilePlan(pb, blueprint(), { skipMerged: true });
+    expect(plan.tasks.find((t) => t.taskId === 'site-thumbnail')).toMatchObject({
+      phase: 3,
+      role: 'deployment-engineer',
+      dependsOn: ['create-site'],
+      acceptance: ['validator:site.thumbnail'],
+    });
+  });
+
   it('builds the pilot slice: non-pilot work waits on a checkpoint after the pilot items', () => {
     const plan = compilePlan(pb, blueprint());
     const byId = new Map(plan.tasks.map((t) => [t.taskId, t]));

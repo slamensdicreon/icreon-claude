@@ -3,7 +3,7 @@
 # the navigation, through parity and deploy. It runs on our own tenant and closes at Gate 2; a signed
 # client's build starts from scratch on sitecoreai-migration. Plan: docs/architecture/homepage-demo-playbook.md.
 id: sitecoreai-homepage-demo
-version: 0.1.1
+version: 0.1.2
 name: SitecoreAI homepage demo
 description: >-
   Audits a prospect's whole site and writes the full Blueprint, then builds their homepage, header,

@@ -11,6 +11,13 @@ import { Crawler, CRAWL_LIMITS } from './crawl/crawler';
 import { CrawlReports } from './crawl/report';
 import { discover } from './crawl/sitemap';
 import { MemoryCrawlStore, type CrawlJob, type CrawlStore } from './crawl/store';
+import {
+  designFrom,
+  readBrand,
+  thumbnailHtml,
+  type BrandCues,
+  type ThumbnailDesign,
+} from './thumbnail';
 
 export interface BrowserServerOptions {
   /** Source-site hosts per project; the browser goes nowhere else. */
@@ -226,6 +233,32 @@ const CATALOG: OperationCatalog = {
     mutates: false,
     untrusted: true,
   },
+  'brand.thumbnail': {
+    description:
+      "A thumbnail for the site in the Sitecore Sites dashboard (1200×640 PNG), made from the brand of its source home page: its logo, colours, typeface, headline and hero photo, laid out as a field with the logo and headline, and the photo behind a diagonal edge in the brand's accent. Returns the stored file's ref (for sitecore-authoring.site.thumbnail) and the design it used. Anything the page gets wrong can be given instead: headline (short, from the site's own words), emphasis (words of it in the accent), eyebrow (what the business does, a few words), accent, field and ink colours (#RRGGBB), tone (dark or light), font (a Google Fonts family), logo or photo (image URLs), motif (route for networks and utilities, grid for building and engineering, lines for digital and speed, or none) and chip (a short tag such as Demo).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: "The source site's home page." },
+        headline: { type: 'string', maxLength: 90 },
+        emphasis: { type: 'string', maxLength: 60 },
+        eyebrow: { type: 'string', maxLength: 50 },
+        accent: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$' },
+        field: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$' },
+        ink: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$' },
+        tone: { type: 'string', enum: ['dark', 'light'] },
+        font: { type: 'string', maxLength: 60 },
+        logo: { type: 'string' },
+        photo: { type: 'string' },
+        motif: { type: 'string', enum: ['none', 'route', 'grid', 'lines'] },
+        chip: { type: 'string', maxLength: 16 },
+      },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
   screenshot: {
     description:
       'Full-page screenshots of a URL at desktop (1440), tablet (834) and phone (390) widths, for visual comparison.',
@@ -384,6 +417,8 @@ export class BrowserToolServer implements ToolServer {
           );
         case 'fetch.asset':
           return await this.fetchAsset(ctx.projectId, policy, String(args.url));
+        case 'brand.thumbnail':
+          return await this.thumbnail(ctx.projectId, policy, args);
         case 'page.markup':
         case 'page.styles':
           return await this.structure(policy, op, args);
@@ -730,6 +765,118 @@ export class BrowserToolServer implements ToolServer {
       body: { url: url.toString(), shots },
       summary: `Screenshots of ${url.pathname} at ${breakpoints.join(', ')}`,
     };
+  }
+
+  /** The site's dashboard thumbnail, from its home page's brand and what the agent gave. */
+  private async thumbnail(
+    projectId: string,
+    policy: UrlPolicy,
+    args: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const url = await assertNavigable(String(args.url), policy);
+    const str = (k: string) =>
+      typeof args[k] === 'string' && (args[k] as string).trim()
+        ? (args[k] as string).trim()
+        : undefined;
+    const given: Partial<ThumbnailDesign> & { host: string } = {
+      host: url.hostname,
+      headline: str('headline'),
+      emphasis: str('emphasis'),
+      eyebrow: str('eyebrow'),
+      accent: str('accent'),
+      field: str('field'),
+      ink: str('ink'),
+      tone: str('tone') as ThumbnailDesign['tone'] | undefined,
+      font: str('font'),
+      motif: str('motif') as ThumbnailDesign['motif'] | undefined,
+      chip: str('chip'),
+      ...(str('logo') ? { logo: { src: str('logo')!, ratio: 3 } } : {}),
+      ...(str('photo') ? { photos: [str('photo')!] } : {}),
+    };
+    for (const k of Object.keys(given) as (keyof typeof given)[])
+      if (given[k] === undefined) delete given[k];
+    return this.withPage(policy, async (context) => {
+      // The brand as the home page shows it; a page that won't load leaves the given parts only.
+      let cues: BrandCues = {
+        logo: null,
+        headerBackground: 'rgb(255, 255, 255)',
+        colors: [],
+        headline: '',
+        headlineColor: null,
+        font: '',
+        photos: [],
+        description: '',
+      };
+      let read = false;
+      const page = await context.newPage();
+      try {
+        await page.setViewportSize(BREAKPOINTS.desktop);
+        const r = await page.goto(url.toString(), {
+          waitUntil: 'load',
+          timeout: this.opts.navigationTimeoutMs ?? 30_000,
+        });
+        await page.waitForTimeout(1500);
+        if (r && r.status() < 400) {
+          cues = (await page.evaluate(`(${readBrand.toString()})()`)) as BrandCues;
+          read = true;
+        }
+      } catch {
+        /* the page didn't load: the given parts and defaults make the design */
+      } finally {
+        await page.close();
+      }
+      const design = designFrom(cues, given);
+      const card = await context.newPage();
+      try {
+        await card.setViewportSize({ width: 1200, height: 640 });
+        await card
+          .setContent(thumbnailHtml(design), { waitUntil: 'networkidle', timeout: 30_000 })
+          .catch(() => {});
+        await card
+          .waitForFunction('window.__ready === true', undefined, { timeout: 20_000 })
+          .catch(() => {});
+        await card.waitForTimeout(150);
+        const png = await card.screenshot({ type: 'png' });
+        const sha256 = createHash('sha256').update(png).digest('hex');
+        const ref = await this.opts.blobs.put(
+          projectId,
+          `assets/site-thumbnail-${sha256.slice(0, 16)}.png`,
+          png,
+          'image/png',
+        );
+        const used = {
+          tone: design.tone,
+          field: design.field,
+          ink: design.ink,
+          accent: design.accent,
+          font: design.font,
+          headline: design.headline,
+          emphasis: design.emphasis,
+          eyebrow: design.eyebrow,
+          logo: design.logo?.src ?? (design.logo?.svg ? 'the inline SVG logo from the page' : null),
+          logoShownWhite: design.logoWhite,
+          wordmark: design.wordmark,
+          photos: design.photos,
+          motif: design.motif,
+          chip: design.chip,
+        };
+        return {
+          code: 200,
+          body: {
+            ref,
+            sha256,
+            width: 1200,
+            height: 640,
+            bytes: png.length,
+            readFromPage: read,
+            design: used,
+          },
+          summary: `Thumbnail for ${url.hostname}: ${design.tone} field ${design.field}, accent ${design.accent}, ${design.logo ? 'its logo' : `the wordmark "${design.wordmark}"`}, ${design.photos.length ? 'its hero photo' : 'no photo'}, headline "${design.headline}"${read ? '' : ` (the home page couldn't be read: only what was given, and defaults)`}`,
+        };
+      } finally {
+        await card.close();
+      }
+    });
   }
 
   /** The page's components and fields from its embedded layout data, within a size budget. */
