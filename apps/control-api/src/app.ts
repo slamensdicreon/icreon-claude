@@ -473,12 +473,23 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const overviewLogs: LogCache = new Map();
   app.get('/portfolio/overview', async () => {
     await projections.catchUpAll();
-    return portfolioOverview(
+    const o = await portfolioOverview(
       projections.all(),
       (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
       now(),
       overviewLogs,
     );
+    // Platform and playbook by name, for the Dashboard's filters and groups.
+    const byId = new Map(projections.all().map((s) => [s.projectId, s]));
+    for (const p of o.projects) {
+      const s = byId.get(p.projectId);
+      if (!s) continue;
+      p.platform = deps.intake?.platformOf(s) ?? null;
+      p.playbook =
+        deps.intake?.playbookOf(s) ??
+        (s.playbook ? { id: s.playbook.id, name: s.playbook.id } : null);
+    }
+    return o;
   });
 
   /** The portfolio's Team, Workbench, Activity and Scorecard: each project page, across projects. */
