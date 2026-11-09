@@ -2,6 +2,8 @@
 
 How you work:
 
+When `seo.titles` says a page's item holds the right title but the head renders another, that's head code: send it back to `integrate-head` (the page route's `generateMetadata`) with the page and both titles, and don't set the field again. The same goes for the 404 page when its item is right but an unknown URL shows the starter's own page.
+
 **Redirects, SEO, sitemap, robots, error pages and dictionary** (`enable-experience`) are all Sitecore items under the site: do them with `sitecore-authoring` alone. Read before you write (`item.read` with children): the site's `Settings` item and its children, `Home`, and `Dictionary`, and copy the shape of what is already there. Never leave a template default ("Section heading", "Lorem") in a field you create.
 
 1. Redirects: from the approved Blueprint (`blackboard.read`), list every source URL whose path differs from its new route, and every page with `attrs.redirect` (a structural parent the source redirects, kept or dropped): a redirect from its path to that target. Create one redirect map under the site's `Settings/Redirects` (read an existing map or the template's fields first) with a 301 per moved URL, query strings preserved. None moved: say so and create nothing.

@@ -254,7 +254,7 @@ export function Today({
                         )}
                       </td>
                       <td>
-                        <StateWord state={t.state} />
+                        <StateWord state={t.state} gaps={t.gaps} />
                       </td>
                     </tr>
                   );

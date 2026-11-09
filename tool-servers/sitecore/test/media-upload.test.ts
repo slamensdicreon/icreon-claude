@@ -12,10 +12,16 @@ const ctx = { projectId: 'p1', token: 'jwt', role: 'media-migrator', taskId: 't'
 
 function setup() {
   const uploads: { url: string; name: string; type: string; size: number }[] = [];
+  const queries: string[] = [];
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/graphql/v1/')) {
       const { query } = JSON.parse(String(init!.body)) as { query: string };
+      queries.push(query);
+      if (/deleteItem\(/.test(query))
+        return Response.json({ data: { deleteItem: { successful: true } } });
+      if (/item\(where/.test(query) && /wrong-upload/.test(query))
+        return Response.json({ data: { item: { itemId: 'abc', children: { nodes: [] } } } });
       if (/uploadMedia\(/.test(query))
         return Response.json({
           data: { uploadMedia: { presignedUploadUrl: 'https://up.example/x' } },
@@ -54,10 +60,27 @@ function setup() {
   return {
     s: new SitecoreAuthoringToolServer({ facts: async () => facts, fetch, blobs }),
     uploads,
+    queries,
   };
 }
 
 describe('media.upload', () => {
+  it('replaces a wrong upload when asked, putting the old item in the recycle bin first', async () => {
+    const { s, uploads, queries } = setup();
+    const r = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/media library/Project/Brands/ansco/Home/wrong-upload',
+        ref: 'blob://p1/assets/def456.bin',
+        replace: true,
+      },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    expect(queries.some((q) => /deleteItem\(.*permanently: false/.test(q))).toBe(true);
+    expect(uploads.at(-1)).toMatchObject({ name: 'wrong-upload.png', type: 'image/png' });
+  });
+
   it('files a stored file by what its bytes are, and turns AVIF away with the way round', async () => {
     const { s, uploads } = setup();
     // Microsoft's Xbox promo: a Scene7 URL with no extension, stored as .bin, went in as a File.

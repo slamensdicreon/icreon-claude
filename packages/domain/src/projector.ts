@@ -344,6 +344,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         endedAt: prior?.endedAt ?? null,
         escalationId: prior?.escalationId ?? null,
         lastReason: prior?.lastReason ?? null,
+        gaps: prior?.gaps ?? null,
         plannedStart: prior?.plannedStart ?? null,
         plannedEnd: prior?.plannedEnd ?? null,
       };
@@ -374,6 +375,12 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       t.state = e.data.to;
       t.attempt = e.data.attempt;
       t.lastReason = e.data.reason;
+      // Done is not always passed: past the send-back limit, or accepted as is, it has gaps.
+      t.gaps =
+        e.data.to === 'done' &&
+        /had been sent back|differences went to|^Accepted as is/i.test(e.data.reason ?? '')
+          ? e.data.reason
+          : null;
       if (e.data.to === 'running' && !t.startedAt) t.startedAt = e.ts;
       if (e.data.to === 'running') t.escalationId = null;
       if (['done', 'cancelled', 'rolled_back'].includes(e.data.to)) t.endedAt = e.ts;

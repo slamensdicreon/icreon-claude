@@ -560,6 +560,21 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           problems.push(`${path} shows placeholder copy: "${placeholders.join('", "')}"`);
         // A component whose datasource never resolved has no fields at all: its rendering is
         // broken, and "add items" would send every page to fix content that is already there.
+        // The same component with the same content twice in a row (Paylocity's demo band, placed
+        // twice above the footer) is a layout mistake no text check sees.
+        const placed = layoutComponents(page.body);
+        for (let i = 1; i < placed.length; i++) {
+          const a = placed[i - 1]!;
+          const b = placed[i]!;
+          if (
+            a.name === b.name &&
+            a.fields &&
+            JSON.stringify(a.fields) === JSON.stringify(b.fields)
+          )
+            problems.push(
+              `${path}: ${a.name} is placed twice in a row with the same content: remove one`,
+            );
+        }
         const broken = unresolvedComponents(page.body);
         for (const name of broken) problems.push(`${path}: ${name} ${UNRESOLVED}`);
         for (const c of layoutComponents(page.body))
@@ -575,7 +590,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         if (!origin) continue;
         const sourceUrl = `${origin}${path === '/' ? '/' : `${path}/`}`;
         const source = await getText(cfg, sourceUrl);
-        if (source.status !== 200) {
+        if (source.status !== 200 || isChallengePage(source.body)) {
           unread++;
           continue;
         }
@@ -816,7 +831,8 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           getText(cfg, `https://${project}-editing.vercel.app${at.path}`),
           getText(cfg, sourceUrl),
         ]);
-        if (have.status !== at.status || want.status !== 200) return null;
+        if (have.status !== at.status || want.status !== 200 || isChallengePage(want.body))
+          return null;
         // The source sends this path elsewhere: there is no page of its own to measure against.
         if (redirectedAway(sourceUrl, want.url)) return { have: 0, want: 0 };
         return {
@@ -884,8 +900,17 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           if (page.status !== 200)
             return `${p.path} answered ${page.status || 'nothing'} on the editing host`;
           const have = titleOf(page.body);
-          return have.toLowerCase() === p.title.toLowerCase()
-            ? null
+          if (have.toLowerCase() === p.title.toLowerCase()) return null;
+          // The item may hold the right title while the head renders another (Microsoft: the
+          // homepage's metadata title set, the tab showing the site name): that's head code.
+          const home = `${sitecoreBindings(ctx.target).sitePath}/Home`;
+          const it = await item(ctx, p.path === '/' ? home : `${home}${p.path}`).catch(() => null);
+          const set = (it?.fields?.nodes ?? []).find(
+            (f) =>
+              /title/i.test(f.name) && visibleText(f.value).toLowerCase() === p.title.toLowerCase(),
+          );
+          return set
+            ? `${p.path} has the title "${have}", but its item's ${set.name} holds the source's "${p.title}": the head's <title> doesn't read the page's title field. That's head code (generateMetadata in the page route): send it back to integrate-head, not to content`
             : `${p.path} has the title "${have}"; the source page's is "${p.title}"`;
         })
       ).filter((x): x is string => !!x);
@@ -965,10 +990,33 @@ export function redirectedAway(requested: string, final: string | undefined): bo
   if (!final) return false;
   try {
     const at = (u: string) => new URL(u).pathname.replace(/\/$/, '').toLowerCase() || '/';
-    return at(final) !== at(requested);
+    const from = at(requested);
+    const to = at(final);
+    if (to === from) return false;
+    // The same page under a locale (microsoft.com/ → /en-us, /about → /en-us/about) is still the
+    // page: compare with it. Treated as "moved", Microsoft's homepage was never compared at all.
+    const locale = /^\/[a-z]{2}(?:-[a-z]{2,4})?(?=\/|$)/.exec(to)?.[0];
+    if (locale && (to.slice(locale.length) || '/') === from) return false;
+    return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * A page that isn't the site: a bot check or a script that sets a cookie and reloads (Paylocity
+ * answered a plain request with 1.4 KB of "cf_bypass" script, status 200). Comparing with it
+ * passes any page, so it counts as unreadable.
+ */
+export function isChallengePage(html: string): boolean {
+  if (
+    /Just a moment\.\.\.|Verify you are human|Checking your browser|cf-chl-|cf_bypass|challenges\.cloudflare\.com|captcha-delivery|Attention Required! \| Cloudflare/i.test(
+      html.slice(0, 20_000),
+    )
+  )
+    return true;
+  const words = visibleText(html).split(' ').filter(Boolean).length;
+  return words < 40 && /location\.reload|document\.cookie|window\.location\s*=/.test(html);
 }
 
 /** What a visitor reads on an HTML page: scripts, styles and markup removed. */

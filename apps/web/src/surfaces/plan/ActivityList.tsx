@@ -160,7 +160,7 @@ export function ActivityList({ s: sched }: { s: ScheduleSnapshot }) {
                           {t?.title ?? id}
                         </button>
                       </td>
-                      <td>{t && <StateWord state={t.state} />}</td>
+                      <td>{t && <StateWord state={t.state} gaps={t.gaps} />}</td>
                     </tr>,
                   );
                 }

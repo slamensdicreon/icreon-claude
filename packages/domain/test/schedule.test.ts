@@ -130,3 +130,61 @@ describe('forecast', () => {
     });
   });
 });
+
+describe('done with gaps', () => {
+  it('marks a task finished past the send-back limit or accepted as is, and clears it when redone', () => {
+    const s = project([
+      { ...created, at: at(19, 9) },
+      { ...task('migrate-home', 'content-migrator'), at: at(19, 9) },
+      { ...task('migrate-about', 'content-migrator'), at: at(19, 9) },
+      { ...move('migrate-home', 'planned', 'running'), at: at(19, 10) },
+      {
+        ...move('migrate-home', 'running', 'done'),
+        data: {
+          taskId: 'migrate-home',
+          from: 'running',
+          to: 'done',
+          attempt: 3,
+          reason:
+            'Done: its own work passed review; Port Hero had been sent back 2 times, so their differences went to Audit content parity',
+        } as never,
+        at: at(19, 11),
+      },
+      {
+        ...move('migrate-about', 'running', 'done'),
+        data: {
+          taskId: 'migrate-about',
+          from: 'running',
+          to: 'done',
+          attempt: 1,
+          reason: 'Accepted',
+        } as never,
+        at: at(19, 11),
+      },
+    ]);
+    expect(s.tasks['migrate-home']!.gaps).toMatch(/sent back 2 times/);
+    expect(s.tasks['migrate-about']!.gaps).toBeNull();
+    const snap = scheduleSnapshot(s, at(19, 12));
+    expect(snap.tasks.find((t) => t.taskId === 'migrate-home')!.gaps).toMatch(
+      /differences went to/,
+    );
+    // Redone: it leaves "done", and its gaps go with it.
+    const redone = project([
+      { ...created, at: at(19, 9) },
+      { ...task('migrate-home', 'content-migrator'), at: at(19, 9) },
+      {
+        ...move('migrate-home', 'running', 'done'),
+        data: {
+          taskId: 'migrate-home',
+          from: 'running',
+          to: 'done',
+          attempt: 3,
+          reason: 'Accepted as is',
+        } as never,
+        at: at(19, 11),
+      },
+      { ...move('migrate-home', 'done', 'ready'), at: at(19, 13) },
+    ]);
+    expect(redone.tasks['migrate-home']!.gaps).toBeNull();
+  });
+});
