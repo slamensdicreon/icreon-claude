@@ -59,6 +59,78 @@ function behaves(name: string, make: () => Promise<OrganizationStore>) {
       expect(await orgs.members(acme.id)).toEqual([]);
     });
 
+    it('turns an invitation into a membership when its address signs in', async () => {
+      const orgs = await make();
+      const acme = await orgs.create({
+        name: 'Acme',
+        slug: `acme-i-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      const later = new Date(Date.now() + 7 * 86_400_000);
+      const first = await orgs.invite({
+        organizationId: acme.id,
+        email: ' Dana@Example.com ',
+        role: 'director',
+        invitedBy: 'github:bob',
+        expiresAt: later,
+      });
+      // Inviting again replaces the open invitation (here, with another role).
+      const again = await orgs.invite({
+        organizationId: acme.id,
+        email: 'dana@example.com',
+        role: 'watcher',
+        invitedBy: 'github:bob',
+        expiresAt: later,
+      });
+      expect(again.email).toBe('dana@example.com');
+      expect((await orgs.invitations(acme.id)).map((i) => i.id)).toEqual([again.id]);
+      expect(await orgs.revokeInvitation(acme.id, first.id)).toBe(false);
+      await expect(
+        orgs.invite({
+          organizationId: acme.id,
+          email: 'nope',
+          role: 'watcher',
+          invitedBy: 'x',
+          expiresAt: later,
+        }),
+      ).rejects.toThrow(/email/);
+
+      const accepted = await orgs.acceptInvitations('DANA@example.com', 'workos:user_dana');
+      expect(accepted.map((i) => i.id)).toEqual([again.id]);
+      const mine = await orgs.membershipsOf('workos:user_dana');
+      expect(mine.map((m) => [m.organizationId, m.role, m.label])).toEqual([
+        [acme.id, 'watcher', 'dana@example.com'],
+      ]);
+      // Accepted once: nothing is left open, and signing in again accepts nothing.
+      expect(await orgs.invitations(acme.id)).toEqual([]);
+      expect(await orgs.acceptInvitations('dana@example.com', 'workos:user_dana')).toEqual([]);
+    });
+
+    it('lets an invitation be withdrawn, and never accepts an expired one', async () => {
+      const orgs = await make();
+      const acme = await orgs.create({
+        name: 'Acme',
+        slug: `acme-r-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      const inv = await orgs.invite({
+        organizationId: acme.id,
+        email: 'eve@example.com',
+        role: 'director',
+        invitedBy: 'github:bob',
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      expect(await orgs.revokeInvitation(acme.id, inv.id)).toBe(true);
+      await orgs.invite({
+        organizationId: acme.id,
+        email: 'old@example.com',
+        role: 'director',
+        invitedBy: 'github:bob',
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      expect(await orgs.acceptInvitations('eve@example.com', 'workos:eve')).toEqual([]);
+      expect(await orgs.acceptInvitations('old@example.com', 'workos:old')).toEqual([]);
+      expect(await orgs.membershipsOf('workos:eve')).toEqual([]);
+    });
+
     it('gives each project one owner for good; unassigned projects are Icreon’s', async () => {
       const orgs = await make();
       const acme = await orgs.create({ name: 'Acme', slug: 'acme-p' });

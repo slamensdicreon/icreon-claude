@@ -18,7 +18,7 @@ them: sign-in, ownership of projects, the global integrations, and the catalog.
 | Kickoff             | Every customer starts with an Icreon Director, a member of the organization the customer can't remove for the first 3 months, and who stays after that unless the customer asks otherwise. |
 | Hosting             | Icreon hosts everything: build repositories in Icreon's GitHub org, sites in Icreon's Vercel team, agents on Icreon's Anthropic account.                       |
 | Leaving             | A customer can export their code and repository during the license and for 90 days after it ends.                                                           |
-| Sign-in             | Auth0. Email and social sign-in now; SSO per organization later, without changes on our side. GitHub stays one way in.                                         |
+| Sign-in             | WorkOS AuthKit (chosen over Auth0: built for B2B, SSO priced per customer connection, identity only). Email, Google, Microsoft now; SSO per organization later. GitHub stays one way in. |
 | Playbooks           | Icreon's product. Customers run them and never edit them.                                                                                                     |
 | Lessons             | Reach the shared playbooks only through Icreon's knowledge review, with client names removed, and ship to every licensee in the next version.                  |
 | Seats               | Unlimited.                                                                                                                                                     |
@@ -124,7 +124,7 @@ Not yet:
 
 ## People and roles
 
-A person (an Auth0 user) can belong to several organizations; Icreon Directors belong to every
+A person (a WorkOS user, or a GitHub login) can belong to several organizations; Icreon Directors belong to every
 customer they start. The Control Center gets an organization switcher.
 
 Customers never reach `/admin`. It is a separate area for Icreon super admins: every organization,
@@ -139,7 +139,7 @@ holds inside an organization, it never opens `/admin`.
 
 Roles are stored in our database as permission sets, not in Auth0, so we can add a role (a client
 approver who answers only some cards is the likely next one) or grant a role on a single project
-without a rewrite. Auth0 holds identity, organization membership and invitations.
+without a rewrite. WorkOS holds identity only; memberships and invitations are ours.
 
 ### The Icreon kickoff Director
 
@@ -179,16 +179,38 @@ Still to do in the Control Center: hide the buttons a Watcher can't use (they sh
 themselves when pressed), and word the Dashboard for someone who decides nothing ("Four things are
 yours" is the Director's line).
 
-## Sign-in
+## Sign-in (step 4)
 
-- Auth0 with Organizations: one Auth0 organization per Launchworks organization; email or magic
-  link, Google and Microsoft; MFA; invitations by email.
-- The API keeps its session cookie and checks membership and role on every request, as it checks
-  `OPERATORS` today.
-- No public sign-up. Icreon creates an organization in `/admin` when a license is sold, invites
-  the kickoff Director, and that Director invites the customer.
-- API keys (`OPERATOR_API_KEYS`) become per organization, each with a role. The cron secret stays
-  system level.
+WorkOS AuthKit, chosen over Auth0: it is built for selling to companies, each customer's own SSO
+and directory sync are priced per connection (switched on only for customers who want them), and
+it holds identity only, so our memberships, roles and invitations stay ours.
+
+Built:
+
+- **Both ways in** (`apps/control-api/src/auth.ts`). With `WORKOS_CLIENT_ID` and `WORKOS_KEY` set,
+  `/auth/login` offers "Continue with email, Google or Microsoft" (AuthKit) beside GitHub for
+  Icreon's operators; `AUTH=workos` drops GitHub. A WorkOS session is `workos:<user id>` in
+  memberships and needs no place on `OPERATORS`.
+- **Only people with an invitation get in.** On the way back from AuthKit, every open invitation
+  for the person's verified address becomes a membership; someone with none is turned away with
+  "hasn't been invited yet", and no session is made.
+- **Invitations** (`lw_invitations`, migration `009`; `apps/control-api/src/people.ts`): a Director
+  invites by email as Director or Watcher, from **People** in Global settings. WorkOS sends the
+  email; its link (`/auth/login?invitation_token=…`) goes straight to AuthKit. An invitation is
+  open 7 days, inviting again replaces it, and it can be withdrawn. If WorkOS can't send the
+  email, the invitation still stands: the person signs in with that address.
+- **People** also changes a member's role and removes members. Nobody changes their own access,
+  an organization always keeps a Director, and a customer can't remove or demote Icreon's
+  Director (only Icreon can). The 3-month minimum isn't separate from that yet.
+
+Not yet:
+
+- The organization switcher in the Control Center, for people in several organizations (Icreon's
+  Directors). The API already takes `x-lw-organization`; the stream (an `EventSource`) can't send
+  a header, so the choice needs a cookie.
+- API keys (`OPERATOR_API_KEYS`) per organization, each with a role. The cron secret stays system
+  level.
+- Creating organizations from `/admin`.
 
 ## Hosting
 
@@ -237,7 +259,8 @@ before it reaches a playbook.
    **Done**, except row-level security (see "Not yet" above).
 3. Roles enforced in the API; Watcher with the read allowlist and redaction. **Done** (see
    "Enforcing roles").
-4. Auth0 sign-in, invitations, organization switcher.
+4. WorkOS sign-in, invitations, organization switcher. **Built**, except the switcher (see
+   "Sign-in"); live once WorkOS is configured (`docs/deploy/workos.md`).
 5. Licenses: entities, playbooks, project count, term; the catalog filtered by them;
    the end-of-term pause.
 6. Hosting per organization: prefixed names, usage recorded per organization.

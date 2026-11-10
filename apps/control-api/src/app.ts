@@ -114,6 +114,7 @@ import { zip, type ZipEntry } from './zip';
 import { deletionReadiness, purgeDue, purgeProject, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
 import { redactForWatcher, redactJsonForWatcher } from './redact';
+import { registerPeople, type SendInvitation } from './people';
 import {
   LOCAL_SUBJECT,
   organizationOf,
@@ -240,6 +241,8 @@ export interface AppDeps {
    * in one organization and sees only its projects; without it (tests), the API is one team's.
    */
   organizations?: OrganizationStore;
+  /** Sends a new member's invitation email (WorkOS); without it, invitations wait for sign-in. */
+  sendInvitation?: SendInvitation | null;
 }
 
 /** What the worker reports about itself. */
@@ -309,6 +312,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return String(reply.getHeader('content-type') ?? '').includes('json')
         ? redactJsonForWatcher(payload)
         : payload;
+    });
+    registerPeople(app, {
+      orgs,
+      signedIn: Boolean(deps.auth),
+      sendInvitation: deps.sendInvitation ?? null,
     });
   }
   /** The request's organization's projects (every project for system calls and without orgs). */

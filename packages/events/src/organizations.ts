@@ -21,6 +21,20 @@ export interface Membership {
   role: MemberRole;
   addedBy: string;
   createdAt: string;
+  /** How the member is shown: their email or GitHub login. */
+  label: string | null;
+}
+
+/** An open invitation: someone asked, by email, to join an organization in a role. */
+export interface Invitation {
+  id: string;
+  organizationId: string;
+  /** Lower case. */
+  email: string;
+  role: MemberRole;
+  invitedBy: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 /**
@@ -35,14 +49,32 @@ export interface OrganizationStore {
   /** The organizations a person belongs to, oldest organization first. */
   membershipsOf(subject: string): Promise<(Membership & { organization: Organization })[]>;
   members(organizationId: string): Promise<Membership[]>;
-  /** Adds a person, or changes their role. */
+  /** Adds a person, or changes their role (and label, when given). */
   setMember(
     organizationId: string,
     subject: string,
     role: MemberRole,
     addedBy: string,
+    label?: string,
   ): Promise<void>;
   removeMember(organizationId: string, subject: string): Promise<void>;
+  /** Invites an email address; an open invitation for the same address is replaced. */
+  invite(input: {
+    organizationId: string;
+    email: string;
+    role: MemberRole;
+    invitedBy: string;
+    expiresAt: Date;
+  }): Promise<Invitation>;
+  /** An organization's open invitations: not accepted, withdrawn or expired. */
+  invitations(organizationId: string): Promise<Invitation[]>;
+  /** Withdraws an open invitation; false if there was none. */
+  revokeInvitation(organizationId: string, id: string): Promise<boolean>;
+  /**
+   * Turns every open invitation for a verified email address into a membership for the person
+   * who signed in with it. Returns the invitations accepted.
+   */
+  acceptInvitations(email: string, subject: string): Promise<Invitation[]>;
   /** Records a project's owner. Refuses to move a project that another organization owns. */
   assignProject(projectId: string, organizationId: string): Promise<void>;
   /**
@@ -54,6 +86,8 @@ export interface OrganizationStore {
 
 /** `github:<login>`, lower case: GitHub logins are case-insensitive. */
 export const githubSubject = (login: string) => `github:${login.toLowerCase()}`;
+/** `workos:<user id>`: someone WorkOS signed in. */
+export const workosSubject = (userId: string) => `workos:${userId}`;
 
 export class OrganizationError extends Error {}
 
@@ -81,6 +115,16 @@ interface MemberRow {
   role: MemberRole;
   added_by: string;
   created_at: string | Date;
+  label?: string | null;
+}
+interface InvitationRow {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: MemberRole;
+  invited_by: string;
+  created_at: string | Date;
+  expires_at: string | Date;
 }
 const iso = (t: string | Date) => new Date(t).toISOString();
 const org = (r: OrgRow): Organization => ({
@@ -95,7 +139,25 @@ const member = (r: MemberRow): Membership => ({
   role: r.role,
   addedBy: r.added_by,
   createdAt: iso(r.created_at),
+  label: r.label ?? null,
 });
+const invitation = (r: InvitationRow): Invitation => ({
+  id: r.id,
+  organizationId: r.organization_id,
+  email: r.email,
+  role: r.role,
+  invitedBy: r.invited_by,
+  createdAt: iso(r.created_at),
+  expiresAt: iso(r.expires_at),
+});
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const normalEmail = (email: string) => {
+  const e = email.trim().toLowerCase();
+  if (!EMAIL.test(e) || e.length > 254)
+    throw new OrganizationError(`"${email}" is not an email address.`);
+  return e;
+};
+const INVITATION_COLUMNS = 'id, organization_id, email, role, invited_by, created_at, expires_at';
 
 export class PostgresOrganizationStore implements OrganizationStore {
   /** Owners never change, so a known owner is kept for the life of the process. */
@@ -133,7 +195,7 @@ export class PostgresOrganizationStore implements OrganizationStore {
     const { rows } = await this.sql.query<
       MemberRow & { name: string; slug: string; org_created_at: string | Date }
     >(
-      `SELECT m.organization_id, m.subject, m.role, m.added_by, m.created_at,
+      `SELECT m.organization_id, m.subject, m.role, m.added_by, m.created_at, m.label,
               o.name, o.slug, o.created_at AS org_created_at
          FROM lw_memberships m JOIN lw_organizations o ON o.id = m.organization_id
         WHERE m.subject = $1
@@ -153,20 +215,98 @@ export class PostgresOrganizationStore implements OrganizationStore {
 
   async members(organizationId: string): Promise<Membership[]> {
     const { rows } = await this.sql.query<MemberRow>(
-      `SELECT organization_id, subject, role, added_by, created_at FROM lw_memberships
+      `SELECT organization_id, subject, role, added_by, created_at, label FROM lw_memberships
         WHERE organization_id = $1 ORDER BY created_at, subject`,
       [organizationId],
     );
     return rows.map(member);
   }
 
-  async setMember(organizationId: string, subject: string, role: MemberRole, addedBy: string) {
+  async setMember(
+    organizationId: string,
+    subject: string,
+    role: MemberRole,
+    addedBy: string,
+    label?: string,
+  ) {
     checkRole(role);
     await this.sql.query(
-      `INSERT INTO lw_memberships (organization_id, subject, role, added_by) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (organization_id, subject) DO UPDATE SET role = EXCLUDED.role`,
-      [organizationId, subject, role, addedBy],
+      `INSERT INTO lw_memberships (organization_id, subject, role, added_by, label)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (organization_id, subject) DO UPDATE
+         SET role = EXCLUDED.role, label = COALESCE(EXCLUDED.label, lw_memberships.label)`,
+      [organizationId, subject, role, addedBy, label ?? null],
     );
+  }
+
+  async invite(input: {
+    organizationId: string;
+    email: string;
+    role: MemberRole;
+    invitedBy: string;
+    expiresAt: Date;
+  }): Promise<Invitation> {
+    checkRole(input.role);
+    const email = normalEmail(input.email);
+    // Two statements: in one, Postgres doesn't order the withdrawal before the insert.
+    await this.sql.query(
+      `UPDATE lw_invitations SET revoked_at = now()
+        WHERE organization_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL`,
+      [input.organizationId, email],
+    );
+    const { rows } = await this.sql.query<InvitationRow>(
+      `INSERT INTO lw_invitations (id, organization_id, email, role, invited_by, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING ${INVITATION_COLUMNS}`,
+      [
+        `inv-${randomUUID().slice(0, 12)}`,
+        input.organizationId,
+        email,
+        input.role,
+        input.invitedBy,
+        input.expiresAt.toISOString(),
+      ],
+    );
+    return invitation(rows[0]!);
+  }
+
+  async invitations(organizationId: string): Promise<Invitation[]> {
+    const { rows } = await this.sql.query<InvitationRow>(
+      `SELECT ${INVITATION_COLUMNS} FROM lw_invitations
+        WHERE organization_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL
+          AND expires_at > now()
+        ORDER BY created_at`,
+      [organizationId],
+    );
+    return rows.map(invitation);
+  }
+
+  async revokeInvitation(organizationId: string, id: string): Promise<boolean> {
+    const { rows } = await this.sql.query<{ id: string }>(
+      `UPDATE lw_invitations SET revoked_at = now()
+        WHERE organization_id = $1 AND id = $2 AND accepted_at IS NULL AND revoked_at IS NULL
+        RETURNING id`,
+      [organizationId, id],
+    );
+    return rows.length > 0;
+  }
+
+  async acceptInvitations(email: string, subject: string): Promise<Invitation[]> {
+    const { rows } = await this.sql.query<InvitationRow>(
+      `WITH acc AS (
+         UPDATE lw_invitations SET accepted_at = now(), accepted_by = $2
+          WHERE email = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+          RETURNING ${INVITATION_COLUMNS}
+       ), joined AS (
+         INSERT INTO lw_memberships (organization_id, subject, role, added_by, label)
+         SELECT organization_id, $2, role, invited_by, email FROM acc
+         ON CONFLICT (organization_id, subject) DO UPDATE
+           SET role = EXCLUDED.role, label = EXCLUDED.label
+       )
+       SELECT * FROM acc`,
+      [normalEmail(email), subject],
+    );
+    return rows.map(invitation);
   }
 
   async removeMember(organizationId: string, subject: string): Promise<void> {
@@ -223,6 +363,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
   private readonly orgs = new Map<string, Organization>();
   private readonly memberships = new Map<string, Membership>();
   private readonly owners = new Map<string, string>();
+  private readonly invites = new Map<string, Invitation & { closed: boolean }>();
 
   constructor(private readonly now: () => Date = () => new Date()) {
     this.orgs.set(DEFAULT_ORGANIZATION, {
@@ -268,7 +409,13 @@ export class MemoryOrganizationStore implements OrganizationStore {
     return [...this.memberships.values()].filter((m) => m.organizationId === organizationId);
   }
 
-  async setMember(organizationId: string, subject: string, role: MemberRole, addedBy: string) {
+  async setMember(
+    organizationId: string,
+    subject: string,
+    role: MemberRole,
+    addedBy: string,
+    label?: string,
+  ) {
     checkRole(role);
     if (!this.orgs.has(organizationId))
       throw new OrganizationError(`No organization "${organizationId}".`);
@@ -280,7 +427,64 @@ export class MemoryOrganizationStore implements OrganizationStore {
       role,
       addedBy: was?.addedBy ?? addedBy,
       createdAt: was?.createdAt ?? this.now().toISOString(),
+      label: label ?? was?.label ?? null,
     });
+  }
+
+  private open(i: Invitation & { closed: boolean }) {
+    return !i.closed && i.expiresAt > this.now().toISOString();
+  }
+
+  async invite(input: {
+    organizationId: string;
+    email: string;
+    role: MemberRole;
+    invitedBy: string;
+    expiresAt: Date;
+  }): Promise<Invitation> {
+    checkRole(input.role);
+    if (!this.orgs.has(input.organizationId))
+      throw new OrganizationError(`No organization "${input.organizationId}".`);
+    const email = normalEmail(input.email);
+    for (const i of this.invites.values())
+      if (i.organizationId === input.organizationId && i.email === email) i.closed = true;
+    const inv: Invitation = {
+      id: `inv-${randomUUID().slice(0, 12)}`,
+      organizationId: input.organizationId,
+      email,
+      role: input.role,
+      invitedBy: input.invitedBy,
+      createdAt: this.now().toISOString(),
+      expiresAt: input.expiresAt.toISOString(),
+    };
+    this.invites.set(inv.id, { ...inv, closed: false });
+    return inv;
+  }
+
+  async invitations(organizationId: string): Promise<Invitation[]> {
+    return [...this.invites.values()]
+      .filter((i) => i.organizationId === organizationId && this.open(i))
+      .map(({ closed: _, ...i }) => i);
+  }
+
+  async revokeInvitation(organizationId: string, id: string): Promise<boolean> {
+    const i = this.invites.get(id);
+    if (!i || i.organizationId !== organizationId || i.closed) return false;
+    i.closed = true;
+    return true;
+  }
+
+  async acceptInvitations(email: string, subject: string): Promise<Invitation[]> {
+    const e = normalEmail(email);
+    const accepted: Invitation[] = [];
+    for (const i of this.invites.values()) {
+      if (i.email !== e || !this.open(i)) continue;
+      i.closed = true;
+      await this.setMember(i.organizationId, subject, i.role, i.invitedBy, e);
+      const { closed: _, ...inv } = i;
+      accepted.push(inv);
+    }
+    return accepted;
   }
 
   async removeMember(organizationId: string, subject: string): Promise<void> {

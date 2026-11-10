@@ -27,6 +27,7 @@ import {
   githubSubject,
   MemoryOrganizationStore,
   PostgresOrganizationStore,
+  workosSubject,
   type OrganizationStore,
   type SecretVault,
 } from '@lw/events';
@@ -63,6 +64,7 @@ import { z } from 'zod';
 import { buildApp, type WorkerHeartbeat } from './app';
 import { GithubApp, VaultCredentials } from '@lw/connectors';
 import { IntakeService, type StartInput } from './intake';
+import { workosInvitations } from './people';
 import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
 import { policyRows } from './policy';
 import { demoCommands, remoteCommands, simulationCommands, type ProjectCommands } from './commands';
@@ -117,7 +119,14 @@ const env = z
     CREDENTIALS_KEY_PREVIOUS: z.string().optional(),
     INLINE_WORKER: z.enum(['true', 'false']).default('true'),
     AGENTS: z.enum(['stub', 'claude']).default('stub'),
-    AUTH: z.enum(['none', 'github']).default('none'),
+    /**
+     * github: GitHub sign-in for OPERATORS, plus WorkOS when it is configured; workos: WorkOS only.
+     */
+    AUTH: z.enum(['none', 'github', 'workos']).default('none'),
+    /** WorkOS AuthKit: the client ID (public) and the API key (WORKOS_KEY or WORKOS_API_KEY). */
+    WORKOS_CLIENT_ID: z.string().optional(),
+    WORKOS_KEY: z.string().optional(),
+    WORKOS_API_KEY: z.string().optional(),
     /**
      * Allow AUTH=none on a non-local HOST. Only for a container whose port is published to
      * 127.0.0.1 (compose.yaml); never on a reachable host.
@@ -185,11 +194,41 @@ const extraOrigins = [env.VERCEL_URL, env.VERCEL_BRANCH_URL]
   .filter((h): h is string => Boolean(h))
   .map((h) => `https://${h}`);
 
+const workosKey = (env.WORKOS_KEY ?? env.WORKOS_API_KEY)?.trim() || null;
+// WorkOS signs people in where both halves are set; AUTH=workos insists on them.
+const workos =
+  env.AUTH !== 'none' && env.WORKOS_CLIENT_ID && workosKey
+    ? { clientId: env.WORKOS_CLIENT_ID.trim(), apiKey: workosKey }
+    : null;
+if (env.AUTH === 'workos' && !workos)
+  throw new Error('AUTH=workos needs WORKOS_CLIENT_ID and WORKOS_KEY (or WORKOS_API_KEY).');
 const auth =
-  env.AUTH === 'github'
+  env.AUTH !== 'none'
     ? {
-        clientId: required('GITHUB_CLIENT_ID', env.GITHUB_CLIENT_ID),
-        clientSecret: required('GITHUB_CLIENT_SECRET', env.GITHUB_CLIENT_SECRET),
+        ...(env.AUTH === 'github' || (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET)
+          ? {
+              clientId: required('GITHUB_CLIENT_ID', env.GITHUB_CLIENT_ID),
+              clientSecret: required('GITHUB_CLIENT_SECRET', env.GITHUB_CLIENT_SECRET),
+            }
+          : {}),
+        ...(workos
+          ? {
+              workos: {
+                ...workos,
+                // Their invitations become memberships; someone with none is turned away.
+                admit: async (user: { id: string; email: string }) => {
+                  const subject = workosSubject(user.id);
+                  await organizations.acceptInvitations(user.email, subject);
+                  return (await organizations.membershipsOf(subject)).length
+                    ? ({ ok: true } as const)
+                    : ({
+                        ok: false,
+                        message: `${user.email} hasn't been invited to Launchworks yet. Ask your organization's Director for an invitation.`,
+                      } as const);
+                },
+              },
+            }
+          : {}),
         sessionSecret: required('SESSION_SECRET', env.SESSION_SECRET),
         publicUrl: required('PUBLIC_URL', publicUrl),
         appUrl: required('APP_URL', appUrl),
@@ -205,10 +244,12 @@ const auth =
         secureCookies: required('PUBLIC_URL', publicUrl).startsWith('https://'),
       }
     : undefined;
-if (auth && !auth.operators.length) throw new Error('AUTH=github needs OPERATORS (GitHub logins).');
+if (env.AUTH === 'github' && !auth?.operators.length)
+  throw new Error('AUTH=github needs OPERATORS (GitHub logins).');
+if (workos) console.log('Sign-in: WorkOS AuthKit is on.');
 
 function required(name: string, value: string | undefined): string {
-  if (!value) throw new Error(`AUTH=github needs ${name}`);
+  if (!value) throw new Error(`AUTH=${env.AUTH} needs ${name}`);
   return value;
 }
 
@@ -559,6 +600,7 @@ const app = await buildApp({
     organizations,
   }),
   organizations,
+  sendInvitation: workos ? workosInvitations({ apiKey: workos.apiKey }) : null,
   github,
   hosting: hosting
     ? {

@@ -104,7 +104,11 @@ const deny = (reply: FastifyReply, status: number, code: string, message: string
 
 /** Who the caller is, as memberships name them. */
 export const subjectOf = (req: FastifyRequest, signedIn: boolean): string | null =>
-  !signedIn ? LOCAL_SUBJECT : req.operator ? githubSubject(req.operator.login) : null;
+  !signedIn
+    ? LOCAL_SUBJECT
+    : req.operator
+      ? (req.operator.subject ?? githubSubject(req.operator.login))
+      : null;
 
 /**
  * Puts every request in one organization and keeps it there: a project of another organization

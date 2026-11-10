@@ -11,6 +11,7 @@ import { InForce } from './InForce';
 import { Knowledge } from './Knowledge';
 import { Playbooks } from './Playbooks';
 import { Rules } from './Rules';
+import { PeoplePanel } from '../settings/PeoplePanel';
 import { Lead, usePortfolio } from './shared';
 import s from './manage.module.css';
 
@@ -28,6 +29,7 @@ export function ManagePage({ page }: { page: Page }) {
             Settings every project shares. Each project’s own policies, budgets and credentials are
             in its Settings.
           </Lead>
+          <PeoplePanel />
           <GithubAppPanel />
         </div>
       )}
