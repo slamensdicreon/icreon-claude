@@ -2,7 +2,7 @@
 # Blueprint's collections: components, pages, media and personas. Before Gate 1 each forEach
 # template shows as one placeholder task, so the whole plan is visible from day one.
 #
-# What the TASB member portal taught, in the plan's shape: the shell (sign-in, sessions, role
+# What an earlier member portal taught, in the plan's shape: the shell (sign-in, sessions, role
 # navigation, demo data) is code, built once before the components; every word on a screen is a
 # field; personalization variants are made in Page builder by hand, from content the agents
 # prepare; and the presentation path is walked by a person, persona by persona, before release.

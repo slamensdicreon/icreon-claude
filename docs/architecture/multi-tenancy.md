@@ -180,11 +180,13 @@ Several prompts and roles name the clients whose projects taught them a lesson
 (`prompts/media-migrator.md`, `prompts/head-integrator.md`, `prompts/rendering-registrar.md`,
 `roles/rendering-registrar.yaml`, `plan.yaml` in `sitecoreai-migration` and
 `sitecoreai-homepage-demo`). Every licensee's agents would read them. Restate each lesson without
-the name, and make the playbook validator refuse client names so new ones can't land.
+the name, and keep a test that refuses client names so new ones can't land. Once organizations exist, the
+knowledge review should also check a lesson against every organization's and project's name
+before it reaches a playbook.
 
 ## Order of work
 
-1. Remove client names from the playbooks; validator check.
+1. Remove client names from the playbooks; a test that refuses them. **Done:** `packages/playbook-sdk/test/client-names.test.ts`.
 2. Organizations, memberships and roles in the data model, row-level security, today's projects as
    organization #1.
 3. Roles enforced in the API; Watcher with the read allowlist and redaction.

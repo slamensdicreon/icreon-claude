@@ -560,8 +560,8 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           problems.push(`${path} shows placeholder copy: "${placeholders.join('", "')}"`);
         // A component whose datasource never resolved has no fields at all: its rendering is
         // broken, and "add items" would send every page to fix content that is already there.
-        // The same component with the same content twice in a row (Paylocity's demo band, placed
-        // twice above the footer) is a layout mistake no text check sees.
+        // The same component with the same content twice in a row (a demo band placed twice above
+        // the footer) is a layout mistake no text check sees.
         const placed = layoutComponents(page.body);
         for (let i = 1; i < placed.length; i++) {
           const a = placed[i - 1]!;
@@ -901,7 +901,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
             return `${p.path} answered ${page.status || 'nothing'} on the editing host`;
           const have = titleOf(page.body);
           if (have.toLowerCase() === p.title.toLowerCase()) return null;
-          // The item may hold the right title while the head renders another (Microsoft: the
+          // The item may hold the right title while the head renders another (the
           // homepage's metadata title set, the tab showing the site name): that's head code.
           const home = `${sitecoreBindings(ctx.target).sitePath}/Home`;
           const it = await item(ctx, p.path === '/' ? home : `${home}${p.path}`).catch(() => null);
@@ -993,8 +993,8 @@ export function redirectedAway(requested: string, final: string | undefined): bo
     const from = at(requested);
     const to = at(final);
     if (to === from) return false;
-    // The same page under a locale (microsoft.com/ → /en-us, /about → /en-us/about) is still the
-    // page: compare with it. Treated as "moved", Microsoft's homepage was never compared at all.
+    // The same page under a locale (example.com/ → /en-us, /about → /en-us/about) is still the
+    // page: compare with it. Treated as "moved", one site's homepage was never compared at all.
     const locale = /^\/[a-z]{2}(?:-[a-z]{2,4})?(?=\/|$)/.exec(to)?.[0];
     if (locale && (to.slice(locale.length) || '/') === from) return false;
     return true;
@@ -1004,7 +1004,7 @@ export function redirectedAway(requested: string, final: string | undefined): bo
 }
 
 /**
- * A page that isn't the site: a bot check or a script that sets a cookie and reloads (Paylocity
+ * A page that isn't the site: a bot check or a script that sets a cookie and reloads (one site
  * answered a plain request with 1.4 KB of "cf_bypass" script, status 200). Comparing with it
  * passes any page, so it counts as unreadable.
  */

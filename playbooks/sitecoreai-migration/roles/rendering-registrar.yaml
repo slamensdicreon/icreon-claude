@@ -56,7 +56,7 @@ tools:
       - ser.pull
       - ser.validate
   # The editing host's layout data, to see that a rendering's content resolves after a Component
-  # Query change (Paylocity's footer: three query edits without anyone seeing the page).
+  # Query change (one earlier footer took three query edits without anyone seeing the page).
   browser:
     ops:
       - page.data

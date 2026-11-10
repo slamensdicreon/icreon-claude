@@ -1,5 +1,5 @@
 # Example Blueprint for demos and tests: a member portal for a risk pool, with a business manager
-# and a finance contact (the shape of the TASB member portal).
+# and a finance contact (the shape of an earlier member portal).
 version: 1
 collections:
   components:
