@@ -79,13 +79,42 @@ project costs us, and is how we will find out if one license is unprofitable.
 
 ## Organizations and isolation
 
-- Every project, event, sealed credential, saved connection, blob and setting gets an
-  `organizationId`. Today none of them carries one, and the portfolio lists every project.
-- The event store is the hard part: every existing event needs the field, and the projections
-  and the `LISTEN/NOTIFY` live tail must filter by it. The current projects become
-  organization #1 (Icreon) in one migration.
-- **Postgres row-level security** on every table, keyed on the organization set for each
-  connection. A query that forgets its filter returns nothing instead of another customer's data.
+Built (step 2):
+
+- **A project's owner scopes everything of the project.** Events, documents, blobs and sealed
+  credentials are all keyed by project, so instead of an `organizationId` on every event, one row
+  per project records its organization (`lw_project_organizations`). It is written before the
+  project's first event and never changes, so no reader sees a project without its owner.
+- **Tables:** `lw_organizations`, `lw_memberships` (person, organization, role) and
+  `lw_project_organizations` (migration `008_organizations.sql`). The migration creates
+  organization #1, Icreon (`org-icreon`), and gives it every project already in the log. A project
+  a process writes without an owner (a demo, a seed) is Icreon's as well.
+- **Every request acts in one organization** (`apps/control-api/src/organizations.ts`). The
+  caller's memberships decide which; the `x-lw-organization` header picks one when they belong to
+  several. Someone who belongs nowhere gets `403 no_organization`. Today's operators
+  (`OPERATORS` and their API keys) are added as Icreon Directors at startup, and a local run's
+  operator is one too.
+- **One check for every project route.** Any `/projects/:id/...` route answers `404` for a project
+  of another organization, as if it didn't exist. Lists (projects, the Dashboard, Team, Workbench,
+  Activity, Scorecard, playbook scorecards, deleted projects) hold only the organization's projects.
+- **Saved connections belong to an organization:** they can't be listed, rotated or used to start
+  a project from another. Connections saved before organizations are Icreon's.
+- **Cypher runs per organization:** it reads, drafts and answers for that organization's projects
+  only, and keeps its conversations apart.
+- **System calls stay system-wide:** the scheduled watchdog and purge (Vercel Cron) act across
+  organizations; an operator running the purge by hand purges their own organization's.
+
+Not yet:
+
+- **Postgres row-level security.** Every service shares one connection pool as the table owner, so
+  policies keyed on a per-request setting need a connection (and transaction) per request. Until
+  that change, isolation rests on the single checks above, which tests cover.
+- **Team-wide content is still Icreon's alone:** rules, knowledge and the proposals review, the
+  GitHub App setup and the worker's diagnostics are shared. That is right while Icreon is the
+  only organization; step 3 limits them to super admins, and decides which rules a customer's
+  Director may make (today a rule can be scoped to a whole playbook or platform).
+- Organizations are created and people added through the store, not yet through `/admin`.
+
 - The tool gateway already limits every agent call to its own project. Keep it that way, and add
   the organization to the audit record.
 - Settings that are global today (`preferences: integrations`) split into system settings and
@@ -187,8 +216,8 @@ before it reaches a playbook.
 ## Order of work
 
 1. Remove client names from the playbooks; a test that refuses them. **Done:** `packages/playbook-sdk/test/client-names.test.ts`.
-2. Organizations, memberships and roles in the data model, row-level security, today's projects as
-   organization #1.
+2. Organizations, memberships and roles in the data model, today's projects as organization #1.
+   **Done**, except row-level security (see "Not yet" above).
 3. Roles enforced in the API; Watcher with the read allowlist and redaction.
 4. Auth0 sign-in, invitations, organization switcher.
 5. Licenses: entities, playbooks, project count, term; the catalog filtered by them;

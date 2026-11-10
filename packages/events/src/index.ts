@@ -8,3 +8,4 @@ export * from './integrations';
 export * from './rules';
 export * from './knowledge';
 export * from './tombstones';
+export * from './organizations';

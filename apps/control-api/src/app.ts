@@ -82,12 +82,14 @@ import {
   type ProjectState,
 } from '@lw/domain';
 import { Blueprint, blueprintSnapshot } from '@lw/plan';
-import type {
-  EventStore,
-  IntegrationStore,
-  KnowledgeStore,
-  Projections,
-  RuleStore,
+import {
+  DEFAULT_ORGANIZATION,
+  type EventStore,
+  type IntegrationStore,
+  type KnowledgeStore,
+  type OrganizationStore,
+  type Projections,
+  type RuleStore,
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
 import { harvestRules, type OperatorNotice } from '@lw/stack';
@@ -111,6 +113,14 @@ import { activityCsv } from './activity-csv';
 import { zip, type ZipEntry } from './zip';
 import { deletionReadiness, purgeDue, purgeProject, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
+import {
+  LOCAL_SUBJECT,
+  organizationOf,
+  owns,
+  registerOrganizationScope,
+  scoped,
+  subjectOf,
+} from './organizations';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
 import { withDocumentFacts, workbenchStory } from './story';
 import { explainDocument, explainedWithoutModel } from './plain';
@@ -224,6 +234,11 @@ export interface AppDeps {
    * it they live in this process's memory, which is enough for a local run.
    */
   preferences?: IntegrationStore | null;
+  /**
+   * Organizations: who belongs to which, and which owns each project. With it, every request acts
+   * in one organization and sees only its projects; without it (tests), the API is one team's.
+   */
+  organizations?: OrganizationStore;
 }
 
 /** What the worker reports about itself. */
@@ -249,6 +264,17 @@ background:#f6f5f2;color:#1d1c1a}main{max-width:28rem;padding:2rem}h1{font-size:
 <body><main><h1>The Launchworks app is installed</h1><p>Thank you. The team can now reach the
 repositories you selected. You can close this page; nothing else is needed from you.</p></main></body></html>`;
 
+/** An integration store seen through a key prefix: one organization's share of a shared table. */
+function prefixedStore(store: IntegrationStore, prefix: string): IntegrationStore {
+  return {
+    get: (name) => store.get(prefix + name),
+    put: (name, config) => store.put(prefix + name, config),
+    delete: (name) => store.delete(prefix + name),
+    list: async <T>(p: string) =>
+      (await store.list<T>(prefix + p)).map((r) => ({ ...r, name: r.name.slice(prefix.length) })),
+  };
+}
+
 function fail(reply: FastifyReply, status: number, code: string, message: string) {
   const body: ApiError = { error: { code, message } };
   return reply.status(status).send(body);
@@ -269,6 +295,32 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     // Local development: no sign-in, one operator on this machine.
     app.get('/auth/me', async () => ({ login: 'local', name: 'Director', avatarUrl: null }));
   }
+
+  const orgs = deps.organizations;
+  if (orgs) {
+    // A local run's one operator is a Director of organization #1.
+    if (!deps.auth && !(await orgs.membershipsOf(LOCAL_SUBJECT)).length)
+      await orgs.setMember(DEFAULT_ORGANIZATION, LOCAL_SUBJECT, 'director', 'local run');
+    registerOrganizationScope(app, orgs, { signedIn: Boolean(deps.auth) });
+  }
+  /** The request's organization's projects (every project for system calls and without orgs). */
+  const mine = (req: FastifyRequest) => scoped(orgs, req, projections.all(), (s) => s.projectId);
+
+  /** The organizations the caller belongs to, and the one this request acts in. */
+  app.get('/me/organizations', async (req) => {
+    if (!orgs) return { current: null, organizations: [] };
+    const subject = subjectOf(req, Boolean(deps.auth));
+    const list = subject ? await orgs.membershipsOf(subject) : [];
+    return {
+      current: req.organization ?? null,
+      organizations: list.map((m) => ({
+        id: m.organization.id,
+        name: m.organization.name,
+        slug: m.organization.slug,
+        role: m.role,
+      })),
+    };
+  });
 
   // The operator's preferences: the mode each screen was left in, so the Dial follows them to
   // another device. Keyed by login; a local run has one operator.
@@ -448,11 +500,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(INSTALLED_PAGE),
   );
 
-  app.get('/projects', async () => {
+  app.get('/projects', async (req) => {
     await projections.catchUpAll();
     // Oldest first, however the read models were folded (on demand, they come in any order).
-    return projections
-      .all()
+    return (await mine(req))
       .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
       .map((s) => ({ ...projectListItem(s), platform: deps.intake?.platformOf(s) }));
   });
@@ -461,20 +512,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---- Portfolio: the Dashboard above every project ---------------------------------------
 
-  app.get('/portfolio', async () => {
+  app.get('/portfolio', async (req) => {
     await projections.catchUpAll();
-    return projections
-      .all()
+    return (await mine(req))
       .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
       .map(portfolioItem);
   });
 
   /** The Dashboard in both modes: Cypher's line, what's yours, every project, and the week. */
   const overviewLogs: LogCache = new Map();
-  app.get('/portfolio/overview', async () => {
+  app.get('/portfolio/overview', async (req) => {
     await projections.catchUpAll();
     const o = await portfolioOverview(
-      projections.all(),
+      await mine(req),
       (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
       now(),
       overviewLogs,
@@ -493,30 +543,30 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   /** The portfolio's Team, Workbench, Activity and Scorecard: each project page, across projects. */
-  app.get('/portfolio/team', async () => {
+  app.get('/portfolio/team', async (req) => {
     await projections.catchUpAll();
-    return portfolioTeam(projections.all(), now());
+    return portfolioTeam(await mine(req), now());
   });
-  app.get('/portfolio/workbench', async () => {
+  app.get('/portfolio/workbench', async (req) => {
     await projections.catchUpAll();
-    return portfolioWorkbench(projections.all(), now());
+    return portfolioWorkbench(await mine(req), now());
   });
-  app.get('/portfolio/scorecard', async () => {
+  app.get('/portfolio/scorecard', async (req) => {
     await projections.catchUpAll();
-    return portfolioScorecard(projections.all(), now());
+    return portfolioScorecard(await mine(req), now());
   });
   app.get('/portfolio/activity', async (req) => {
     await projections.catchUpAll();
     const q = PortfolioActivityQuery.parse(req.query);
     return portfolioActivity(
-      projections.all(),
+      await mine(req),
       (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
       now(),
       q,
     );
   });
 
-  app.get('/portfolio/diagnostics', async (): Promise<PortfolioDiagnostics> => {
+  app.get('/portfolio/diagnostics', async (req): Promise<PortfolioDiagnostics> => {
     const at = new Date(now()).toISOString();
     const services: ServiceHealth[] = [
       { key: 'api', label: 'Control API', status: 'ok', detail: 'Answering', checkedAt: at },
@@ -527,7 +577,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         key: 'database',
         label: 'Event log (Postgres)',
         status: 'ok',
-        detail: `${projections.all().length} projects read`,
+        detail: `${(await mine(req)).length} projects read`,
         checkedAt: at,
       });
     } catch (err) {
@@ -677,9 +727,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---- Saved connections and remix ---------------------------------------------------------
 
-  app.get('/connections', async () => {
+  app.get('/connections', async (req) => {
     await projections.catchUpAll();
-    return deps.intake ? deps.intake.connections(projections.all()) : [];
+    return deps.intake ? deps.intake.connections(await mine(req), organizationOf(req)) : [];
   });
 
   app.post('/connections', async (req, reply) => {
@@ -688,8 +738,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { name, fromProject } = CreateConnection.parse(req.body);
     await projections.catchUp(fromProject);
     const s = project(fromProject);
-    if (!s) return fail(reply, 404, 'unknown_project', `No project "${fromProject}".`);
-    const id = await service.createConnection(s, name);
+    if (!s || !(await owns(orgs, req, fromProject)))
+      return fail(reply, 404, 'unknown_project', `No project "${fromProject}".`);
+    const id = await service.createConnection(s, name, organizationOf(req));
     return reply.status(201).send({ connectionId: id });
   });
 
@@ -704,7 +755,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         req.params.id,
         req.params.credentialId,
         secret,
-        projections.all(),
+        await mine(req),
+        organizationOf(req),
       );
       return { ok: true };
     },
@@ -1122,104 +1174,132 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // Cypher on the Dashboard: a conversation about the portfolio that can draft projects, never
   // create or change them.
-  const cypher =
-    deps.cypher && deps.intake
-      ? new PortfolioCypher({
-          ...deps.cypher,
-          now,
-          portfolio: async () => {
-            await projections.catchUpAll();
-            return projections.all().map(portfolioItem);
+  // One Cypher per organization: it reads, drafts and answers for that organization's projects
+  // only, and keeps its conversations apart (organization #1 keeps the keys it always had).
+  const cyphers = new Map<string, PortfolioCypher>();
+  const cypherFor = (req: FastifyRequest): PortfolioCypher | null => {
+    if (!deps.cypher || !deps.intake) return null;
+    const orgId = orgs && req.organization ? req.organization.id : null;
+    const made = cyphers.get(orgId ?? '');
+    if (made) return made;
+    const theirs = async (list: ProjectState[]) => {
+      if (!orgs || !orgId) return list;
+      const owners = await orgs.ownersOf(list.map((s) => s.projectId));
+      return list.filter((s) => owners.get(s.projectId) === orgId);
+    };
+    const inOrg = async (id: string) =>
+      !orgs || !orgId || (await orgs.ownersOf([id])).get(id) === orgId;
+    const c = new PortfolioCypher({
+      ...deps.cypher,
+      store:
+        orgId && orgId !== DEFAULT_ORGANIZATION
+          ? prefixedStore(deps.cypher.store, `org:${orgId}:`)
+          : deps.cypher.store,
+      now,
+      portfolio: async () => {
+        await projections.catchUpAll();
+        return (await theirs(projections.all())).map(portfolioItem);
+      },
+      playbooks: () => deps.intake!.playbooks(),
+      connections: async () => {
+        await projections.catchUpAll();
+        return deps.intake!.connections(await theirs(projections.all()), orgId ?? undefined);
+      },
+      detail: async (id) => {
+        if (!(await inOrg(id))) return null;
+        const s = project(id);
+        if (!s) return null;
+        const mc = missionControl(s);
+        return { status: mc.subtitle, waitingOnYou: mc.waitingOnYou.map((w) => w.title) };
+      },
+      // Every card waiting on the Director in one project, with Cypher's words and pick.
+      cards: async (id) => {
+        if (!(await inOrg(id))) return null;
+        await projections.catchUp(id);
+        const s = project(id);
+        if (!s) return null;
+        return missionControl(s)
+          .waitingOnYou.filter((x) => x.status === 'open')
+          .map((x) => enrichEscalation(s, x))
+          .map((x) => ({
+            escalationId: x.escalationId,
+            type: x.type,
+            title: x.title,
+            gist: x.gist ?? null,
+            options: x.options.map((o) => ({
+              id: o.id,
+              label: o.label,
+              recommended: Boolean(o.recommended),
+            })),
+            defaultOptionId: x.defaultOptionId,
+            recommendation: x.recommendation ?? null,
+            alike: x.group ? x.group.escalationIds.length : 1,
+            finalGate: Boolean(x.gate?.requiresConfirmation),
+            locked: LOCKED_CATEGORIES.includes(cardCategory(x)),
+          }));
+      },
+      // Answers one card as the Director, through the same path as their own click.
+      answer: async (id, escalationId, optionId, notes) => {
+        if (!(await inOrg(id)))
+          throw new CommandError(404, 'unknown_project', `No project "${id}".`);
+        const { answered } = await resolveCard(id, escalationId, optionId, notes, true);
+        return { answered };
+      },
+      remixDraft: async (id, playbookId) => {
+        await projections.catchUp(id);
+        const s = (await inOrg(id)) ? project(id) : null;
+        if (!s) throw new Error(`No project "${id}". Use list_projects for ids.`);
+        return deps.intake!.remixDraft(s, playbookId);
+      },
+      history: async (id, search) => {
+        if (!(await inOrg(id))) return null;
+        await projections.catchUp(id);
+        const s = project(id);
+        if (!s) return null;
+        return projectHistory(
+          s,
+          (before, limit) => deps.store.read(id, { before, limit, order: 'desc' }),
+          search,
+          {
+            lessons: deps.knowledge
+              ? (await deps.knowledge.list({ projectId: id })).map((e) => ({
+                  ref: e.ref,
+                  status: e.status,
+                  title: e.title,
+                }))
+              : [],
+            now: now(),
           },
-          playbooks: () => deps.intake!.playbooks(),
-          connections: async () => {
-            await projections.catchUpAll();
-            return deps.intake!.connections(projections.all());
-          },
-          detail: async (id) => {
-            const s = project(id);
-            if (!s) return null;
-            const mc = missionControl(s);
-            return { status: mc.subtitle, waitingOnYou: mc.waitingOnYou.map((w) => w.title) };
-          },
-          // Every card waiting on the Director in one project, with Cypher's words and pick.
-          cards: async (id) => {
-            await projections.catchUp(id);
-            const s = project(id);
-            if (!s) return null;
-            return missionControl(s)
-              .waitingOnYou.filter((x) => x.status === 'open')
-              .map((x) => enrichEscalation(s, x))
-              .map((x) => ({
-                escalationId: x.escalationId,
-                type: x.type,
-                title: x.title,
-                gist: x.gist ?? null,
-                options: x.options.map((o) => ({
-                  id: o.id,
-                  label: o.label,
-                  recommended: Boolean(o.recommended),
-                })),
-                defaultOptionId: x.defaultOptionId,
-                recommendation: x.recommendation ?? null,
-                alike: x.group ? x.group.escalationIds.length : 1,
-                finalGate: Boolean(x.gate?.requiresConfirmation),
-                locked: LOCKED_CATEGORIES.includes(cardCategory(x)),
-              }));
-          },
-          // Answers one card as the Director, through the same path as their own click.
-          answer: async (id, escalationId, optionId, notes) => {
-            const { answered } = await resolveCard(id, escalationId, optionId, notes, true);
-            return { answered };
-          },
-          remixDraft: async (id, playbookId) => {
-            await projections.catchUp(id);
-            const s = project(id);
-            if (!s) throw new Error(`No project "${id}". Use list_projects for ids.`);
-            return deps.intake!.remixDraft(s, playbookId);
-          },
-          history: async (id, search) => {
-            await projections.catchUp(id);
-            const s = project(id);
-            if (!s) return null;
-            return projectHistory(
-              s,
-              (before, limit) => deps.store.read(id, { before, limit, order: 'desc' }),
-              search,
-              {
-                lessons: deps.knowledge
-                  ? (await deps.knowledge.list({ projectId: id })).map((e) => ({
-                      ref: e.ref,
-                      status: e.status,
-                      title: e.title,
-                    }))
-                  : [],
-                now: now(),
-              },
-            );
-          },
-          rules: deps.rules,
-          knowledge: deps.knowledge,
-        })
-      : null;
+        );
+      },
+      rules: deps.rules,
+      knowledge: deps.knowledge,
+    });
+    cyphers.set(orgId ?? '', c);
+    return c;
+  };
 
   // Saved conversations, newest first; a fresh one starts with the first message that names none.
-  app.get('/cypher', async () =>
-    cypher ? cypher.conversations() : { available: false, conversations: [] },
-  );
+  app.get('/cypher', async (req) => {
+    const cypher = cypherFor(req);
+    return cypher ? cypher.conversations() : { available: false, conversations: [] };
+  });
 
   app.post('/cypher', async (req, reply) => {
+    const cypher = cypherFor(req);
     if (!cypher) return fail(reply, 501, 'cypher_unavailable', 'Cypher is not wired in this mode.');
     const { body, conversationId } = AskCypher.parse(req.body);
     return cypher.ask(body, conversationId);
   });
 
   app.get<{ Params: { id: string } }>('/cypher/:id', async (req, reply) => {
+    const cypher = cypherFor(req);
     const c = cypher ? await cypher.conversation(req.params.id) : null;
     return c ?? fail(reply, 404, 'unknown_conversation', 'No such conversation.');
   });
 
   app.delete<{ Params: { id: string } }>('/cypher/:id', async (req, reply) => {
+    const cypher = cypherFor(req);
     if (!cypher) return fail(reply, 501, 'cypher_unavailable', 'Cypher is not wired in this mode.');
     await cypher.remove(req.params.id);
     return { ok: true };
@@ -1241,7 +1321,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post('/projects', async (req, reply) => {
     const service = intake(reply);
     if (!service) return;
-    const projectId = await service.create(ProjectIntake.parse(req.body));
+    const projectId = await service.create(ProjectIntake.parse(req.body), organizationOf(req));
     await projections.catchUp(projectId);
     return reply.status(201).send({ projectId, canStart: service.canStart });
   });
@@ -1278,8 +1358,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     await projections.catchUpAll();
     return {
       playbookId: req.params.id,
-      projects: projections
-        .all()
+      projects: (await mine(req))
         .filter((s) => s.playbook?.id === req.params.id && s.mode === 'live')
         .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
         .map((s) => ({
@@ -2236,7 +2315,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!deps.purge)
       throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
     await projections.catchUpAll();
-    return purgeDue(deps.purge, projections.all(), req.operator?.login ?? 'vercel-cron');
+    return purgeDue(deps.purge, await mine(req), req.operator?.login ?? 'vercel-cron');
   });
 
   /**
@@ -2253,7 +2332,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   /** What is left of deleted projects: their tombstones. */
-  app.get('/portfolio/deleted', async () => (deps.purge ? deps.purge.tombstones.list() : []));
+  app.get('/portfolio/deleted', async (req) =>
+    deps.purge ? scoped(orgs, req, await deps.purge.tombstones.list(), (t) => t.projectId) : [],
+  );
 
   /** Restore: an archived project comes back as completed or cancelled (or not started). */
   app.post<P>('/projects/:id/restore', async (req) => {

@@ -23,6 +23,11 @@ import {
   PostgresTombstoneStore,
   PostgresVault,
   Projections,
+  DEFAULT_ORGANIZATION,
+  githubSubject,
+  MemoryOrganizationStore,
+  PostgresOrganizationStore,
+  type OrganizationStore,
   type SecretVault,
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
@@ -450,6 +455,20 @@ const tombstones = opened.sql
   : env.STORE === 'memory'
     ? new MemoryTombstoneStore()
     : undefined;
+// Organizations: who owns each project and who belongs where. Beside the event log (its migration
+// gives every existing project to organization #1, Icreon); memory for local runs.
+const organizations: OrganizationStore = opened.sql
+  ? new PostgresOrganizationStore(opened.sql)
+  : new MemoryOrganizationStore();
+// Today's operators (and their API keys) are Icreon's Directors. Only added, never changed: a role
+// set since is kept.
+if (auth)
+  for (const login of new Set([...auth.operators, ...auth.apiKeys.map((k) => k.login)])) {
+    const subject = githubSubject(login);
+    const mine = await organizations.membershipsOf(subject);
+    if (!mine.some((m) => m.organizationId === DEFAULT_ORGANIZATION))
+      await organizations.setMember(DEFAULT_ORGANIZATION, subject, 'director', 'OPERATORS');
+  }
 // The team's knowledge across projects; the worker seeds it too, and seeding adds only what's new.
 const knowledge = opened.sql
   ? new PostgresKnowledgeStore(opened.sql)
@@ -531,7 +550,9 @@ const app = await buildApp({
     github,
     buildOrg: env.GITHUB_BUILD_ORG,
     connections: integrations ?? undefined,
+    organizations,
   }),
+  organizations,
   github,
   hosting: hosting
     ? {

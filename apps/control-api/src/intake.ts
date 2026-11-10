@@ -11,7 +11,13 @@ import type {
 } from '@lw/contracts';
 import { briefApplies, SOURCE_REPO } from '@lw/contracts';
 import { CommandError, type ProjectState } from '@lw/domain';
-import type { EventStore, IntegrationStore, SecretVault } from '@lw/events';
+import {
+  DEFAULT_ORGANIZATION,
+  type EventStore,
+  type IntegrationStore,
+  type OrganizationStore,
+  type SecretVault,
+} from '@lw/events';
 import type { CatalogEntry } from '@lw/playbook-sdk';
 import type { GithubApp, VerifyResult } from '@lw/connectors';
 import { phaseDefs, roster } from '@lw/playbook-sdk/pure';
@@ -56,6 +62,8 @@ export interface IntakeDeps {
   buildOrg?: string;
   /** Where saved connections are kept (one tenant's shared facts and sealed secrets). */
   connections?: IntegrationStore;
+  /** Who owns each project: a new project is filed under its organization before its first event. */
+  organizations?: OrganizationStore;
 }
 
 /** A saved connection as stored: secrets by vault reference, sealed to the connection. */
@@ -77,9 +85,13 @@ interface ConnectionRecord {
   >;
   createdAt: string;
   createdFrom: { projectId: string; name: string } | null;
+  /** The organization the connection belongs to; absent on ones saved before organizations. */
+  organizationId?: string;
 }
 
 const CONNECTION = 'connection:';
+/** Connections saved before organizations belong to organization #1, as their projects do. */
+const ownerOf = (c: ConnectionRecord) => c.organizationId ?? DEFAULT_ORGANIZATION;
 
 const INTAKE = { kind: 'system', id: 'intake' } as const;
 
@@ -246,14 +258,16 @@ export class IntakeService {
   }
 
   /** Records a new project in intake. Every credential given must pass its check first. */
-  async create(intake: ProjectIntake): Promise<string> {
+  async create(intake: ProjectIntake, organizationId = DEFAULT_ORGANIZATION): Promise<string> {
     const { store, vault } = this.deps;
     const { entry, pack, spec } = this.resolve(intake.playbookId);
     const { playbook } = entry;
     const projectId = `prj-${randomUUID().slice(0, 8)}`;
 
     // A saved connection fills the tenant's facts and stands in for credentials not given.
-    const connection = intake.connectionId ? await this.connection(intake.connectionId) : null;
+    const connection = intake.connectionId
+      ? await this.connection(intake.connectionId, organizationId)
+      : null;
     if (connection && connection.platform !== pack.id)
       throw new CommandError(
         422,
@@ -359,6 +373,8 @@ export class IntakeService {
       credentialEvents.push(...(await this.githubEvents(repo, intake.source.branch, INTAKE)));
 
     const described = pack.describe(target);
+    // Owned before it exists: no reader ever sees the project without its organization.
+    await this.deps.organizations?.assignProject(projectId, organizationId);
     await store.append(projectId, [
       {
         type: 'project.created',
@@ -751,16 +767,21 @@ export class IntakeService {
     return this.deps.connections;
   }
 
-  private async connection(id: string): Promise<ConnectionRecord> {
+  /** A saved connection; with an organization, only if it is that organization's. */
+  private async connection(id: string, organizationId?: string): Promise<ConnectionRecord> {
     const c = await this.store().get<ConnectionRecord>(CONNECTION + id);
-    if (!c) throw new CommandError(404, 'unknown_connection', `No connection "${id}".`);
+    if (!c || (organizationId && ownerOf(c) !== organizationId))
+      throw new CommandError(404, 'unknown_connection', `No connection "${id}".`);
     return c;
   }
 
   /** Every saved connection, with the projects that use it. */
-  async connections(projects: ProjectState[]): Promise<ConnectionView[]> {
+  /** Every saved connection (an organization's, given one), with the projects that use it. */
+  async connections(projects: ProjectState[], organizationId?: string): Promise<ConnectionView[]> {
     if (!this.deps.connections) return [];
-    const rows = await this.deps.connections.list<ConnectionRecord>(CONNECTION);
+    const rows = (await this.deps.connections.list<ConnectionRecord>(CONNECTION)).filter(
+      ({ config: c }) => !organizationId || ownerOf(c) === organizationId,
+    );
     return rows.map(({ config: c }) => ({
       id: c.id,
       name: c.name,
@@ -786,7 +807,11 @@ export class IntakeService {
    * Saves a project's tenant as a connection: the target facts its platform shares across sites,
    * and those credentials, opened and sealed again to the connection (never shown to anyone).
    */
-  async createConnection(s: ProjectState, name: string): Promise<string> {
+  async createConnection(
+    s: ProjectState,
+    name: string,
+    organizationId = DEFAULT_ORGANIZATION,
+  ): Promise<string> {
     const pack = this.packOf(s);
     if (!pack || !s.intake)
       throw new CommandError(422, 'invalid', `${s.name} has no intake to save a connection from.`);
@@ -819,6 +844,7 @@ export class IntakeService {
       credentials,
       createdAt: new Date().toISOString(),
       createdFrom: { projectId: s.projectId, name: s.name },
+      organizationId,
     } satisfies ConnectionRecord);
     return id;
   }
@@ -832,8 +858,9 @@ export class IntakeService {
     credentialId: string,
     secret: Record<string, string>,
     projects: ProjectState[],
+    organizationId?: string,
   ): Promise<void> {
-    const c = await this.connection(id);
+    const c = await this.connection(id, organizationId);
     const pack = this.deps.platforms.get(c.platform);
     const spec = pack?.credentials[credentialId];
     if (!pack || !spec || !pack.connection?.credentials.includes(credentialId))
