@@ -240,6 +240,8 @@
   color: var(--ink);
 }
 .tile {
+  position: relative;
+  overflow: hidden;
   flex: none;
   width: var(--space-6);
   height: var(--space-6);

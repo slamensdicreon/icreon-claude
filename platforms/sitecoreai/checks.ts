@@ -1,6 +1,7 @@
 import { mapLimit, type VerifyConfig } from '@lw/connectors';
 import type { CheckResult, PlatformCheck, PlatformCheckContext } from '../src/index';
 import { ownedPaths, sitecoreBindings, sitecoreTarget } from './pack';
+import { spread } from './page-templates';
 
 /**
  * SitecoreAI acceptance checks: read-only looks at the tenant and at Experience Edge, judged
@@ -71,9 +72,36 @@ async function findByName(
   return found;
 }
 
+/**
+ * Where a rendering missing from the project's folder actually is: the rest of the Renderings tree
+ * (Project and Feature, three levels down), so the failure names its path and ID rather than only
+ * a display name (UtiliQuest's team argued over which "Card Row" was meant).
+ */
+async function missingRendering(
+  ctx: PlatformCheckContext,
+  root: string,
+  name: string,
+): Promise<string> {
+  const elsewhere = new Map<string, Child[]>();
+  for (const base of ['/sitecore/layout/Renderings/Project', '/sitecore/layout/Renderings/Feature'])
+    await findByName(ctx, base, [name], elsewhere);
+  const hits = (elsewhere.get(name.toLowerCase()) ?? []).filter(
+    (h) => !h.path.toLowerCase().startsWith(`${root.toLowerCase()}/`),
+  );
+  return hits.length
+    ? `rendering ${name} not under ${root}; found at ${hits
+        .slice(0, 3)
+        .map((h) => `${h.path} (${h.itemId})`)
+        .join(', ')}: move the project's own under ${root}, or create it there`
+    : `rendering ${name} not under ${root}, nor anywhere under /sitecore/layout/Renderings/Project or Feature: create it under ${root} with componentName ${name}`;
+}
+
 /** The collection's kept items, or only the task's own when it covers some of them. */
 const inScope = (ctx: PlatformCheckContext, collection: string) => {
   const kept = (ctx.blueprint?.collections[collection] ?? []).filter((i) => i.status !== 'drop');
+  // A large site's template is proven on its example pages: the pages merged into it.
+  if (collection === 'pages' && ctx.scope.collection === 'page-templates' && ctx.scope.items.length)
+    return kept.filter((i) => ctx.scope.items.includes(String(i.attrs?.mergedInto ?? '')));
   const own =
     ctx.scope.collection === collection && ctx.scope.items.length ? ctx.scope.items : null;
   return own ? kept.filter((i) => own.includes(i.key)) : kept;
@@ -152,7 +180,7 @@ async function renderingsOf(ctx: PlatformCheckContext, components: Component[]) 
   const found: { component: Component; name: string; rendering: Item }[] = [];
   for (const [i, n] of names.entries()) {
     const hits = all.get(n.toLowerCase()) ?? [];
-    if (!hits.length) problems.push(`rendering ${n} not under ${root}`);
+    if (!hits.length) problems.push(await missingRendering(ctx, root, n));
     else if (hits.length > 1)
       problems.push(
         `${hits.length} renderings named ${n} (${hits.map((h) => `${h.path} ${h.itemId}`).join(', ')}): keep one, delete the others, and offer the one kept`,
@@ -215,7 +243,73 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     return paths.length ? [...new Set(paths)] : ['/'];
   };
 
+  /**
+   * A large site's bulk-imported pages aren't Blueprint pages: a spread of each imported
+   * template's pages (from its template-import report), so the end-of-project checks see them.
+   */
+  const importedSample = async (ctx: PlatformCheckContext, perTemplate: number) => {
+    const out: string[] = [];
+    for (const t of inScope(ctx, 'page-templates')) {
+      const doc = (await ctx.document(`template-import-${t.key}`)) as {
+        imported?: { path?: string }[];
+      } | null;
+      const paths = (doc?.imported ?? []).map((p) => String(p.path ?? '')).filter(Boolean);
+      out.push(...spread(paths, perTemplate));
+    }
+    return out;
+  };
+
   return {
+    // The site's thumbnail in the Sites dashboard is set, to an image of its brand: the one
+    // site.thumbnail uploaded (checked for size), or one the Director set there by hand.
+    'site.thumbnail': async (ctx) => {
+      const b = sitecoreBindings(ctx.target);
+      const site = await ctx.read('sitecore-authoring', 'item.read', {
+        path: b.sitePath,
+        fields: ['__Thumbnail'],
+      });
+      if (site.code !== 200) return pending(`Can't read the site item ${b.sitePath}.`);
+      const value =
+        (
+          site.body as { fields?: { nodes?: { name: string; value: string }[] } }
+        ).fields?.nodes?.find((f) => f.name.toLowerCase() === '__thumbnail')?.value ?? '';
+      const id = /mediaid=['"]\{?([0-9a-f-]{32,36})/i.exec(value)?.[1];
+      if (!id)
+        return fail([
+          'The site has no thumbnail of its own, so the Sites dashboard shows a screenshot of the top of its home page: make one with browser.brand.thumbnail and set it with sitecore-authoring.site.thumbnail',
+        ]);
+      // The thumbnails site.thumbnail uploads are named site-thumbnail-<hash> in the site's System
+      // media folder; any other image is one set by hand in the Sites dashboard.
+      const folder = `/sitecore/media library/Project/${b.project}/System`;
+      const hexOf = (x: string) => x.replace(/[^0-9a-f]/gi, '').toLowerCase();
+      const listed = await ctx.read('sitecore-authoring', 'item.read', {
+        path: folder,
+        children: true,
+      });
+      const ours = (
+        (listed.body as { children?: { nodes?: { name: string; path: string; itemId: string }[] } })
+          ?.children?.nodes ?? []
+      ).find((n) => /^site-thumbnail/i.test(n.name) && hexOf(n.itemId) === hexOf(id));
+      if (listed.code !== 200 || !ours)
+        return pass(
+          'The site has a thumbnail of its own in the Sites dashboard (set there by hand).',
+        );
+      const media = await ctx.read('sitecore-authoring', 'item.read', {
+        path: ours.path,
+        fields: ['Width', 'Height'],
+      });
+      const nodes = (media.body as { fields?: { nodes?: { name: string; value: string }[] } })
+        .fields?.nodes;
+      const dim = (n: string) => Number(nodes?.find((f) => f.name === n)?.value ?? 0);
+      if (dim('Width') && dim('Width') < 1000)
+        return fail([
+          `The site's thumbnail is ${dim('Width')}×${dim('Height')}: make it again with browser.brand.thumbnail (1200×640), so it stays sharp in the dashboard`,
+        ]);
+      return pass(
+        `The site's thumbnail is its brand image (${ours.path}, ${dim('Width')}×${dim('Height')}).`,
+      );
+    },
+
     // The site and the project's own folders exist, with routes under Home.
     'structural.site': async (ctx) => {
       const b = sitecoreBindings(ctx.target);
@@ -753,7 +847,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         const name = renderingName(c);
         const hit = all.get(name.toLowerCase())?.[0];
         if (!hit) {
-          problems.push(`rendering ${name} not under ${root}`);
+          problems.push(await missingRendering(ctx, root, name));
           continue;
         }
         const r = await ctx.read('sitecore-authoring', 'item.read', {
@@ -789,12 +883,15 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
 
     // Every page the Blueprint keeps resolves on the live endpoint.
     'routes.resolve': async (ctx) => {
-      const paths = pagePaths(ctx);
+      const imported = await importedSample(ctx, 20);
+      const paths = [...new Set([...pagePaths(ctx), ...imported])];
       const r = await routes(ctx, paths, 'edge-live');
       if (!r.missing) return pending(`Can't check routes: ${r.why}.`);
       return r.missing.length
         ? fail(r.missing.map((p) => `${p} doesn't resolve`))
-        : pass(`${paths.length} routes resolve on Experience Edge (live).`);
+        : pass(
+            `${paths.length} routes resolve on Experience Edge (live)${imported.length ? `, ${imported.length} of them a spread of the bulk-imported pages` : ''}.`,
+          );
     },
 
     // Content parity: each kept page, on Experience Edge (preview), against the source re-crawl.
@@ -806,9 +903,13 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       } | null;
       if (!inv?.pages?.length) return pending('No source inventory to compare with.');
       const kept = new Set(pagePaths(ctx));
-      const source = inv.pages
+      const source: { path: string; words: number; imported?: boolean }[] = inv.pages
         .map((p) => ({ path: inventoryPath(p), words: p.words ?? 0 }))
         .filter((p) => kept.has(p.path));
+      // A large site's bulk-imported pages: a spread of each template, measured as both sites
+      // render them (the inventory lists only their examples, so it has no word counts for them).
+      for (const path of await importedSample(ctx, 10))
+        if (!source.some((p) => p.path === path)) source.push({ path, words: 0, imported: true });
       if (!source.length) return pending('No kept page appears in the source inventory.');
       const r = await routes(
         ctx,
@@ -844,7 +945,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         source.map(async (p) => {
           const text = textOf(r.rendered.get(p.path));
           const words = count(text);
-          let enough = !p.words || words >= p.words * 0.9;
+          let enough = p.imported ? false : !p.words || words >= p.words * 0.9;
           let rendered: { have: number; want: number } | null = null;
           if (!enough && r.rendered.has(p.path)) {
             rendered = await asRendered(p.path);
@@ -868,10 +969,13 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         }),
       );
       const parity = Math.round((pages.filter((p) => p.ok).length / pages.length) * 1000) / 10;
+      const sampled = source.filter((p) => p.imported).length;
       const bad = pages.filter((p) => !p.ok).map((p) => `${p.path}: ${p.problem}`);
       return {
         ...(parity >= 98
-          ? pass(`Content parity ${parity}% across ${pages.length} pages.`)
+          ? pass(
+              `Content parity ${parity}% across ${pages.length} pages${sampled ? `, ${sampled} of them a spread of the bulk-imported pages` : ''}.`,
+            )
           : fail([`Content parity ${parity}% (98% needed)`, ...bad])),
         data: { parity, pages },
       };

@@ -232,9 +232,25 @@ describe('SitecoreAI checks', () => {
     expect(all.detail).toBe(
       "Cards ({BBBB-2}) isn't in Available Renderings: none of Page Content lists that ID; rendering Tabs not under " +
         r +
-        '.',
+        `, nor anywhere under /sitecore/layout/Renderings/Project or Feature: create it under ${r} with componentName Tabs.`,
     );
     expect(all.detail).not.toContain('[object Object]');
+    // A rendering in another folder is named by its path and ID (UtiliQuest's Card Row).
+    const stray = tenant({
+      [r]: {},
+      [`${r}/Hero`]: { id: '{AAAA-1}' },
+      '/sitecore/layout/Renderings/Project': {},
+      '/sitecore/layout/Renderings/Project/Brands': {},
+      '/sitecore/layout/Renderings/Project/Brands/other': {},
+      '/sitecore/layout/Renderings/Project/Brands/other/Tabs': { id: '{CCCC-3}' },
+      '/sitecore/content/Brands/ansco/Presentation/Available Renderings': {},
+    });
+    const elsewhere = await pack.checks!['structural.renderings']!(
+      ctx(stray.read, contract, { collection: 'components', items: ['tabs'] }),
+    );
+    expect(elsewhere.detail).toContain(
+      'found at /sitecore/layout/Renderings/Project/Brands/other/Tabs ({CCCC-3})',
+    );
   });
 
   it('checks what Page builder needs to add a component and create its content', async () => {

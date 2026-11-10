@@ -32,6 +32,8 @@ export interface Activities {
     tasks?: { taskId: string; title: string; state: string }[];
     /** The cards waiting on the Director (no gates), for "answer them" to name. */
     cards?: DirectiveCard[];
+    /** The team's roles, for new work to name its owner. */
+    roles?: { role: string; name: string; mandate: string }[];
   }): Promise<DirectiveInterpretation>;
   /**
    * A question an agent stopped on, seen by its Lead first: the category's autonomy level

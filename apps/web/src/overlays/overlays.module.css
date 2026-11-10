@@ -365,6 +365,8 @@
   white-space: nowrap;
 }
 .tile {
+  position: relative;
+  overflow: hidden;
   flex: none;
   width: calc(var(--space-7) + var(--space-1));
   height: calc(var(--space-7) + var(--space-1));

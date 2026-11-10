@@ -26,6 +26,17 @@ function setup() {
         return Response.json({
           data: { uploadMedia: { presignedUploadUrl: 'https://up.example/x' } },
         });
+      // A file's Title reads back as written.
+      if (/item\(where/.test(query) && /code-of-conduct/.test(query) && /"Title"/.test(query))
+        return Response.json({
+          data: {
+            item: {
+              itemId: 'pdf1',
+              path: '/sitecore/media library/Project/Brands/ansco/files/code-of-conduct',
+              f0: { value: 'Supplier Code of Conduct' },
+            },
+          },
+        });
       // A file's template (Pdf, File) has no Alt field.
       if (/updateItem\(/.test(query) && /name: "Alt"/.test(query))
         return Response.json({ errors: [{ message: 'Cannot find a field with the name Alt.' }] });
@@ -166,8 +177,8 @@ describe('media.upload', () => {
     expect(uploads).toHaveLength(1);
   });
 
-  it('uploads a file whose media type has no Alt field, without alt text', async () => {
-    const { s, uploads } = setup();
+  it('uploads a file whose media type has no Alt field, its description in Title', async () => {
+    const { s, uploads, queries } = setup();
     const r = await s.call(
       'media.upload',
       {
@@ -178,8 +189,11 @@ describe('media.upload', () => {
       },
       ctx,
     );
-    expect(r).toMatchObject({ code: 200, body: { alt: null } });
-    expect(r.summary).toContain('no Alt field on this media type');
+    expect(r).toMatchObject({ code: 200, body: { alt: null, title: 'Supplier Code of Conduct' } });
+    expect(r.summary).toContain(
+      'no Alt field on this media type, so its description went in Title',
+    );
+    expect(queries.some((q) => /updateItem\(/.test(q) && /name: "Title"/.test(q))).toBe(true);
     expect(uploads).toHaveLength(1);
   });
 
@@ -201,5 +215,32 @@ describe('media.upload', () => {
     expect(cdn).toMatchObject({ code: 422 });
     expect(JSON.stringify(cdn.body)).toContain('browser.fetch.asset');
     expect((await s.call('media.upload', { itemPath: path }, ctx)).code).toBe(422);
+  });
+});
+
+describe('site.thumbnail', () => {
+  it("sets only this project's site, and only from a thumbnail the browser made", async () => {
+    const { s, uploads } = setup();
+    const other = await s.call(
+      'site.thumbnail',
+      {
+        sitePath: '/sitecore/content/Brands/icreon',
+        ref: 'blob://p1/assets/site-thumbnail-0123456789abcdef.png',
+      },
+      ctx,
+    );
+    expect(other).toMatchObject({ code: 422 });
+    expect((other.body as { error: string }).error).toBe(
+      "/sitecore/content/Brands/icreon isn't this project's site: give /sitecore/content/Brands/ansco.",
+    );
+    const notPng = await s.call(
+      'site.thumbnail',
+      { sitePath: '/sitecore/content/Brands/ansco', ref: 'blob://p1/assets/report.pdf' },
+      ctx,
+    );
+    expect((notPng.body as { error: string }).error).toMatch(
+      /Give the PNG browser\.brand\.thumbnail made/,
+    );
+    expect(uploads).toEqual([]);
   });
 });

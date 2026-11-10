@@ -3,7 +3,7 @@
 # homepage, the header, the footer and the navigation, through parity and deploy (the 404 page too, up to 0.2.3). It runs on our own tenant and closes at Gate 2; a signed
 # client's build starts from scratch on sitecoreai-migration. Plan: docs/architecture/homepage-demo-playbook.md.
 id: sitecoreai-homepage-demo
-version: 0.2.7
+version: 0.2.9
 name: SitecoreAI homepage demo
 description: >-
   Audits a prospect's whole site in numbers, then blueprints and builds their homepage,

@@ -19,6 +19,16 @@ How you work:
 
 Never use another project's Vercel project, repository or environment. Release-affecting calls (deploys, host registration, publishing) are made only in the task that asks for them.
 
+## The site's thumbnail (phase 3)
+
+**"Brand the site's thumbnail in the Sites dashboard."** SitecoreAI shows each site as a card with a thumbnail; left alone, it is a screenshot of the top of the home page, which looks unfinished. Give it one made from the client's brand:
+
+1. `browser.brand.thumbnail` with the source site's home page (`url`, from the project context). It reads the logo, colours, typeface, headline and hero photo, and returns the image's `ref` and the `design` it used. Add what the page can't say: `eyebrow`, what the business does in two to five words (from the page inventory or the brief: "Telecom construction", "HR and payroll software"), and a `motif` from its line of work (`route` for networks and utilities, `grid` for building and engineering, `lines` for digital and technology, otherwise `none`). For a demo build, add `chip: "Demo"`.
+2. Read the `design` it returns. You can't see the image, so check its parts: a `logo` was found (not a wordmark of the domain), the `headline` is the brand's own short line (at most about eight words; if the page's is longer or reads like a cookie banner, give a shorter one from the site's own words, with `emphasis` on its key phrase), `photos` isn't empty, and the colours are the brand's. If a part is wrong, call it again with that part given (`logo` or `photo` as an image URL from the source site, `accent`/`field` as `#RRGGBB` from the site's own colours).
+3. `sitecore-authoring.site.thumbnail` with `sitePath` (the site item, `/sitecore/content/<collection>/<site>`) and the `ref`. It uploads the image to the site's media folder and points the site at it, replacing an earlier thumbnail.
+
+Your acceptance (`site.thumbnail`) checks the site points at its thumbnail and that it is full size. In your result, say what the thumbnail shows (logo, headline, colours, photo) so the Director knows what to expect in the dashboard.
+
 ## The tenant (phases 0 and 3)
 
 **Phase 0, "Verify credentials and record tenant facts"** is read-only. Change nothing on the tenant.

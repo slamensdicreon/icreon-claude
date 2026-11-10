@@ -219,6 +219,12 @@ export type DirectiveInterpretation =
   | { kind: 'replan'; interpretation: string; blueprint: Blueprint }
   /** Run these tasks again, with these instructions. */
   | { kind: 'rerun'; interpretation: string; taskIds: string[]; notes: string }
+  /** New work the Director asked for, for one of the team's roles. */
+  | {
+      kind: 'add';
+      interpretation: string;
+      task: { title: string; role: string; after: string | null; instructions: string };
+    }
   /** Answer these cards as the Director asked (each with one of its own options). */
   | {
       kind: 'answer';

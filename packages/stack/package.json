@@ -32,6 +32,7 @@
     "@anthropic-ai/sdk": "^1.1.0",
     "@temporalio/client": "^1.24.0",
     "@temporalio/testing": "^1.24.0",
-    "@types/pngjs": "6.0.5"
+    "@types/pngjs": "6.0.5",
+    "@electric-sql/pglite": "^0.5.11"
   }
 }

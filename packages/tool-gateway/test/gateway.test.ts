@@ -166,8 +166,9 @@ describe('authorization matrix (every role × every operation)', () => {
   it('never lets anyone reach operations no role is granted', async () => {
     const { gateway } = setup({ recipe: true });
     for (const role of pb.roles) {
-      // Only the Registrar may delete (to the Recycle Bin), and only its own definitions.
-      if (role.role !== 'rendering-registrar')
+      // Only the Registrar (its own definitions) and the Content Migrator (taking a bulk import back
+      // out, on the Director's decision) may delete, and only to the Recycle Bin.
+      if (role.role !== 'rendering-registrar' && role.role !== 'content-migrator')
         expect(
           await gateway.call(
             call(role.role, 'sitecore-authoring', 'item.delete', {

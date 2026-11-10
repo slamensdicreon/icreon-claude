@@ -4,8 +4,9 @@
  * matches the name, the client and the playbook. Groups fold, and their heads carry the count,
  * the spend and what's yours. The choices stay for this browser; the search doesn't.
  */
+import { ProjectIcon } from '../../ui/project-icon';
 import type { PortfolioOverview, PortfolioProject } from '@lw/contracts';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { clock, localDate, usd } from '../../lib/fmt';
 import { useApp } from '../../state';
 import { Icon } from '../../theme/icons';
@@ -85,6 +86,18 @@ function savePrefs(p: Prefs) {
  */
 export function showProjectsView(view: View) {
   savePrefs({ ...loadPrefs(), view, platform: 'all', playbook: 'all' });
+  // A table already on screen takes the new view too.
+  window.dispatchEvent(new Event(VIEW_EVENT));
+}
+const VIEW_EVENT = 'lw-projects-view';
+
+/**
+ * Opens the projects table on the projects that are still going (not accepted, cancelled or
+ * archived), whatever view was picked last: "All projects" from the menu or the switcher starts
+ * there, as the list grows. All and Archived stay a click away.
+ */
+export function showActiveProjects() {
+  showProjectsView('active');
 }
 
 const stateOf = (p: PortfolioProject): (typeof STATES)[number] =>
@@ -110,6 +123,11 @@ export function ProjectsTable({ o, refresh }: { o: PortfolioOverview; refresh: (
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   // On a phone the filters fold behind a button, so the projects come first.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  useEffect(() => {
+    const reload = () => setPrefsState(loadPrefs());
+    window.addEventListener(VIEW_EVENT, reload);
+    return () => window.removeEventListener(VIEW_EVENT, reload);
+  }, []);
   const setPrefs = (patch: Partial<Prefs>) =>
     setPrefsState((cur) => {
       const next = { ...cur, ...patch };
@@ -457,6 +475,7 @@ function ProjectRow({
               aria-hidden="true"
             >
               {p.initials}
+              <ProjectIcon projectId={p.projectId} />
             </span>
             <span className={s.projectName}>
               <b>

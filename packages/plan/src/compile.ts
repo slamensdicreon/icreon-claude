@@ -361,6 +361,8 @@ function expand(
       },
     ];
   }
+  // A collection only some projects have shows nothing until a Blueprint has it.
+  if (!blueprint && template.optional) return [];
   if (!blueprint) {
     return [
       {
@@ -374,6 +376,7 @@ function expand(
     ];
   }
   const collection = blueprint.collections[template.forEach];
+  if (!collection && template.optional) return [];
   if (!collection) {
     problems.push(`${template.id}: Blueprint has no "${template.forEach}" collection`);
     return [];

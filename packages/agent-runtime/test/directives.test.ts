@@ -2,12 +2,16 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
 import { readDirective, type DirectiveReading } from '../src/directives';
 
-const answering = (parsed: DirectiveReading, seen: string[] = []) =>
+const NO_TASK = { title: '', role: '', after: '', instructions: '' };
+const answering = (
+  parsed: Omit<DirectiveReading, 'task'> & { task?: DirectiveReading['task'] },
+  seen: string[] = [],
+) =>
   ({
     messages: {
       parse: async (req: { messages: { content: string }[] }) => {
         seen.push(req.messages[0]!.content);
-        return { parsed_output: parsed, stop_reason: 'end_turn' };
+        return { parsed_output: { task: NO_TASK, ...parsed }, stop_reason: 'end_turn' };
       },
     },
   }) as unknown as Anthropic;
@@ -17,6 +21,68 @@ const tasks = [
 ];
 
 describe('readDirective', () => {
+  const roles = [
+    { role: 'content-migrator', name: 'Content Migrator', mandate: 'Migrates page content.' },
+  ];
+  const adding = (task: DirectiveReading['task']) =>
+    answering({
+      kind: 'add',
+      interpretation: 'have someone fill the footer from the source',
+      drop: [],
+      rerun: [],
+      notes: '',
+      answers: [],
+      task,
+    });
+
+  it('adds new work for a role the team has, after a task in the plan or none', async () => {
+    const seen: string[] = [];
+    const r = await readDirective(
+      { text: 'Have someone fill the footer from the source', items: [], tasks, roles },
+      answering(
+        {
+          kind: 'add',
+          interpretation: 'have someone fill the footer from the source',
+          drop: [],
+          rerun: [],
+          notes: '',
+          answers: [],
+          task: {
+            title: 'Fill the footer from the source',
+            role: 'content-migrator',
+            after: 'integrate-head',
+            instructions: 'every column and link, as the source shows them',
+          },
+        },
+        seen,
+      ),
+    );
+    expect(seen[0]).toContain('- content-migrator: Content Migrator: Migrates page content.');
+    expect(r).toMatchObject({
+      kind: 'add',
+      task: { role: 'content-migrator', after: 'integrate-head' },
+    });
+    // A task it names that doesn't exist is dropped: it starts now.
+    const loose = await readDirective(
+      { text: 'Fill the footer', items: [], tasks, roles },
+      adding({
+        title: 'Fill the footer',
+        role: 'content-migrator',
+        after: 'made-up',
+        instructions: '',
+      }),
+    );
+    expect(loose).toMatchObject({ kind: 'add', task: { after: '' } });
+    // A role the team doesn't have, or no title: a note.
+    for (const task of [
+      { title: 'Fill the footer', role: 'made-up', after: '', instructions: '' },
+      { title: ' ', role: 'content-migrator', after: '', instructions: '' },
+    ])
+      expect((await readDirective({ text: 'x', items: [], tasks, roles }, adding(task))).kind).toBe(
+        'note',
+      );
+  });
+
   it('names tasks to re-run from the plan, with the Director’s instructions', async () => {
     const seen: string[] = [];
     const r = await readDirective(

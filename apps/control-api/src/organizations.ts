@@ -53,6 +53,7 @@ export const WATCHER_ROUTES = new Set([
   'GET /portfolio/workbench',
   'GET /portfolio/scorecard',
   'GET /portfolio/activity',
+  'GET /projects/:id/icon',
   'GET /projects/:id/mission-control',
   'GET /projects/:id/scorecard',
   'GET /projects/:id/team',

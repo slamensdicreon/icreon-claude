@@ -57,6 +57,8 @@ tools:
       - edge.routes
       - rendering-host.read
       - rendering-host.set
+      # The site's thumbnail in the Sites dashboard, from browser.brand.thumbnail.
+      - site.thumbnail
     scope:
       paths:
         # The site and the definitions it depends on: publishing related items does not
@@ -71,6 +73,10 @@ tools:
         - /sitecore/layout/Renderings/Project/{collection}
         - /sitecore/media library/Project/{collection}
         - /sitecore/system/Languages/**
+  # The brand of the source site, rendered as the site's dashboard thumbnail.
+  browser:
+    ops:
+      - brand.thumbnail
   artifacts:
     ops:
       - read

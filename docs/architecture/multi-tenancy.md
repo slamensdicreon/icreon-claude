@@ -86,7 +86,7 @@ Built (step 2):
   per project records its organization (`lw_project_organizations`). It is written before the
   project's first event and never changes, so no reader sees a project without its owner.
 - **Tables:** `lw_organizations`, `lw_memberships` (person, organization, role) and
-  `lw_project_organizations` (migration `008_organizations.sql`). The migration creates
+  `lw_project_organizations` (migration `010_organizations.sql`). The migration creates
   organization #1, Icreon (`org-icreon`), and gives it every project already in the log. A project
   a process writes without an owner (a demo, a seed) is Icreon's as well.
 - **Every request acts in one organization** (`apps/control-api/src/organizations.ts`). The
@@ -194,7 +194,7 @@ Built:
 - **Only people with an invitation get in.** On the way back from AuthKit, every open invitation
   for the person's verified address becomes a membership; someone with none is turned away with
   "hasn't been invited yet", and no session is made.
-- **Invitations** (`lw_invitations`, migration `009`; `apps/control-api/src/people.ts`): a Director
+- **Invitations** (`lw_invitations`, migration `011`; `apps/control-api/src/people.ts`): a Director
   invites by email as Director or Watcher, from **People** in Global settings. WorkOS sends the
   email; its link (`/auth/login?invitation_token=…`) goes straight to AuthKit. An invitation is
   open 7 days, inviting again replaces it, and it can be withdrawn. If WorkOS can't send the

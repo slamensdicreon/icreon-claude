@@ -1,4 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
+import { ProjectIcon } from '../ui/project-icon';
+import { showActiveProjects } from '../surfaces/dashboard/ProjectsTable';
 import { post } from '../lib/api';
 import { live } from '../lib/live';
 import { MANAGE, useApp, useProjectResource, type Surface } from '../state';
@@ -30,12 +32,15 @@ const remember = (id: string) => {
 };
 /** Past this many projects the switcher leads with a search and splits into sections. */
 const MANY = 6;
+/** Statuses that are done: the switcher leaves these to the Dashboard. */
+const FINISHED = new Set(['completed', 'cancelled', 'archived']);
 
 /**
  * The project switcher. A short list reads top to bottom; a long one (30 to 50 projects) leads
  * with a search, then what needs you, what you opened lately, and the rest. Enter opens the first
- * match; the arrow keys move between rows. Archived projects live under the Dashboard's Archived
- * view instead.
+ * match; the arrow keys move between rows. It is a shortcut to work in flight: completed,
+ * cancelled and archived projects are left out (bar the one you are on) and reached from the
+ * Dashboard's project table instead.
  */
 export function ProjectMenu() {
   const { projects, projectId, switchProject, home, closeOverlay, newProject } = useApp();
@@ -46,7 +51,8 @@ export function ProjectMenu() {
     closeOverlay();
     switchProject(id);
   };
-  const shown = projects.filter((p) => p.status !== 'archived' || p.id === projectId);
+  const shown = projects.filter((p) => !FINISHED.has(p.status) || p.id === projectId);
+  const finished = projects.length - shown.length;
   const many = shown.length > MANY;
   const q = query.trim().toLowerCase();
   const sections: { title: string; items: typeof shown }[] = [];
@@ -110,6 +116,7 @@ export function ProjectMenu() {
           aria-current={!projectId || undefined}
           onClick={() => {
             closeOverlay();
+            showActiveProjects();
             home();
           }}
         >
@@ -119,8 +126,8 @@ export function ProjectMenu() {
           <span className={s.rowText}>
             <span className="type-body-small">Dashboard</span>
             <span className="type-meta">
-              {many
-                ? `All ${shown.length} projects and where they stand`
+              {finished
+                ? `Every project, including ${finished} finished`
                 : 'Every project and where it stands'}
             </span>
           </span>
@@ -132,7 +139,7 @@ export function ProjectMenu() {
               className="type-body-small"
               type="search"
               autoFocus
-              placeholder={`Find a project among ${shown.length}`}
+              placeholder={`Find among ${shown.length} in flight`}
               aria-label="Find a project"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -150,7 +157,7 @@ export function ProjectMenu() {
             </h3>
             {sec.items.length === 0 && (
               <p className={`${s.menuEmpty} type-body-small`}>
-                Nothing matches. Archived projects are on the Dashboard.
+                Nothing in flight matches. Finished projects are on the Dashboard.
               </p>
             )}
             {sec.items.map((p) => (
@@ -163,6 +170,7 @@ export function ProjectMenu() {
               >
                 <span className={`${s.tile} type-label`} aria-hidden="true">
                   {p.initials}
+                  <ProjectIcon projectId={p.id} />
                 </span>
                 <span className={s.rowText}>
                   <span className="type-body-small">

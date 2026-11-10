@@ -16,7 +16,7 @@ import {
   type Attribution,
 } from '@lw/agent-runtime';
 import { autonomyFor } from '@lw/domain';
-import type { EventStore, KnowledgeStore, Projections, RuleStore } from '@lw/events';
+import type { EventStore, KnowledgeStore, Projections, RuleStore, SqlClient } from '@lw/events';
 import {
   createStubActivities,
   loadFixtures,
@@ -32,7 +32,14 @@ import { lessonsFor } from './knowledge';
 import { blueprintEntries, leadTriageInput } from './lead-triage';
 import { sliceScreenshot } from './screens';
 import { loadRolePrompts, type Playbook } from '@lw/playbook-sdk';
-import { BrowserToolServer, GuardedBrowser, type UrlPolicy } from '@lw/tool-browser';
+import {
+  BrowserToolServer,
+  Crawler,
+  GuardedBrowser,
+  MemoryCrawlStore,
+  PostgresCrawlStore,
+  type UrlPolicy,
+} from '@lw/tool-browser';
 export { GuardedBrowser } from '@lw/tool-browser';
 import {
   LocalBlobStore,
@@ -45,6 +52,13 @@ import {
   type ToolServer,
 } from '@lw/tool-gateway';
 import { ValidatorsToolServer } from '@lw/tool-validators';
+import {
+  ImportToolServer,
+  MemoryImportStore,
+  TemplateImporter,
+  type ImportCall,
+  type ImportStore,
+} from './import';
 import {
   AcceptanceToolServer,
   ArtifactLibrary,
@@ -98,10 +112,61 @@ export interface StackOptions {
    * launches and closes its own.
    */
   browser?: GuardedBrowser;
+  /**
+   * Background crawls (browser.crawl.start), shared by every stack in the process so each crawl
+   * runs once; see createCrawler. Without one, the stack keeps its crawls in memory.
+   */
+  crawler?: Crawler;
+  /** Where bulk imports are kept (Postgres in the worker, so they resume); memory otherwise. */
+  imports?: ImportStore;
+}
+
+/**
+ * The hosts a project's browser may visit: its source site (both spellings: one usually
+ * redirects to the other) and its new site, for visual QA and parity.
+ */
+export function sourcePolicy(
+  projections: Projections,
+  allowPrivateNetworks?: boolean,
+): (projectId: string) => UrlPolicy {
+  return (projectId) => {
+    const s = projections.get(projectId);
+    const url = s?.sourceUrl;
+    const host = url ? new URL(url).hostname : null;
+    return {
+      allowedHosts: [
+        ...(host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : []),
+        // The new site: its production URL, its fixed editing address, and the provider's other
+        // addresses for it (team and per-deployment URLs).
+        ...projectHosts(s?.hosting ?? null),
+      ],
+      allowPrivateNetworks,
+    };
+  };
+}
+
+/**
+ * The process's background crawler: crawls kept in Postgres when there is one (they survive a
+ * restart and any worker resumes them), in memory otherwise. Call `resumeAll()` once the worker
+ * is up, and `shutdown()` when it stops.
+ */
+export function createCrawler(opts: {
+  projections: Projections;
+  browser: GuardedBrowser;
+  sql?: SqlClient | null;
+  allowPrivateNetworks?: boolean;
+}): Crawler {
+  return new Crawler({
+    store: opts.sql ? new PostgresCrawlStore(opts.sql) : new MemoryCrawlStore(),
+    browser: opts.browser,
+    policy: sourcePolicy(opts.projections, opts.allowPrivateNetworks),
+  });
 }
 
 export interface Stack {
   activities: Activities;
+  /** Bulk imports of large sites' page templates: resume them once the worker is up. */
+  importer: TemplateImporter;
   /** Roles running on real agents; the rest are stubs. */
   liveRoles: string[];
   gateway: ToolGateway;
@@ -163,21 +228,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   // One Chromium behind one egress proxy for every browser-driven server.
   const chromium =
     opts.browser ?? new GuardedBrowser({ allowPrivateNetworks: opts.allowPrivateNetworks });
-  const policy = (projectId: string): UrlPolicy => {
-    const s = opts.projections.get(projectId);
-    const url = s?.sourceUrl;
-    const host = url ? new URL(url).hostname : null;
-    return {
-      allowedHosts: [
-        // The site and its www form: one usually redirects to the other.
-        ...(host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : []),
-        // The new site, for visual QA and parity: its production URL, its fixed editing address,
-        // and the provider's other addresses for it (team and per-deployment URLs).
-        ...projectHosts(s?.hosting ?? null),
-      ],
-      allowPrivateNetworks: opts.allowPrivateNetworks,
-    };
-  };
+  const policy = sourcePolicy(opts.projections, opts.allowPrivateNetworks);
   // Acceptance checks read the project's systems, never change them.
   const readOnly = async (
     projectId: string,
@@ -367,20 +418,116 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   // Hosts the project's documents point media at, by the documents' versions.
   const hostsSeen = new Map<string, { key: string; hosts: string[] }>();
   const STRUCTURE = ['site', 'templates', 'renderings'] as const;
+  const browserServer = new BrowserToolServer({
+    blobs,
+    policy,
+    browser: chromium,
+    crawler: opts.crawler,
+    assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
+    // The source site's pages are read once and reused for six hours; the new site's never.
+    sourceHosts: (projectId) => {
+      const url = opts.projections.get(projectId)?.sourceUrl;
+      if (!url) return [];
+      const host = new URL(url).hostname;
+      return [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`];
+    },
+  });
+  // Bulk imports write through the gateway as the task that started them; it exists below.
+  let gatewayRef: ToolGateway | null = null;
+  const importCall: ImportCall = async (projectId, role, taskId, stepIndex, server, op, args) => {
+    const r = await gatewayRef!.call({
+      projectId,
+      taskId,
+      stepIndex,
+      attempt: 0,
+      role,
+      server,
+      op,
+      args,
+    });
+    if (r.ok) {
+      const b = r.body as { untrusted?: boolean; content?: unknown } | null;
+      return { ok: true, code: r.code, body: b?.untrusted ? b.content : r.body };
+    }
+    if ('denied' in r)
+      return {
+        ok: false,
+        code: 403,
+        body: null,
+        message: r.message,
+        retryable: r.denied === 'locked',
+      };
+    return { ok: false, code: r.code, body: null, message: r.message, retryable: r.retryable };
+  };
+  const importer = new TemplateImporter({
+    store: opts.imports ?? new MemoryImportStore(),
+    crawls: browserServer.crawler.store,
+    browser: chromium,
+    policy,
+    call: importCall,
+    blueprint: async (projectId) => {
+      const doc = await library.read(projectId, 'blueprint').catch(() => null);
+      try {
+        return doc ? (JSON.parse(doc.content) as Blueprint) : null;
+      } catch {
+        return null;
+      }
+    },
+    document: async (projectId, artifactId) => {
+      const doc = await library.read(projectId, artifactId).catch(() => null);
+      try {
+        return doc ? JSON.parse(doc.content) : null;
+      } catch {
+        return null;
+      }
+    },
+    report: async (projectId, template, content) => {
+      await library.write(projectId, {
+        artifactId: `template-import-${template}`,
+        kind: 'report',
+        title: `Bulk import: ${template}`,
+        format: 'json',
+        content: JSON.stringify(content, null, 2),
+        producer: 'content-migrator',
+        summary: null,
+        audience: 'team',
+      });
+    },
+    sitePath: (projectId) => {
+      const i = opts.projections.get(projectId)?.intake;
+      return i ? (opts.platform.bindings(i.target).sitePath ?? null) : null;
+    },
+    // The canary pages through the platform's page checks: they render, and show the source's text.
+    verify: async (projectId, paths) => {
+      const checks = opts.platform.checks;
+      if (!checks) return null;
+      const out: { id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[] = [];
+      for (const id of ['head.pages-render', 'parity.render']) {
+        const check = checks[id];
+        if (!check) continue;
+        const r = await runPlatformCheck(projectId, (ctx) =>
+          check({
+            ...ctx,
+            blueprint: {
+              collections: {
+                ...(ctx.blueprint?.collections ?? {}),
+                pages: paths.map((path, i) => ({
+                  key: `canary-${i}`,
+                  name: path,
+                  attrs: { path },
+                })),
+              },
+            },
+          }),
+        );
+        out.push({ id, status: r.status, detail: r.detail });
+      }
+      return out;
+    },
+  });
   const servers: ToolServer[] = [
-    new BrowserToolServer({
-      blobs,
-      policy,
-      browser: chromium,
-      assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
-      // The source site's pages are read once and reused for six hours; the new site's never.
-      sourceHosts: (projectId) => {
-        const url = opts.projections.get(projectId)?.sourceUrl;
-        if (!url) return [];
-        const host = new URL(url).hostname;
-        return [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`];
-      },
-    }),
+    browserServer,
+    new ImportToolServer(importer),
     new ValidatorsToolServer({
       blobs,
       policy,
@@ -479,6 +626,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       return i && opts.platform.facts ? opts.platform.facts(call, body, i.target) : [];
     },
   });
+  gatewayRef = gateway;
 
   const { blueprint: fixture, outputs } = await loadFixtures(opts.playbookDir);
   const stubs = createStubActivities({
@@ -551,10 +699,17 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           items,
           tasks: req.tasks ?? [],
           cards: req.cards ?? [],
+          roles: req.roles ?? [],
         });
         if (r.kind === 'status') return { kind: 'status' };
         if (r.kind === 'answer')
           return { kind: 'answer', interpretation: r.interpretation, answers: r.answers };
+        if (r.kind === 'add')
+          return {
+            kind: 'add',
+            interpretation: r.interpretation,
+            task: { ...r.task, after: r.task.after || null },
+          };
         if (r.kind === 'rerun')
           return {
             kind: 'rerun',
@@ -692,10 +847,14 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
 
   return {
     activities,
+    importer,
     liveRoles: live,
     gateway,
     library,
     close: async () => {
+      // Its own crawler, if it made one, lets go of its crawls; a shared one is its owner's.
+      await importer.shutdown();
+      await browserServer.close();
       if (!opts.browser) await chromium.close();
     },
   };

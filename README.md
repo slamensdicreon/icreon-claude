@@ -6,6 +6,7 @@ Home of **Launchworks**, Icreon's agentic implementation studio for SitecoreAI (
 - [Organizations, roles and licensing](docs/architecture/multi-tenancy.md)
 - [Running the Control Center against the mock backend](docs/mock-backend.md)
 - [Deploying on Vercel](docs/deploy/vercel.md)
+- [Crawling large sites](docs/architecture/large-site-crawl.md)
 
 ## Quick start
 
@@ -63,7 +64,7 @@ The Control Center calls `GET /auth/me` to know who is signed in, sends people t
 | `packages/tool-gateway`          | Policy enforcement point for every agent tool call: grants, scopes, credentials, audit  |
 | `packages/agent-runtime`         | Agent loop on the Claude Messages API: tools via the gateway, caching, budgets          |
 | `packages/stack`                 | Composition root: tool servers behind the gateway, live agents where tools exist        |
-| `tool-servers/browser`           | Crawl, snapshots, screenshots at 3 breakpoints, asset fetch; egress proxy blocks SSRF   |
+| `tool-servers/browser`           | Background crawls of any size, snapshots, screenshots, asset fetch; egress blocks SSRF  |
 | `tool-servers/validators`        | axe-core, Lighthouse and screenshot pixel diff for the QA roles                         |
 | `tool-servers/workspace`         | Versioned project documents (artifacts), the Blueprint blackboard, the Decision Log     |
 | `packages/playbook-sdk`          | Schema, loader and validator for playbooks                                              |
