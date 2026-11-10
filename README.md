@@ -3,6 +3,7 @@
 Home of **Launchworks**, Icreon's agentic implementation studio for SitecoreAI (working codename).
 
 - [Backend, architecture & build plan](docs/architecture/backend-plan.md)
+- [Organizations, roles and licensing](docs/architecture/multi-tenancy.md)
 - [Running the Control Center against the mock backend](docs/mock-backend.md)
 - [Deploying on Vercel](docs/deploy/vercel.md)
 
