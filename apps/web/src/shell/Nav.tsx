@@ -5,7 +5,8 @@
  * one, the project's.
  */
 import { ProjectIcon } from '../ui/project-icon';
-import { DemoMenu, ManageMenu, ProjectMenu } from '../overlays/Menus';
+import { AccountMenu, DemoMenu, managePages, ManageMenu, ProjectMenu } from '../overlays/Menus';
+import { isWatching } from '../lib/role';
 import { showActiveProjects } from '../surfaces/dashboard/ProjectsTable';
 import { isManagePage, useApp, useProjectResource } from '../state';
 import { Icon } from '../theme/icons';
@@ -250,24 +251,33 @@ export function Sidebar() {
           true,
         )}
       {projectId && item('all', 'projects', 'All projects', false, allProjects, null, true)}
-      {item(
-        'settings',
-        'settings',
-        'Settings',
-        projectId ? surface === 'settings' : isManagePage(view),
-        () => (projectId ? go('settings') : openOverlay(<ManageMenu />)),
-        null,
-        true,
-      )}
-      <div className={styles.user}>
+      {/* A Watcher changes no settings: neither a project's nor the organization's. */}
+      {!isWatching() &&
+        (projectId || managePages().length > 0) &&
+        item(
+          'settings',
+          'settings',
+          'Settings',
+          projectId ? surface === 'settings' : isManagePage(view),
+          () => (projectId ? go('settings') : openOverlay(<ManageMenu />)),
+          null,
+          true,
+        )}
+      <button
+        type="button"
+        className={styles.user}
+        onClick={() => openOverlay(<AccountMenu />)}
+        aria-haspopup="menu"
+        aria-label={`${me.name}: account, people and sign out`}
+      >
         <span className={styles.avatar} aria-hidden="true">
           {me.name[0]?.toUpperCase()}
         </span>
         <span className={styles.userText}>
           <span className="type-nav">{me.name}</span>
-          <span className="type-meta">Director</span>
+          <span className="type-meta">{isWatching() ? 'Watcher' : 'Director'}</span>
         </span>
-      </div>
+      </button>
       <div className={styles.theme}>
         <ThemeSwitch onShell />
       </div>

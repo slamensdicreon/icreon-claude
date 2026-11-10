@@ -22,7 +22,7 @@ export const messageOf = (err: unknown, fallback: string): string =>
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   // A Watcher changes nothing (the API refuses it too): say so without asking. Their own screen
   // modes are theirs to keep.
-  if (method !== 'GET' && isWatching() && path !== '/me/preferences')
+  if (method !== 'GET' && isWatching() && path !== '/me/preferences' && path !== '/auth/logout')
     throw new ApiProblem(403, 'read_only', readOnlyMessage());
   const res = await fetch(API + path, {
     method,

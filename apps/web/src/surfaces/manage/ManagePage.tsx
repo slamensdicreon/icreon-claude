@@ -20,7 +20,7 @@ export { LessonsLearned } from './LessonsLearned';
 
 export function ManagePage({ page }: { page: Page }) {
   // Only the pages that name projects need the portfolio.
-  const projects = usePortfolio(page !== 'settings' && page !== 'diagnostics');
+  const projects = usePortfolio(page !== 'settings' && page !== 'diagnostics' && page !== 'people');
   return (
     <div className={s.manage}>
       {page === 'settings' && (
@@ -29,8 +29,16 @@ export function ManagePage({ page }: { page: Page }) {
             Settings every project shares. Each project’s own policies, budgets and credentials are
             in its Settings.
           </Lead>
-          <PeoplePanel />
           <GithubAppPanel />
+        </div>
+      )}
+      {page === 'people' && (
+        <div className={s.page}>
+          <Lead>
+            Who can see and run your organization’s projects. Directors decide; Watchers follow
+            along.
+          </Lead>
+          <PeoplePanel />
         </div>
       )}
       {page === 'connections' && <Connections projects={projects} />}

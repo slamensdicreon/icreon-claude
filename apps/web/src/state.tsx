@@ -132,10 +132,18 @@ export interface NewProjectIntent {
 
 /** Pages above any one project, opened from the header's menu. */
 export type ManagePage =
-  'settings' | 'connections' | 'playbooks' | 'in-force' | 'rules' | 'knowledge' | 'diagnostics';
+  | 'people'
+  | 'settings'
+  | 'connections'
+  | 'playbooks'
+  | 'in-force'
+  | 'rules'
+  | 'knowledge'
+  | 'diagnostics';
 
 /** The header menu's pages: each one's title and what it is for. */
 export const MANAGE: [ManagePage, string, string][] = [
+  ['people', 'People', 'Who can see and run your projects, and invitations'],
   ['settings', 'Global settings', 'The GitHub App every project commits through'],
   ['connections', 'Connections', 'Tenants shared by the sites on them'],
   ['playbooks', 'Playbooks', 'What a new project can run'],

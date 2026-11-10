@@ -39,7 +39,8 @@ function fakeWorkos(users: Record<string, Partial<WorkosUser>>) {
           email_verified: true,
           ...u,
         },
-        access_token: 'jwt',
+        // A JWT whose payload carries the WorkOS session id.
+        access_token: `e30.${Buffer.from(JSON.stringify({ sid: `session_${body.code}` })).toString('base64url')}.sig`,
       });
     }
     if (url === 'https://api.workos.com/user_management/invitations') {
@@ -176,6 +177,31 @@ describe('signing in with WorkOS', () => {
       headers: { cookie: session! },
     });
     expect(projects.statusCode).toBe(200);
+  });
+
+  it('signs out of WorkOS too, so AuthKit doesn’t sign the person straight back in', async () => {
+    const { orgs, acme } = await start({ users: { 'code-hal': { email: 'hal@example.com' } } });
+    await orgs.invite({
+      organizationId: acme.id,
+      email: 'hal@example.com',
+      role: 'director',
+      invitedBy: 'github:bob',
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    const { session } = await signIn('code-hal');
+    const out = await app!.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: { cookie: session!, origin: APP },
+    });
+    expect(out.statusCode).toBe(200);
+    const to = new URL(out.json().redirect);
+    expect(to.origin + to.pathname).toBe('https://api.workos.com/user_management/sessions/logout');
+    expect(Object.fromEntries(to.searchParams)).toEqual({
+      session_id: 'session_code-hal',
+      return_to: APP,
+    });
+    expect(String(out.headers['set-cookie'])).toContain('lw_session=; ');
   });
 
   it('turns away someone nobody invited, and an address that isn’t verified', async () => {

@@ -5,9 +5,12 @@
 export interface Role {
   organization: string | null;
   role: 'director' | 'watcher';
+  /** One of Icreon's administrators (a Director of Icreon): the pages every licensee shares. */
+  superAdmin: boolean;
 }
 
-let current: Role = { organization: null, role: 'director' };
+// Without organizations (an older API, or a local run) the person runs everything, as before.
+let current: Role = { organization: null, role: 'director', superAdmin: true };
 
 export const role = (): Role => current;
 export const isWatching = () => current.role === 'watcher';
@@ -25,9 +28,14 @@ export async function loadRole(api: string): Promise<Role> {
     const res = await fetch(`${api}/me/organizations`, { credentials: 'include' });
     if (res.ok) {
       const body = (await res.json()) as {
-        current: { name: string; role: 'director' | 'watcher' } | null;
+        current: { name: string; role: 'director' | 'watcher'; superAdmin?: boolean } | null;
       };
-      if (body.current) current = { organization: body.current.name, role: body.current.role };
+      if (body.current)
+        current = {
+          organization: body.current.name,
+          role: body.current.role,
+          superAdmin: body.current.superAdmin ?? false,
+        };
     }
   } catch {
     /* keep the default */

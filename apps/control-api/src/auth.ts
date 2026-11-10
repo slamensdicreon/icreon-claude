@@ -77,6 +77,8 @@ interface Session {
   /** Absent on GitHub sessions (and every session from before WorkOS). */
   provider?: 'workos';
   subject?: string;
+  /** The WorkOS session (the access token's `sid`), ended with ours at sign-out. */
+  sid?: string;
 }
 
 declare module 'fastify' {
@@ -247,7 +249,10 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
           user_agent: req.headers['user-agent'],
         }),
       });
-      const body = (await res.json().catch(() => null)) as { user?: WorkosUser } | null;
+      const body = (await res.json().catch(() => null)) as {
+        user?: WorkosUser;
+        access_token?: string;
+      } | null;
       const user = body?.user;
       if (!res.ok || !user?.id || !user.email)
         return page(reply, 502, 'WorkOS did not complete sign-in. Try again.');
@@ -262,6 +267,7 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
         avatarUrl: user.profile_picture_url ?? null,
         provider: 'workos',
         subject: `workos:${user.id}`,
+        ...(sessionIdOf(body?.access_token) ? { sid: sessionIdOf(body?.access_token)! } : {}),
         exp: Date.now() + ttl,
       };
       reply.header('set-cookie', [cookie(STATE, '', 0), cookie(SESSION, sign(session), ttl)]);
@@ -344,8 +350,17 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
     return { login, name, avatarUrl };
   });
 
-  app.post('/auth/logout', async (_req, reply) => {
+  // Signing out of a WorkOS session ends it at WorkOS too, or AuthKit would sign the person
+  // straight back in: the app follows `redirect`, and WorkOS returns them to the Control Center.
+  app.post('/auth/logout', async (req, reply) => {
+    const session = read<Session>(cookies(req)[SESSION]);
     reply.header('set-cookie', cookie(SESSION, '', 0));
+    if (session?.provider === 'workos' && session.sid && workos) {
+      const url = new URL(`${workos.baseUrl ?? WORKOS_API}/user_management/sessions/logout`);
+      url.searchParams.set('session_id', session.sid);
+      url.searchParams.set('return_to', opts.appUrl);
+      return { redirect: url.toString() };
+    }
     return reply.status(204).send();
   });
 }
@@ -433,4 +448,16 @@ function chooser(returnTo: string) {
   return `<h1>Sign in to Launchworks</h1>
 <a class="b" href="${escapeHtml(q('workos'))}">Continue with email, Google or Microsoft</a>
 <a class="b s" href="${escapeHtml(q('github'))}">Icreon operators: continue with GitHub</a>`;
+}
+
+/** The `sid` claim of a WorkOS access token (a JWT that came straight from WorkOS over TLS). */
+function sessionIdOf(token: string | undefined): string | null {
+  const payload = token?.split('.')[1];
+  if (!payload) return null;
+  try {
+    const sid = (JSON.parse(Buffer.from(payload, 'base64url').toString()) as { sid?: unknown }).sid;
+    return typeof sid === 'string' && sid.length < 200 ? sid : null;
+  } catch {
+    return null;
+  }
 }
