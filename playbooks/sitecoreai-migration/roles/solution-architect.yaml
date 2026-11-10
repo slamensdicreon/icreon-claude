@@ -23,6 +23,14 @@ tools:
     ops:
       - read
       - write
+  # A large site's templates and their example pages, read from the discovery crawl (and the
+  # source's layout data), to write each page template's field mapping. Read only.
+  browser:
+    ops:
+      - crawl.status
+      - crawl.query
+      - crawl.page
+      - page.data
   # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
   facts:
     ops:

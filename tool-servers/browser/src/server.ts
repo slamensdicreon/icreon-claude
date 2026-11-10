@@ -6,6 +6,16 @@ import { extractContent, extractPage, type PageExtract } from './extract';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
 import { layoutData } from './layout-data';
 import { assertNavigable, BlockedUrlError, type UrlPolicy, withSibling } from './ssrf';
+import { Crawler, CRAWL_LIMITS } from './crawl/crawler';
+import { CrawlReports } from './crawl/report';
+import { MemoryCrawlStore, type CrawlJob, type CrawlStore } from './crawl/store';
+import {
+  designFrom,
+  readBrand,
+  thumbnailHtml,
+  type BrandCues,
+  type ThumbnailDesign,
+} from './thumbnail';
 
 export interface BrowserServerOptions {
   /** Source-site hosts per project; the browser goes nowhere else. */
@@ -37,6 +47,13 @@ export interface BrowserServerOptions {
   sourceHosts?: (projectId: string) => string[];
   /** How long a source page read is reused (default 6 hours; 0 turns reuse off). */
   readCacheMs?: number;
+  /**
+   * Background crawls (crawl.start and the rest). Share one across servers in a process so each
+   * crawl runs once; without it, one is made over `crawls` (or memory).
+   */
+  crawler?: Crawler;
+  /** Where background crawls are kept when this server makes its own crawler. */
+  crawls?: CrawlStore;
 }
 
 /**
@@ -46,7 +63,7 @@ export interface BrowserServerOptions {
  * then blocks, then all but the main headings. `browser.snapshot` reads any page in full.
  */
 export function compactCrawl(
-  pages: (PageExtract & { url: string; status: number })[],
+  pages: (Omit<PageExtract, 'layout'> & { url: string; status: number })[],
   budget: number,
 ) {
   const imageCount = new Map<string, { src: string; alt: string | null; pages: number }>();
@@ -132,7 +149,84 @@ const ASSET_HEADERS = {
   'accept-language': 'en-US,en;q=0.9',
 };
 
+const crawlId = {
+  type: 'string',
+  description: "The crawl's id from crawl.start; the project's latest crawl when left out.",
+};
+
 const CATALOG: OperationCatalog = {
+  'crawl.start': {
+    description:
+      "Start crawling the source site in the background, however large it is; returns at once with a crawlId. It finds the pages from the site's robots.txt, sitemaps and links, reads them several at a time at the pace the site allows (in a real browser only when a page needs one), and groups them into templates. Follow it with crawl.status. A crawl of the same site still running, or finished within a day, is returned instead of starting another: pass fresh: true to crawl again (the phase 6 re-crawl), with changedOnly: true to keep pages the sitemap says haven't changed. robots.txt is respected unless respectRobots is false, which only the Director may decide.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Where to start: the home page.' },
+        maxPages: { type: 'integer', minimum: 1, maximum: CRAWL_LIMITS.maxPages },
+        concurrency: { type: 'integer', minimum: 1, maximum: CRAWL_LIMITS.concurrency },
+        respectRobots: { type: 'boolean' },
+        fresh: { type: 'boolean' },
+        changedOnly: { type: 'boolean' },
+      },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+  },
+  'crawl.status': {
+    description:
+      "A background crawl's progress and what it has found: pages found, read, left and the pace (with an estimate of the time left), how they were read, redirects, what was excluded and why, the header/nav/footer regions repeated across pages, and its templates (kinds of page: URL patterns, page count, layout, average words, and three example pages each). Give waitSeconds (up to 300) to wait for the crawl to finish before answering: call it again until status is no longer running. Templates appear early, so you can start reading examples while it runs.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        crawlId,
+        waitSeconds: { type: 'integer', minimum: 0, maximum: 300 },
+      },
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'crawl.query': {
+    description:
+      'Pages of a crawl, up to 200 rows at a time (url, path, title, description, h1, words, images, template), filtered by template (an id from crawl.status), path prefix, words in the title or URL (text), or state: read (default), excluded or failed (with the reason), queued. Page through with offset: the answer gives the total and the next offset.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        crawlId,
+        template: { type: 'string' },
+        path: { type: 'string' },
+        text: { type: 'string' },
+        state: { type: 'string', enum: ['read', 'excluded', 'failed', 'queued'] },
+        limit: { type: 'integer', minimum: 1, maximum: 200 },
+        offset: { type: 'integer', minimum: 0 },
+      },
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'crawl.page': {
+    description:
+      'One page as the crawl read it, without visiting the site again: title, description, headings, content blocks (with excerpts), images with alt text, links, regions and layout, and how it was read. For its whole text word for word, use snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: { crawlId, url: { type: 'string' } },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'crawl.stop': {
+    description: 'Stop a background crawl, keeping the pages it has read.',
+    inputSchema: {
+      type: 'object',
+      properties: { crawlId },
+      additionalProperties: false,
+    },
+    mutates: false,
+  },
   crawl: {
     description:
       'Crawl the source site from a start URL (plus its sitemap): page inventory with titles, headings, word counts, images and alt text, internal links, and header/nav/footer regions repeated across pages. Same host only. `sections` counts the sitemap\'s URLs by first path segment. On a site too big for one crawl, crawl one `section` (a path prefix such as "/blog/") at a time; to read exactly some pages (the Blueprint\'s, for the parity re-crawl) give their `paths`, and no links are followed.',
@@ -156,6 +250,32 @@ const CATALOG: OperationCatalog = {
     inputSchema: {
       type: 'object',
       properties: { url: { type: 'string' } },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
+  'brand.thumbnail': {
+    description:
+      "A thumbnail for the site in the Sitecore Sites dashboard (1200×640 PNG), made from the brand of its source home page: its logo, colours, typeface, headline and hero photo, laid out as a field with the logo and headline, and the photo behind a diagonal edge in the brand's accent. Returns the stored file's ref (for sitecore-authoring.site.thumbnail) and the design it used. Anything the page gets wrong can be given instead: headline (short, from the site's own words), emphasis (words of it in the accent), eyebrow (what the business does, a few words), accent, field and ink colours (#RRGGBB), tone (dark or light), font (a Google Fonts family), logo or photo (image URLs), motif (route for networks and utilities, grid for building and engineering, lines for digital and speed, or none) and chip (a short tag such as Demo).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: "The source site's home page." },
+        headline: { type: 'string', maxLength: 90 },
+        emphasis: { type: 'string', maxLength: 60 },
+        eyebrow: { type: 'string', maxLength: 50 },
+        accent: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$' },
+        field: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$' },
+        ink: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$' },
+        tone: { type: 'string', enum: ['dark', 'light'] },
+        font: { type: 'string', maxLength: 60 },
+        logo: { type: 'string' },
+        photo: { type: 'string' },
+        motif: { type: 'string', enum: ['none', 'route', 'grid', 'lines'] },
+        chip: { type: 'string', maxLength: 16 },
+      },
       required: ['url'],
       additionalProperties: false,
     },
@@ -273,17 +393,38 @@ export class BrowserToolServer implements ToolServer {
   readonly catalog = CATALOG;
   private readonly browser: GuardedBrowser;
   private readonly ownsBrowser: boolean;
+  private readonly ownsCrawler: boolean;
+  readonly crawler: Crawler;
+  private readonly reports: CrawlReports;
 
   constructor(private readonly opts: BrowserServerOptions) {
     this.ownsBrowser = !opts.browser;
     this.browser = opts.browser ?? new GuardedBrowser();
+    this.ownsCrawler = !opts.crawler;
+    this.crawler =
+      opts.crawler ??
+      new Crawler({
+        store: opts.crawls ?? new MemoryCrawlStore(),
+        browser: this.browser,
+        policy: opts.policy,
+        settleMs: opts.settleMs,
+        navigationTimeoutMs: opts.navigationTimeoutMs,
+      });
+    this.reports = new CrawlReports(this.crawler.store);
   }
+
+  /**
+   * crawl.status waits up to 5 minutes, and the gateway's default is 10; nothing here runs
+   * longer than the gateway allows.
+   */
 
   target(projectId: string): string {
     return this.opts.policy(projectId).allowedHosts[0] ?? projectId;
   }
 
   async close(): Promise<void> {
+    // Crawls stay running in their store; another worker (or this one, restarted) resumes them.
+    if (this.ownsCrawler) await this.crawler.shutdown();
     if (this.ownsBrowser) await this.browser.close();
   }
 
@@ -342,6 +483,14 @@ export class BrowserToolServer implements ToolServer {
     const policy = this.opts.policy(ctx.projectId);
     try {
       switch (op) {
+        case 'crawl.start':
+        case 'crawl.status':
+        case 'crawl.query':
+        case 'crawl.page':
+        case 'crawl.stop':
+          return await this.background(op, args, ctx.projectId);
+        case 'brand.thumbnail':
+          return await this.thumbnail(ctx.projectId, policy, args);
         case 'crawl':
           return await this.crawl(policy, String(args.url), Number(args.maxPages ?? 200), {
             section: typeof args.section === 'string' && args.section ? args.section : undefined,
@@ -769,6 +918,231 @@ export class BrowserToolServer implements ToolServer {
     };
   }
 
+  /** The background crawl operations. */
+  private async background(
+    op: string,
+    args: Record<string, unknown>,
+    projectId: string,
+  ): Promise<ToolResult> {
+    if (op === 'crawl.start') {
+      const { job, existing } = await this.crawler.start(projectId, {
+        url: String(args.url),
+        maxPages: num(args.maxPages),
+        concurrency: num(args.concurrency),
+        respectRobots: typeof args.respectRobots === 'boolean' ? args.respectRobots : undefined,
+        fresh: args.fresh === true,
+        changedOnly: args.changedOnly === true,
+      });
+      const lead =
+        existing === 'running'
+          ? `A crawl of ${job.origin} is already running (${job.id}): follow it`
+          : existing === 'recent'
+            ? `${job.origin} was crawled ${ago(job.finishedAt)} (${job.id}): its pages are used. Pass fresh: true to crawl again`
+            : `Crawling ${job.origin} in the background (${job.id}), up to ${job.options.maxPages} pages`;
+      return {
+        code: existing ? 200 : 202,
+        body: {
+          crawlId: job.id,
+          status: job.status,
+          origin: job.origin,
+          existing,
+          options: job.options,
+          next: 'crawl.status with waitSeconds: 240, again until status is not running',
+        },
+        summary: `${lead}. Next: crawl.status with waitSeconds`,
+      };
+    }
+    const job = await this.findCrawl(projectId, args.crawlId);
+    if (!job)
+      return {
+        code: 404,
+        body: {
+          error: args.crawlId
+            ? `No crawl ${String(args.crawlId)} for this project`
+            : 'This project has no crawl yet: start one with crawl.start',
+        },
+        summary: 'No crawl found',
+      };
+    switch (op) {
+      case 'crawl.status': {
+        const wait = Math.min(300, Math.max(0, num(args.waitSeconds) ?? 0)) * 1000;
+        const current = (await this.crawler.wait(job.id, wait)) ?? job;
+        const r = await this.reports.status(current);
+        return { code: 200, ...r };
+      }
+      case 'crawl.query': {
+        const r = await this.reports.query(job, {
+          template: str(args.template),
+          path: str(args.path),
+          text: str(args.text),
+          state: str(args.state) as 'read' | undefined,
+          limit: num(args.limit),
+          offset: num(args.offset),
+        });
+        return { code: 200, ...r };
+      }
+      case 'crawl.page': {
+        const found = await this.crawler.store.page(job.id, canonical(String(args.url)));
+        if (!found)
+          return {
+            code: 404,
+            body: {
+              error: `Crawl ${job.id} has no ${String(args.url)}: use snapshot to read it live`,
+            },
+            summary: `Not in crawl ${job.id}: ${String(args.url)}`,
+          };
+        if (!found.page)
+          return {
+            code: 200,
+            body: { url: found.url.url, state: found.url.state, reason: found.url.reason },
+            summary: `${found.url.url}: ${found.url.state}${found.url.reason ? ` (${found.url.reason})` : ''}`,
+          };
+        const { links, ...page } = found.page;
+        const own = new URL(job.origin).origin;
+        const internal = [...new Set(links.filter((l) => l.startsWith(own)))];
+        return {
+          code: 200,
+          body: {
+            ...page,
+            links: {
+              internal: internal.slice(0, 150),
+              internalCount: internal.length,
+              external: links.length - links.filter((l) => l.startsWith(own)).length,
+            },
+          },
+          summary: `${found.page.url} from crawl ${job.id}: ${found.page.blocks.length} blocks, ${found.page.wordCount} words (read ${found.page.via === 'browser' ? 'in a browser' : found.page.via === 'reused' ? 'in the last crawl, unchanged since' : 'directly'})`,
+        };
+      }
+      default: {
+        const stopped = (await this.crawler.stop(job.id)) ?? job;
+        this.reports.invalidate(job.id);
+        const r = await this.reports.status(stopped);
+        return { code: 200, ...r };
+      }
+    }
+  }
+
+  private async findCrawl(projectId: string, id: unknown): Promise<CrawlJob | null> {
+    if (typeof id === 'string' && id) {
+      const j = await this.crawler.store.get(id);
+      // Another project's crawl reads as no crawl at all.
+      return j && j.projectId === projectId ? j : null;
+    }
+    return this.crawler.store.latest(projectId);
+  }
+
+  /** The site's dashboard thumbnail, from its home page's brand and what the agent gave. */
+  private async thumbnail(
+    projectId: string,
+    policy: UrlPolicy,
+    args: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const url = await assertNavigable(String(args.url), policy);
+    const str = (k: string) =>
+      typeof args[k] === 'string' && (args[k] as string).trim()
+        ? (args[k] as string).trim()
+        : undefined;
+    const given: Partial<ThumbnailDesign> & { host: string } = {
+      host: url.hostname,
+      headline: str('headline'),
+      emphasis: str('emphasis'),
+      eyebrow: str('eyebrow'),
+      accent: str('accent'),
+      field: str('field'),
+      ink: str('ink'),
+      tone: str('tone') as ThumbnailDesign['tone'] | undefined,
+      font: str('font'),
+      motif: str('motif') as ThumbnailDesign['motif'] | undefined,
+      chip: str('chip'),
+      ...(str('logo') ? { logo: { src: str('logo')!, ratio: 3 } } : {}),
+      ...(str('photo') ? { photos: [str('photo')!] } : {}),
+    };
+    for (const k of Object.keys(given) as (keyof typeof given)[])
+      if (given[k] === undefined) delete given[k];
+    return this.withPage(policy, async (context) => {
+      // The brand as the home page shows it; a page that won't load leaves the given parts only.
+      let cues: BrandCues = {
+        logo: null,
+        headerBackground: 'rgb(255, 255, 255)',
+        colors: [],
+        headline: '',
+        headlineColor: null,
+        font: '',
+        photos: [],
+        description: '',
+      };
+      let read = false;
+      const page = await context.newPage();
+      try {
+        await page.setViewportSize(BREAKPOINTS.desktop);
+        const r = await page.goto(url.toString(), {
+          waitUntil: 'load',
+          timeout: this.opts.navigationTimeoutMs ?? 30_000,
+        });
+        await page.waitForTimeout(1500);
+        if (r && r.status() < 400) {
+          cues = (await page.evaluate(`(${readBrand.toString()})()`)) as BrandCues;
+          read = true;
+        }
+      } catch {
+        /* the page didn't load: the given parts and defaults make the design */
+      } finally {
+        await page.close();
+      }
+      const design = designFrom(cues, given);
+      const card = await context.newPage();
+      try {
+        await card.setViewportSize({ width: 1200, height: 640 });
+        await card
+          .setContent(thumbnailHtml(design), { waitUntil: 'networkidle', timeout: 30_000 })
+          .catch(() => {});
+        await card
+          .waitForFunction('window.__ready === true', undefined, { timeout: 20_000 })
+          .catch(() => {});
+        await card.waitForTimeout(150);
+        const png = await card.screenshot({ type: 'png' });
+        const sha256 = createHash('sha256').update(png).digest('hex');
+        const ref = await this.opts.blobs.put(
+          projectId,
+          `assets/site-thumbnail-${sha256.slice(0, 16)}.png`,
+          png,
+          'image/png',
+        );
+        const used = {
+          tone: design.tone,
+          field: design.field,
+          ink: design.ink,
+          accent: design.accent,
+          font: design.font,
+          headline: design.headline,
+          emphasis: design.emphasis,
+          eyebrow: design.eyebrow,
+          logo: design.logo?.src ?? (design.logo?.svg ? 'the inline SVG logo from the page' : null),
+          logoShownWhite: design.logoWhite,
+          wordmark: design.wordmark,
+          photos: design.photos,
+          motif: design.motif,
+          chip: design.chip,
+        };
+        return {
+          code: 200,
+          body: {
+            ref,
+            sha256,
+            width: 1200,
+            height: 640,
+            bytes: png.length,
+            readFromPage: read,
+            design: used,
+          },
+          summary: `Thumbnail for ${url.hostname}: ${design.tone} field ${design.field}, accent ${design.accent}, ${design.logo ? 'its logo' : `the wordmark "${design.wordmark}"`}, ${design.photos.length ? 'its hero photo' : 'no photo'}, headline "${design.headline}"${read ? '' : ` (the home page couldn't be read: only what was given, and defaults)`}`,
+        };
+      } finally {
+        await card.close();
+      }
+    });
+  }
+
   /** The page's components and fields from its embedded layout data, within a size budget. */
   private async pageData(policy: UrlPolicy, args: Record<string, unknown>): Promise<ToolResult> {
     let url = await assertNavigable(String(args.url), policy);
@@ -1171,3 +1545,15 @@ export function sniffExt(b: Uint8Array): string | null {
 /** SitecoreAI doesn't file AVIF as an image: no alt text, no size. */
 const AVIF_NOTE =
   '. AVIF: the media library would store it as a plain file, not an image. The download already asks for PNG or JPEG; this server sent AVIF anyway, so add a format parameter (Scene7: ?fmt=png-alpha or ?fmt=jpg) and fetch it again';
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+
+/** "12 minutes ago", "3 hours ago". */
+function ago(iso: string | null): string {
+  if (!iso) return 'recently';
+  const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+  return m < 60
+    ? `${m} minute${m === 1 ? '' : 's'} ago`
+    : `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? '' : 's'} ago`;
+}

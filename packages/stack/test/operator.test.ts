@@ -282,6 +282,51 @@ describe('source-site heads-up', () => {
     );
   });
 
+  it('reads a background crawl’s progress for throttling, refusals and size', () => {
+    const status = (summary: string) => step(48, 200, 'crawl.status', summary);
+    expect(
+      sourceNotice(
+        paylocity(),
+        [
+          status(
+            'Crawl crawl-1 of https://www.paylocity.com: running, 40 of 2700 URLs read. The site is throttling us (6 "too many requests" answers): the crawl slowed to its pace',
+          ),
+        ],
+        now,
+      ),
+    ).toMatchObject({
+      title: 'paylocity.com is throttling the team',
+      body: expect.stringMatching(/answered "too many requests" repeatedly in the last 15 minutes/),
+    });
+    expect(
+      sourceNotice(
+        paylocity(),
+        [
+          status(
+            "Crawl crawl-1 of https://www.paylocity.com found no page it could read: the site's bot protection",
+          ),
+        ],
+        now,
+      )?.title,
+    ).toBe('paylocity.com is turning the team away');
+    expect(
+      sourceNotice(
+        paylocity(),
+        [
+          status(
+            'Crawl crawl-1 of https://www.paylocity.com: running, 400 of 2700 URLs read; 9 templates so far. A large site (2700 URLs found): work from the templates',
+          ),
+        ],
+        now,
+      ),
+    ).toMatchObject({
+      title: 'paylocity.com is a large site',
+      body: expect.stringMatching(
+        /reading it in the background and working from its page templates/,
+      ),
+    });
+  });
+
   it('says nothing for one stray 429, old answers, or within the hour after telling', () => {
     expect(sourceNotice(paylocity(), [step(48, 429)], now)).toBeNull();
     expect(sourceNotice(paylocity(), [step(10, 429), step(11, 429)], now)).toBeNull();

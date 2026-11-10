@@ -64,6 +64,14 @@ export interface GuardedBrowserOptions {
   allowPrivateNetworks?: boolean;
 }
 
+export interface ContextOptions {
+  /**
+   * For parsing HTML fetched without a browser (`page.setContent`): scripts off, and every request
+   * refused, so the page is read as served, quickly, and nothing leaves the machine.
+   */
+  offline?: boolean;
+}
+
 /**
  * One Chromium shared by the browser-driven tool servers. Every call gets a fresh context (no
  * cookies or storage carried between projects or tasks) whose requests are held to the project's
@@ -85,9 +93,16 @@ export class GuardedBrowser {
     return this.proxy;
   }
 
-  async withContext<T>(policy: UrlPolicy, fn: (context: BrowserContext) => Promise<T>): Promise<T> {
+  async withContext<T>(
+    policy: UrlPolicy,
+    fn: (context: BrowserContext) => Promise<T>,
+    opts: ContextOptions = {},
+  ): Promise<T> {
     const open = async () =>
-      (await this.launch()).newContext({ javaScriptEnabled: true, viewport: BREAKPOINTS.desktop });
+      (await this.launch()).newContext({
+        javaScriptEnabled: !opts.offline,
+        viewport: BREAKPOINTS.desktop,
+      });
     let context: BrowserContext;
     try {
       context = await open();
@@ -99,6 +114,8 @@ export class GuardedBrowser {
     }
     await context.addInitScript('globalThis.__name = (f) => f;');
     await context.route('**/*', (route) => {
+      // An offline context only parses HTML it is handed: it fetches nothing at all.
+      if (opts.offline) return route.abort('blockedbyclient');
       const req = route.request();
       if (isBlockedSubresource(req.url(), policy)) return route.abort('blockedbyclient');
       // Navigations (and redirects) must stay on the project's hosts.

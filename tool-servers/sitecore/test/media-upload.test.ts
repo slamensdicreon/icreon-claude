@@ -217,3 +217,30 @@ describe('media.upload', () => {
     expect((await s.call('media.upload', { itemPath: path }, ctx)).code).toBe(422);
   });
 });
+
+describe('site.thumbnail', () => {
+  it("sets only this project's site, and only from a thumbnail the browser made", async () => {
+    const { s, uploads } = setup();
+    const other = await s.call(
+      'site.thumbnail',
+      {
+        sitePath: '/sitecore/content/Brands/icreon',
+        ref: 'blob://p1/assets/site-thumbnail-0123456789abcdef.png',
+      },
+      ctx,
+    );
+    expect(other).toMatchObject({ code: 422 });
+    expect((other.body as { error: string }).error).toBe(
+      "/sitecore/content/Brands/icreon isn't this project's site: give /sitecore/content/Brands/ansco.",
+    );
+    const notPng = await s.call(
+      'site.thumbnail',
+      { sitePath: '/sitecore/content/Brands/ansco', ref: 'blob://p1/assets/report.pdf' },
+      ctx,
+    );
+    expect((notPng.body as { error: string }).error).toMatch(
+      /Give the PNG browser\.brand\.thumbnail made/,
+    );
+    expect(uploads).toEqual([]);
+  });
+});

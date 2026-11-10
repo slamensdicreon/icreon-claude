@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Favicons } from './favicon';
 import cors from '@fastify/cors';
 import {
   ApproveGate,
@@ -133,6 +134,8 @@ export interface AppDeps {
   github?: GithubApp;
   /** Stored content of an artifact version, or null if none is stored. */
   artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
+  /** The source sites' icons, for the projects' tiles; one is made when not given. */
+  favicons?: Favicons;
   /** Stores a file the Director gives the team (the blob store); absent where nothing can hold it. */
   putFile?: (
     projectId: string,
@@ -1784,6 +1787,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       )
       .header('content-disposition', raster ? 'inline' : 'attachment')
       .send(Buffer.from(bytes));
+  });
+
+  /**
+   * The project's tile picture: its source site's own icon. 404 when the project has no source
+   * site, or the site has no icon: the app shows the project's initials then.
+   */
+  const favicons = deps.favicons ?? new Favicons();
+  app.get<{ Params: { id: string } }>('/projects/:id/icon', async (req, reply) => {
+    const s = known(req.params.id);
+    const icon = s.sourceUrl ? await favicons.get(s.sourceUrl) : null;
+    if (!icon) return fail(reply, 404, 'no_icon', 'The project has no source site icon.');
+    // A client site's file: shown as a picture, never run as the app (an SVG can carry script).
+    return reply
+      .header('content-type', icon.type)
+      .header('cache-control', 'private, max-age=86400')
+      .header('x-content-type-options', 'nosniff')
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+      .header('content-disposition', 'inline')
+      .send(Buffer.from(icon.bytes));
   });
 
   const ActivityQuery = z.object({

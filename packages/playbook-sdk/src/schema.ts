@@ -207,6 +207,12 @@ export const TaskTemplate = z.object({
   /** Name of a Blueprint collection. Without it the template yields exactly one task. */
   forEach: Kebab.optional(),
   /**
+   * For a forEach template over a collection only some Blueprints have (`page-templates`: large
+   * sites only): no placeholder task before the Blueprint, and no tasks, rather than a plan error,
+   * when the Blueprint has no such collection.
+   */
+  optional: z.boolean().optional(),
+  /**
    * Dispatch hint: up to this many ready tasks from the template may run in one agent session.
    * Planning stays per item, so dropping one page changes exactly one task.
    */

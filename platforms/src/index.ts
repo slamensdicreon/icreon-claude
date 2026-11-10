@@ -320,3 +320,10 @@ export function validateTarget(spec: IntakeSpec, raw: TargetValues): TargetValue
 
 export { list, text } from './values';
 export { ownedPaths, SITECOREAI, sitecoreBindings, sitecoreTarget } from '../sitecoreai/pack';
+export {
+  mappingProblems,
+  parseSource,
+  type MappingEntry,
+  type Source,
+} from '../sitecoreai/mapping';
+export { BULK_TEMPLATE_PAGES, LARGE_SITE_PAGES, siteScale } from '../sitecoreai/page-templates';

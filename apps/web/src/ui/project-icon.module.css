@@ -1,0 +1,23 @@
+/* A project's source site icon on its tile: a white plate, as the icon was drawn for, over the
+   initials, which show again if there is no icon. */
+.icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 16%;
+  background: #fff;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+.icon[data-loaded] {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon {
+    transition: none;
+  }
+}

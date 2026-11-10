@@ -210,6 +210,12 @@ const MediaArgs = z
     replace: z.boolean().optional(),
   })
   .refine((a) => Boolean(a.sourceUrl) !== Boolean(a.ref), 'give either ref or sourceUrl');
+const ThumbnailArgs = z.object({
+  /** The site item, so the gateway checks it is the role's to change. */
+  sitePath: z.string().max(500),
+  /** The PNG browser.brand.thumbnail stored. */
+  ref: z.string().startsWith('blob://').max(500),
+});
 const PublishStatusArgs = z.object({
   operationId: z.string().min(1).max(300),
   wait: z.boolean().default(false),
@@ -563,6 +569,18 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       description: 'Old name of site.verify.',
       mutates: false,
     },
+    'site.thumbnail': {
+      description:
+        "Set the site's thumbnail in the SitecoreAI Sites dashboard: uploads the image browser.brand.thumbnail made (its ref) to the site's media folder (System/site-thumbnail, replacing an earlier one) and points the site item's thumbnail at it, then reads both back. Give sitePath, the site item (/sitecore/content/<collection>/<site>).",
+      inputSchema: {
+        type: 'object',
+        properties: { sitePath: { type: 'string' }, ref: { type: 'string' } },
+        required: ['sitePath', 'ref'],
+        additionalProperties: false,
+      },
+      mutates: true,
+      pathArgs: ['sitePath'],
+    },
     'language.add': {
       description:
         'Add a content language to the environment, e.g. "es-US", if it is not there yet.',
@@ -636,6 +654,8 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           return await this.hostSet(q, HostArgs.safeParse(args), facts, lang);
         case 'language.add':
           return await this.language(q, LanguageArgs.safeParse(args));
+        case 'site.thumbnail':
+          return await this.thumbnail(q, ThumbnailArgs.safeParse(args), facts, ctx, lang);
         default:
           return { code: 404, body: { error: `Unknown operation ${op}` } };
       }
@@ -1095,6 +1115,74 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       ...r,
       body: { ...(r.body as object), renderings: count },
       summary: `Placed ${count} component${count === 1 ? '' : 's'} on ${a.data.path}, read back`,
+    };
+  }
+
+  /** The site's dashboard thumbnail: the image uploaded, the site item pointed at it. */
+  private async thumbnail(
+    q: Gql,
+    a: Parsed<typeof ThumbnailArgs>,
+    facts: TenantFacts,
+    ctx: ToolCallContext,
+    lang: Lang,
+  ): Promise<ToolResult> {
+    if (!a.success) return rejected(a.error.issues[0]!.message);
+    const site = `/sitecore/content/${facts.siteCollection}/${facts.site}`;
+    if (a.data.sitePath.replace(/\/$/, '').toLowerCase() !== site.toLowerCase())
+      return rejected(`${a.data.sitePath} isn't this project's site: give ${site}.`);
+    if (!/\.png$/i.test(a.data.ref))
+      return rejected('Give the PNG browser.brand.thumbnail made (its ref).');
+    // Named after the image, so the same image is uploaded once, and a new one never collides
+    // with the old (Sitecore won't upload over an existing media item).
+    const folder = `${MEDIA_ROOT}Project/${facts.siteCollection}/${facts.site}/System`;
+    const tag =
+      /site-thumbnail-([0-9a-f]{6,64})\.png$/i.exec(a.data.ref)?.[1]?.slice(0, 12) ?? 'image';
+    const itemPath = `${folder}/site-thumbnail-${tag}`;
+    let mediaId = (await readBack(q, itemPath, lang()).catch(() => null))?.itemId ?? null;
+    if (!mediaId) {
+      const up = await this.media(
+        q,
+        MediaArgs.safeParse({ itemPath, ref: a.data.ref, fileName: 'site-thumbnail.png' }),
+        facts,
+        ctx,
+        lang,
+      );
+      if (up.code !== 200) return up;
+      mediaId = (up.body as { itemId?: string | null }).itemId ?? null;
+    }
+    if (!mediaId)
+      return { code: 502, body: { error: `Uploaded ${itemPath}, but couldn't read its ID back.` } };
+    // As the Sites dashboard writes it: a dashed, lower-case ID.
+    const h = bare(mediaId);
+    const value = `<image mediaid='${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}' />`;
+    const set = await this.update(
+      q,
+      UpdateArgs.safeParse({ path: site, fields: [{ name: '__Thumbnail', value }] }),
+      lang,
+    );
+    if (set.code !== 200) return set;
+    // Earlier generated thumbnails go to the Recycle Bin (restorable); anything else stays.
+    const retired: string[] = [];
+    const listed = await this.read(
+      q,
+      ReadArgs.safeParse({ path: folder, children: true }),
+      lang,
+    ).catch(() => null);
+    const kids =
+      (listed?.body as { children?: { nodes?: { name: string; path: string; itemId: string }[] } })
+        ?.children?.nodes ?? [];
+    for (const k of kids)
+      if (/^site-thumbnail/i.test(k.name) && bare(k.itemId) !== bare(mediaId)) {
+        const r = await this.remove(
+          q,
+          DeleteArgs.safeParse({ path: k.path, itemId: k.itemId }),
+        ).catch(() => null);
+        if (r?.code === 200) retired.push(k.name);
+      }
+    return {
+      code: 200,
+      body: { sitePath: site, mediaPath: itemPath, mediaId, thumbnail: value, retired },
+      summary: `Set ${facts.site}'s thumbnail in the Sites dashboard: ${itemPath}, read back${retired.length ? `; the earlier ${retired.join(', ')} moved to the Recycle Bin` : ''}`,
     };
   }
 

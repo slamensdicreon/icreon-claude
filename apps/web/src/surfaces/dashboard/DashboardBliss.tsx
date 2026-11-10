@@ -1,4 +1,5 @@
 import type { PortfolioOverview, PortfolioProject } from '@lw/contracts';
+import { ProjectIcon } from '../../ui/project-icon';
 import { age, clock } from '../../lib/fmt';
 import { useMode } from '../../mode/mode';
 import { useApp, useNow } from '../../state';
@@ -211,6 +212,7 @@ function ProjectLines({ projects, calm }: { projects: PortfolioProject[]; calm: 
                     onClick={() => switchProject(p.projectId)}
                   >
                     {p.initials}
+                    <ProjectIcon projectId={p.projectId} />
                   </button>
                 ))}
                 {l.projects.length > 8 && (

@@ -19,6 +19,14 @@ produces:
 tools:
   browser:
     ops:
+      # Background crawls, for a site of any size: start one, follow it, read its pages and
+      # templates without visiting the site again.
+      - crawl.start
+      - crawl.status
+      - crawl.query
+      - crawl.page
+      - crawl.stop
+      # The whole crawl in one answer, for a small site (up to 500 pages and 7 minutes).
       - crawl
       - snapshot
       - screenshot

@@ -7,10 +7,17 @@ import {
   verifyOrganizationClient,
   type VerifyConfig,
 } from '@lw/connectors';
-import type { PlatformPack } from '../src/index';
+import type { PlatformCheck, PlatformPack } from '../src/index';
 import { sitecoreFacts } from './facts';
 import { sitecoreChecks } from './checks';
 import { discoveryChecks } from './discovery-checks';
+import { pageTemplateChecks } from './page-templates';
+
+/** The page-template checks sample pages with the page checks beside them. */
+const withPageTemplates = (base: Record<string, PlatformCheck>) => ({
+  ...base,
+  ...pageTemplateChecks(base),
+});
 import { hostOf, list, text, type TargetValues } from '../src/values';
 
 /** The SitecoreAI pack's id, as projects record it at intake. */
@@ -259,7 +266,7 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
       readOnly: ['sitecore.json', 'nuget.config'],
     },
     // The tenant's checks, and discovery's, which read the source site and the project's documents.
-    checks: { ...sitecoreChecks(cfg), ...discoveryChecks(cfg) },
+    checks: withPageTemplates({ ...sitecoreChecks(cfg), ...discoveryChecks(cfg) }),
     // The Content SDK head (examples/basic-nextjs). Our Vercel project is the editing host and
     // the stable preview, so both targets read draft content: the preview Context ID. The live
     // Context ID belongs to the delivery host the client runs after handover.

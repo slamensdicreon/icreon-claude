@@ -4,6 +4,7 @@
  * Director reads) and an Everything face (the tables, filtered). Rows open the project at the page
  * they came from.
  */
+import { ProjectIcon } from '../../ui/project-icon';
 import type {
   AgentView,
   PortfolioActivity,
@@ -68,10 +69,12 @@ function Loading({ what, error }: { what: string; error: string | null }) {
 
 /** A project's initials tile in its team's hue, with its name beside it when asked. */
 function ProjectMark({
+  projectId,
   initials,
   hue,
   name,
 }: {
+  projectId: string;
   initials: string;
   hue: Parameters<typeof hueOf>[0];
   name?: string;
@@ -80,6 +83,7 @@ function ProjectMark({
     <span className={s.project}>
       <span className={`${s.tile} type-label`} style={{ background: hueOf(hue) }} aria-hidden>
         {initials}
+        <ProjectIcon projectId={projectId} />
       </span>
       {name && <span className={s.projectName}>{name}</span>}
     </span>
@@ -109,7 +113,7 @@ function TeamBliss({ t }: { t: PortfolioTeam }) {
       {live.map((p) => (
         <section key={p.projectId} className={s.section} aria-label={p.name}>
           <SectionHeading>
-            <ProjectMark initials={p.initials} hue={p.hue} name={p.name} />
+            <ProjectMark projectId={p.projectId} initials={p.initials} hue={p.hue} name={p.name} />
           </SectionHeading>
           <div>
             {p.leads.map((l) => (
@@ -212,7 +216,12 @@ function TeamEverything({ t }: { t: PortfolioTeam }) {
                     </button>
                   </td>
                   <td>
-                    <ProjectMark initials={p.initials} hue={p.hue} name={p.name} />
+                    <ProjectMark
+                      projectId={p.projectId}
+                      initials={p.initials}
+                      hue={p.hue}
+                      name={p.name}
+                    />
                   </td>
                   <td>
                     <Chip state={a.state} />
@@ -290,7 +299,7 @@ function WorkbenchBliss({ w }: { w: PortfolioWorkbench }) {
                 className={s.line}
                 onClick={() => openProject(d.projectId, 'workbench', { wbArtifact: d.artifactId })}
               >
-                <ProjectMark initials={d.initials} hue={d.hue} />
+                <ProjectMark projectId={d.projectId} initials={d.initials} hue={d.hue} />
                 <span className={s.stack}>
                   <b>{d.headline ?? d.title}</b>
                   <span
@@ -416,7 +425,7 @@ function WorkbenchEverything({ w }: { w: PortfolioWorkbench }) {
           className={st?.tone === 'yours' ? `${w2.row} ${w2.yours}` : w2.row}
           onClick={() => open(d)}
         >
-          <ProjectMark initials={d.initials} hue={d.hue} />
+          <ProjectMark projectId={d.projectId} initials={d.initials} hue={d.hue} />
           <span className={w2.rowBody}>
             <span className={w2.rowTop}>
               <span className={`${w2.kind} type-label`}>{kindOf(d)}</span>
@@ -520,7 +529,7 @@ function WorkbenchEverything({ w }: { w: PortfolioWorkbench }) {
               data-tone={d.awaitingApproval ? 'yours' : 'changed'}
             >
               <span className={w2.flagTop}>
-                <ProjectMark initials={d.initials} hue={d.hue} />
+                <ProjectMark projectId={d.projectId} initials={d.initials} hue={d.hue} />
                 <b className="type-body-small">
                   {short(d.project)}: {d.headline ?? d.title}
                 </b>
@@ -560,7 +569,7 @@ function WorkbenchEverything({ w }: { w: PortfolioWorkbench }) {
                 className={w2.proj}
                 onClick={() => openProject(p.projectId, 'workbench', { wbView: 'story' })}
               >
-                <ProjectMark initials={p.initials} hue={p.hue} />
+                <ProjectMark projectId={p.projectId} initials={p.initials} hue={p.hue} />
                 <span className={w2.rowBody}>
                   <b className="type-body-small">{p.project}</b>
                   <span className={`${w2.quiet} type-meta`}>
@@ -649,7 +658,7 @@ function ActivityBliss() {
                   })
                 }
               >
-                <ProjectMark initials={i.initials} hue={hue(i.projectId)} />
+                <ProjectMark projectId={i.projectId} initials={i.initials} hue={hue(i.projectId)} />
                 <span className={s.stack}>
                   <b>
                     {i.who}: {i.operation ?? i.summary}
@@ -745,7 +754,12 @@ function ActivityEverything() {
                   >
                     <td className={s.nowrap}>{clock(i.ts, tz)}</td>
                     <td>
-                      <ProjectMark initials={i.initials} hue={hue(i.projectId)} name={i.project} />
+                      <ProjectMark
+                        projectId={i.projectId}
+                        initials={i.initials}
+                        hue={hue(i.projectId)}
+                        name={i.project}
+                      />
                     </td>
                     <td className={s.nowrap}>{i.who}</td>
                     <td className={s.quiet}>{i.toolLabel}</td>
@@ -877,7 +891,12 @@ function ScoreEverything({ sc }: { sc: PortfolioScorecard }) {
                 >
                   <td>
                     <button type="button" className={s.docTitle}>
-                      <ProjectMark initials={p.initials} hue={p.hue} name={p.name} />
+                      <ProjectMark
+                        projectId={p.projectId}
+                        initials={p.initials}
+                        hue={p.hue}
+                        name={p.name}
+                      />
                     </button>
                   </td>
                   <td className={s.num}>
