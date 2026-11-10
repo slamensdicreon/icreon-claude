@@ -238,7 +238,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** Counts a background job without awaiting it, so its scheduling stays as it was. */
   const track = (job: Promise<unknown>) => {
     busy += 1;
-    const finished = () => void (busy -= 1);
+    const finished = () => {
+      busy -= 1;
+      // The stall check waits for background work to settle: look again once it has.
+      if (busy === 0 && patched('stall-after-outcomes')) poke();
+    };
     void job.then(finished, finished);
   };
   /** The same, for a job the caller awaits. */
@@ -2825,10 +2829,13 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     }
 
     // Nobody working, nothing waiting on the Director, yet tasks wait on each other: no wait can
-    // end, so release them all to finish what is theirs.
+    // end, so release them all to finish what is theirs. Not while an outcome is still being
+    // recorded: a finished session leaves `children` before its send-backs and re-queues are
+    // done, and a busy worker once released every wait in that gap (agent-waiting on CI).
     if (
       waitingOn.size &&
       !children.size &&
+      !(busy > 0 && patched('stall-after-outcomes')) &&
       !projectPaused &&
       !budgetHold &&
       ![...escalations.values()].some((e) => e.status === 'open') &&
