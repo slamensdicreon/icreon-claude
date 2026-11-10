@@ -1,9 +1,10 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { ProjectIcon } from '../ui/project-icon';
 import { showActiveProjects } from '../surfaces/dashboard/ProjectsTable';
-import { post } from '../lib/api';
+import { messageOf, post, postFor } from '../lib/api';
+import { isWatching, role } from '../lib/role';
 import { live } from '../lib/live';
-import { MANAGE, useApp, useProjectResource, type Surface } from '../state';
+import { MANAGE, useApp, useProjectResource, type ManagePage, type Surface } from '../state';
 import { Icon, type IconName } from '../theme/icons';
 import { Scrim } from './Dialogs';
 import s from './overlays.module.css';
@@ -229,12 +230,25 @@ export function ProjectMenu() {
 }
 
 /** The header's menu, top right: the pages above any one project. */
+/** Icreon's own pages: what every licensee shares, and the system itself. */
+const ICREON_ONLY = new Set<ManagePage>([
+  'settings',
+  'in-force',
+  'rules',
+  'knowledge',
+  'diagnostics',
+]);
+
+/** The pages someone can use: a Watcher none, a customer's Director their organization's own. */
+export const managePages = () =>
+  isWatching() ? [] : MANAGE.filter(([page]) => role().superAdmin || !ICREON_ONLY.has(page));
+
 export function ManageMenu() {
   const { view, projectId, manage, closeOverlay } = useApp();
   return (
     <Scrim place="nav-bottom">
       <div className={`${s.float} ${s.menu}`} role="menu" aria-label="Settings">
-        {MANAGE.map(([page, label, about]) => (
+        {managePages().map(([page, label, about]) => (
           <button
             key={page}
             role="menuitem"
@@ -251,6 +265,65 @@ export function ManageMenu() {
             </span>
           </button>
         ))}
+      </div>
+    </Scrim>
+  );
+}
+
+/** The signed-in person: who they are here, People, and signing out. */
+export function AccountMenu() {
+  const { me, manage, closeOverlay, toast } = useApp();
+  const r = role();
+  const [leaving, setLeaving] = useState(false);
+  // A local run has no sign-in to leave.
+  const signedIn = Boolean(me.login && me.login !== 'local');
+  const signOut = async () => {
+    setLeaving(true);
+    try {
+      const out = await postFor<{ redirect?: string } | undefined>('/auth/logout', {});
+      // WorkOS ends its own session and sends the person back; otherwise, the sign-in page.
+      location.assign(out?.redirect ?? '/auth/login');
+    } catch (err) {
+      setLeaving(false);
+      toast(messageOf(err, 'Could not sign out. Try again.'));
+    }
+  };
+  return (
+    <Scrim place="nav-bottom">
+      <div className={`${s.float} ${s.menu}`} role="menu" aria-label="Account">
+        <h3 className={`${s.menuHead} type-label`}>
+          {me.login ?? me.name}
+          {r.organization
+            ? ` · ${r.role === 'watcher' ? 'Watcher' : 'Director'} of ${r.organization}`
+            : ''}
+        </h3>
+        {!isWatching() && (
+          <button
+            role="menuitem"
+            className={s.row}
+            onClick={() => {
+              closeOverlay();
+              manage('people');
+            }}
+          >
+            <span className={s.rowText}>
+              <span className="type-body-small">People</span>
+              <span className="type-meta">Invite people and choose what they can do</span>
+            </span>
+          </button>
+        )}
+        {signedIn && (
+          <button
+            role="menuitem"
+            className={s.row}
+            disabled={leaving}
+            onClick={() => void signOut()}
+          >
+            <span className={s.rowText}>
+              <span className="type-body-small">{leaving ? 'Signing out…' : 'Sign out'}</span>
+            </span>
+          </button>
+        )}
       </div>
     </Scrim>
   );
