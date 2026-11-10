@@ -147,20 +147,37 @@ For the first 3 months the customer can't remove the kickoff Director or lower t
 refuses it. After that nothing changes on its own: Icreon keeps providing service and support, and
 the Director stays until the customer asks for them to be removed.
 
-### Enforcing Watcher
+### Enforcing roles (step 3, built)
 
-The Control API has over a hundred routes. Watcher access is an **allowlist of read routes**,
-deny by default, so a route added later is closed to Watchers until someone opens it. Closed:
-commands, intake, connections and credentials, purge and delete, knowledge review, settings and
-preferences, API keys, voice and project chat that can act, and the CSV exports unless we decide
-otherwise.
+Every check is in the Control API (`apps/control-api/src/organizations.ts`); the Control Center
+only explains it.
 
-What Watchers must not see even on routes they can read:
+- **Watcher: an allowlist of read routes** (`WATCHER_ROUTES`), deny by default, so a route added
+  later is closed to Watchers until someone lists it. A test fails if the list names a route that
+  doesn't exist. Open: the projects list, the Dashboard and the portfolio pages, and on each
+  project Mission Control, Team and agents, Plan and tasks, the conversation, cards and the
+  Decision Log, facts, the Workbench and its documents and screenshots, schedule, preview,
+  Blueprint, Activity and the live stream. Closed: every command and change, intake, settings,
+  saved connections, Cypher, remix, the documents zip and the CSV exports. Their own screen modes
+  (`PUT /me/preferences`) are theirs to keep. A refusal is `403 read_only`.
+- **What a Watcher's answers leave out** (`apps/control-api/src/redact.ts`), on every JSON answer
+  and on the live stream: amounts (spend, budgets, tokens) are 0 and money lines in Activity read
+  "Spend recorded"; credential hints, sealed references and the scope a credential was granted
+  for are blank. Values are blanked, not removed, so every answer keeps its contract.
+- **Prompt text** is not in any answer, for any role: no route returns a role's prompt.
+- **Super admin: a Director of Icreon (organization #1)**, wherever the request acts. Only they
+  reach the knowledge base and its review, rules, proposals, the GitHub App, retrospectives,
+  triage replays, the operator test email, the simulator's scenarios and the system's
+  diagnostics (`403 super_admin_only` for everyone else). This means a customer's Director does
+  not make rules from their answers yet; which rules they may make is still to decide.
+- **The Control Center** reads the role before it renders. A Watcher sees "Watching
+  <organization> · read only" at the bottom of every screen, amounts as "—", and any button they
+  press answers with the read-only message instead of sending anything.
+  `LOCAL_ROLE=watcher pnpm dev` shows a local run as a Watcher sees it.
 
-- cost, budgets and Icreon's margin;
-- credential names and environment hostnames;
-- prompt text. Playbooks are the product, so transcripts and "why did the agent do this" views
-  show what an agent did, not the instructions it was given. This applies to client Directors too.
+Still to do in the Control Center: hide the buttons a Watcher can't use (they show, and explain
+themselves when pressed), and word the Dashboard for someone who decides nothing ("Four things are
+yours" is the Director's line).
 
 ## Sign-in
 
@@ -218,7 +235,8 @@ before it reaches a playbook.
 1. Remove client names from the playbooks; a test that refuses them. **Done:** `packages/playbook-sdk/test/client-names.test.ts`.
 2. Organizations, memberships and roles in the data model, today's projects as organization #1.
    **Done**, except row-level security (see "Not yet" above).
-3. Roles enforced in the API; Watcher with the read allowlist and redaction.
+3. Roles enforced in the API; Watcher with the read allowlist and redaction. **Done** (see
+   "Enforcing roles").
 4. Auth0 sign-in, invitations, organization switcher.
 5. Licenses: entities, playbooks, project count, term; the catalog filtered by them;
    the end-of-term pause.

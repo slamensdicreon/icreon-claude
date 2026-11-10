@@ -12,6 +12,8 @@ export interface RequestOrganization {
   name: string;
   slug: string;
   role: MemberRole;
+  /** A Director of Icreon (organization #1): Icreon's own administrators. */
+  superAdmin: boolean;
 }
 
 declare module 'fastify' {
@@ -30,6 +32,72 @@ export const ORGANIZATION_HEADER = 'x-lw-organization';
 export const LOCAL_SUBJECT = 'local';
 /** The scheduled caller the sign-in hook lets through with CRON_SECRET. */
 const CRON_LOGIN = 'vercel-cron';
+
+/**
+ * What a Watcher may call: the portfolio and every project's progress, read only. Everything else
+ * is closed to them, including any route added later, until it is listed here.
+ */
+export const WATCHER_ROUTES = new Set([
+  'GET /auth/me',
+  'GET /me/organizations',
+  'GET /me/preferences',
+  // Their own screen modes, not the project's.
+  'PUT /me/preferences',
+  'GET /health',
+  'GET /projects',
+  'GET /playbooks',
+  'GET /playbooks/:id/scorecard',
+  'GET /portfolio',
+  'GET /portfolio/overview',
+  'GET /portfolio/team',
+  'GET /portfolio/workbench',
+  'GET /portfolio/scorecard',
+  'GET /portfolio/activity',
+  'GET /projects/:id/mission-control',
+  'GET /projects/:id/scorecard',
+  'GET /projects/:id/team',
+  'GET /projects/:id/agents/:agentId',
+  'GET /projects/:id/plan',
+  'GET /projects/:id/tasks/:taskId',
+  'GET /projects/:id/conversation',
+  'GET /projects/:id/escalations/:escalationId',
+  'GET /projects/:id/decisions',
+  'GET /projects/:id/facts',
+  'GET /projects/:id/workbench',
+  'GET /projects/:id/artifacts/:artifactId',
+  'GET /projects/:id/artifacts/:artifactId/versions/:version/content',
+  'GET /projects/:id/artifacts/:artifactId/versions/:version/plain',
+  'GET /projects/:id/schedule',
+  'GET /projects/:id/preview',
+  'GET /projects/:id/blueprint',
+  'GET /projects/:id/since',
+  'GET /projects/:id/blobs/*',
+  'GET /projects/:id/activity',
+  'GET /projects/:id/stream',
+]);
+
+/**
+ * Icreon's alone, whichever organization the request acts in: the knowledge, rules and proposals
+ * every licensee's playbooks learn from, the GitHub App, and the system's diagnostics and tests.
+ */
+const SUPER_ADMIN_ROUTES = [
+  /^\/integrations\/github(\/manifest|\/callback)?$/,
+  /^\/rules(\/|$)/,
+  /^\/knowledge(\/|$)/,
+  /^\/proposals\//,
+  /^\/playbooks\/:id\/in-force$/,
+  /^\/projects\/:id\/escalations\/:escalationId\/rule-draft$/,
+  /^\/projects\/:id\/rules\/harvest$/,
+  /^\/projects\/:id\/retrospectives$/,
+  /^\/projects\/:id\/lessons$/,
+  /^\/projects\/:id\/triage\/replay$/,
+  /^\/projects\/:id\/operator\/test-email$/,
+  /^\/projects\/:id\/diagnostics$/,
+  /^\/projects\/:id\/scenarios(\/|$)/,
+  /^\/portfolio\/diagnostics$/,
+  /^\/portfolio\/watchdog$/,
+];
+export const isSuperAdminRoute = (url: string) => SUPER_ADMIN_ROUTES.some((r) => r.test(url));
 
 const deny = (reply: FastifyReply, status: number, code: string, message: string) =>
   reply.status(status).send({ error: { code, message } });
@@ -72,12 +140,30 @@ export function registerOrganizationScope(
             'no_organization',
             'Your account is not a member of any organization yet. Ask your Director for an invitation.',
           );
+    const superAdmin = mine.some(
+      (x) => x.organizationId === DEFAULT_ORGANIZATION && x.role === 'director',
+    );
     req.organization = {
       id: m.organization.id,
       name: m.organization.name,
       slug: m.organization.slug,
       role: m.role,
+      superAdmin,
     };
+
+    // What the caller may do here. An unknown path is left to answer 404.
+    const url = req.routeOptions.url;
+    if (!url) return;
+    if (isSuperAdminRoute(url) && !superAdmin)
+      return deny(reply, 403, 'super_admin_only', "Only Icreon's administrators can do this.");
+    const method = req.method === 'HEAD' ? 'GET' : req.method;
+    if (m.role === 'watcher' && !WATCHER_ROUTES.has(`${method} ${url}`))
+      return deny(
+        reply,
+        403,
+        'read_only',
+        `You are watching ${m.organization.name}: you can see everything, but not change it.`,
+      );
   });
 
   // Every route on one project: the project must be the caller's organization's.

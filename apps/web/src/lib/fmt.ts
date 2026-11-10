@@ -1,4 +1,5 @@
 import type { AgentView } from '@lw/contracts';
+import { isWatching } from './role';
 
 const fmtCache = new Map<string, Intl.DateTimeFormat>();
 /** A date formatter for a zone, made once: building one costs far more than using it. */
@@ -80,7 +81,9 @@ export function elapsed(since: string | null, now = Date.now()): string {
     : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
-export const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+/** Dollars; a Watcher isn't shown what the work costs (the API sends them 0). */
+export const usd = (n: number) =>
+  isWatching() ? '—' : `$${Math.round(n).toLocaleString('en-US')}`;
 
 export function duration(ms: number | null): string {
   if (ms === null || ms === 0) return '–';

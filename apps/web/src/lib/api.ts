@@ -1,4 +1,5 @@
 import type { ApiError, CommandResult } from '@lw/contracts';
+import { isWatching, readOnlyMessage } from './role';
 
 /** The Control API's origin. Empty: the same origin (Vite proxies in development). */
 export const API = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
@@ -19,6 +20,10 @@ export const messageOf = (err: unknown, fallback: string): string =>
   err instanceof ApiProblem ? err.message : fallback;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  // A Watcher changes nothing (the API refuses it too): say so without asking. Their own screen
+  // modes are theirs to keep.
+  if (method !== 'GET' && isWatching() && path !== '/me/preferences')
+    throw new ApiProblem(403, 'read_only', readOnlyMessage());
   const res = await fetch(API + path, {
     method,
     credentials: 'include',

@@ -113,6 +113,7 @@ import { activityCsv } from './activity-csv';
 import { zip, type ZipEntry } from './zip';
 import { deletionReadiness, purgeDue, purgeProject, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
+import { redactForWatcher, redactJsonForWatcher } from './redact';
 import {
   LOCAL_SUBJECT,
   organizationOf,
@@ -302,6 +303,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!deps.auth && !(await orgs.membershipsOf(LOCAL_SUBJECT)).length)
       await orgs.setMember(DEFAULT_ORGANIZATION, LOCAL_SUBJECT, 'director', 'local run');
     registerOrganizationScope(app, orgs, { signedIn: Boolean(deps.auth) });
+    // A Watcher sees the work, not what it costs or how its credentials are held.
+    app.addHook('onSend', async (req, reply, payload) => {
+      if (req.organization?.role !== 'watcher' || typeof payload !== 'string') return payload;
+      return String(reply.getHeader('content-type') ?? '').includes('json')
+        ? redactJsonForWatcher(payload)
+        : payload;
+    });
   }
   /** The request's organization's projects (every project for system calls and without orgs). */
   const mine = (req: FastifyRequest) => scoped(orgs, req, projections.all(), (s) => s.projectId);
@@ -2063,6 +2071,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       withCredentials: Boolean(deps.auth),
       pollMs: deps.stream?.pollMs ?? 2_000,
       maxMs: deps.stream?.maxMs ?? null,
+      view: req.organization?.role === 'watcher' ? redactForWatcher : undefined,
     });
   });
 

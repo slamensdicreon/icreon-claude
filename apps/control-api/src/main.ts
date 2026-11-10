@@ -123,6 +123,8 @@ const env = z
      * 127.0.0.1 (compose.yaml); never on a reachable host.
      */
     INSECURE_NO_AUTH: z.enum(['true', 'false']).default('false'),
+    /** Local runs only (no sign-in): the role of the one local operator, to see the app as a Watcher does. */
+    LOCAL_ROLE: z.enum(['director', 'watcher']).optional(),
     GITHUB_CLIENT_ID: z.string().optional(),
     GITHUB_CLIENT_SECRET: z.string().optional(),
     /** Comma-separated GitHub logins allowed in. */
@@ -460,6 +462,10 @@ const tombstones = opened.sql
 const organizations: OrganizationStore = opened.sql
   ? new PostgresOrganizationStore(opened.sql)
   : new MemoryOrganizationStore();
+// A local run's operator in the role asked for (LOCAL_ROLE=watcher shows the app as a client
+// stakeholder sees it). Without sign-in only: a deployment's roles come from its memberships.
+if (!auth && env.LOCAL_ROLE)
+  await organizations.setMember(DEFAULT_ORGANIZATION, 'local', env.LOCAL_ROLE, 'LOCAL_ROLE');
 // Today's operators (and their API keys) are Icreon's Directors. Only added, never changed: a role
 // set since is kept.
 if (auth)

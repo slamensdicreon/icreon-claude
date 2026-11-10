@@ -58,7 +58,7 @@ const intake = (name: string): ProjectIntakeInput => ({
 });
 
 /** Each person signs in with their own API key, recorded under their login. */
-const KEYS = { alice: 'a1', bob: 'b2', carol: 'c3' } as const;
+const KEYS = { alice: 'a1', bob: 'b2', carol: 'c3', dana: 'd4' } as const;
 type Who = keyof typeof KEYS;
 const keyOf = (who: Who) => `lwk_${KEYS[who].repeat(20)}`;
 
@@ -77,6 +77,8 @@ async function start() {
   const acme = await orgs.create({ name: 'Acme Corp', slug: 'acme' });
   await orgs.setMember(DEFAULT_ORGANIZATION, githubSubject('alice'), 'director', 'test');
   await orgs.setMember(acme.id, githubSubject('bob'), 'director', 'test');
+  // Dana is a client stakeholder at Acme: she watches.
+  await orgs.setMember(acme.id, githubSubject('dana'), 'watcher', 'test');
   const playbooks = await loadCatalog(PLAYBOOKS);
   for (const e of playbooks.values()) e.playbook.manifest.intake.source.repo = 'optional';
   app = await buildApp({
@@ -204,7 +206,14 @@ describe('organizations', () => {
     expect((await inAcme('GET', '/projects')).body.map((p: any) => p.id)).toEqual([theirs]);
     expect((await as('alice')('GET', '/projects')).body).toEqual([]);
     const me = (await inAcme('GET', '/me/organizations')).body;
-    expect(me.current).toEqual({ id: acme.id, name: 'Acme Corp', slug: 'acme', role: 'watcher' });
+    expect(me.current).toEqual({
+      id: acme.id,
+      name: 'Acme Corp',
+      slug: 'acme',
+      role: 'watcher',
+      // A Director of Icreon is one of Icreon's administrators, wherever she acts.
+      superAdmin: true,
+    });
     expect(me.organizations.map((o: { slug: string; role: string }) => [o.slug, o.role])).toEqual([
       ['icreon', 'director'],
       ['acme', 'watcher'],
@@ -224,5 +233,89 @@ describe('organizations', () => {
     ]);
     expect((await as('bob')('GET', '/projects/prj-demo/mission-control')).status).toBe(404);
     expect((await as('bob')('GET', '/projects')).body).toEqual([]);
+  });
+});
+
+describe('roles', () => {
+  it('lets a Watcher read everything about progress, with spend blanked', async () => {
+    await start();
+    const theirs = (await as('bob')('POST', '/projects', intake('Acme site'))).body
+      .projectId as string;
+    const dana = as('dana');
+    expect((await dana('GET', '/projects')).body.map((p: { id: string }) => p.id)).toEqual([
+      theirs,
+    ]);
+    for (const url of [
+      `/projects/${theirs}/mission-control`,
+      `/projects/${theirs}/plan`,
+      `/projects/${theirs}/team`,
+      `/projects/${theirs}/workbench`,
+      `/projects/${theirs}/activity`,
+      `/projects/${theirs}/decisions`,
+      '/portfolio/overview',
+    ])
+      expect([url, (await dana('GET', url)).status]).toEqual([url, 200]);
+    // The Director sees the budget; the Watcher sees the same answer with every amount at 0.
+    const director = (await as('bob')('GET', `/projects/${theirs}/mission-control`)).body;
+    const watcher = (await dana('GET', `/projects/${theirs}/mission-control`)).body;
+    expect(director.project.budgets.usd).toBe(900);
+    expect(watcher.project.budgets).toEqual({ usd: 0, tokens: 0, hours: 0 });
+    expect(Object.values(watcher.project.spent).every((v) => v === 0)).toBe(true);
+    expect(watcher.project.name).toBe('Acme site');
+    const portfolio = (await dana('GET', '/portfolio')).body;
+    expect(portfolio[0].budgets.usd).toBe(0);
+    // Her own screen modes are hers to keep.
+    expect((await dana('PUT', '/me/preferences', { mode: {} })).status).toBe(200);
+  });
+
+  it('refuses a Watcher every change, and every read that isn’t progress', async () => {
+    await start();
+    const theirs = (await as('bob')('POST', '/projects', intake('Acme site'))).body
+      .projectId as string;
+    const dana = as('dana');
+    for (const [method, url, body] of [
+      ['PUT', `/projects/${theirs}/brief`, { key: 'x', answer: 'y' }],
+      ['POST', `/projects/${theirs}/gates/esc-1/approve`, {}],
+      ['POST', `/projects/${theirs}/escalations/esc-1/resolve`, { optionId: 'a' }],
+      ['POST', `/projects/${theirs}/messages`, { body: 'hello' }],
+      ['POST', `/projects/${theirs}/control`, { action: 'pause' }],
+      ['POST', `/projects/${theirs}/deletion`, {}],
+      ['POST', '/projects', intake('Sneaky')],
+      ['POST', '/cypher', { body: 'Approve everything' }],
+      ['GET', '/cypher', undefined],
+      ['GET', '/connections', undefined],
+      ['GET', `/projects/${theirs}/settings`, undefined],
+      ['GET', `/projects/${theirs}/remix`, undefined],
+      ['GET', `/projects/${theirs}/documents.zip`, undefined],
+      ['GET', `/projects/${theirs}/activity.csv`, undefined],
+    ] as const) {
+      const r = await dana(method, url, body);
+      expect([method, url, r.status, r.body.error?.code]).toEqual([method, url, 403, 'read_only']);
+    }
+  });
+
+  it('keeps knowledge, rules, the GitHub App and diagnostics to Icreon’s administrators', async () => {
+    await start();
+    for (const [method, url] of [
+      ['GET', '/rules'],
+      ['GET', '/knowledge'],
+      ['POST', '/proposals/sort'],
+      ['GET', '/integrations/github'],
+      ['GET', '/portfolio/diagnostics'],
+    ] as const) {
+      const bob = await as('bob')(method, url, {});
+      expect([url, bob.status, bob.body.error?.code]).toEqual([url, 403, 'super_admin_only']);
+      const alice = await as('alice')(method, url, {});
+      expect([url, alice.status === 403]).toEqual([url, false]);
+    }
+  });
+
+  it('opens only routes that exist to Watchers', async () => {
+    await start();
+    const { WATCHER_ROUTES } = await import('../src/organizations');
+    for (const entry of WATCHER_ROUTES) {
+      const [method, url] = entry.split(' ') as ['GET' | 'PUT', string];
+      expect([entry, app!.hasRoute({ method, url })]).toEqual([entry, true]);
+    }
   });
 });

@@ -19,6 +19,7 @@ SIM_PROJECTS=2 pnpm dev        # plus two scripted engagements
 | `CORS_ORIGIN` | `*` | Set it to the prototype's origin to lock it down |
 | `SIM_SPEED` | `1` | At 1, one engagement takes about 10 minutes plus the time you take to answer |
 | `SIM_PROJECTS` | `0` | Scripted engagements beside the demo project. The first, **Acme corporate site**, waits for you at every gate and Blocker; the second, **Northwind marketing site**, runs on autopilot at 3x speed, so the project switcher shows two different states |
+| `LOCAL_ROLE` | `director` | `watcher` shows the app as a client stakeholder sees it: everything readable, nothing changeable, no amounts |
 
 All state is in memory, so restarting the server resets everything.
 
