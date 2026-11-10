@@ -72,6 +72,20 @@ export const releaseApprovalId = (taskId: string) => `approve-${taskId}`;
 const PLACEHOLDER_KEY = 'all';
 
 /**
+ * A collection's shared items: those every page shows (the header, footer and navigation), marked
+ * `attrs.datasource: "shared"` or `attrs.shared: true`. A Blueprint that marks none falls back to
+ * names that say header, footer, navigation or menu.
+ */
+export function sharedKeys(items: BlueprintItem[], skipMerged = false): string[] {
+  const kept = items.filter((i) => (skipMerged ? hasOwnWork(i) : i.status !== 'drop'));
+  const marked = kept.filter((i) => i.attrs?.datasource === 'shared' || i.attrs?.shared === true);
+  const found = marked.length
+    ? marked
+    : kept.filter((i) => /header|footer|nav|menu/i.test(`${i.key} ${i.name}`));
+  return found.map((i) => i.key);
+}
+
+/**
  * Compiles a playbook (and, once approved, a Blueprint) into the project's task graph. Pure and
  * deterministic: the same inputs always give the same ids in the same order, which is what lets a
  * re-plan be diffed against the running plan.
@@ -142,11 +156,14 @@ export function compilePlan(
   const pilot = playbook.plan.pilot;
   let pilotKeys = new Set<string>();
   if (pilot && blueprint) {
-    pilotKeys = new Set(
-      (blueprint.collections[pilot.collection] ?? [])
+    const items = blueprint.collections[pilot.collection] ?? [];
+    pilotKeys = new Set([
+      ...items
         .filter((i) => i.pilot && (options.skipMerged ? hasOwnWork(i) : i.status !== 'drop'))
         .map((i) => i.key),
-    );
+      // The header, footer and navigation are built with the slice: every page shows them.
+      ...(pilot.includeShared ? sharedKeys(items, options.skipMerged === true) : []),
+    ]);
     if (pilotKeys.size) {
       const enabled = pilot.optionalGate && options.enabledGates?.includes(pilot.optionalGate);
       tasks.push({
@@ -177,6 +194,25 @@ export function compilePlan(
     const source = expanded.get(t.taskId);
     const deps = new Set<string>();
     for (const pattern of source?.template.dependsOn ?? []) {
+      // `register-{shared}`: that template's tasks for the shared items only (the header, footer
+      // and navigation), so what needs them alone doesn't wait for every component.
+      if (pattern.includes('{shared}')) {
+        const of = playbook.plan.templates.find(
+          (x) => x.id === pattern.replace('{shared}', '{key}'),
+        );
+        if (!of?.forEach) {
+          problems.push(`${t.taskId} depends on ${pattern}, which names no forEach template`);
+          continue;
+        }
+        const own = tasks.filter((x) => x.templateId === of.id && x.taskId !== t.taskId);
+        const keys = blueprint
+          ? sharedKeys(blueprint.collections[of.forEach] ?? [], options.skipMerged === true)
+          : [];
+        const picked = own.filter((x) => x.itemKeys.some((k) => keys.includes(k)));
+        // Before the Blueprint (a placeholder) or when it marks nothing shared: all of them.
+        for (const x of picked.length ? picked : own) deps.add(x.taskId);
+        continue;
+      }
       const bound = pattern.replaceAll('{key}', source?.key ?? '');
       if (bound.endsWith('*')) {
         const prefix = bound.slice(0, -1);

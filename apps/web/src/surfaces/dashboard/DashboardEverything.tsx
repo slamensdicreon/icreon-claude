@@ -1,31 +1,18 @@
-import type { PortfolioOverview, PortfolioProject } from '@lw/contracts';
-import { useState } from 'react';
-import { age, clock, localDate, usd } from '../../lib/fmt';
-import { useApp, useNow } from '../../state';
+import type { PortfolioOverview } from '@lw/contracts';
+import { age, clock, localDate } from '../../lib/fmt';
+import { useNow } from '../../state';
 import { EscalationLines, SpendBars, Swatch } from '../../ui/cypher/charts';
 import { leftOf, pillHue, pillOf, useYoursActions } from '../../ui/cypher/cards';
-import { Avatar, Bar, Button, Chips, hueOf, Kpi, NeedsRow, Panel } from '../../ui/cypher/parts';
+import { Avatar, Bar, hueOf, Kpi, NeedsRow, Panel } from '../../ui/cypher/parts';
 import s from './dashboard.module.css';
-
-type Filter = 'all' | 'yours' | 'archived';
-
-const HEALTH_TONE: Record<string, string> = {
-  Healthy: 'var(--green)',
-  Attention: 'var(--gold)',
-  Blocked: 'var(--coral-text)',
-};
+import { ProjectsTable } from './ProjectsTable';
 
 /**
  * The portfolio in Everything (Dashboard-Everything board): four numbers, the projects table, every
  * card that is the Director's, deploys, agents under load, spend by day and escalations.
  */
 export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refresh: () => void }) {
-  const { switchProject, newProject } = useApp();
   const now = useNow(30_000);
-  const [filter, setFilter] = useState<Filter>('all');
-  const rows = o.projects.filter((p) =>
-    filter === 'all' ? true : filter === 'yours' ? p.yours > 0 : p.archived,
-  );
   const tz = o.timezone;
   const hm = (at: string) => clock(at, tz).replace(/\s?[AP]M$/, '');
   const kpi = (k: string) => o.kpis.find((x) => x.key === k);
@@ -41,68 +28,7 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
         })}
       </section>
 
-      <div id="projects">
-        <Panel
-          title="Projects"
-          chips={
-            <Chips<Filter>
-              label="Show projects"
-              value={filter}
-              onChange={setFilter}
-              options={[
-                { value: 'all', label: 'All', count: o.projects.length },
-                {
-                  value: 'yours',
-                  label: 'Needs you',
-                  count: o.projects.filter((p) => p.yours > 0).length,
-                },
-                { value: 'archived', label: 'Archived', count: o.counts.archived },
-              ]}
-            />
-          }
-          meta={
-            <span className={s.headRight}>
-              Sorted by what needs you
-              <Button kind="secondary" onClick={() => newProject()}>
-                New project
-              </Button>
-            </span>
-          }
-        >
-          <div className={s.tableWrap}>
-            <table className={`${s.table} type-table`}>
-              <thead>
-                <tr>
-                  <th>Project</th>
-                  <th>Phase</th>
-                  <th className={s.progressCol}>Progress</th>
-                  <th className={s.num}>Yours</th>
-                  <th className={s.num}>Spend</th>
-                  <th>Last event</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((p) => (
-                  <ProjectRow
-                    key={p.projectId}
-                    p={p}
-                    hm={hm}
-                    tz={tz}
-                    onOpen={() => switchProject(p.projectId)}
-                  />
-                ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className={s.empty}>
-                      Nothing here.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-      </div>
+      <ProjectsTable o={o} refresh={refresh} />
 
       <div id="needs">
         <Panel title="Needs you" count={o.yours.length} meta="By clock, then type">
@@ -190,59 +116,6 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
   );
 }
 
-function ProjectRow({
-  p,
-  hm,
-  tz,
-  onOpen,
-}: {
-  p: PortfolioProject;
-  hm: (at: string) => string;
-  tz: string;
-  onOpen: () => void;
-}) {
-  const today = p.lastEvent && localDate(p.lastEvent.at, tz) === localDate(Date.now(), tz);
-  return (
-    <tr>
-      <td>
-        <button type="button" className={s.projectCell} onClick={onOpen}>
-          <span
-            className={`${s.tile} type-label`}
-            style={{ background: p.archived ? 'var(--text-3)' : hueOf(p.hue) }}
-            aria-hidden="true"
-          >
-            {p.initials}
-          </span>
-          <span className={s.projectName}>
-            <b>{p.name}</b>
-            <span
-              className="type-meta"
-              style={{ color: HEALTH_TONE[p.healthWord] ?? 'var(--text-3)' }}
-            >
-              {p.healthWord}
-            </span>
-          </span>
-        </button>
-      </td>
-      <td className={s.secondary}>{p.phaseLabel}</td>
-      <td>
-        <Bar percent={p.percent} hue={p.archived ? 'var(--text-3)' : hueOf(p.hue)} />
-      </td>
-      <td className={s.num} data-yours={p.yours > 0 || undefined}>
-        {p.yours > 0 ? p.yours : '–'}
-      </td>
-      <td className={`${s.num} ${s.secondary}`}>{usd(p.spentUsd)}</td>
-      <td className={s.last}>
-        {p.lastEvent && (
-          <>
-            <b>{today ? hm(p.lastEvent.at) : shortDate(p.lastEvent.at, tz)}</b> {p.lastEvent.text}
-          </>
-        )}
-      </td>
-    </tr>
-  );
-}
-
 function YoursRow({
   y,
   now,
@@ -268,12 +141,6 @@ function YoursRow({
 }
 
 const tokensShort = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
-
-function shortDate(at: string, tz: string): string {
-  return new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'short', day: 'numeric' }).format(
-    new Date(at),
-  );
-}
 
 /** "Noon yesterday", "6 PM", "Midnight", "6 AM". */
 function hourWord(at: string, tz: string, now: number): string {

@@ -12,10 +12,16 @@ const ctx = { projectId: 'p1', token: 'jwt', role: 'media-migrator', taskId: 't'
 
 function setup() {
   const uploads: { url: string; name: string; type: string; size: number }[] = [];
+  const queries: string[] = [];
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/graphql/v1/')) {
       const { query } = JSON.parse(String(init!.body)) as { query: string };
+      queries.push(query);
+      if (/deleteItem\(/.test(query))
+        return Response.json({ data: { deleteItem: { successful: true } } });
+      if (/item\(where/.test(query) && /wrong-upload/.test(query))
+        return Response.json({ data: { item: { itemId: 'abc', children: { nodes: [] } } } });
       if (/uploadMedia\(/.test(query))
         return Response.json({
           data: { uploadMedia: { presignedUploadUrl: 'https://up.example/x' } },
@@ -34,6 +40,13 @@ function setup() {
   }) as typeof globalThis.fetch;
   const stored = new Map([
     ['blob://p1/assets/abc123.png', new Uint8Array([137, 80, 78, 71, 1, 2])],
+    ['blob://p1/files/file-1a2b3c4d-paylocity-logo.svg', new TextEncoder().encode('<svg/>')],
+    // Stored before the type was known: an image server's URL with no extension.
+    ['blob://p1/assets/def456.bin', new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
+    [
+      'blob://p1/assets/avif789.bin',
+      new Uint8Array([0, 0, 0, 28, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]),
+    ],
   ]);
   const blobs = {
     put: async () => '',
@@ -47,10 +60,53 @@ function setup() {
   return {
     s: new SitecoreAuthoringToolServer({ facts: async () => facts, fetch, blobs }),
     uploads,
+    queries,
   };
 }
 
 describe('media.upload', () => {
+  it('replaces a wrong upload when asked, putting the old item in the recycle bin first', async () => {
+    const { s, uploads, queries } = setup();
+    const r = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/media library/Project/Brands/ansco/Home/wrong-upload',
+        ref: 'blob://p1/assets/def456.bin',
+        replace: true,
+      },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    expect(queries.some((q) => /deleteItem\(.*permanently: false/.test(q))).toBe(true);
+    expect(uploads.at(-1)).toMatchObject({ name: 'wrong-upload.png', type: 'image/png' });
+  });
+
+  it('files a stored file by what its bytes are, and turns AVIF away with the way round', async () => {
+    const { s, uploads } = setup();
+    // Microsoft's Xbox promo: a Scene7 URL with no extension, stored as .bin, went in as a File.
+    const r = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/media library/Project/Brands/ansco/Home/xbox',
+        ref: 'blob://p1/assets/def456.bin',
+        fileName: 'xbox.bin',
+      },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    expect(uploads.at(-1)).toMatchObject({ name: 'xbox.png', type: 'image/png' });
+    const avif = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/media library/Project/Brands/ansco/Home/xbox',
+        ref: 'blob://p1/assets/avif789.bin',
+      },
+      ctx,
+    );
+    expect(avif.code).toBe(422);
+    expect(JSON.stringify(avif.body)).toContain('fmt=png-alpha');
+  });
+
   it('uploads a file the browser already downloaded, by its ref', async () => {
     const { s, uploads } = setup();
     const r = await s.call(
@@ -66,6 +122,33 @@ describe('media.upload', () => {
     expect(uploads).toEqual([
       { url: 'https://up.example/x', name: 'hsa.png', type: 'image/png', size: 6 },
     ]);
+  });
+
+  it('uploads a file the Director gave the team, by its ref', async () => {
+    const { s, uploads } = setup();
+    const r = await s.call(
+      'media.upload',
+      {
+        itemPath: '/sitecore/media library/Project/Brands/ansco/Shared/logo',
+        ref: 'blob://p1/files/file-1a2b3c4d-paylocity-logo.svg',
+        fileName: 'logo.svg',
+      },
+      ctx,
+    );
+    expect(r.code).toBe(200);
+    expect(uploads).toEqual([
+      { url: 'https://up.example/x', name: 'logo.svg', type: 'image/svg+xml', size: 6 },
+    ]);
+    // Anything else stored for the project isn't for the media library.
+    expect(
+      (
+        await s.call(
+          'media.upload',
+          { itemPath: '/sitecore/media library/x', ref: 'blob://p1/sessions/t1.json' },
+          ctx,
+        )
+      ).code,
+    ).toBe(422);
   });
 
   it('takes the media library path in any casing, as Sitecore does', async () => {

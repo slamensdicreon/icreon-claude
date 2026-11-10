@@ -80,9 +80,13 @@ const last = (steps: StepEvent[], server: string, op: string) =>
   steps.filter((s) => s.data.toolServer === server && s.data.operation === op).at(-1);
 const after = (steps: StepEvent[], a: StepEvent) => steps.slice(steps.indexOf(a) + 1);
 /** Working-copy operations that change files. */
-/** Components that are their own full-width band (hero, header, footer) and the app's plumbing. */
+/**
+ * Components that are their own full-width band (any hero: HeroBanner, HeroWithTabs; header,
+ * footer) and the app's plumbing. Only HeroBanner was exempt until Microsoft's HeroWithTabs was
+ * rejected for following the prompt, which exempts every hero.
+ */
 const SECTION_EXEMPT =
-  /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(HeroBanner|SiteHeader|SiteFooter|Header|Footer|Nav)[^/]*\.tsx$/i;
+  /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(Hero|SiteHeader|SiteFooter|Header|Footer|Nav)[^/]*\.tsx$/i;
 const CHANGES = new Set(['fs.write', 'exec.content-sdk-cli']);
 
 /**
@@ -141,6 +145,11 @@ async function ownedFiles(
  * The checks that exist, by validator id; the platform pack adds its own. Everything else a plan
  * names is pending.
  */
+/** The plan task that fills the shared header, footer and navigation content, once, before pages. */
+export const SHARED_CHROME_TASK = 'migrate-shared-chrome';
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 export const CHECKS: Record<string, Check> = {
   // Built green after the last change, and that state committed.
   // Committing first and then building is as good as building first: what counts is that the
@@ -269,8 +278,15 @@ export const CHECKS: Record<string, Check> = {
     if (!bp?.collections) return failed(['No Blueprint has been written']);
     const inv = (await readJson(ctx, 'page-inventory')) as {
       pages?: { path?: string; url?: string }[];
+      crawl?: { pagesFound?: number; pagesInventoried?: number; partial?: boolean };
     } | null;
     const inScope = (c: string) => (bp.collections![c] ?? []).filter((i) => i.status !== 'drop');
+    // A sample isn't the site: when Discovery read only part of it, the Blueprint says what it
+    // covers and how the rest is handled (Paylocity: 64 pages of 2,693, approved unseen).
+    const found = Number(inv?.crawl?.pagesFound ?? 0);
+    const listed = Number(inv?.crawl?.pagesInventoried ?? inv?.pages?.length ?? 0);
+    const sampled = Boolean(inv?.crawl?.partial) || (found > 0 && found > listed);
+    const scope = (bp as { scope?: { pagesFound?: number; approach?: string } }).scope;
     const all = (c: string) => bp.collections![c] ?? [];
     const problems: string[] = [];
     const placed = new Set(
@@ -286,6 +302,10 @@ export const CHECKS: Record<string, Check> = {
       if (t && !templates.has(String(t)))
         problems.push(`page ${p.key} uses unknown template ${String(t)}`);
     }
+    if (sampled && !scope?.approach)
+      problems.push(
+        `the inventory covers ${listed} of ${found || 'more'} pages found: write the Blueprint's \`scope\` (pagesFound, and how the other pages are handled: built from these templates later, imported, or left out, and why) so the Director sees it at Gate 1`,
+      );
     const components = inScope('components');
     if (!components.length) problems.push('no components');
     if (!components.some((c) => c.pilot)) problems.push('no pilot components');
@@ -298,16 +318,34 @@ export const CHECKS: Record<string, Check> = {
         problems.push(`${c.key}'s child items have no limit`);
       if (!a.queryBudget) problems.push(`${c.key} has no query budget`);
     }
+    // A media entry names one file: a folder (Microsoft's CDN folder for two promo images) leaves
+    // the media migrator guessing, and ended in a Director card.
+    const mediaUrls = inScope('media').map((m) => ({
+      key: m.key,
+      url: String(m.attrs?.url ?? ''),
+    }));
+    for (const m of mediaUrls) {
+      if (!/^https?:\/\//.test(m.url)) continue;
+      const bare = m.url.replace(/[?#].*$/, '');
+      const folder =
+        bare.endsWith('/') ||
+        mediaUrls.some((o) => o !== m && o.url.replace(/[?#].*$/, '').startsWith(`${bare}/`));
+      if (folder)
+        problems.push(
+          `media ${m.key}'s url is a folder (${m.url}): give the full URL of the one file it is`,
+        );
+    }
     return problems.length
       ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))
       : pass(
-          `${inScope('pages').length} pages, ${templates.size} templates and ${components.length} components, each with a model contract.`,
+          `${inScope('pages').length} pages, ${templates.size} templates and ${components.length} components, each with a model contract.${scope?.approach ? ` Covers ${inScope('pages').length} of ${scope.pagesFound ?? found} pages found: ${scope.approach}` : ''}`,
         );
   },
 
-  // The homepage demo's slice (homepage demo playbook, Gate 1): the whole site in the Blueprint,
-  // only the homepage, the 404 page and what they use kept, everything else held. The plan builds
-  // the kept items, so this is what keeps the demo to its slice.
+  // The homepage demo's Blueprint (homepage demo playbook, Gate 1): the homepage and what it uses,
+  // with the navigation its own component (and, up to 0.2.3, the 404 page; from 0.2.5 a kept one fails). The plan builds every
+  // kept item, so this is what keeps the demo to the homepage. (Items held from a whole-site Blueprint, as version 0.1.0
+  // wrote them, are still accepted.)
   'blueprint.demo-slice': async (ctx) => {
     const bp = (await readJson(ctx, 'blueprint')) as {
       collections?: Record<string, Item[]>;
@@ -337,21 +375,35 @@ export const CHECKS: Record<string, Check> = {
     const notFound = pages.find((p) => Number(p.attrs?.errorPage) === 404 || pathOf(p) === '/404');
     if (!home) problems.push('no homepage: a page with attrs.path "/"');
     else if (!kept(home)) problems.push(`the homepage (${home.key}) is dropped; it is the demo`);
-    if (!notFound) problems.push('no 404 page: a page with attrs.errorPage 404');
-    else if (!kept(notFound)) problems.push(`the 404 page (${notFound.key}) is dropped`);
-    const slice = [home, notFound].filter((p): p is Item => Boolean(p));
+    // The 404 page was in the slice until 0.2.3. From 0.2.4 the demo builds the homepage alone:
+    // the 404 page is recorded as dropped. From 0.2.5 a kept one fails; projects pinned to older
+    // versions (or with no version on record) may still keep it.
+    const version = (ctx.state?.playbook?.version ?? '').split('.').map(Number);
+    const atLeast025 =
+      version.length === 3 &&
+      version.every(Number.isFinite) &&
+      (version[0]! > 0 || version[1]! > 2 || (version[1] === 2 && version[2]! >= 5));
+    if (atLeast025 && notFound && kept(notFound))
+      problems.push(
+        `the 404 page (${notFound.key}) is kept; the homepage demo builds no 404 page: record it as dropped with its reason`,
+      );
+    const slice = [home, notFound && kept(notFound) ? notFound : undefined].filter((p): p is Item =>
+      Boolean(p),
+    );
     const slicePaths = new Set(slice.map(pathOf));
     const onSlice = (i: Item) => pagesOf(i).some((p) => slicePaths.has(p));
     for (const p of pages)
       if (!slice.includes(p) && kept(p))
-        problems.push(`page ${p.key} (${pathOf(p)}) is kept; only the homepage and 404 are built`);
+        problems.push(
+          `page ${p.key} (${pathOf(p)}) is in the Blueprint; only the homepage is built, so leave it out (the audit counts it)`,
+        );
 
     const neededTemplates = new Set(slice.map((p) => String(p.attrs?.template ?? '')));
     for (const t of all('templates')) {
       if (neededTemplates.has(t.key) && !kept(t))
-        problems.push(`template ${t.key} is used by the homepage or 404 but dropped`);
+        problems.push(`template ${t.key} is used by a page the demo builds but dropped`);
       else if (!neededTemplates.has(t.key) && kept(t))
-        problems.push(`template ${t.key} isn't used by the homepage or 404: mark it held`);
+        problems.push(`template ${t.key} isn't used by the pages the demo builds: leave it out`);
     }
 
     const components = all('components');
@@ -363,14 +415,18 @@ export const CHECKS: Record<string, Check> = {
     for (const c of components) {
       const needed = c.attrs?.datasource === 'shared' || onSlice(c);
       if (needed && !kept(c))
-        problems.push(`${c.key} is on the homepage or 404 (or shared) but dropped`);
+        problems.push(`${c.key} is on a page the demo builds (or shared) but dropped`);
       else if (!needed && kept(c) && !merged(c))
         problems.push(
-          `${c.key} isn't on the homepage or 404 and isn't shared: mark it held, or list the pages it's on`,
+          `${c.key} isn't on a page the demo builds and isn't shared: leave it out, or list the pages it's on`,
         );
-      const fields = c.attrs?.fields;
-      if (held(c) && (!Array.isArray(fields) || !fields.length))
-        problems.push(`${c.key} is held but has no fields: the audit keeps every model contract`);
+      // A merged component ships with the one it's merged into: that one must be built too.
+      const into = merged(c) ? String(c.attrs!.mergedInto) : null;
+      const target = into ? components.find((x) => x.key === into) : null;
+      if (into && kept(c) && (!target || !kept(target)))
+        problems.push(
+          `${c.key} is merged into ${into}, which the demo doesn't build: leave ${c.key} out, or merge it into a component it builds`,
+        );
     }
 
     for (const m of all('media')) {
@@ -378,7 +434,7 @@ export const CHECKS: Record<string, Check> = {
       if (needed && held(m)) problems.push(`media ${m.key} is used by the demo but held`);
       else if (!needed && kept(m))
         problems.push(
-          `media ${m.key} isn't used on the homepage, 404, header, footer or navigation: mark it held, or list its pages`,
+          `media ${m.key} isn't used on the pages the demo builds, header, footer or navigation: leave it out, or list its pages`,
         );
     }
 
@@ -392,7 +448,7 @@ export const CHECKS: Record<string, Check> = {
     return problems.length
       ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))
       : pass(
-          `The demo builds ${count('pages')} pages, ${count('templates')} templates, ${count('components')} components and ${count('media')} media; ${heldCount} items are audited, not in the demo.`,
+          `The demo builds ${plural(count('pages'), 'page')}, ${plural(count('templates'), 'template')}, ${plural(count('components'), 'component')} and ${count('media')} media${heldCount ? `; ${heldCount} items are held, not built` : ''}.`,
         );
   },
 
@@ -688,17 +744,28 @@ export async function routeFailures(a: {
   codeRoles: Set<string>;
 }): Promise<{ waitOn: AgentWaiting; reason: string; tokens: number } | null> {
   if (!a.deps.attribute) return null;
-  let components: { key: string; name: string }[] = [];
+  let components: { key: string; name: string; shared?: boolean }[] = [];
   try {
     const doc = await a.deps.library.read(a.projectId, 'blueprint');
     const bp = doc
       ? (JSON.parse(doc.content) as {
-          collections?: { components?: { key: string; name: string; status?: string }[] };
+          collections?: {
+            components?: {
+              key: string;
+              name: string;
+              status?: string;
+              attrs?: Record<string, unknown>;
+            }[];
+          };
         })
       : null;
     components = (bp?.collections?.components ?? [])
       .filter((c) => c.status !== 'drop')
-      .map((c) => ({ key: c.key, name: c.name }));
+      .map((c) => ({
+        key: c.key,
+        name: c.name,
+        ...(c.attrs?.datasource === 'shared' ? { shared: true } : {}),
+      }));
   } catch {
     return null;
   }
@@ -723,33 +790,62 @@ export async function routeFailures(a: {
     tasks.filter(
       (t) => t.itemKeys.includes(key) && a.codeRoles.has(t.role) && t.taskId !== a.task.taskId,
     );
+  // The shared header, footer and navigation content has one task of its own (the plan's
+  // `migrate-shared-chrome`): a page that fails on it waits for that task, never edits it itself.
+  const sharedTask = tasks.find(
+    (t) => t.taskId === SHARED_CHROME_TASK && t.taskId !== a.task.taskId,
+  );
   const own: string[] = [];
   const byKey = new Map<string, string[]>();
+  const sharedFixes: string[] = [];
   for (const f of read.failures) {
     if (f.owner === 'component' && f.component && owners(f.component).length)
       byKey.set(f.component, [...(byKey.get(f.component) ?? []), f.fix]);
+    else if (f.owner === 'shared' && sharedTask) sharedFixes.push(f.fix);
     else own.push(`${f.check}: ${f.fix}`);
   }
   // A failed check the attribution left out stays the task's, in the check's own words.
   for (const f of a.fails)
     if (!read.failures.some((x) => x.check === f.id)) own.push(`${f.id}: ${f.detail}`);
-  if (!byKey.size) return null;
+  if (!byKey.size && !sharedFixes.length) return null;
   const nameOf = (key: string) => components.find((c) => c.key === key)?.name ?? key;
   const names = [...byKey.keys()].map(nameOf);
+  // The rendering registrar owns a component's Component Query and datasource settings: it gets
+  // a failure only when that's what is broken (content that never resolves), not code fixes.
+  const registration =
+    /Component\s*Query|isContentResolved|resolve its datasource|datasource (?:didn't|does not|doesn't|never) resolve/i;
   const sendBack = [...byKey].flatMap(([key, fixes]) =>
-    owners(key).map((t) => ({
-      taskId: t.taskId,
-      fixes: `${a.task.title} fails on ${nameOf(key)}: ${fixes.join(' ')}`,
-    })),
+    owners(key)
+      .filter((t) => t.role !== 'rendering-registrar' || fixes.some((f) => registration.test(f)))
+      .map((t) => ({
+        taskId: t.taskId,
+        fixes: `${a.task.title} fails on ${nameOf(key)}: ${fixes.join(' ')}`,
+      })),
   );
-  const listed =
-    names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-  const reason = `${listed} ${names.length === 1 ? 'needs' : 'need'} fixing in code, which this task can't change: sent to ${names.length === 1 ? 'its owner' : 'their owners'}, and this task waits for ${names.length === 1 ? 'it' : 'them'}.${own.length ? ` Yours to fix when it runs again: ${own.join(' ')}` : ' It is checked again once they are redone.'}`;
+  if (sharedTask && sharedFixes.length)
+    sendBack.push({
+      taskId: sharedTask.taskId,
+      fixes: `${a.task.title} fails on the shared header, footer or navigation content: ${sharedFixes.join(' ')}`,
+    });
+  const join = (xs: string[]) =>
+    xs.length === 1 ? xs[0]! : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`;
+  const parts = [
+    names.length
+      ? `${join(names)} ${names.length === 1 ? 'needs' : 'need'} fixing in code, which this task can't change`
+      : '',
+    sharedFixes.length
+      ? `the shared header, footer and navigation content, which every page shows, is filled by ${sharedTask!.title}, not by a page`
+      : '',
+  ].filter(Boolean);
+  const listed = join([...names, ...(sharedFixes.length ? [sharedTask!.title] : [])]);
+  const n = names.length + (sharedFixes.length ? 1 : 0);
+  const reason = `${parts.join('; ')}: sent to ${n === 1 ? 'its owner' : 'their owners'}, and this task waits for ${n === 1 ? 'it' : 'them'}.${own.length ? ` Yours to fix when it runs again: ${own.join(' ')}` : ' It is checked again once they are redone.'}`;
+  const capital = reason.charAt(0).toUpperCase() + reason.slice(1);
   return {
-    reason,
+    reason: capital,
     tokens: read.tokens,
     waitOn: {
-      summary: reason,
+      summary: capital,
       taskIds: [],
       sendBack,
       what: `fixes to ${listed}`,
@@ -921,13 +1017,28 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
       );
       // 1. Automated checks.
       const acceptance = acceptanceOf(task);
-      const results = await runChecks(deps, {
+      const checked = await runChecks(deps, {
         projectId: req.projectId,
         state,
         steps,
         task,
         acceptance,
       });
+      // The Director's waivers for this task (a card's "Waive"): a waived check that fails counts
+      // as passed, says so, and the Lead doesn't reject for it (UtiliQuest's renderings check).
+      const waived = new Map<string, string>();
+      for (const e of log)
+        if (e.type === 'decision.recorded' && e.data.scopeKey.startsWith(`waiver:${task.taskId}:`))
+          waived.set(e.data.scopeKey.slice(`waiver:${task.taskId}:`.length), e.data.rationale);
+      const results = checked.map((r) =>
+        r.status === 'fail' && waived.has(r.id)
+          ? {
+              ...r,
+              status: 'pass' as const,
+              detail: `Waived by the Director (${waived.get(r.id)}). Still failing: ${r.detail}`,
+            }
+          : r,
+      );
       const events: NewEvent[] = results.map((r) => ({
         type: 'step.recorded',
         actor: { kind: 'agent', id: reviewerId },
@@ -960,8 +1071,13 @@ export function withReview(base: Activities, deps: ReviewDeps): Activities {
               role,
               lead,
               fails,
+              // The roles that build a component: its code (the sandbox) and its rendering
+              // registration, which owns the Component Query. A page's failure on a rendering
+              // whose content never resolves is the registrar's (Paylocity's footer), not code's.
               codeRoles: new Set(
-                [...roles.values()].filter((r) => r.tools?.sandbox).map((r) => r.role),
+                [...roles.values()]
+                  .filter((r) => r.tools?.sandbox || r.role === 'rendering-registrar')
+                  .map((r) => r.role),
               ),
             })
           : null;

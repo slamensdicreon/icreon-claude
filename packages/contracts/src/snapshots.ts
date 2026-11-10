@@ -96,6 +96,11 @@ export const ProjectSummary = z.object({
   /** The platform the project builds on, named by its pack; absent where no pack names it. */
   platform: z.object({ id: z.string(), name: z.string() }).optional(),
   status: ProjectStatus,
+  /** An archived project scheduled for deletion: when it goes, who asked, and whether it is going. */
+  deletion: z
+    .object({ due: z.iso.datetime(), requestedBy: z.string(), purging: z.boolean() })
+    .nullable()
+    .optional(),
   health: Health,
   /** Why health is not green, in words ("Blocker open: Media upload 403"). */
   healthReason: z.string().nullable(),
@@ -271,6 +276,11 @@ export const TaskView = z.object({
   /** Set when blocked: the escalation it waits on. */
   escalationId: z.string().nullable(),
   lastReason: z.string().nullable(),
+  /**
+   * Done with known gaps: finished past the send-back limit with differences handed on, or
+   * accepted as is by the Director. Its reason; null when it passed.
+   */
+  gaps: z.string().nullable().default(null),
   /** The roster agent that runs this task. */
   agentId: z.string(),
   groupTitle: z.string().nullable(),
@@ -825,6 +835,8 @@ export const ScheduledTask = z.object({
   end: z.iso.datetime(),
   /** actual = from task events; planned = a Lead's window; forecast = the scheduler's estimate. */
   basis: z.enum(['actual', 'planned', 'forecast']),
+  /** Done with known gaps (see TaskView.gaps). */
+  gaps: z.string().nullable().default(null),
 });
 export type ScheduledTask = z.infer<typeof ScheduledTask>;
 
@@ -1279,6 +1291,11 @@ export const PortfolioProject = z.object({
   faces: z.array(Face),
   /** "nine working", "waiting on you", "resting". */
   workingWord: z.string(),
+  /** Who it's for, to find a project by its client. */
+  client: z.string().default(''),
+  /** The platform it builds on and the playbook it runs, by name: the Dashboard filters and groups by them. */
+  platform: z.object({ id: z.string(), name: z.string() }).nullable().default(null),
+  playbook: z.object({ id: z.string(), name: z.string() }).nullable().default(null),
 });
 export type PortfolioProject = z.infer<typeof PortfolioProject>;
 
@@ -1365,3 +1382,75 @@ export const PortfolioOverview = z.object({
   }),
 });
 export type PortfolioOverview = z.infer<typeof PortfolioOverview>;
+
+// ---------------------------------------------------------------------------
+// What the next build knows, and the proposals waiting to join it
+// ---------------------------------------------------------------------------
+
+/** A lesson or procedure that can reach a playbook's agents. */
+export const InForceEntry = z.object({
+  id: z.string(),
+  ref: z.string(),
+  kind: z.enum(['lesson', 'procedure']),
+  title: z.string(),
+  text: z.string(),
+  scope: KnowledgeScope,
+  /** The playbook's roles it can reach; empty for every role. */
+  roles: z.array(z.string()),
+  /** Briefs it has been put in, on any project. */
+  used: z.number().int(),
+  updatedAt: z.iso.datetime(),
+});
+export type InForceEntry = z.infer<typeof InForceEntry>;
+
+/**
+ * GET /playbooks/:id/in-force: what a new project on the playbook starts with. The rules its Leads
+ * apply, the lessons and procedures its agents can be given (each brief carries the few that fit
+ * the task), and the known gaps, which are engineering's and reach no agent. Project-scoped
+ * entries are left out: they apply to their own project only.
+ */
+export const InForceSnapshot = z.object({
+  playbook: z.object({ id: z.string(), name: z.string(), version: z.string() }),
+  platform: z.object({ id: z.string(), name: z.string() }),
+  roles: z.array(z.object({ role: z.string(), name: z.string() })),
+  rules: z.array(RuleView),
+  entries: z.array(InForceEntry),
+  gaps: z.array(z.object({ id: z.string(), ref: z.string(), title: z.string(), text: z.string() })),
+  /** Proposals that would apply here once approved. */
+  pending: z.object({ knowledge: z.number().int(), rules: z.number().int() }),
+});
+export type InForceSnapshot = z.infer<typeof InForceSnapshot>;
+
+/** A change Cypher suggests to a proposal before it's approved. */
+export const ProposalEdit = z.object({
+  title: z.string().optional(),
+  text: z.string().optional(),
+  when: z.string().optional(),
+  then: z.string().optional(),
+  scope: z.object({ kind: z.string(), id: z.string() }).optional(),
+  roles: z.array(z.string()).optional(),
+});
+export type ProposalEdit = z.infer<typeof ProposalEdit>;
+
+/** Cypher's read of one proposal: approve it, approve it changed, or reject it, and why. */
+export const ProposalRecommendation = z.object({
+  kind: z.enum(['knowledge', 'rule']),
+  id: z.string(),
+  ref: z.string(),
+  /** The proposal as it stands, for the list: a title, or a rule's "when". */
+  label: z.string(),
+  action: z.enum(['approve', 'edit', 'reject']),
+  reason: z.string(),
+  edit: ProposalEdit.nullable(),
+  /** The ref of an entry or rule it repeats, when that's why it's rejected. */
+  duplicateOf: z.string().nullable(),
+});
+export type ProposalRecommendation = z.infer<typeof ProposalRecommendation>;
+
+/** POST /proposals/sort: every waiting proposal with Cypher's recommendation. */
+export const ProposalReview = z.object({
+  /** False when no model is set up: the proposals are listed without recommendations. */
+  available: z.boolean(),
+  recommendations: z.array(ProposalRecommendation),
+});
+export type ProposalReview = z.infer<typeof ProposalReview>;

@@ -56,6 +56,8 @@ import { ACTIVE_TASK_STATES } from './task-fsm';
 export interface ProjectState {
   projectId: string;
   seq: number;
+  /** Scheduled for deletion (archived projects only), or being deleted. */
+  deletion: { due: string; requestedBy: string; purging: boolean } | null;
   name: string;
   client: string;
   initials: string;
@@ -79,6 +81,17 @@ export interface ProjectState {
   escalations: Record<string, EscalationView>;
   decisions: DecisionView[];
   conversation: ConversationItem[];
+  /** Files the Director gave the team, oldest first. */
+  files: {
+    fileId: string;
+    name: string;
+    contentType: string;
+    bytes: number;
+    ref: string;
+    note: string | null;
+    about: string | null;
+    ts: string;
+  }[];
   metrics: Record<MetricKey, MetricView>;
   latest: ActivityItem[];
   holds: Record<string, { kind: ScopeKind; id: string; label: string }>;
@@ -166,6 +179,7 @@ export function createProjectState(projectId: string): ProjectState {
   return {
     projectId,
     seq: 0,
+    deletion: null,
     name: '',
     client: '',
     initials: '',
@@ -188,6 +202,7 @@ export function createProjectState(projectId: string): ProjectState {
     escalations: {},
     decisions: [],
     conversation: [],
+    files: [],
     metrics,
     latest: [],
     holds: {},
@@ -292,6 +307,18 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       }
       break;
     }
+    case 'project.deletion':
+      s.deletion =
+        e.data.action === 'cancelled'
+          ? null
+          : e.data.action === 'requested'
+            ? { due: e.data.due ?? e.ts, requestedBy: e.actor.id, purging: false }
+            : {
+                due: s.deletion?.due ?? e.ts,
+                requestedBy: s.deletion?.requestedBy ?? e.actor.id,
+                purging: true,
+              };
+      break;
     case 'project.status':
       s.status = e.data.status;
       if (e.data.status === 'running' && !s.startedAt) s.startedAt = e.ts;
@@ -317,6 +344,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         endedAt: prior?.endedAt ?? null,
         escalationId: prior?.escalationId ?? null,
         lastReason: prior?.lastReason ?? null,
+        gaps: prior?.gaps ?? null,
         plannedStart: prior?.plannedStart ?? null,
         plannedEnd: prior?.plannedEnd ?? null,
       };
@@ -347,6 +375,12 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       t.state = e.data.to;
       t.attempt = e.data.attempt;
       t.lastReason = e.data.reason;
+      // Done is not always passed: past the send-back limit, or accepted as is, it has gaps.
+      t.gaps =
+        e.data.to === 'done' &&
+        /had been sent back|differences went to|^Accepted as is/i.test(e.data.reason ?? '')
+          ? e.data.reason
+          : null;
       if (e.data.to === 'running' && !t.startedAt) t.startedAt = e.ts;
       if (e.data.to === 'running') t.escalationId = null;
       if (['done', 'cancelled', 'rolled_back'].includes(e.data.to)) t.endedAt = e.ts;
@@ -536,6 +570,33 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
         settled: null,
       });
       break;
+    case 'file.attached': {
+      const { fileId, name, contentType, bytes, ref, note, about } = e.data;
+      s.files.push({ fileId, name, contentType, bytes, ref, note, about, ts: e.ts });
+      s.conversation.push({
+        messageId: fileId,
+        seq: e.seq,
+        ts: e.ts,
+        from: 'director',
+        kind: 'director',
+        title: null,
+        body: `Attached ${name} (${contentType}, ${Math.max(1, Math.round(bytes / 1024))} KB)${note ? `: ${note}` : ''}`,
+        sections: [],
+        proceedsAt: null,
+        directiveId: null,
+        label: null,
+        rows: [],
+        bullets: [],
+        note: null,
+        links: [],
+        status: null,
+        needs: [],
+        upNext: [],
+        about,
+        settled: null,
+      });
+      break;
+    }
     case 'cos.presence':
       s.presence = e.data.presence;
       break;
@@ -819,6 +880,7 @@ export function projectSummary(s: ProjectState): ProjectSummary {
     name: s.name,
     client: s.client,
     status: s.status,
+    deletion: s.deletion,
     health,
     healthReason: reason,
     currentPhase: lead

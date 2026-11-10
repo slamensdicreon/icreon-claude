@@ -246,7 +246,7 @@ const page = (r: PageRow): ImportPage => ({
 });
 const PAGE_COLS = 'seq, url, path, state, item_id, created, reason, attempts';
 
-/** Imports in the shared database (migration 008_imports.sql). */
+/** Imports in the shared database (migration 009_imports.sql). */
 export class PostgresImportStore implements ImportStore {
   constructor(private readonly sql: SqlClient) {}
 

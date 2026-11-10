@@ -355,6 +355,31 @@ describe('page.markup, page.styles', () => {
 });
 
 describe('snapshot, screenshot, fetch.asset', () => {
+  it('stores an embedded data: URI image, decoded rather than fetched', async () => {
+    // The Paylocity logo: an inline SVG in the footer's CSS background-image.
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="44"><rect width="160" height="44"/></svg>';
+    const css = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+    const r = await browser.call('fetch.asset', { url: css }, ctx);
+    expect(r.code).toBe(200);
+    const body = r.body as { contentType: string; bytes: number; ref: string };
+    expect(body).toMatchObject({ contentType: 'image/svg+xml', bytes: svg.length });
+    expect(body.ref).toMatch(/assets\/[0-9a-f]{64}\.svg$/);
+    const png = await browser.call(
+      'fetch.asset',
+      { url: `data:image/png;base64,${Buffer.from([137, 80, 78, 71]).toString('base64')}` },
+      ctx,
+    );
+    expect(png).toMatchObject({ code: 200, body: { contentType: 'image/png', bytes: 4 } });
+    // Images only, and never empty.
+    expect(
+      (await browser.call('fetch.asset', { url: 'data:text/html,<script>x</script>' }, ctx)).code,
+    ).toBe(422);
+    expect((await browser.call('fetch.asset', { url: 'data:image/png;base64,' }, ctx)).code).toBe(
+      422,
+    );
+  });
+
   it('captures one page’s blocks in order', async () => {
     const r = await browser.call('snapshot', { url: `${origin}/` }, ctx);
     const page = r.body as { blocks: { tag: string; className: string; heading: string | null }[] };
@@ -366,6 +391,18 @@ describe('snapshot, screenshot, fetch.asset', () => {
       }),
       expect.objectContaining({ tag: 'section', className: 'promo', heading: 'New this season' }),
     ]);
+  }, 30_000);
+
+  it('hands the agent a not-found page’s content, not just an error line', async () => {
+    // The site's own 404 page is what the missing-page probe wants: its title, heading and text.
+    const r = await browser.call('snapshot', { url: `${origin}/no-such-page` }, ctx);
+    expect(r.code).toBe(200);
+    expect(r.summary).toMatch(/answered HTTP 404: this is its not-found page, read as served/);
+    const page = r.body as { status: number; blocks: { heading: string | null }[] };
+    expect(page.status).toBe(404);
+    expect(JSON.stringify(r.body)).toContain('Not found');
+    const outline = await browser.call('page.markup', { url: `${origin}/no-such-page` }, ctx);
+    expect(outline.code).toBe(200);
   }, 30_000);
 
   it('treats a page the site refuses (403) as the site’s answer, not a refused credential', async () => {
@@ -666,4 +703,71 @@ describe('egress proxy', () => {
       await proxy.close();
     }
   });
+});
+
+describe('a site that lands elsewhere and lists its sitemaps in robots.txt', () => {
+  // Microsoft: microsoft.com redirects to www.microsoft.com, has no /sitemap.xml, and lists one
+  // sitemap index per section in robots.txt. The crawl read one page and found no sitemap.
+  let site: Server;
+  let www: string;
+  let apex: string;
+  beforeAll(async () => {
+    site = createServer((req, res) => {
+      const host = String(req.headers.host);
+      const path = new URL(req.url!, 'http://x').pathname;
+      const page = (body: string) =>
+        res
+          .writeHead(200, { 'content-type': 'text/html' })
+          .end(`<html><body>${body}</body></html>`);
+      if (host.startsWith('localhost'))
+        return res.writeHead(301, { location: `${www}/en-us` }).end();
+      if (path === '/robots.txt')
+        return res
+          .writeHead(200, { 'content-type': 'text/plain' })
+          .end(`User-agent: *\nSitemap: ${www}/sitemaps/index.xml\n`);
+      if (path === '/sitemaps/index.xml')
+        return res
+          .writeHead(200, { 'content-type': 'application/xml' })
+          .end(
+            `<sitemapindex><sitemap><loc>${www}/sitemaps/windows.xml</loc></sitemap><sitemap><loc>https://elsewhere.example/x.xml</loc></sitemap></sitemapindex>`,
+          );
+      if (path === '/sitemaps/windows.xml')
+        return res
+          .writeHead(200, { 'content-type': 'application/xml' })
+          .end(
+            `<urlset><url><loc>${www}/en-us/windows</loc></url><url><loc>${www}/en-us/surface</loc></url></urlset>`,
+          );
+      if (path === '/en-us') return page(`<h1>Home</h1><a href="${www}/en-us/ai">AI</a>`);
+      if (['/en-us/ai', '/en-us/windows', '/en-us/surface'].includes(path))
+        return page(`<h1>${path}</h1>`);
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => site.listen(0, '127.0.0.1', r));
+    const port = (site.address() as { port: number }).port;
+    www = `http://127.0.0.1:${port}`;
+    apex = `http://localhost:${port}`;
+  });
+  afterAll(async () => {
+    await new Promise((r) => site.close(r));
+  });
+
+  it('crawls from where the start page lands, with the sitemaps robots.txt lists', async () => {
+    const server = new BrowserToolServer({
+      policy: () => ({ allowedHosts: ['127.0.0.1', 'localhost'], allowPrivateNetworks: true }),
+      blobs: new LocalBlobStore(blobDir),
+      browser: guarded,
+    });
+    const r = await server.call('crawl', { url: `${apex}/` }, ctx);
+    expect(r.code).toBe(200);
+    const body = r.body as { origin: string; sitemapUrls: number; pages: { url: string }[] };
+    expect(body.origin).toBe(www);
+    // The home page's link, and both pages from the sitemap index; nothing off the site.
+    expect(body.sitemapUrls).toBe(2);
+    expect(body.pages.map((p) => new URL(p.url).pathname).sort()).toEqual([
+      '/en-us',
+      '/en-us/ai',
+      '/en-us/surface',
+      '/en-us/windows',
+    ]);
+  }, 60_000);
 });

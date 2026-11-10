@@ -1,12 +1,10 @@
-# Task templates for the homepage demo: the website playbook's tasks, over the demo slice. The plan
-# compiler expands forEach templates over the Blueprint's kept items, and in this playbook the
-# Architect keeps only the slice (the homepage, the 404 page, their templates, the components they
-# use, the header, footer and navigation, and their media) and marks everything else
-# `status: drop` with `attrs.held: true`: audited, not in the demo. blueprint.demo-slice checks the
-# marks, so the plan always builds exactly the slice.
+# Task templates for the homepage demo: the website playbook's tasks over a two-page Blueprint. The
+# Architect writes the Blueprint for the homepage (from 0.2.4 no 404 page), its template, the components on
+# them, the header, footer and navigation, and their media; blueprint.demo-slice checks it. The rest
+# of the site is audited in numbers in the page inventory, not blueprinted.
 #
-# No pilot block: the slice is the pilot. Its components are proven end to end (editing host,
-# Page builder checks) before the templates and pages are built on them.
+# No pilot block: the whole Blueprint is the pilot. Its components are proven end to end (editing
+# host, Page builder checks) before the templates and pages are built on them.
 
 templates:
   # 0 — Intake and access verification
@@ -49,7 +47,8 @@ templates:
     title: Draft the Implementation Blueprint
     dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
     # discovery.blueprint: every source form placed (a Director item when Form is the SDK's
-    # built-in), redirects decided, the 404 page at /404, source components mapped, media hosts named.
+    # built-in), redirects decided, the 404 page recorded as dropped (0.2.4 builds none; from 0.2.5 demo-slice fails a kept one),
+    # source components mapped, media hosts named.
     # blueprint.demo-slice: the slice kept, the navigation its own component, the rest held.
     acceptance:
       [validator:blueprint.coverage, validator:discovery.blueprint, validator:blueprint.demo-slice]
@@ -118,7 +117,10 @@ templates:
     role: head-integrator
     title: Configure the head as the editing host
     dependsOn: [prepare-hosting]
-    acceptance: [validator:head.editing-scripts]
+    # Ends with its change live on the editing host (from 0.17.0/0.2.7): a task waiting on it is
+    # checked again the moment it finishes, and on Microsoft and Ervin Cable that check ran
+    # against a build without the fix, three times over.
+    acceptance: [validator:head.editing-scripts, validator:editing-host.deployed]
   # Each component is built on its own branch. Page builder only offers components the editing
   # host's code has, so each accepted component joins one integration branch, deployed at the
   # project's fixed editing address.
@@ -149,7 +151,8 @@ templates:
     phase: 4
     role: structural-validator
     title: Prove the homepage components are ready for drag and drop
-    dependsOn: [switch-editing-host]
+    # With the header and footer on the editing host: their faults surface here, not on the pages.
+    dependsOn: [switch-editing-host, partial-designs]
     # What Page builder needs to offer each slice component in the toolbox and create its content
     # when it's dragged onto a page. The Director drags and drops in Page builder at Gate 2.
     acceptance:
@@ -157,6 +160,7 @@ templates:
         validator:structural.renderings,
         validator:editor.component-enabled,
         validator:editor.new-datasource,
+        validator:head.header-footer,
       ]
   - id: validate-components
     phase: 4
@@ -167,11 +171,14 @@ templates:
 
   # 5 — Templates, layouts and designs
   - id: partial-designs
-    phase: 5
+    phase: 4
     role: rendering-registrar
     title: Create header and footer partial designs, with the navigation
-    # Partial designs bind the header's and footer's renderings: they must be registered first.
-    dependsOn: [register-*]
+    # The header, footer and navigation come first: every page and template check looks at them.
+    # Their partial designs need only those components registered and on the editing host, not
+    # every component (`{shared}`: the shared items' tasks; before 0.14.0/0.2.3 this waited on
+    # register-* in phase 5, so the header appeared after the whole component build).
+    dependsOn: ['register-{shared}', 'integrate-{shared}']
     acceptance: [validator:head.header-footer]
   - id: template-{key}
     phase: 5
@@ -189,6 +196,15 @@ templates:
     acceptance: [validator:structural.templates]
 
   # 6 — Content and media migration
+  # The shared header, footer and navigation are filled once, before the pages (as on the website
+  # playbook): the demo's outcome includes them, and the homepage shows them.
+  - id: migrate-shared-chrome
+    phase: 4
+    role: content-migrator
+    title: Fill the shared header, footer and navigation
+    # Real header and footer content as soon as their designs exist, before templates and pages.
+    dependsOn: [partial-designs]
+    acceptance: [validator:head.header-footer, validator:parity.chrome]
   - id: migrate-pages-{key}
     phase: 6
     role: content-migrator
@@ -197,6 +213,7 @@ templates:
     batchSize: 8
     title: Migrate {name}
     metric: pages_migrated
+    dependsOn: [migrate-shared-chrome]
     acceptance:
       [
         validator:structural.layouts,
@@ -215,7 +232,7 @@ templates:
   - id: recrawl-source
     phase: 6
     role: content-analyst
-    title: Re-crawl the homepage and 404 for parity
+    title: Re-crawl the homepage for parity
   - id: audit-parity
     phase: 6
     role: parity-auditor
@@ -227,7 +244,7 @@ templates:
   - id: enable-experience
     phase: 7
     role: experience-enabler
-    title: Homepage SEO fields, dictionary and the 404 page setting
+    title: Homepage SEO fields and dictionary
     # Sitecore items only: it runs while Page builder (for the proof variant) isn't connected.
     uses: [sitecore-authoring, blackboard, artifacts]
     acceptance: [validator:seo.titles]
@@ -236,6 +253,7 @@ templates:
     phase: 8
     role: head-integrator
     title: Finalize production configuration
+    acceptance: [validator:editing-host.deployed]
   # Three separate releases: success in one proves nothing about the others.
   - id: deploy-code
     phase: 8
@@ -250,7 +268,7 @@ templates:
   - id: publish-edge
     phase: 8
     role: deployment-engineer
-    title: Publish to Experience Edge and verify the homepage and 404
+    title: Publish to Experience Edge and verify the homepage
     dependsOn: [deploy-code]
     release:
       # Always our demo tenant: approved once, here.
@@ -274,6 +292,6 @@ templates:
       Follow the checklist in the demo summary. In Page builder, on the homepage: drag a component
       from the toolbox into a placeholder, give it new content and edit a field inline; open the
       header partial design and change a navigation link. Publish, then open the preview URL and
-      see both changes, and open a URL that doesn't exist to see the 404 page. Mark it done naming
+      see both changes. Mark it done naming
       anything that failed, send each failure back to its task, and remove your test component
       before you accept at Gate 2.

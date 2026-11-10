@@ -11,7 +11,7 @@ export { groupTemplates, urlPattern, type Template } from './crawl/templates';
 export { parseRobots } from './crawl/robots';
 export { discover } from './crawl/sitemap';
 export { Pacer } from './crawl/pacer';
-export { OfflineParser, type SelectQuery, canonical } from './page-load';
+export { OfflineParser, type SelectQuery } from './page-load';
 export { fetchPage, type Fetched } from './crawl/http';
 export { CrawlReports } from './crawl/report';
 export { designFrom, readBrand, thumbnailHtml, safeSvg, type ThumbnailDesign } from './thumbnail';

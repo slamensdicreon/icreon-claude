@@ -1,21 +1,22 @@
-# Example Blueprint for the homepage demo: a mid-size corporate site, audited whole. The demo slice
-# is kept: the homepage and the 404 page, their template, the components on them, the header,
-# footer and navigation, and their media. Everything else is held: audited, not in the demo.
+# Example Blueprint for the homepage demo: the homepage of a mid-size corporate site, its
+# template, the components on them, the header, footer and navigation, and their media.
+# The rest of the site is the page inventory's audit, not the Blueprint's. One item on the homepage
+# that won't move (an expired campaign banner) is dropped with its reason.
 version: 1
 collections:
   components:
     - key: header
       name: Header
       pilot: true
-      attrs: { datasource: shared, pages: ['/', '/404'] }
+      attrs: { datasource: shared, pages: ['/'] }
     - key: navigation
       name: Navigation
       pilot: true
-      attrs: { datasource: shared, pages: ['/', '/404'] }
+      attrs: { datasource: shared, pages: ['/'] }
     - key: footer
       name: Footer
       pilot: true
-      attrs: { datasource: shared, pages: ['/', '/404'] }
+      attrs: { datasource: shared, pages: ['/'] }
     - key: hero
       name: Hero
       pilot: true
@@ -31,93 +32,30 @@ collections:
     - key: rich-text
       name: RichText
       pilot: true
-      attrs: { variants: [{ name: Default, pages: ['/404', '/about'] }] }
-    - key: testimonial
-      name: Testimonial
-      status: drop
-      attrs:
-        {
-          held: true,
-          fields: [{ name: quote, type: Multi-Line Text }],
-          variants: [{ name: Default, pages: ['/about'] }],
-        }
-    - key: accordion
-      name: Accordion
-      status: drop
-      attrs:
-        {
-          held: true,
-          fields: [{ name: heading, type: Single-Line Text }],
-          variants: [{ name: Default, pages: ['/faq'] }],
-        }
-    - key: image-gallery
-      name: ImageGallery
-      status: drop
-      attrs:
-        {
-          held: true,
-          fields: [{ name: images, type: Multilist }],
-          variants: [{ name: Default, pages: ['/work'] }],
-        }
+      attrs: { variants: [{ name: Default, pages: ['/', '/about'] }] }
   templates:
     - key: home
       name: Home Page
-    - key: content
-      name: Content Page
-    - key: landing
-      name: Landing Page
-      status: drop
-      attrs: { held: true }
-    - key: article
-      name: Article Page
-      status: drop
-      attrs: { held: true }
   pages:
     - key: home
       name: Home
       attrs: { path: '/', template: home }
     - key: not-found
       name: Page not found
-      attrs: { path: '/404', template: content, errorPage: 404 }
-    - key: about
-      name: About
       status: drop
-      attrs: { held: true, path: '/about', template: content }
-    - key: services
-      name: Services
-      status: drop
-      attrs: { held: true, path: '/services', template: landing }
-    - key: faq
-      name: FAQ
-      status: drop
-      attrs: { held: true, path: '/faq', template: content }
-    - key: work
-      name: Our work
-      status: drop
-      attrs: { held: true, path: '/work', template: landing }
-    - key: news-1
-      name: News 1
-      status: drop
-      attrs: { held: true, path: '/news/news-1', template: article }
-    - key: old-campaign
-      name: Old campaign
-      status: drop
-      attrs: { path: '/campaign-2019', template: landing, reason: Expired campaign; won't move }
+      attrs: { path: '/404', errorPage: 404, reason: The homepage demo builds no 404 page }
+
   media:
+    - key: campaign-banner
+      name: campaign-2019.jpg
+      status: drop
+      attrs: { pages: ['/'], reason: Expired 2019 campaign banner; won't move }
     - key: logo
       name: logo.svg
-      attrs: { pages: ['/', '/404'], shared: true }
+      attrs: { pages: ['/'], shared: true }
     - key: hero-home
       name: hero-home.jpg
       attrs: { pages: ['/'] }
     - key: card-1
       name: card-1.jpg
       attrs: { pages: ['/'] }
-    - key: about-team
-      name: about-team.jpg
-      status: drop
-      attrs: { held: true, pages: ['/about'] }
-    - key: work-1
-      name: work-1.jpg
-      status: drop
-      attrs: { held: true, pages: ['/work'] }

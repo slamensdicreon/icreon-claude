@@ -190,6 +190,25 @@ describe('SitecoreAI checks', () => {
       "Cards ({BBBB-2}) isn't in Available Renderings: none of Page Content lists that ID.",
     );
 
+    // A component merged into another ships with it: its own rendering isn't asked for (the
+    // UtiliQuest demo's Job Categories, merged into a Card Row nobody built, failed forever).
+    const merged = {
+      collections: {
+        components: [
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero' } },
+          {
+            key: 'jobs',
+            name: 'Job Categories',
+            status: 'merge',
+            attrs: { rendering: 'Card Row', mergedInto: 'card-row' },
+          },
+        ],
+      },
+    };
+    expect(await pack.checks!['structural.renderings']!(ctx(t.read, merged))).toMatchObject({
+      status: 'pass',
+    });
+
     // A registration task is checked on its own component, whose rendering may be a
     // { name, componentName } model contract rather than a plain name.
     const contract = {
@@ -533,6 +552,66 @@ describe('SitecoreAI checks', () => {
     expect(res.detail).toContain('render on 2 pages');
     expect(res.detail).toContain('/quality not created yet');
     expect(requested).toEqual(['/', '/about']);
+  });
+
+  it('passes the shared header and footer only once they render their content and items', async () => {
+    const rsc = (componentName: string, fields: unknown) =>
+      `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ componentName, fields }))}])</script>`;
+    let home = '';
+    const checks = createPlatforms({
+      sitecore: {
+        ...SITECORE_DEFAULTS,
+        fetch: (async (url: string | URL | Request) =>
+          String(url) === 'https://pay-editing.vercel.app/'
+            ? new Response(home)
+            : new Response('', { status: 404 })) as typeof fetch,
+      },
+    }).get('sitecoreai')!.checks!;
+    const bp = {
+      collections: {
+        components: [
+          {
+            key: 'site-header',
+            name: 'Site Header',
+            attrs: { rendering: 'SiteHeader', datasource: 'shared' },
+          },
+          {
+            key: 'site-footer',
+            name: 'Site Footer',
+            attrs: { rendering: 'SiteFooter', datasource: 'shared', children: { max: 6 } },
+          },
+          { key: 'hero', name: 'Hero', attrs: { rendering: 'Hero', datasource: 'page' } },
+        ],
+      },
+    };
+    const run = () =>
+      checks['parity.chrome']!({
+        ...ctx(tenant({}).read, bp),
+        target: { ...target, hostingProject: 'pay' },
+      });
+    // Paylocity: the footer's datasource had no children, so every page failed on it.
+    home = `<div id="header">${rsc('SiteHeader', { tagline: { value: 'Section heading' } })}</div><div id="footer">${rsc('SiteFooter', { data: { datasource: { children: { results: [] } } } })}</div>`;
+    const res = await run();
+    expect(res.status).toBe('fail');
+    expect(res.detail).toContain('Site Footer renders no items');
+    expect(res.detail).toContain('Site Header shows placeholder copy: "Section heading"');
+    home = `<div id="header">${rsc('SiteHeader', { tagline: { value: 'HR and payroll' } })}</div><div id="footer">${rsc('SiteFooter', { data: { datasource: { children: { results: [{ name: 'Products' }] } } } })}</div>`;
+    expect(await run()).toMatchObject({ status: 'pass' });
+    // Paylocity's real fault: the footer's Component Query failed, so the layout service gave it
+    // isContentResolved: false and no fields. The check says the rendering is broken, not "add items".
+    const unresolved = `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ uid: '8a05f372-0060-42f5-8391-6d0cca7464da', componentName: 'SiteFooter', dataSource: '{0848C112-80C4-4B6C-B66F-783A2FA29923}', isContentResolved: false }))}])</script>`;
+    home = `<div id="header">${rsc('SiteHeader', { tagline: { value: 'HR and payroll' } })}</div><div id="footer">${unresolved}</div>`;
+    const broken = await run();
+    expect(broken.status).toBe('fail');
+    expect(broken.detail).toContain(
+      "Site Footer gets no content: the layout service couldn't resolve its datasource",
+    );
+    expect(broken.detail).not.toContain('renders no items');
+    // A home page with neither shared component placed fails, saying which are missing.
+    home = '<div id="header"><nav>x</nav></div><div id="footer"><p>y</p></div>';
+    expect((await run()).detail).toContain(
+      'none of the shared components (Site Header, Site Footer)',
+    );
   });
 
   it('compares each rendered page with its source: text, headings, items, placeholders, header', async () => {
@@ -1515,5 +1594,28 @@ describe('Optimizely pack', () => {
       value: 'https://api.cms.optimizely.com',
       sensitive: false,
     });
+  });
+});
+
+describe('reading the source fairly', () => {
+  it('compares a page moved under a locale, and never compares with a challenge page', async () => {
+    const { redirectedAway, isChallengePage } = await import('../sitecoreai/checks');
+    // Microsoft: / lands on /en-us, the same page; Ansco: /services lands on the home page.
+    expect(redirectedAway('https://www.microsoft.com/', 'https://www.microsoft.com/en-us')).toBe(
+      false,
+    );
+    expect(redirectedAway('https://x.com/about/', 'https://x.com/en-gb/about')).toBe(false);
+    expect(redirectedAway('https://src.example/services/', 'https://src.example/')).toBe(true);
+    // Paylocity's answer to a plain request: a cookie script and a reload, status 200.
+    expect(
+      isChallengePage(
+        '<html><body><script>document.cookie = "cf_bypass=1";location.reload();</script><noscript>Continue to Paylocity</noscript></body></html>',
+      ),
+    ).toBe(true);
+    expect(
+      isChallengePage(
+        '<html><body><h1>Payroll</h1><p>' + 'word '.repeat(80) + '</p></body></html>',
+      ),
+    ).toBe(false);
   });
 });

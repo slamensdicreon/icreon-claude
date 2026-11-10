@@ -30,6 +30,8 @@ const COMPONENTS = [
   'quote-calculator',
 ];
 const PILOT = new Set(['hero', 'promo-card', 'rich-text']);
+/** The header and footer join the pilot (0.14.0): every page shows them, so they're built first. */
+const SLICE = [...PILOT, 'header', 'footer'];
 
 function blueprint(
   overrides: Partial<
@@ -221,15 +223,7 @@ describe('compilePlan', () => {
     expect(checkpoint).toMatchObject({ kind: 'checkpoint', gate: null, phase: 4 });
     expect(checkpoint.dependsOn.sort()).toEqual(
       [
-        'port-hero',
-        'port-promo-card',
-        'port-rich-text',
-        'register-hero',
-        'register-promo-card',
-        'register-rich-text',
-        'integrate-hero',
-        'integrate-promo-card',
-        'integrate-rich-text',
+        ...SLICE.flatMap((k) => [`port-${k}`, `register-${k}`, `integrate-${k}`]),
         'switch-editing-host',
         'prove-pilot-slice',
       ].sort(),
@@ -237,14 +231,15 @@ describe('compilePlan', () => {
     expect(byId.get('port-tabs')!.dependsOn).toEqual(['design-system', PILOT_CHECKPOINT]);
     expect(byId.get('register-tabs')!.dependsOn).toEqual(['port-tabs']);
     expect(byId.get('port-hero')!.dependsOn).toEqual(['design-system']);
-    const pilotWork = [...PILOT].flatMap((k) => [`port-${k}`, `register-${k}`, `integrate-${k}`]);
-    // The end-to-end proof waits on the site's own editing host and every pilot task, not on the rest.
+    const pilotWork = SLICE.flatMap((k) => [`port-${k}`, `register-${k}`, `integrate-${k}`]);
+    // The end-to-end proof waits on the site's own editing host, the header and footer designs and
+    // every pilot task, not on the rest.
     expect(byId.get('prove-pilot-slice')!.dependsOn.sort()).toEqual(
-      ['switch-editing-host', ...pilotWork].sort(),
+      ['switch-editing-host', 'partial-designs', ...pilotWork].sort(),
     );
     // The proof checks the pilot components only: the rest aren't built yet.
     expect(byId.get('prove-pilot-slice')).toMatchObject({ collection: 'components' });
-    expect([...byId.get('prove-pilot-slice')!.itemKeys].sort()).toEqual([...PILOT].sort());
+    expect([...byId.get('prove-pilot-slice')!.itemKeys].sort()).toEqual([...SLICE].sort());
     expect(byId.get('switch-editing-host')!.itemKeys).toEqual([]);
     // The site moves to its own host once the pilot components are on it, after the Director approves.
     expect(byId.get('switch-editing-host')!.dependsOn).toEqual(['approve-switch-editing-host']);
@@ -425,24 +420,32 @@ describe('scheduling', () => {
     const states: Record<string, 'done'> = {};
     for (const t of plan.tasks.filter((t) => t.phase < 4)) states[t.taskId] = 'done';
     const ready = readyTasks(plan, states, active).map((t) => t.taskId);
-    expect(ready).toEqual(['port-hero', 'port-promo-card', 'port-rich-text', 'integrate-head']);
+    expect(ready).toEqual([...SLICE.map((k) => `port-${k}`), 'integrate-head']);
 
-    for (const k of PILOT) states[`port-${k}`] = states[`register-${k}`] = 'done';
+    for (const k of SLICE) states[`port-${k}`] = states[`register-${k}`] = 'done';
     states['integrate-head'] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual(
-      [...PILOT].map((k) => `integrate-${k}`),
+      SLICE.map((k) => `integrate-${k}`),
     );
-    for (const k of PILOT) states[`integrate-${k}`] = 'done';
+    for (const k of SLICE) states[`integrate-${k}`] = 'done';
+    // The header and footer designs as soon as those two are on the editing host.
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual([
       'approve-switch-editing-host',
+      'partial-designs',
     ]);
-    states['approve-switch-editing-host'] = states['switch-editing-host'] = 'done';
+    states['approve-switch-editing-host'] = states['partial-designs'] = 'done';
+    // Their shared content right after, alongside the switch to the site's own host.
+    expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual([
+      'switch-editing-host',
+      'migrate-shared-chrome',
+    ]);
+    states['switch-editing-host'] = states['migrate-shared-chrome'] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual(['prove-pilot-slice']);
     states['prove-pilot-slice'] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual([PILOT_CHECKPOINT]);
     states[PILOT_CHECKPOINT] = 'done';
     expect(readyTasks(plan, states, active).map((t) => t.taskId)).toEqual(
-      ['header', 'footer', 'card-grid', 'tabs', 'quote-calculator'].map((k) => `port-${k}`),
+      ['card-grid', 'tabs', 'quote-calculator'].map((k) => `port-${k}`),
     );
     expect(phaseComplete(plan, states, 4)).toBe(false);
   });
@@ -454,17 +457,105 @@ describe('scheduling', () => {
       'register-hero',
       'port-hero',
     ]);
-    // Designs bind registered renderings, so they depend on every registration.
+    // The header and footer designs bind only the shared components' renderings: a body
+    // component's rework no longer rolls back the designs and every template.
     expect(dependentsOf(plan, 'port-tabs')).toEqual([
       'register-tabs',
       'integrate-tabs',
       'validate-components',
-      'partial-designs',
-      'template-home',
-      'template-landing',
-      'template-article',
-      'template-blog',
-      'validate-templates',
     ]);
+    expect(dependentsOf(plan, 'port-footer')).toContain('partial-designs');
+  });
+});
+
+describe('Blueprint scope', () => {
+  it('keeps a proper scope, and sets aside one in another shape instead of rejecting the Blueprint', () => {
+    const base = { version: 1, collections: { pages: [] } };
+    const kept = Blueprint.parse({
+      ...base,
+      scope: { pagesFound: 2693, approach: 'Blog posts are imported in bulk after launch.' },
+    });
+    expect(kept.scope).toMatchObject({ pagesFound: 2693, sections: [] });
+    // Microsoft's demo Solution Architect wrote a scope naming its two pages, with no approach.
+    const odd = Blueprint.safeParse({ ...base, scope: { pages: ['/', '/404'], note: 'demo' } });
+    expect(odd.success).toBe(true);
+    expect(odd.success && odd.data.scope).toBeUndefined();
+  });
+});
+
+describe('the shared header, footer and navigation first', () => {
+  const item = (key: string, attrs: Record<string, unknown> = {}, pilot = false) => ({
+    key,
+    name: key,
+    status: 'keep' as const,
+    pilot,
+    attrs,
+  });
+  const bp = (components: ReturnType<typeof item>[]) =>
+    Blueprint.parse({
+      version: 1,
+      collections: {
+        components,
+        templates: [item('home')],
+        pages: [item('home', { path: '/', template: 'home' })],
+        media: [],
+      },
+    });
+
+  it('builds the partial designs on the shared components alone, and their content right after', async () => {
+    const pb = await loadPlaybook(
+      fileURLToPath(new URL('../../../playbooks/sitecoreai-homepage-demo', import.meta.url)),
+    );
+    const plan = compilePlan(
+      pb,
+      bp([
+        item('site-header', { datasource: 'shared' }),
+        item('site-footer', { datasource: 'shared' }),
+        item('hero', { datasource: 'page' }),
+        item('cards', { datasource: 'page' }),
+      ]),
+    );
+    const task = (id: string) => plan.tasks.find((t) => t.taskId === id)!;
+    expect(task('partial-designs').phase).toBe(4);
+    expect(task('partial-designs').dependsOn.sort()).toEqual([
+      'integrate-site-footer',
+      'integrate-site-header',
+      'register-site-footer',
+      'register-site-header',
+    ]);
+    expect(task('migrate-shared-chrome')).toMatchObject({
+      phase: 4,
+      dependsOn: ['partial-designs'],
+    });
+    expect(task('prove-slice').dependsOn).toContain('partial-designs');
+    // Nothing marked shared: names that say header, footer or navigation stand for them.
+    const unmarked = compilePlan(pb, bp([item('site-nav'), item('hero')]));
+    expect(unmarked.tasks.find((t) => t.taskId === 'partial-designs')!.dependsOn.sort()).toEqual([
+      'integrate-site-nav',
+      'register-site-nav',
+    ]);
+  });
+
+  it('puts the shared components in the website pilot, so they are built first', async () => {
+    const pb = await loadPlaybook(
+      fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url)),
+    );
+    const plan = compilePlan(
+      pb,
+      bp([
+        item('hero', { datasource: 'page' }, true),
+        item('site-footer', { datasource: 'shared' }),
+        item('cards', { datasource: 'page' }),
+      ]),
+    );
+    const checkpoint = plan.tasks.find((t) => t.taskId === PILOT_CHECKPOINT)!;
+    expect(checkpoint.itemKeys.sort()).toEqual(['hero', 'site-footer']);
+    // The footer doesn't wait on the pilot; the non-pilot cards do.
+    expect(plan.tasks.find((t) => t.taskId === 'port-site-footer')!.dependsOn).not.toContain(
+      PILOT_CHECKPOINT,
+    );
+    expect(plan.tasks.find((t) => t.taskId === 'port-cards')!.dependsOn).toContain(
+      PILOT_CHECKPOINT,
+    );
   });
 });

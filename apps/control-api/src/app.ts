@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import {
   ApproveGate,
   ArchiveProject,
+  DeleteProjectNow,
   ChangeSetting,
   ChangeBrief,
   ChangeBudgets,
@@ -23,6 +25,8 @@ import {
   AutonomySetting,
   CreateRule,
   EditRule,
+  ApplyProposals,
+  AttachFile,
   CreateKnowledge,
   EditKnowledge,
   RunRetrospective,
@@ -41,6 +45,7 @@ import {
   type AutonomyLevel,
   type DecisionCategory,
   type CommandResult,
+  type NewEvent,
   type PortfolioDiagnostics,
   type PlaybookScorecard,
   type RuleDraftView,
@@ -86,7 +91,7 @@ import type {
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
 import { harvestRules, type OperatorNotice } from '@lw/stack';
-import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
 import { registerGithubAuth, registerOriginCheck, type GithubAuthOptions } from './auth';
@@ -94,9 +99,17 @@ import type { GithubApp } from '@lw/connectors';
 import type { IntakeService } from './intake';
 import { PortfolioCypher } from './cypher';
 import { projectHistory } from './history';
-import type { ModelClient, RuleDraftInput } from '@lw/agent-runtime';
+import type {
+  ModelClient,
+  ProposalSortInput,
+  RuleDraftInput,
+  SortedProposal,
+} from '@lw/agent-runtime';
+import { applyProposals, inForce, unsorted } from './knowledge-review';
 import { streamProject, type StreamOptions } from './sse';
 import { activityCsv } from './activity-csv';
+import { zip, type ZipEntry } from './zip';
+import { deletionReadiness, purgeDue, purgeProject, type PurgeDeps } from './purge';
 import { escalationsCsv } from './escalations-csv';
 import { enrichEscalation, withDocumentVoice, withVoice } from './enrich';
 import { withDocumentFacts, workbenchStory } from './story';
@@ -120,6 +133,13 @@ export interface AppDeps {
   github?: GithubApp;
   /** Stored content of an artifact version, or null if none is stored. */
   artifactContent?: (projectId: string, ref: string) => Promise<Uint8Array | null>;
+  /** Stores a file the Director gives the team (the blob store); absent where nothing can hold it. */
+  putFile?: (
+    projectId: string,
+    key: string,
+    bytes: Uint8Array,
+    contentType: string,
+  ) => Promise<string>;
   /** The playbook's escalation policy table, for Settings. */
   policyDefaults?: (projectId: string) => PolicyRow[];
   /** The playbook's autonomy defaults for a project, for Settings and triage. */
@@ -160,10 +180,21 @@ export interface AppDeps {
   heartbeat?: () => Promise<WorkerHeartbeat | null>;
   /** Rules from the Director's answers, applied by Lead triage. Absent where nothing stores them. */
   rules?: RuleStore;
+  /**
+   * Deleting projects: what the purge removes from. Absent where it can't run (no store for
+   * tombstones); deletion can then be requested but not carried out.
+   */
+  purge?: PurgeDeps;
+  /** Days between asking for a deletion and the purge (default 30). */
+  deleteGraceDays?: number;
   /** Drafts a rule from an answered card (Claude); without it, the draft copies the card. */
   ruleDrafter?: ((input: RuleDraftInput) => Promise<{ when: string; then: string }>) | null;
   /** The team's knowledge across projects: lessons, procedures and gaps. */
   knowledge?: KnowledgeStore;
+  /** Cypher's recommendation on each waiting proposal (Claude); absent where no model is set up. */
+  proposalSorter?: ((input: ProposalSortInput) => Promise<SortedProposal[]>) | null;
+  /** What changed in the product, for the proposal sort to weigh ("the crawl is bounded"). */
+  productNotes?: string[];
   /**
    * Runs a finished phase's retrospective (Cypher proposes entries with evidence); absent where
    * no model is configured.
@@ -310,6 +341,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (typeof id === 'string' && req.url.startsWith('/projects/')) await projections.catchUp(id);
   });
 
+  // An archived project is read-only: only restoring it changes it. Reads and downloads still work.
+  // A project being deleted answers 410 to everything: nothing may read or write it while it goes.
+  const OPEN_WHEN_ARCHIVED = /^\/projects\/[^/]+\/(restore|archive|deletion|delete-now)$/;
+  app.addHook('preHandler', async (req) => {
+    const id = (req.params as { id?: unknown } | undefined)?.id;
+    if (typeof id !== 'string' || !req.url.startsWith('/projects/')) return;
+    const s = projections.get(id);
+    if (s?.deletion?.purging) throw new CommandError(410, 'deleted', `${s.name} is being deleted.`);
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
+    if (OPEN_WHEN_ARCHIVED.test(req.url.split('?')[0]!)) return;
+    if (s?.status === 'archived')
+      throw new CommandError(
+        409,
+        'archived',
+        `${s.name} is archived and read-only. Restore it from Settings to change anything.`,
+      );
+  });
+
   const project = (id: string): ProjectState | null => projections.get(id) ?? null;
   const orchestrator = (id: string): ProjectCommands => {
     const s = project(id);
@@ -424,12 +473,23 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const overviewLogs: LogCache = new Map();
   app.get('/portfolio/overview', async () => {
     await projections.catchUpAll();
-    return portfolioOverview(
+    const o = await portfolioOverview(
       projections.all(),
       (id, before, limit) => store.read(id, { before, limit, order: 'desc' }),
       now(),
       overviewLogs,
     );
+    // Platform and playbook by name, for the Dashboard's filters and groups.
+    const byId = new Map(projections.all().map((s) => [s.projectId, s]));
+    for (const p of o.projects) {
+      const s = byId.get(p.projectId);
+      if (!s) continue;
+      p.platform = deps.intake?.platformOf(s) ?? null;
+      p.playbook =
+        deps.intake?.playbookOf(s) ??
+        (s.playbook ? { id: s.playbook.id, name: s.playbook.id } : null);
+    }
+    return o;
   });
 
   /** The portfolio's Team, Workbench, Activity and Scorecard: each project page, across projects. */
@@ -828,6 +888,90 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!found) return;
     return found.store.history(found.r.id);
   });
+
+  // ---- What the next build knows, and the proposals waiting to join it ----------------------
+
+  /** What a new project on a playbook starts with: its rules, lessons, procedures and known gaps. */
+  app.get<{ Params: { id: string } }>('/playbooks/:id/in-force', async (req, reply) => {
+    const pb = deps.intake?.playbooks().find((p) => p.id === req.params.id);
+    if (!pb) return fail(reply, 404, 'unknown_playbook', `No playbook "${req.params.id}".`);
+    const [entries, ruleList] = await Promise.all([
+      deps.knowledge?.list() ?? [],
+      deps.rules?.list() ?? [],
+    ]);
+    return inForce(pb, entries, ruleList);
+  });
+
+  /**
+   * Every waiting proposal (lessons, procedures, gaps and rules, from every project), with Cypher's
+   * recommendation on each: read together, so repeats and contradictions are caught.
+   */
+  app.post('/proposals/sort', async () => {
+    const [entries, ruleList] = await Promise.all([
+      deps.knowledge?.list() ?? [],
+      deps.rules?.list() ?? [],
+    ]);
+    const list = unsorted(entries, ruleList);
+    if (!deps.proposalSorter || !list.length)
+      return { available: !!deps.proposalSorter, recommendations: list };
+    const names = new Map(projections.all().map((p) => [p.projectId, p.name]));
+    const proposed = entries.filter((e) => e.status === 'proposed');
+    const proposedRules = ruleList.filter((r) => r.status === 'proposed');
+    const sorted = await deps.proposalSorter({
+      proposals: [
+        ...proposed.map((e) => ({
+          kind: 'knowledge' as const,
+          id: e.id,
+          ref: e.ref,
+          type: e.kind,
+          title: e.title,
+          text: e.text,
+          scope: e.scope,
+          roles: e.roles,
+          from: e.source?.projectId ? (names.get(e.source.projectId) ?? e.source.projectId) : null,
+        })),
+        ...proposedRules.map((r) => ({
+          kind: 'rule' as const,
+          id: r.id,
+          ref: r.ref,
+          type: r.category,
+          title: `When ${r.when}`,
+          text: `Then ${r.then}`,
+          scope: r.scope,
+          roles: r.roles,
+          from: r.sources[0] ? (names.get(r.sources[0].projectId) ?? r.sources[0].projectId) : null,
+        })),
+      ],
+      active: [
+        ...entries.filter((e) => e.status === 'active').map((e) => `${e.ref}: ${e.title}`),
+        ...ruleList.filter((r) => r.status === 'active').map((r) => `${r.ref}: when ${r.when}`),
+      ],
+      playbooks: (deps.intake?.playbooks() ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        platform: p.platform.id,
+      })),
+      notes: deps.productNotes,
+    });
+    const byId = new Map(sorted.map((x) => [x.id, x]));
+    return {
+      available: true,
+      recommendations: list.map((p) => {
+        const s = byId.get(p.id);
+        return s
+          ? { ...p, action: s.action, reason: s.reason, edit: s.edit, duplicateOf: s.duplicateOf }
+          : { ...p, reason: 'Cypher made no recommendation on this one: read it yourself.' };
+      }),
+    };
+  });
+
+  /** The Director's decisions on waiting proposals, applied in one go. */
+  app.post('/proposals/apply', async (req) =>
+    applyProposals(
+      { knowledge: deps.knowledge, rules: deps.rules },
+      ApplyProposals.parse(req.body),
+    ),
+  );
 
   // ---- Knowledge: what the team knows across projects ----------------------------------------
 
@@ -1559,6 +1703,54 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return sinceSummary(s, events, from, now());
   });
 
+  /**
+   * A file the Director gives the team: a logo, a brand kit, a content export. Stored with the
+   * project, listed in every agent's context with the ref media.upload takes, and shown in the
+   * conversation. JSON with the file as base64, up to 10 MB.
+   */
+  app.post<P>('/projects/:id/files', { bodyLimit: 15 * 1024 * 1024 }, async (req, reply) => {
+    const s = known(req.params.id);
+    if (!deps.putFile)
+      return fail(reply, 501, 'files_unavailable', 'This server has nowhere to keep files.');
+    const input = AttachFile.parse(req.body);
+    const bytes = new Uint8Array(Buffer.from(input.dataBase64, 'base64'));
+    if (!bytes.length) return fail(reply, 422, 'empty_file', 'The file is empty.');
+    if (bytes.length > 10 * 1024 * 1024)
+      return fail(reply, 413, 'file_too_large', 'Files can be up to 10 MB.');
+    const fileId = `file-${randomUUID().slice(0, 8)}`;
+    // The stored name keeps its extension (what media.upload and the download route go by).
+    const safe =
+      input.name
+        .normalize('NFKD')
+        .replace(/[^\w.\-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(-120) || 'file';
+    const ref = await deps.putFile(
+      s.projectId,
+      `files/${fileId}-${safe}`,
+      bytes,
+      input.contentType,
+    );
+    const [stored] = await store.append(s.projectId, [
+      {
+        type: 'file.attached',
+        actor: { kind: 'director', id: 'director' },
+        subject: { kind: 'project', id: s.projectId },
+        severity: 'notable',
+        data: {
+          fileId,
+          name: input.name,
+          contentType: input.contentType,
+          bytes: bytes.length,
+          ref,
+          note: input.note?.trim() || null,
+          about: input.about ?? null,
+        },
+      },
+    ]);
+    return reply.status(201).send({ fileId, ref, seq: stored?.seq ?? null });
+  });
+
   /** Screenshots and images a project's documents refer to (`blob://<project>/<key>`). */
   app.get<{ Params: { id: string; '*': string } }>('/projects/:id/blobs/*', async (req, reply) => {
     known(req.params.id);
@@ -1686,6 +1878,72 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * The activity log as a CSV download, oldest first, with full text: an audit trail to hand on.
    * Takes the Activity page's filters (view, severity, agent, phase) and an optional ISO `since`.
    */
+  /** A project's activity, oldest first, read through its whole log (capped at 200,000 rows). */
+  const activityOf = async (s: ProjectState, keep: (i: ActivityItem) => boolean) => {
+    const items: ActivityItem[] = [];
+    let after = 0;
+    const MAX = 200_000;
+    while (items.length < MAX) {
+      const chunk = await store.read(s.projectId, { after, limit: 1000 });
+      if (!chunk.length) break;
+      for (const e of chunk) {
+        const i = toActivity(s, e);
+        if (keep(i)) items.push(i);
+      }
+      after = chunk.at(-1)!.seq;
+    }
+    return items;
+  };
+
+  /**
+   * Everything worth keeping from a project, in one zip: the latest version of every document with
+   * stored content, the activity log as CSV, and a README saying what it is. Offered before a
+   * project is deleted; it works for any project, archived ones included.
+   */
+  app.get<P>('/projects/:id/documents.zip', async (req, reply) => {
+    const s = known(req.params.id);
+    const ext = { markdown: 'md', json: 'json', png: 'png', binary: 'bin' } as const;
+    const files: ZipEntry[] = [];
+    const missing: string[] = [];
+    for (const a of Object.values(s.artifacts)) {
+      const v = a.versions.find((x) => x.version === a.latest);
+      const bytes =
+        v?.ref && deps.artifactContent
+          ? await deps.artifactContent(s.projectId, v.ref).catch(() => null)
+          : null;
+      if (!v || !bytes) {
+        missing.push(a.title ?? a.artifactId);
+        continue;
+      }
+      files.push({
+        name: `documents/${a.artifactId}-v${v.version}.${ext[v.format ?? 'binary']}`,
+        data: bytes,
+        date: new Date(v.ts),
+      });
+    }
+    const activity = await activityOf(s, (i) => i.toolLabel !== null);
+    files.push({
+      name: 'activity.csv',
+      data: Buffer.from(`\uFEFF${activityCsv(activity, (id) => s.agents[id])}`, 'utf8'),
+    });
+    const lines = [
+      `${s.name} (${s.client})`,
+      `Exported ${new Date().toISOString()} from Launchworks. Project id ${s.projectId}, status ${s.status}.`,
+      '',
+      `documents/: the latest version of ${files.length - 1} document(s).`,
+      'activity.csv: every step the team took, with who, which tool, the result and the tokens.',
+      ...(missing.length ? ['', `Not included (no stored content): ${missing.join(', ')}.`] : []),
+    ];
+    files.push({ name: 'README.txt', data: Buffer.from(lines.join('\n') + '\n', 'utf8') });
+    const day = new Date().toISOString().slice(0, 10);
+    const name = `${(s.name ?? s.projectId).replace(/[^A-Za-z0-9-]+/g, '-')}-documents-${day}.zip`;
+    return reply
+      .header('content-type', 'application/zip')
+      .header('content-disposition', `attachment; filename="${name}"`)
+      .header('cache-control', 'no-store')
+      .send(zip(files));
+  });
+
   app.get<P & { Querystring: Record<string, string> }>(
     '/projects/:id/activity.csv',
     async (req, reply) => {
@@ -1698,26 +1956,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       const severities = q.severity?.split(',');
       const types = q.type?.split(',');
       const since = q.since ? Date.parse(q.since) : null;
-      const items: ActivityItem[] = [];
-      let after = 0;
-      const MAX = 200_000;
-      while (items.length < MAX) {
-        const chunk = await store.read(s.projectId, { after, limit: 1000 });
-        if (!chunk.length) break;
-        for (const e of chunk) {
-          const i = toActivity(s, e);
-          if (
-            (q.view === 'all' || i.toolLabel !== null) &&
-            (!severities || severities.includes(i.severity)) &&
-            (!types || types.includes(i.type)) &&
-            (!q.agent || i.agentId === q.agent) &&
-            (q.phase === undefined || i.phase === q.phase) &&
-            (since === null || Date.parse(i.ts) >= since)
-          )
-            items.push(i);
-        }
-        after = chunk.at(-1)!.seq;
-      }
+      const items = await activityOf(
+        s,
+        (i) =>
+          (q.view === 'all' || i.toolLabel !== null) &&
+          (!severities || severities.includes(i.severity)) &&
+          (!types || types.includes(i.type)) &&
+          (!q.agent || i.agentId === q.agent) &&
+          (q.phase === undefined || i.phase === q.phase) &&
+          (since === null || Date.parse(i.ts) >= since),
+      );
       const day = new Date().toISOString().slice(0, 10);
       const name = `${(s.name ?? s.projectId).replace(/[^A-Za-z0-9-]+/g, '-')}-activity-${day}.csv`;
       return reply
@@ -1819,15 +2067,229 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   );
 
+  /** Who did it: the signed-in operator's login, so the log says who archived or restored. */
+  const operatorActor = (req: FastifyRequest) =>
+    ({ kind: 'director', id: req.operator?.login ?? 'director' }) as const;
+  const note = (projectId: string, title: string, body: string): NewEvent => ({
+    type: 'cos.message',
+    actor: { kind: 'chief_of_staff', id: 'chief-of-staff' },
+    subject: { kind: 'project', id: projectId },
+    severity: 'notable',
+    data: { messageId: randomUUID(), kind: 'text', title, body },
+  });
+
+  /**
+   * Archive: the project stops for good, leaves the active lists and becomes read-only (the hook
+   * above). Only once nothing runs: a running project is paused first. A paused project is
+   * cancelled the normal way (open tasks cancelled, cards superseded) before it is archived.
+   */
   app.post<P>('/projects/:id/archive', async (req) => {
     const { confirmation } = ArchiveProject.parse(req.body);
-    if (confirmation !== known(req.params.id).name)
+    const id = req.params.id;
+    const s = known(id);
+    if (confirmation !== s.name)
       throw new CommandError(
         422,
         'confirmation_mismatch',
         'Type the project name exactly to archive it.',
       );
-    return command(req.params.id, (o) => supported(o, 'archive')());
+    if (s.status === 'archived')
+      throw new CommandError(409, 'archived', `${s.name} is already archived.`);
+    if (s.status === 'running')
+      throw new CommandError(
+        409,
+        'not_paused',
+        `Pause ${s.name} first. A project is archived only once nothing is running.`,
+      );
+    if (s.mode !== 'live') return command(id, (o) => supported(o, 'archive')());
+    const previous = s.status;
+    if (previous === 'paused')
+      await orchestrator(id).control({ verb: 'cancel', scope: { kind: 'project', id } });
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.status',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { status: 'archived', previous },
+      },
+      note(
+        id,
+        'Archived',
+        `${by.id === 'director' ? 'The Director' : by.id} archived this project. It is read-only: nothing runs and nothing can be changed. Its history, documents and handover pack stay. Restore it from Settings to read it as ${previous === 'completed' ? 'completed' : previous === 'intake' ? 'not started' : 'cancelled'}.`,
+      ),
+    ]);
+    return settled(id);
+  });
+
+  /**
+   * Delete: asked for on an archived project, carried out by the daily purge once the grace period
+   * is over. Until then it can be cancelled, and restoring is refused (cancel first).
+   */
+  app.post<P>('/projects/:id/deletion', async (req) => {
+    const { confirmation } = ArchiveProject.parse(req.body);
+    const id = req.params.id;
+    const s = known(id);
+    if (confirmation !== s.name)
+      throw new CommandError(
+        422,
+        'confirmation_mismatch',
+        'Type the project name exactly to delete it.',
+      );
+    if (s.status !== 'archived')
+      throw new CommandError(
+        409,
+        'not_archived',
+        `Archive ${s.name} first. Only an archived project can be deleted.`,
+      );
+    if (s.deletion)
+      throw new CommandError(
+        409,
+        'deletion_scheduled',
+        `${s.name} is already scheduled for deletion.`,
+      );
+    const days = deps.deleteGraceDays ?? 30;
+    const due = new Date(now() + days * 86_400_000).toISOString();
+    const by = operatorActor(req);
+    const when = new Date(due).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    await store.append(id, [
+      {
+        type: 'project.deletion',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { action: 'requested', due },
+      },
+      note(
+        id,
+        'Deletion scheduled',
+        `${by.id === 'director' ? 'The Director' : by.id} asked for this project to be deleted. On ${when} everything held for it goes: its history, documents, screenshots, credentials, and its own rules and lessons. Lessons it taught other projects stay, without its name. Cancel the deletion in Settings any time before then.`,
+      ),
+    ]);
+    return settled(id);
+  });
+
+  app.delete<P>('/projects/:id/deletion', async (req) => {
+    const id = req.params.id;
+    const s = known(id);
+    if (!s.deletion)
+      throw new CommandError(409, 'no_deletion', `${s.name} isn't scheduled for deletion.`);
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.deletion',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { action: 'cancelled', due: null },
+      },
+      note(
+        id,
+        'Deletion cancelled',
+        `${by.id === 'director' ? 'The Director' : by.id} cancelled the deletion. The project stays archived.`,
+      ),
+    ]);
+    return settled(id);
+  });
+
+  /**
+   * Delete now: for a project made by mistake, a test, or a demo nobody will open again. No archive
+   * and no grace period: the same purge as the daily run, started at once by the operator. Refused
+   * while the project runs (pause it first). A purge cut off part way is finished by the daily run.
+   */
+  app.post<P>('/projects/:id/delete-now', async (req) => {
+    const { confirmation, keepRepository, keepHosting } = DeleteProjectNow.parse(req.body);
+    const id = req.params.id;
+    const s = known(id);
+    if (confirmation !== s.name)
+      throw new CommandError(
+        422,
+        'confirmation_mismatch',
+        'Type the project name exactly to delete it.',
+      );
+    if (s.status === 'running')
+      throw new CommandError(
+        409,
+        'not_paused',
+        `Pause ${s.name} first. A project is deleted only once nothing is running.`,
+      );
+    if (!deps.purge)
+      throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
+    const keep = [
+      ...(keepRepository ? (['repository'] as const) : []),
+      ...(keepHosting ? (['hosting'] as const) : []),
+    ];
+    const tombstone = await purgeProject(deps.purge, s, operatorActor(req).id, { now: true, keep });
+    // The log is gone: this instance's read model lets the project go too.
+    await projections.catchUp(id);
+    return tombstone;
+  });
+
+  /** The daily purge (Vercel Cron, with CRON_SECRET), or an operator running it by hand. */
+  app.get('/portfolio/purge-due', async (req) => {
+    if (!deps.purge)
+      throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
+    await projections.catchUpAll();
+    return purgeDue(deps.purge, projections.all(), req.operator?.login ?? 'vercel-cron');
+  });
+
+  /**
+   * Whether a deletion would also get the build repository and the hosting project: GitHub's and
+   * Vercel's answers, asked read-only. Kept a few minutes so the Danger zone doesn't ask each time.
+   */
+  let readiness: { at: number; value: Awaited<ReturnType<typeof deletionReadiness>> } | null = null;
+  app.get('/portfolio/deletion-readiness', async () => {
+    if (!deps.purge)
+      throw new CommandError(501, 'purge_unavailable', 'Deletion is not wired in this mode.');
+    if (!readiness || now() - readiness.at > 5 * 60_000)
+      readiness = { at: now(), value: await deletionReadiness(deps.purge) };
+    return readiness.value;
+  });
+
+  /** What is left of deleted projects: their tombstones. */
+  app.get('/portfolio/deleted', async () => (deps.purge ? deps.purge.tombstones.list() : []));
+
+  /** Restore: an archived project comes back as completed or cancelled (or not started). */
+  app.post<P>('/projects/:id/restore', async (req) => {
+    const id = req.params.id;
+    const s = known(id);
+    if (s.status !== 'archived')
+      throw new CommandError(409, 'not_archived', `${s.name} isn't archived.`);
+    if (s.deletion)
+      throw new CommandError(
+        409,
+        'deletion_scheduled',
+        `${s.name} is scheduled for deletion. Cancel the deletion first, then restore it.`,
+      );
+    const log = await store.read(id);
+    const archived = [...log]
+      .reverse()
+      .find((e) => e.type === 'project.status' && e.data.status === 'archived');
+    const previous = archived?.type === 'project.status' ? archived.data.previous : undefined;
+    // A paused project was cancelled on its way to the archive.
+    const status = previous === 'completed' || previous === 'intake' ? previous : 'cancelled';
+    const by = operatorActor(req);
+    await store.append(id, [
+      {
+        type: 'project.status',
+        actor: by,
+        subject: { kind: 'project', id },
+        severity: 'notable',
+        data: { status },
+      },
+      note(
+        id,
+        'Restored',
+        `${by.id === 'director' ? 'The Director' : by.id} restored this project from the archive. It is ${status === 'intake' ? 'back in intake' : status}; to do more work, start a new project from it with Remix.`,
+      ),
+    ]);
+    return settled(id);
   });
 
   app.put<P>('/projects/:id/budgets', async (req) => {

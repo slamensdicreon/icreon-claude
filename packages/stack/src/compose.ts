@@ -424,6 +424,13 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     browser: chromium,
     crawler: opts.crawler,
     assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
+    // The source site's pages are read once and reused for six hours; the new site's never.
+    sourceHosts: (projectId) => {
+      const url = opts.projections.get(projectId)?.sourceUrl;
+      if (!url) return [];
+      const host = new URL(url).hostname;
+      return [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`];
+    },
   });
   // Bulk imports write through the gateway as the task that started them; it exists below.
   let gatewayRef: ToolGateway | null = null;
@@ -941,7 +948,61 @@ async function teamBoard(projections: Projections, projectId: string, taskId: st
 }
 
 /** What every agent is told about the project: its source site and the documents so far. */
-function projectContext(projections: Projections, platform: PlatformPack): ContextProvider {
+/**
+ * What the Director told the team in the project's conversation (Cypher records each message as a
+ * Decision Log entry): every agent starts its task with the latest notes, in the Director's own
+ * words, so "the site was renamed" or "skip the careers video" reaches the work and not only the
+ * log. Newest last; a later note wins over an earlier one it contradicts.
+ */
+export function directorNotes(
+  decisions: {
+    ref: string;
+    question: string;
+    decidedBy: string;
+    scopeKey: string;
+    escalationId: string | null;
+    ts: string;
+  }[],
+  max = 10,
+): string[] {
+  const notes = decisions
+    .filter(
+      (d) => d.decidedBy === 'director' && !d.escalationId && d.scopeKey.startsWith('directive:'),
+    )
+    .slice(-max);
+  if (!notes.length) return [];
+  const clip = (t: string) => (t.length > 600 ? `${t.slice(0, 599)}…` : t);
+  return [
+    `The Director's notes for this project (newest last; they override documents written before them, and a later note wins over an earlier one):\n${notes
+      .map(
+        (d) =>
+          `- ${d.ref} (${d.ts.slice(0, 16).replace('T', ' ')} UTC): ${clip(d.question.trim())}`,
+      )
+      .join('\n')}`,
+  ];
+}
+
+/**
+ * The files the Director gave the team, for every agent: what each is, and the ref to use. An
+ * image or file for the site goes to media.upload with this ref (and a fileName), the same way a
+ * downloaded asset does.
+ */
+export function attachedFiles(
+  files: { name: string; contentType: string; bytes: number; ref: string; note: string | null }[],
+): string[] {
+  if (!files.length) return [];
+  return [
+    `Files the Director gave the team (use them instead of asking for them again; for the site's media, give media.upload the ref with fileName):\n${files
+      .slice(-20)
+      .map(
+        (f) =>
+          `- ${f.name} (${f.contentType}, ${Math.max(1, Math.round(f.bytes / 1024))} KB): ref ${f.ref}${f.note ? `. ${f.note}` : ''}`,
+      )
+      .join('\n')}`,
+  ];
+}
+
+export function projectContext(projections: Projections, platform: PlatformPack): ContextProvider {
   return {
     async forTask(projectId) {
       const s = projections.get(projectId);
@@ -979,6 +1040,8 @@ function projectContext(projections: Projections, platform: PlatformPack): Conte
         docs.length
           ? `Documents you can read with artifacts.read:\n${docs.join('\n')}`
           : 'No documents written yet.',
+        ...directorNotes(s?.decisions ?? []),
+        ...attachedFiles(s?.files ?? []),
       ].join('\n');
     },
   };

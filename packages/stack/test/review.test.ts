@@ -121,6 +121,55 @@ describe('acceptance on live projects', () => {
     });
   });
 
+  it('counts a check the Director waived for this task as passed, and still names its failure', async () => {
+    let asked = 0;
+    const { store, write, validate } = await setup(async () => {
+      asked++;
+      return { verdict: 'accept', reason: 'ok', tokens: 10 };
+    });
+    await write('page-inventory', { pages: [{ path: '/' }, { path: '/about' }] });
+    await write('blueprint', {
+      version: 1,
+      collections: {
+        components: [component('hero')],
+        templates: [{ key: 'content', name: 'Content' }],
+        pages: [{ key: 'home', name: 'Home', attrs: { path: '/', template: 'content' } }],
+        media: [],
+      },
+    });
+    expect((await validate(task({}))).pass).toBe(false);
+    const waive = (taskId: string) =>
+      store.append('p1', [
+        {
+          type: 'decision.recorded',
+          actor: { kind: 'director', id: 'director' },
+          subject: { kind: 'escalation', id: 'esc-1' },
+          severity: 'notable',
+          data: {
+            decisionId: `d-${taskId}`,
+            question: 'Waive blueprint.coverage?',
+            answer: 'Waived',
+            rationale: '/about is out of scope',
+            decidedBy: 'director',
+            scopeKey: `waiver:${taskId}:blueprint.coverage`,
+            escalationId: null,
+          },
+        },
+      ]);
+    // Another task's waiver changes nothing here.
+    await waive('another-task');
+    expect((await validate(task({}))).pass).toBe(false);
+    await waive('draft-blueprint');
+    const r = await validate(task({}));
+    expect(r.pass).toBe(true);
+    expect(asked).toBe(1);
+    const step = (await store.read('p1')).findLast(
+      (e) => e.type === 'step.recorded' && e.data.operation === 'blueprint.coverage',
+    ) as Extract<LwEvent, { type: 'step.recorded' }>;
+    expect(step.data.summary).toContain('Waived by the Director (/about is out of scope)');
+    expect(step.data.summary).toContain('page /about is neither mapped nor dropped');
+  });
+
   it("judges a task on its template's current checks too, so checks added later apply to running projects", async () => {
     const { write, validate } = await setup(async () => ({
       verdict: 'accept',
@@ -441,9 +490,11 @@ describe('head.sections', () => {
       'RichText.tsx': '<div className="w-full">',
       'Stats.tsx': "import { Section } from './ui/Section';\n<Section>",
       'HeroBanner.tsx': '<section>',
+      'hero-with-tabs/HeroWithTabs.tsx': '<section>',
       'ui/Section.tsx': 'export const Section',
     });
     expect(r.status).toBe('fail');
+    expect(r.detail).not.toContain('HeroWithTabs');
     expect(r.detail).toContain("RichText.tsx doesn't render inside ui/Section");
     expect(r.detail).toContain("Stats.tsx doesn't pass a tone");
     expect(r.detail).not.toContain('CardGrid');
@@ -517,7 +568,13 @@ describe('routing failed checks to the components that own them', () => {
     ({ taskId, role, itemKeys, title: taskId }) as never;
 
   async function route(
-    failures: { check: string; owner: 'task' | 'component'; component: string; fix: string }[],
+    failures: {
+      check: string;
+      owner: 'task' | 'component' | 'shared';
+      component: string;
+      fix: string;
+    }[],
+    opts: { sharedTask?: boolean; registrar?: boolean } = { sharedTask: true },
   ) {
     const store = new InMemoryEventStore();
     const library = new ArtifactLibrary(store, new MemoryBlobStore());
@@ -531,6 +588,7 @@ describe('routing failed checks to the components that own them', () => {
           components: [
             { key: 'hero', name: 'Hero Banner' },
             { key: 'cards', name: 'Service Cards' },
+            { key: 'footer', name: 'Site Footer', attrs: { datasource: 'shared' } },
             { key: 'old', name: 'Old', status: 'drop' },
           ],
         },
@@ -543,18 +601,26 @@ describe('routing failed checks to the components that own them', () => {
       'register-hero': taskView('register-hero', 'rendering-registrar', ['hero']),
       'integrate-hero': taskView('integrate-hero', 'head-integrator', ['hero']),
       'port-cards': taskView('port-cards', 'component-engineer', ['cards']),
+      'port-footer': taskView('port-footer', 'component-engineer', ['footer']),
       'migrate-pages-home': taskView('migrate-pages-home', 'content-migrator', ['home']),
     };
+    if (opts.sharedTask)
+      state.tasks['migrate-shared-chrome'] = {
+        ...(taskView('migrate-shared-chrome', 'content-migrator', []) as object),
+        title: 'Fill the shared header, footer and navigation',
+      } as never;
     const seen: string[][] = [];
+    const shared: string[][] = [];
     const routed = await routeFailures({
       deps: {
         library,
         attribute: async (input) => {
           seen.push(input.components.map((c) => c.key));
+          shared.push(input.components.filter((c) => c.shared).map((c) => c.key));
           return {
             failures: failures.map((f) => ({
               ...f,
-              component: f.owner === 'component' ? f.component : null,
+              component: f.owner === 'task' ? null : f.component,
             })),
             tokens: 50,
             usd: 0.01,
@@ -570,9 +636,13 @@ describe('routing failed checks to the components that own them', () => {
         { id: 'parity.visual', status: 'fail', detail: 'Hero: grey band shows black.' },
         { id: 'parity.render', status: 'fail', detail: '/ shows 80% of the text.' },
       ],
-      codeRoles: new Set(['component-engineer', 'head-integrator']),
+      codeRoles: new Set([
+        'component-engineer',
+        'head-integrator',
+        ...(opts.registrar ? ['rendering-registrar'] : []),
+      ]),
     });
-    return { routed, seen };
+    return { routed, seen, shared };
   }
 
   it('sends a component failure to every code task of that component, and the page re-checks', async () => {
@@ -580,7 +650,7 @@ describe('routing failed checks to the components that own them', () => {
       { check: 'parity.visual', owner: 'component', component: 'hero', fix: 'Make the band grey.' },
     ]);
     // Dropped components are not offered.
-    expect(seen[0]).toEqual(['hero', 'cards']);
+    expect(seen[0]).toEqual(['hero', 'cards', 'footer']);
     expect(routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual(['port-hero', 'integrate-hero']);
     expect(routed!.waitOn.sendBack![0]!.fixes).toMatch(
       /Migrate Home fails on Hero Banner: Make the band grey/,
@@ -591,6 +661,41 @@ describe('routing failed checks to the components that own them', () => {
       /Hero Banner needs fixing in code.*Yours to fix when it runs again/,
     );
     expect(routed!.tokens).toBe(50);
+  });
+
+  it('sends a rendering whose content never resolves to its registrar, and code fixes only to code', async () => {
+    const code = await route(
+      [
+        {
+          check: 'parity.visual',
+          owner: 'component',
+          component: 'hero',
+          fix: 'Make the band grey.',
+        },
+      ],
+      { sharedTask: true, registrar: true },
+    );
+    expect(code.routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual([
+      'port-hero',
+      'integrate-hero',
+    ]);
+    // Paylocity's footer: isContentResolved false, the Component Query was broken.
+    const query = await route(
+      [
+        {
+          check: 'parity.render',
+          owner: 'component',
+          component: 'hero',
+          fix: 'Hero gets no content (isContentResolved: false): fix its Component Query.',
+        },
+      ],
+      { sharedTask: true, registrar: true },
+    );
+    expect(query.routed!.waitOn.sendBack!.map((x) => x.taskId)).toEqual([
+      'port-hero',
+      'register-hero',
+      'integrate-hero',
+    ]);
   });
 
   it('re-checks without the agent when everything failed was a component’s', async () => {
@@ -605,6 +710,40 @@ describe('routing failed checks to the components that own them', () => {
     ]);
     expect(routed!.waitOn.review).toEqual({ fixes: null });
     expect(routed!.waitOn.what).toBe('fixes to Hero Banner and Service Cards');
+  });
+
+  it('sends shared header and footer content to its one task, never to the page or the code', async () => {
+    const { routed, shared } = await route([
+      {
+        check: 'parity.render',
+        owner: 'shared',
+        component: 'footer',
+        fix: 'Create the footer columns and links under the SiteFooter datasource.',
+      },
+      { check: 'parity.visual', owner: 'task', component: '', fix: 'Use the source hero image.' },
+    ]);
+    // The Lead is told which components are shared.
+    expect(shared[0]).toEqual(['footer']);
+    expect(routed!.waitOn.sendBack).toEqual([
+      {
+        taskId: 'migrate-shared-chrome',
+        fixes: expect.stringContaining('Create the footer columns and links'),
+      },
+    ]);
+    expect(routed!.waitOn.review).toEqual({
+      fixes: 'parity.visual: Use the source hero image.',
+    });
+    expect(routed!.reason).toMatch(
+      /^The shared header, footer and navigation content.*is filled by Fill the shared header, footer and navigation, not by a page: sent to its owner/,
+    );
+  });
+
+  it('keeps shared content with the page on a plan with no shared task (0.11.0 and older)', async () => {
+    const { routed } = await route(
+      [{ check: 'parity.render', owner: 'shared', component: 'footer', fix: 'Footer links.' }],
+      { sharedTask: false },
+    );
+    expect(routed).toBeNull();
   });
 
   it('leaves everything with the task when nothing is a component’s', async () => {
@@ -685,5 +824,92 @@ describe('blueprint.personas', () => {
   it('fails a Blueprint with no personas', async () => {
     const r = await CHECKS['blueprint.personas']!(ctx(blueprint([])));
     expect(r).toMatchObject({ status: 'fail', detail: 'no personas.' });
+  });
+});
+
+describe('blueprint.coverage on a sampled site', () => {
+  const run = (blueprint: unknown, inventory: unknown) =>
+    CHECKS['blueprint.coverage']!({
+      projectId: 'p1',
+      library: {
+        read: async (_p: string, id: string) =>
+          id === 'blueprint'
+            ? { content: JSON.stringify(blueprint) }
+            : id === 'page-inventory'
+              ? { content: JSON.stringify(inventory) }
+              : null,
+      },
+    } as never);
+  const component = {
+    key: 'hero',
+    name: 'Hero',
+    pilot: true,
+    attrs: { fields: ['title'], rendering: 'Hero', queryBudget: 1 },
+  };
+  const blueprint = (scope?: unknown) => ({
+    version: 1,
+    collections: {
+      pages: [{ key: 'home', name: 'Home', attrs: { path: '/', template: 'home' } }],
+      templates: [{ key: 'home', name: 'Home' }],
+      components: [component],
+    },
+    ...(scope ? { scope } : {}),
+  });
+  // Paylocity: the crawl read 64 pages of the 2,693 the sitemap lists.
+  const inventory = {
+    pages: [{ path: '/' }],
+    crawl: { pagesFound: 2693, pagesInventoried: 1, partial: true },
+  };
+
+  it('asks for the scope decision when Discovery read only part of the site, and shows it', async () => {
+    const missing = await run(blueprint(), inventory);
+    expect(missing.status).toBe('fail');
+    expect(missing.detail).toContain('the inventory covers 1 of 2693 pages found');
+    const decided = await run(
+      blueprint({
+        pagesFound: 2693,
+        approach: 'Blog and resources (2,400 pages) are imported in bulk after launch.',
+      }),
+      inventory,
+    );
+    expect(decided.status).toBe('pass');
+    expect(decided.detail).toContain('Covers 1 of 2693 pages found: Blog and resources');
+    // A site read whole needs no scope.
+    expect(
+      (
+        await run(blueprint(), {
+          pages: [{ path: '/' }],
+          crawl: { pagesFound: 1, pagesInventoried: 1 },
+        })
+      ).status,
+    ).toBe('pass');
+  });
+
+  it('wants each media entry to name one file, not a folder', async () => {
+    const whole = { pages: [{ path: '/' }], crawl: { pagesFound: 1, pagesInventoried: 1 } };
+    const withMedia = (media: { key: string; url: string }[]) => ({
+      ...blueprint(),
+      collections: {
+        ...blueprint().collections,
+        media: media.map((m) => ({ key: m.key, name: m.key, attrs: { url: m.url } })),
+      },
+    });
+    const cdn = 'https://cdn-dynmedia-1.microsoft.com/is/image/microsoftcorp';
+    const r = await run(
+      withMedia([
+        { key: 'promo', url: `${cdn}/` },
+        { key: 'banner', url: cdn },
+        { key: 'xbox', url: `${cdn}/Xbox-Series-S?fmt=png` },
+      ]),
+      whole,
+    );
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain("media promo's url is a folder");
+    expect(r.detail).toContain("media banner's url is a folder");
+    expect(r.detail).not.toContain('media xbox');
+    // A file without an extension (Scene7) is a file.
+    expect(
+      (await run(withMedia([{ key: 'xbox', url: `${cdn}/Xbox-Series-S?fmt=png` }]), whole)).status,
+    ).toBe('pass');
   });
 });

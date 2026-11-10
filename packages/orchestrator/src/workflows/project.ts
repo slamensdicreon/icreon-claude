@@ -114,6 +114,20 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** The previous run's state, when this run continues one. */
   const resume = input.resume;
   const startedAt = resume?.startedAt ?? Date.now();
+  /**
+   * Working time: hours with at least one agent session running. The hours budget counted the
+   * calendar, so a project waiting overnight on a card (Microsoft's demo) "used" its hours asleep.
+   * A run continued from one that counted the calendar starts from what it had counted.
+   */
+  let busyMs = resume?.busyMs ?? (resume ? Date.now() - startedAt : 0);
+  let busySince: number | null = null;
+  const workingHours = () =>
+    Math.round(((busyMs + (busySince === null ? 0 : Date.now() - busySince)) / 3_600_000) * 100) /
+    100;
+  const hoursUsed = () =>
+    patched('working-hours')
+      ? workingHours()
+      : Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100;
   const phaseInfo = new Map(playbook.manifest.phases.map((p) => [p.number, p]));
   const roles = new Map(playbook.roles.map((r) => [r.role, r]));
   const templates = new Map(playbook.plan.templates.map((t) => [t.id, t]));
@@ -132,6 +146,18 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const attempts: Record<string, number> = {};
   const instructions: Record<string, string | null> = {};
   const retryFromBlocked = new Set<string>();
+  /**
+   * Tasks whose last rejected-work card retried by default (nobody answered). If such a task is
+   * rejected again, its next card waits for the Director: Microsoft's 404 raised the same card
+   * every hour overnight, each defaulting to a retry that could not change the result.
+   */
+  const defaultedRetry = new Set<string>();
+  /**
+   * The failing checks on each task's last rejected-work card. The same failure again is the same
+   * decision: the next card says so and waits for the Director (Ervin Cable's SEO titles raised
+   * three cards for one decision).
+   */
+  const lastFailure: Record<string, string> = {};
   /** Tasks the Director sent back: they run even if their phase has already exited. */
   const reruns = new Set<string>();
   /** Tasks parked until other tasks make what they need, and how often each has waited. */
@@ -476,6 +502,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     const recommended = options.find((o) => o.recommended)?.id ?? options[0]!.id;
     if (out.level === 'agents') {
       const id = await raise(tagged, resolver);
+      // The Director may have answered it while it was being raised: their answer stands.
+      if (patched('settle-once') && !unresolved(escalations.get(id)!)) return id;
       await settle(
         id,
         recommended,
@@ -541,6 +569,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       },
       resolver,
     );
+    // The Director may have answered it while it was being raised: their answer stands.
+    if (patched('settle-once') && !unresolved(escalations.get(id)!)) return id;
     await settle(
       id,
       lead.optionId,
@@ -658,6 +688,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         id,
       ),
     );
+    if (e.resolver.kind === 'blocked' && patched('repeat-card-waits')) {
+      if (by === 'default' && optionId === 'retry') defaultedRetry.add(e.resolver.taskId);
+      else defaultedRetry.delete(e.resolver.taskId);
+    }
     await applyResolution(e.resolver, optionId, notes);
     poke();
   }
@@ -686,6 +720,28 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             taskMove(t, 'done', 'Accepted as is'),
             agentRefresh(t.role),
           );
+        } else if (optionId === 'waive' && r.waivable?.length) {
+          // The Director's waiver, on record: the task's checks treat these as passed from now
+          // on, and its Lead no longer rejects it for them. It is checked again without its agent.
+          await send(
+            ...r.waivable.map((check) =>
+              decision(
+                `Waive ${check} for ${t.title}?`,
+                'Waived',
+                notes ?? 'The Director accepted this check failing for this task.',
+                'director',
+                `waiver:${r.taskId}:${check}`,
+                null,
+              ),
+            ),
+          );
+          instructions[r.taskId] = notes;
+          revalidate.add(r.taskId);
+          retryFromBlocked.add(r.taskId);
+        } else if (optionId === 'hold') {
+          // Parked: it stays blocked, with no retry and no further card, until the Director runs
+          // it again from the plan (once the task that owns its cause has landed).
+          instructions[r.taskId] = notes;
         } else {
           instructions[r.taskId] = notes;
           retryFromBlocked.add(r.taskId);
@@ -823,6 +879,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const t of batch) {
       revalidate.delete(t.taskId);
       dispatchedAt[t.taskId] = finishedCount;
+      if (!children.size && busySince === null) busySince = Date.now();
       children.set(t.taskId, handle);
       // The child owns these tasks' transitions now; marking them in flight means they are
       // never dispatched twice.
@@ -869,6 +926,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         : [];
     for (const id of followers) redoPending.add(id);
     children.delete(t.taskId);
+    if (!children.size && busySince !== null) {
+      busyMs += Date.now() - busySince;
+      busySince = null;
+    }
     running.get(t.role)?.delete(t.taskId);
     states[t.taskId] = outcome.state;
     attempts[t.taskId] = outcome.attempt;
@@ -1265,6 +1326,21 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       events.push(agentRefresh(t.role));
       await send(...events);
       // Rejected and retries didn't fix it: the Lead may send it back once more.
+      const holdable = patched('repeat-card-waits');
+      const compared = patched('same-failure-waits');
+      const failing =
+        outcome.outcome === 'escalate'
+          ? (outcome.checks ?? [])
+              .filter((c) => c.status === 'fail')
+              .map((c) => c.id)
+              .sort()
+          : [];
+      const signature = failing.join(',');
+      const sameAgain = compared && Boolean(signature) && lastFailure[t.taskId] === signature;
+      if (compared && signature) lastFailure[t.taskId] = signature;
+      const defaulted = holdable && defaultedRetry.has(t.taskId);
+      const repeat = defaulted || sameAgain;
+      const waivable = compared && failing.length ? failing : [];
       const raiser = (
         card: Omit<EscalationCardInput, 'escalationId' | 'deadline'>,
         resolver: Resolver,
@@ -1313,20 +1389,44 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
                 context: [
                   `The Lead rejected this output and retries did not fix it. ${outcome.reason}`,
                   outcome.outcome === 'escalate' ? checksLine(outcome.checks) : '',
+                  defaulted
+                    ? 'It failed again after the last card retried it by default, with nobody answering. Retrying again changes nothing unless what it depends on changed, so this card waits for you: accept it (it is listed as a gap), hold it until the cause is fixed, or retry with a note.'
+                    : sameAgain
+                      ? `It failed on the same checks as its last card (${failing.join(', ')}): this is the same decision again, so it waits for you. Accept it, waive those checks for this task, hold it until the cause is fixed, or retry with a note saying what changed.`
+                      : '',
                 ]
                   .filter(Boolean)
                   .join(' '),
                 impact: `${t.title} and its dependents wait. Other work continues.`,
                 options: [
-                  { id: 'retry', label: 'Retry with the Lead feedback', recommended: true },
-                  { id: 'accept', label: 'Accept the current output', recommended: false },
+                  { id: 'retry', label: 'Retry with the Lead feedback', recommended: !repeat },
+                  { id: 'accept', label: 'Accept the current output', recommended: repeat },
+                  ...(waivable.length
+                    ? [
+                        {
+                          id: 'waive',
+                          label: `Waive ${waivable.join(', ')} for this task, and check it again without them`,
+                          recommended: false,
+                        },
+                      ]
+                    : []),
+                  ...(holdable
+                    ? [
+                        {
+                          id: 'hold',
+                          label:
+                            'Hold it: no more retries or cards until I run it again from the plan',
+                          recommended: false,
+                        },
+                      ]
+                    : []),
                 ],
-                defaultOptionId: 'retry',
+                defaultOptionId: repeat ? null : 'retry',
                 evidence: [{ kind: 'log', label: 'Rejections', ref: `task:${t.taskId}` }],
                 sourceTaskId: t.taskId,
                 gate: null,
               },
-        { kind: 'blocked', taskId: t.taskId },
+        { kind: 'blocked', taskId: t.taskId, ...(waivable.length ? { waivable } : {}) },
       );
       // A Lead may have settled it already; then the task is retrying, not waiting on a card.
       if (unresolved(escalations.get(escalationId)!)) taskEscalation.set(t.taskId, escalationId);
@@ -1337,7 +1437,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   async function account(result: Pick<AgentResult, 'tokens' | 'usd'>, events: NewEvent[]) {
     spent.tokens += result.tokens;
     spent.usd = Math.round((spent.usd + result.usd) * 100) / 100;
-    const hours = Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100;
+    const hours = hoursUsed();
     events.push({
       type: 'budget.updated',
       actor: SYSTEM,
@@ -1408,8 +1508,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** A signal to a task workflow that has already finished changes nothing: ignore it. */
   function ignoreGone(): void {}
 
-  /** The largest share of any budget used: tokens, dollars or hours since start. */
-  function budgetRatio(hours = Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100) {
+  /** The largest share of any budget used: tokens, dollars or working hours. */
+  function budgetRatio(hours = hoursUsed()) {
     const { budgets } = policy;
     return Math.max(spent.tokens / budgets.tokens, spent.usd / budgets.usd, hours / budgets.hours);
   }
@@ -1820,7 +1920,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         ...say(
           'directive_ack',
           'Directive',
-          `Understood: ${interpretation}. No change to the plan.`,
+          // Said so the Director knows a note reaches the work: every agent's context carries it.
+          `Understood: ${interpretation}. No change to the plan; the team sees this note from its next task.`,
         ),
         decision(
           text,
@@ -2460,6 +2561,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     for (const id of r.pastLimitRerun ?? []) pastLimitRerun.add(id);
     skipMerged = r.skipMerged ?? false;
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
+    for (const id of r.defaultedRetry ?? []) defaultedRetry.add(id);
+    Object.assign(lastFailure, r.lastFailure ?? {});
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
     for (const [id, c] of r.capabilityWait ?? []) capabilityWait.set(id, c);
@@ -2490,12 +2593,15 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   function snapshot(): ProjectSnapshot {
     return {
       startedAt,
+      busyMs: busyMs + (busySince === null ? 0 : Date.now() - busySince),
       blueprint,
       plan,
       states: { ...states },
       attempts: { ...attempts },
       instructions: { ...instructions },
       retryFromBlocked: [...retryFromBlocked],
+      defaultedRetry: [...defaultedRetry],
+      lastFailure: { ...lastFailure },
       reruns: [...reruns],
       waitingOn: [...waitingOn],
       capabilityWait: [...capabilityWait],

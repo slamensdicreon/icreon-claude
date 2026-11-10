@@ -30,4 +30,5 @@ it('compiles every playbook version the catalog serves', async () => {
       }
     }
   expect(failures).toEqual([]);
-});
+  // Every archived version is compiled too; each new version makes this longer.
+}, 60_000);

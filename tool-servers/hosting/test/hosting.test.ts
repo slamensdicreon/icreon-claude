@@ -268,6 +268,18 @@ describe('HostingToolServer', () => {
       records,
     ).call('project.read', {}, ctx);
     expect(r.body).toMatchObject({ productionUrl: 'https://acme-site.vercel.app' });
+    // Which variables the head needs are missing, by target, in the line the Lead reads.
+    expect(r.body).toMatchObject({
+      variables: {
+        production: {
+          set: [],
+          missing: ['NEXT_PUBLIC_DEFAULT_SITE_NAME', 'SITECORE_EDITING_SECRET'],
+        },
+      },
+    });
+    expect(r.summary).toContain(
+      'production 0 set (missing: NEXT_PUBLIC_DEFAULT_SITE_NAME, SITECORE_EDITING_SECRET)',
+    );
     expect(records).toEqual([
       {
         projectId: 'p1',

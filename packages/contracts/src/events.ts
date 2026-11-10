@@ -442,7 +442,25 @@ export const EventBody = z.discriminatedUnion('type', [
         .optional(),
     }),
   ),
-  ev('project.status', z.object({ status: ProjectStatus })),
+  ev(
+    'project.status',
+    z.object({
+      status: ProjectStatus,
+      /** On `archived`: the status it had before, so a restore knows what to return to. */
+      previous: ProjectStatus.optional(),
+    }),
+  ),
+  /**
+   * Deleting an archived project: requested (to run on `due`), cancelled before then, or under
+   * way (the purge has started; the project answers 410 from here on).
+   */
+  ev(
+    'project.deletion',
+    z.object({
+      action: z.enum(['requested', 'cancelled', 'purging']),
+      due: z.iso.datetime().nullable(),
+    }),
+  ),
   ev('phase.entered', z.object({ phase: z.number().int() })),
   ev('phase.exited', z.object({ phase: z.number().int() })),
   ev(
@@ -635,6 +653,24 @@ export const EventBody = z.discriminatedUnion('type', [
       messageId: z.string(),
       body: z.string(),
       /** Set when asked from an escalation card ("Ask a question"). */
+      about: z.string().nullable().default(null),
+    }),
+  ),
+  /**
+   * A file the Director gave the team (a logo, a brand kit, a content export), stored with the
+   * project: every agent's context lists it, and its ref is what media.upload or artifacts take.
+   */
+  ev(
+    'file.attached',
+    z.object({
+      fileId: z.string(),
+      name: z.string(),
+      contentType: z.string(),
+      bytes: z.number().int().nonnegative(),
+      ref: z.string(),
+      /** What it is for, in the Director's words. */
+      note: z.string().nullable().default(null),
+      /** The card it answers, when attached from one. */
       about: z.string().nullable().default(null),
     }),
   ),

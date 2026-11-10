@@ -55,7 +55,26 @@ export interface RuleStore {
   applied(id: string, use: RuleUse): Promise<void>;
   overridden(id: string, use: RuleUse): Promise<void>;
   history(id: string): Promise<RuleHistoryItem[]>;
+  /**
+   * A project is being deleted: its own rules go, with their history. Rules it taught every
+   * project stay; their sources keep the project's id (it points at the deletion record) but lose
+   * the card's words, and their history keeps the counts without the project.
+   */
+  forgetProject(projectId: string): Promise<{ deleted: number; deidentified: number }>;
 }
+
+/** What a source from a deleted project keeps: the id of its deletion record, and no words. */
+export const forgottenSource = (s: RuleSource): RuleSource => ({
+  projectId: s.projectId,
+  escalationId: '',
+  title: 'A card on a deleted project',
+  answer: null,
+});
+/** A use from a deleted project: still counted, no longer pointing anywhere. */
+export const forgottenUse = (detail: Record<string, unknown>) => {
+  const { projectId: _p, escalationId: _e, taskId: _t, ...rest } = detail;
+  return { ...rest, project: 'deleted' };
+};
 
 /** Rule body kept as JSON beside the indexed columns. */
 interface Body {
@@ -225,6 +244,40 @@ export class PostgresRuleStore implements RuleStore {
     await this.log(id, 'overridden', { ...use });
   }
 
+  async forgetProject(projectId: string) {
+    const own = await this.sql.query<{ id: string }>(
+      "SELECT id FROM lw_rules WHERE scope_kind = 'project' AND scope_id = $1",
+      [projectId],
+    );
+    for (const { id } of own.rows) {
+      await this.sql.query('DELETE FROM lw_rule_history WHERE rule_id = $1', [id]);
+      await this.sql.query('DELETE FROM lw_rules WHERE id = $1', [id]);
+    }
+    const taught = await this.sql.query<Row>(
+      "SELECT * FROM lw_rules WHERE body->'sources' @> $1::jsonb",
+      [JSON.stringify([{ projectId }])],
+    );
+    for (const r of taught.rows) {
+      const sources = r.body.sources.map((x) =>
+        x.projectId === projectId ? forgottenSource(x) : x,
+      );
+      await this.sql.query('UPDATE lw_rules SET body = $2::jsonb WHERE id = $1', [
+        r.id,
+        JSON.stringify({ ...r.body, sources }),
+      ]);
+    }
+    const uses = await this.sql.query<{ seq: string | number; detail: Record<string, unknown> }>(
+      "SELECT seq, detail FROM lw_rule_history WHERE detail->>'projectId' = $1",
+      [projectId],
+    );
+    for (const u of uses.rows)
+      await this.sql.query('UPDATE lw_rule_history SET detail = $2::jsonb WHERE seq = $1', [
+        u.seq,
+        JSON.stringify(forgottenUse(u.detail)),
+      ]);
+    return { deleted: own.rows.length, deidentified: taught.rows.length };
+  }
+
   async history(id: string): Promise<RuleHistoryItem[]> {
     const { rows } = await this.sql.query<{
       at: string | Date;
@@ -330,6 +383,30 @@ export class MemoryRuleStore implements RuleStore {
   async overridden(id: string, use: RuleUse): Promise<void> {
     this.bump(id, 'overridden');
     this.push(id, 'overridden', { ...use });
+  }
+
+  async forgetProject(projectId: string) {
+    let deleted = 0;
+    let deidentified = 0;
+    for (const [id, r] of [...this.rules]) {
+      if (r.scope.kind === 'project' && r.scope.id === projectId) {
+        this.rules.delete(id);
+        this.log.delete(id);
+        deleted++;
+      } else if (r.sources.some((x) => x.projectId === projectId)) {
+        const sources = r.sources.map((x) => (x.projectId === projectId ? forgottenSource(x) : x));
+        this.rules.set(id, { ...r, sources });
+        deidentified++;
+      }
+    }
+    for (const [id, items] of this.log)
+      this.log.set(
+        id,
+        items.map((h) =>
+          h.detail.projectId === projectId ? { ...h, detail: forgottenUse(h.detail) } : h,
+        ),
+      );
+    return { deleted, deidentified };
   }
 
   async history(id: string): Promise<RuleHistoryItem[]> {

@@ -23,6 +23,9 @@ const ICONS = {
     <path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 9h18M7 6.5h.01" />
   ),
   activity: <path d="M3 12h4l3 7 4-14 3 7h4" />,
+  attach: (
+    <path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L14.5 7" />
+  ),
   scorecard: <path d="M4 20h16M7 16V9M12 16V4M17 16v-6" />,
   settings: (
     <>

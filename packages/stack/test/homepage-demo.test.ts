@@ -59,8 +59,9 @@ describe('sitecoreai-homepage-demo playbook', () => {
       'stats-strip',
       'rich-text',
     ]);
-    expect(keys('template-')).toEqual(['home', 'content']);
-    expect(keys('migrate-pages-')).toEqual(['home', 'not-found']);
+    // From 0.2.4 the demo builds the homepage alone: the 404 page is recorded as dropped.
+    expect(keys('template-')).toEqual(['home']);
+    expect(keys('migrate-pages-')).toEqual(['home']);
     expect(keys('upload-media-')).toEqual(['logo', 'hero-home', 'card-1']);
     // No pilot checkpoint, no serialization or perf audit; the drag-and-drop check closes it.
     expect(plan.tasks.map((t) => t.taskId)).not.toContain('pilot-checkpoint');
@@ -70,12 +71,32 @@ describe('sitecoreai-homepage-demo playbook', () => {
     expect(approve.dependsOn).toEqual(expect.arrayContaining(['integrate-navigation']));
   });
 
-  it('passes its own slice check, and shows held items as audited, not built', async () => {
+  it('passes its own Blueprint check; a 0.1.0 project’s held items still read as audited', async () => {
     const { blueprint } = await loadFixtures(DEMO);
-    expect((await sliceCheck(blueprint)).status).toBe('pass');
+    expect(await sliceCheck(blueprint)).toMatchObject({
+      status: 'pass',
+      detail: 'The demo builds 1 page, 1 template, 7 components and 3 media.',
+    });
+    // Projects started on 0.1.0 wrote whole-site Blueprints with the rest held.
+    const old = {
+      ...blueprint,
+      collections: {
+        ...blueprint.collections,
+        pages: [
+          ...blueprint.collections.pages!,
+          {
+            key: 'about',
+            name: 'About',
+            status: 'drop' as const,
+            pilot: false,
+            attrs: { held: true, path: '/about' },
+          },
+        ],
+      },
+    };
     const snap = blueprintSnapshot({
       seq: 1,
-      current: { version: 1, blueprint },
+      current: { version: 1, blueprint: old },
       approved: null,
       tasks: [],
       decisions: [],
@@ -83,13 +104,9 @@ describe('sitecoreai-homepage-demo playbook', () => {
     });
     expect(Object.fromEntries(snap.collections[0]!.rows.map((r) => [r.key, r.status]))).toEqual({
       home: 'planned',
-      'not-found': 'planned',
+      // The 404 page is recorded as dropped from 0.2.4; the 0.1.0 page beside it reads as held.
+      'not-found': 'dropped',
       about: 'held',
-      services: 'held',
-      faq: 'held',
-      work: 'held',
-      'news-1': 'held',
-      'old-campaign': 'dropped',
     });
   });
 
@@ -117,9 +134,15 @@ describe('sitecoreai-homepage-demo playbook', () => {
   // the files below, each on purpose. Copy the fix across, or add the file here with the reason.
   it("keeps the website playbook's roles, prompts and knowledge, except where it says why", async () => {
     const DIFFERS: Record<string, string> = {
-      'prompts/solution-architect.md': 'the demo slice: keep the homepage, hold the rest',
-      'prompts/content-analyst.md': 'the parity re-crawl reads only the kept pages',
-      'prompts/experience-enabler.md': 'only the kept pages; no redirects, sitemap or robots',
+      'prompts/solution-architect.md': 'a Blueprint for the homepage only, the 404 page dropped',
+      'prompts/content-analyst.md':
+        'inventory the homepage in full, audit the whole site in numbers',
+      'prompts/repo-analyst.md': 'inventory the homepage, header, footer and navigation only',
+      'prompts/experience-enabler.md':
+        'SEO fields and dictionary only; no redirects, sitemap, robots or error pages',
+      'roles/experience-enabler.yaml':
+        'its mandate names no redirects, sitemap, robots or error pages',
+      'prompts/head-integrator.md': 'no 404 page to serve at unknown URLs',
       'prompts/handover-writer.md': 'the demo summary and drag-and-drop checklist',
       'roles/handover-writer.yaml': 'writes the demo summary, not the handover pack',
       'knowledge/definition-of-done.md': "the demo's own Definition of Done",
@@ -143,9 +166,10 @@ describe('sitecoreai-homepage-demo playbook', () => {
   });
 });
 
-const sliceCheck = (blueprint: unknown) =>
+const sliceCheck = (blueprint: unknown, version?: string) =>
   CHECKS['blueprint.demo-slice']!({
     projectId: 'p1',
+    state: { playbook: version ? { id: 'sitecoreai-homepage-demo', version } : null },
     library: {
       read: async (_p: string, id: string) =>
         id === 'blueprint' ? { content: JSON.stringify(blueprint) } : null,
@@ -214,7 +238,7 @@ describe('blueprint.demo-slice', () => {
     return r.status === 'pass' ? [] : r.detail;
   };
 
-  it('passes the homepage, 404, chrome and their media kept, the rest held', async () => {
+  it('passes the homepage, chrome and their media kept (and a 0.2.3 404 page), the rest held', async () => {
     const r = await sliceCheck(base());
     expect(r).toMatchObject({ status: 'pass' });
     expect(r.detail).toContain('2 pages, 2 templates, 3 components and 1 media');
@@ -229,8 +253,8 @@ describe('blueprint.demo-slice', () => {
       attrs: { held: true, fields: [{ name: 'heading' }], variants: [{ pages: ['/'] }] },
     };
     const d = await problems(bp);
-    expect(d).toContain('page about (/about) is kept');
-    expect(d).toContain('hero is on the homepage or 404 (or shared) but dropped');
+    expect(d).toContain('page about (/about) is in the Blueprint; only the homepage is built');
+    expect(d).toContain('hero is on a page the demo builds (or shared) but dropped');
   });
 
   it('wants the navigation as its own component, not merged into the header', async () => {
@@ -247,7 +271,7 @@ describe('blueprint.demo-slice', () => {
     expect(await problems(bp)).toContain('no navigation component');
   });
 
-  it('wants the 404 page, unused templates and media held, and a reason for every drop', async () => {
+  it('needs no 404 page (0.2.4), wants unused templates and media held, and a reason for every drop', async () => {
     const bp = base();
     bp.collections.pages!.splice(1, 1);
     bp.collections.media!.push({
@@ -265,15 +289,39 @@ describe('blueprint.demo-slice', () => {
       attrs: {},
     });
     const d = await problems(bp);
-    expect(d).toContain('no 404 page');
-    expect(d).toContain("template content isn't used by the homepage or 404");
-    expect(d).toContain("media team isn't used on the homepage");
+    expect(d).not.toContain('404');
+    expect(d).toContain("template content isn't used by the pages the demo builds");
+    expect(d).toContain("media team isn't used on the pages the demo builds");
     expect(d).toContain('templates landing is dropped with neither attrs.held nor a reason');
   });
 
-  it('keeps the model contract of held components', async () => {
+  it('fails a kept 404 page from 0.2.5, and still accepts one on older versions', async () => {
+    const kept404 = 'the 404 page (not-found) is kept; the homepage demo builds no 404 page';
+    for (const v of ['0.2.5', '0.3.0', '1.0.0'])
+      expect((await sliceCheck(base(), v)).detail).toContain(kept404);
+    for (const v of ['0.2.3', '0.2.4', '0.1.0'])
+      expect(await sliceCheck(base(), v)).toMatchObject({ status: 'pass' });
+    const dropped = base();
+    dropped.collections.pages![1] = {
+      ...dropped.collections.pages![1]!,
+      status: 'drop',
+      attrs: { path: '/404', errorPage: 404, reason: 'The homepage demo builds no 404 page' },
+    };
+    dropped.collections.templates!.splice(1, 1);
+    expect(await sliceCheck(dropped, '0.2.5')).toMatchObject({ status: 'pass' });
+  });
+
+  it('wants a merged component to merge into one the demo builds', async () => {
     const bp = base();
-    bp.collections.components![3] = { ...bp.collections.components![3]!, attrs: { held: true } };
-    expect(await problems(bp)).toContain('faq is held but has no fields');
+    bp.collections.components!.push({
+      key: 'jobs',
+      name: 'Job Categories',
+      status: 'merge',
+      pilot: false,
+      attrs: { mergedInto: 'faq', variants: [{ pages: ['/careers'] }] },
+    });
+    expect(await problems(bp)).toContain(
+      "jobs is merged into faq, which the demo doesn't build: leave jobs out",
+    );
   });
 });

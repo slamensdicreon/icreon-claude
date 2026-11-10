@@ -1,0 +1,284 @@
+# Task templates for the homepage demo: the website playbook's tasks over a two-page Blueprint. The
+# Architect writes the Blueprint for the homepage (from 0.2.4 no 404 page), its template, the components on
+# them, the header, footer and navigation, and their media; blueprint.demo-slice checks it. The rest
+# of the site is audited in numbers in the page inventory, not blueprinted.
+#
+# No pilot block: the whole Blueprint is the pilot. Its components are proven end to end (editing
+# host, Page builder checks) before the templates and pages are built on them.
+
+templates:
+  # 0 — Intake and access verification
+  - id: verify-access
+    phase: 0
+    role: deployment-engineer
+    title: Verify credentials and record tenant facts
+    acceptance: [validator:credentials.verified]
+
+  # 1 — Discovery and analysis
+  - id: inventory-repo
+    phase: 1
+    role: repo-analyst
+    title: Inventory components, routes and assets
+    when: source-repo
+    uses: [github, artifacts]
+  # No source repository: the live site is the source, read as rendered.
+  - id: inventory-live-ui
+    phase: 1
+    role: repo-analyst
+    title: Inventory components and design system from the live site
+    unless: source-repo
+    uses: [browser, artifacts]
+  - id: crawl-site
+    phase: 1
+    role: content-analyst
+    title: Crawl the source site and build the page inventory
+    # Compared with a sample of source pages: each page's <title> and meta description, forms,
+    # URLs that redirect elsewhere, embedded layout data, media hosts, and how much it covers.
+    acceptance: [validator:discovery.inventory]
+  - id: platform-notes
+    phase: 1
+    role: research-agent
+    title: Verify platform facts and write Platform Notes
+
+  # 2 — Blueprint
+  - id: draft-blueprint
+    phase: 2
+    role: solution-architect
+    title: Draft the Implementation Blueprint
+    dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
+    # discovery.blueprint: every source form placed (a Director item when Form is the SDK's
+    # built-in), redirects decided, the 404 page planned or recorded as dropped (0.2.4 builds none),
+    # source components mapped, media hosts named.
+    # blueprint.demo-slice: the slice kept, the navigation its own component, the rest held.
+    acceptance:
+      [validator:blueprint.coverage, validator:discovery.blueprint, validator:blueprint.demo-slice]
+
+  # 3 — Foundation
+  - id: create-site
+    phase: 3
+    role: deployment-engineer
+    title: Verify the demo site; create languages and module folders
+  - id: design-system
+    phase: 3
+    role: component-engineer
+    title: Extract the design system (tokens, type, spacing, primitives)
+  - id: prepare-hosting
+    phase: 3
+    role: deployment-engineer
+    title: Deploy the head to Vercel and register it as the editing host
+    release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
+      rollback: >-
+        Delete the editing host registration in the Deploy app and the Vercel project; nothing
+        is published and no content changes.
+    acceptance: [validator:editing-host.responds]
+  - id: validate-foundation
+    phase: 3
+    role: structural-validator
+    title: Validate the site skeleton
+    dependsOn: [create-site]
+    acceptance: [validator:structural.site]
+
+  # 4 — Component build and registration
+  - id: port-{key}
+    phase: 4
+    role: component-engineer
+    forEach: components
+    canary: 0
+    title: Port {name} to Content SDK
+    dependsOn: [design-system]
+    acceptance: [validator:build.green, validator:component-map.registered, validator:head.sections]
+  - id: register-{key}
+    phase: 4
+    role: rendering-registrar
+    forEach: components
+    canary: 0
+    title: Register {name}
+    dependsOn: ['port-{key}']
+    acceptance:
+      [
+        validator:structural.renderings,
+        validator:editor.component-enabled,
+        validator:structural.component-queries,
+      ]
+    metric: components_registered
+  - id: integrate-head
+    phase: 4
+    role: head-integrator
+    title: Configure the head as the editing host
+    dependsOn: [prepare-hosting]
+    acceptance: [validator:head.editing-scripts]
+  # Each component is built on its own branch. Page builder only offers components the editing
+  # host's code has, so each accepted component joins one integration branch, deployed at the
+  # project's fixed editing address.
+  - id: integrate-{key}
+    phase: 4
+    role: head-integrator
+    forEach: components
+    canary: 0
+    title: Integrate {name} into the editing host
+    dependsOn: ['register-{key}', integrate-head]
+    # A port redone after a page sent it back reaches the editing host only through this task.
+    redoWith: ['port-{key}']
+    acceptance: [validator:editing-host.deployed, validator:head.editing-scripts]
+  - id: switch-editing-host
+    phase: 4
+    role: deployment-engineer
+    title: Point the site at its own editing host
+    # Once every slice component is in the editing host's code.
+    dependsOn: [integrate-head, integrate-*]
+    release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
+      rollback: >-
+        Set the site's Site Grouping rendering host back to the value the result names; the new
+        rendering host item can stay, nothing else uses it.
+    acceptance: [validator:rendering-host.set]
+  - id: prove-slice
+    phase: 4
+    role: structural-validator
+    title: Prove the homepage components are ready for drag and drop
+    # With the header and footer on the editing host: their faults surface here, not on the pages.
+    dependsOn: [switch-editing-host, partial-designs]
+    # What Page builder needs to offer each slice component in the toolbox and create its content
+    # when it's dragged onto a page. The Director drags and drops in Page builder at Gate 2.
+    acceptance:
+      [
+        validator:structural.renderings,
+        validator:editor.component-enabled,
+        validator:editor.new-datasource,
+        validator:head.header-footer,
+      ]
+  - id: validate-components
+    phase: 4
+    role: structural-validator
+    title: Validate renderings and Available Renderings
+    dependsOn: [register-*]
+    acceptance: [validator:structural.renderings]
+
+  # 5 — Templates, layouts and designs
+  - id: partial-designs
+    phase: 4
+    role: rendering-registrar
+    title: Create header and footer partial designs, with the navigation
+    # The header, footer and navigation come first: every page and template check looks at them.
+    # Their partial designs need only those components registered and on the editing host, not
+    # every component (`{shared}`: the shared items' tasks; before 0.14.0/0.2.3 this waited on
+    # register-* in phase 5, so the header appeared after the whole component build).
+    dependsOn: ['register-{shared}', 'integrate-{shared}']
+    acceptance: [validator:head.header-footer]
+  - id: template-{key}
+    phase: 5
+    role: rendering-registrar
+    forEach: templates
+    canary: 0
+    title: Create {name} template, placeholder settings and page design
+    # Placeholder settings allow every slice component, so a marketer can drag any of them in.
+    dependsOn: [partial-designs, prove-slice]
+  - id: validate-templates
+    phase: 5
+    role: structural-validator
+    title: Validate templates and designs
+    dependsOn: [template-*]
+    acceptance: [validator:structural.templates]
+
+  # 6 — Content and media migration
+  # The shared header, footer and navigation are filled once, before the pages (as on the website
+  # playbook): the demo's outcome includes them, and the homepage shows them.
+  - id: migrate-shared-chrome
+    phase: 4
+    role: content-migrator
+    title: Fill the shared header, footer and navigation
+    # Real header and footer content as soon as their designs exist, before templates and pages.
+    dependsOn: [partial-designs]
+    acceptance: [validator:head.header-footer, validator:parity.chrome]
+  - id: migrate-pages-{key}
+    phase: 6
+    role: content-migrator
+    forEach: pages
+    canary: 0
+    batchSize: 8
+    title: Migrate {name}
+    metric: pages_migrated
+    dependsOn: [migrate-shared-chrome]
+    acceptance:
+      [
+        validator:structural.layouts,
+        validator:head.pages-render,
+        validator:parity.render,
+        validator:parity.visual,
+      ]
+  - id: upload-media-{key}
+    phase: 6
+    role: media-migrator
+    forEach: media
+    canary: 0
+    batchSize: 20
+    title: Upload {name}
+    metric: media_uploaded
+  - id: recrawl-source
+    phase: 6
+    role: content-analyst
+    title: Re-crawl the homepage for parity
+  - id: audit-parity
+    phase: 6
+    role: parity-auditor
+    title: Audit homepage parity
+    dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
+    acceptance: [validator:parity.render, validator:parity.visual, validator:parity.page]
+
+  # 7 — Experience enablement
+  - id: enable-experience
+    phase: 7
+    role: experience-enabler
+    title: Homepage SEO fields and dictionary
+    # Sitecore items only: it runs while Page builder (for the proof variant) isn't connected.
+    uses: [sitecore-authoring, blackboard, artifacts]
+    acceptance: [validator:seo.titles]
+  # 8 — Deployment and publishing
+  - id: finalize-head
+    phase: 8
+    role: head-integrator
+    title: Finalize production configuration
+  # Three separate releases: success in one proves nothing about the others.
+  - id: deploy-code
+    phase: 8
+    role: deployment-engineer
+    title: Deploy the reviewed commit to the editing and delivery hosts
+    dependsOn: [finalize-head]
+    release:
+      # Always our demo tenant and the demo's own Vercel project: approved once, here.
+      standing: true
+      rollback: Promote the previous production deployment again in Vercel (instant rollback).
+    acceptance: [validator:deploy.commit-matches, validator:editing-host.responds]
+  - id: publish-edge
+    phase: 8
+    role: deployment-engineer
+    title: Publish to Experience Edge and verify the homepage
+    dependsOn: [deploy-code]
+    release:
+      # Always our demo tenant: approved once, here.
+      standing: true
+      rollback: >-
+        Republish the previous item versions, or unpublish the new items; reverting the repository
+        doesn't change what Experience Edge serves.
+    acceptance: [validator:edge.published, validator:routes.resolve]
+  # 9 — Demo review. The demo closes on the Director's drag-and-drop check in Page builder: agents
+  # have no Pages sign-in, so it's a person's check, and it's the script for the meeting.
+  - id: demo-summary
+    phase: 9
+    role: handover-writer
+    title: Write the demo summary and the drag-and-drop checklist
+  - id: drag-and-drop-check
+    phase: 9
+    role: editor-experience-qa
+    title: Director's drag-and-drop check in Page builder
+    dependsOn: [demo-summary]
+    manual: >-
+      Follow the checklist in the demo summary. In Page builder, on the homepage: drag a component
+      from the toolbox into a placeholder, give it new content and edit a field inline; open the
+      header partial design and change a navigation link. Publish, then open the preview URL and
+      see both changes. Mark it done naming
+      anything that failed, send each failure back to its task, and remove your test component
+      before you accept at Gate 2.

@@ -93,5 +93,7 @@ escalateWhen:
   - retriesExhausted
 knowledge:
   - known-pitfalls
+# Phase 4: the shared header, footer and navigation content, right after their partial designs.
 activePhases:
+  - 4
   - 6

@@ -83,6 +83,15 @@ const inScope = (ctx: PlatformCheckContext, collection: string) => {
   return own ? kept.filter((i) => own.includes(i.key)) : kept;
 };
 
+/**
+ * The components a check looks for on the tenant: the kept ones with work of their own. One merged
+ * into another (`status: 'merge'` naming it in `attrs.mergedInto`) gets no tasks and ships as part
+ * of that one, which is checked instead; looking for its own rendering asks for something nobody
+ * builds, and the check can never pass.
+ */
+const builtComponents = (ctx: PlatformCheckContext) =>
+  inScope(ctx, 'components').filter((c) => !(c.status === 'merge' && c.attrs?.mergedInto));
+
 /** The rendering item's name from a component's model contract: a name, or { name, componentName }. */
 export function renderingName(c: { name: string; attrs?: Record<string, unknown> }): string {
   const r = c.attrs?.rendering;
@@ -366,7 +375,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
 
     // Every component has its rendering, and the site offers it in Available Renderings.
     'structural.renderings': async (ctx) => {
-      const components = inScope(ctx, 'components');
+      const components = builtComponents(ctx);
       if (!components.length) return pending('The Blueprint has no components to check.');
       const r = await renderingsOf(ctx, components);
       return r.problems.length
@@ -377,7 +386,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     // What Page builder needs to offer a component and add it to a page: its rendering, offered
     // in Available Renderings, named for the head's component, and its datasource template there.
     'editor.component-enabled': async (ctx) => {
-      const components = inScope(ctx, 'components');
+      const components = builtComponents(ctx);
       if (!components.length) return pending('The Blueprint has no components to check.');
       const r = await renderingsOf(ctx, components);
       const problems = [...r.problems];
@@ -405,7 +414,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     // Page builder's "create new content" needs a datasource template and a location to create
     // it in; a location given as a path must exist.
     'editor.new-datasource': async (ctx) => {
-      const components = inScope(ctx, 'components');
+      const components = builtComponents(ctx);
       if (!components.length) return pending('The Blueprint has no components to check.');
       const r = await renderingsOf(ctx, components);
       const problems = [...r.problems];
@@ -619,15 +628,39 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         const placeholders = PLACEHOLDERS.filter((p) => text.includes(p));
         if (placeholders.length)
           problems.push(`${path} shows placeholder copy: "${placeholders.join('", "')}"`);
+        // A component whose datasource never resolved has no fields at all: its rendering is
+        // broken, and "add items" would send every page to fix content that is already there.
+        // The same component with the same content twice in a row (Paylocity's demo band, placed
+        // twice above the footer) is a layout mistake no text check sees.
+        const placed = layoutComponents(page.body);
+        for (let i = 1; i < placed.length; i++) {
+          const a = placed[i - 1]!;
+          const b = placed[i]!;
+          if (
+            a.name === b.name &&
+            a.fields &&
+            JSON.stringify(a.fields) === JSON.stringify(b.fields)
+          )
+            problems.push(
+              `${path}: ${a.name} is placed twice in a row with the same content: remove one`,
+            );
+        }
+        const broken = unresolvedComponents(page.body);
+        for (const name of broken) problems.push(`${path}: ${name} ${UNRESOLVED}`);
         for (const c of layoutComponents(page.body))
-          if (lists.has(c.name) && !itemCount(c.fields) && !loadsOwnItems(c.fields))
+          if (
+            !broken.includes(c.name) &&
+            lists.has(c.name) &&
+            !itemCount(c.fields) &&
+            !loadsOwnItems(c.fields)
+          )
             problems.push(
               `${path}: ${c.name} renders no items (its rendering needs a Component Query returning its children, and its datasource needs child items)`,
             );
         if (!origin) continue;
         const sourceUrl = `${origin}${path === '/' ? '/' : `${path}/`}`;
         const source = await getText(cfg, sourceUrl);
-        if (source.status !== 200) {
+        if (source.status !== 200 || isChallengePage(source.body)) {
           unread++;
           continue;
         }
@@ -658,6 +691,65 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       return pass(
         `Rendered parity with the source: ${notes.join(', ')}${unread ? `; ${unread} source page${unread === 1 ? '' : 's'} unreadable` : ''}${moved.length ? `; ${moved.join(', ')} redirect${moved.length === 1 ? 's' : ''} elsewhere on the source, nothing to compare` : ''}${forms.active ? '; forms left out (built in SitecoreAI Forms)' : ''}.`,
       );
+    },
+
+    // The shared header, footer and navigation have their content: every page shows them, so the
+    // task that fills them, once, before the pages, passes only when the home page renders each
+    // one with its fields and its items (footer columns and links, menu entries), no placeholders.
+    'parity.chrome': async (ctx) => {
+      const project = sitecoreTarget(ctx).hostingProject?.toLowerCase();
+      if (!project) return pending('No hosting project is recorded for the head.');
+      const host = `https://${project}-editing.vercel.app`;
+      const kept = (ctx.blueprint?.collections.components ?? []).filter(
+        (c) => c.status !== 'drop' && !(c.status === 'merge' && c.attrs?.mergedInto),
+      );
+      const marked = kept.filter((c) => c.attrs?.datasource === 'shared');
+      const shared = marked.length
+        ? marked
+        : kept.filter((c) => /header|footer|nav|menu/i.test(`${c.key} ${c.name}`));
+      if (!shared.length) return pending('The Blueprint marks no component as shared.');
+      const byName = new Map(shared.map((c) => [renderingName(c).replace(/\s+/g, ''), c]));
+      const page = await getText(cfg, `${host}/`);
+      if (page.status !== 200)
+        return fail([`The home page answered ${page.status || 'nothing'} on ${host}`]);
+      const problems: string[] = [];
+      const empty = (id: string) => new RegExp(`<div id="${id}">\\s*</div>`).test(page.body);
+      if (empty('header')) problems.push('the home page has no header');
+      if (empty('footer')) problems.push('the home page has no footer');
+      const seen: string[] = [];
+      const broken = unresolvedComponents(page.body);
+      for (const name of broken) {
+        const bp = byName.get(name);
+        if (!bp) continue;
+        seen.push(name);
+        problems.push(`${bp.name} ${UNRESOLVED}`);
+      }
+      for (const c of layoutComponents(page.body)) {
+        const bp = byName.get(c.name);
+        if (!bp || broken.includes(c.name)) continue;
+        seen.push(c.name);
+        const text = textOf(c.fields);
+        if (bp.attrs?.children && !itemCount(c.fields) && !loadsOwnItems(c.fields))
+          problems.push(
+            `${bp.name} renders no items: create its child items (each column, group and link, or menu entry) under its shared datasource, from the source site's ${bp.name.toLowerCase()}`,
+          );
+        else if (!text && !itemCount(c.fields))
+          problems.push(
+            `${bp.name} renders no content: fill its shared datasource from the source`,
+          );
+        const placeholders = PLACEHOLDERS.filter((p) => text.includes(p));
+        if (placeholders.length)
+          problems.push(`${bp.name} shows placeholder copy: "${placeholders.join('", "')}"`);
+      }
+      if (!seen.length && !problems.length)
+        problems.push(
+          `none of the shared components (${shared.map((c) => c.name).join(', ')}) render on the home page`,
+        );
+      return problems.length
+        ? fail(problems)
+        : pass(
+            `The shared ${[...new Set(seen)].join(', ')} render with their content on the home page of ${host}.`,
+          );
     },
 
     // Visual parity: each kept page, as the editing host renders it, looks like the source page.
@@ -720,7 +812,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
     // A component whose model has child items gets them only through a GraphQL Component Query on
     // its rendering: without one the head receives its own fields and an empty list.
     'structural.component-queries': async (ctx) => {
-      const lists = inScope(ctx, 'components').filter((c) => c.attrs?.children);
+      const lists = builtComponents(ctx).filter((c) => c.attrs?.children);
       if (!lists.length) return pass('No component in scope lists child items.');
       const b = sitecoreBindings(ctx.target);
       const root = `/sitecore/layout/Renderings/Project/${b.module}`;
@@ -816,7 +908,8 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           getText(cfg, `https://${project}-editing.vercel.app${at.path}`),
           getText(cfg, sourceUrl),
         ]);
-        if (have.status !== at.status || want.status !== 200) return null;
+        if (have.status !== at.status || want.status !== 200 || isChallengePage(want.body))
+          return null;
         // The source sends this path elsewhere: there is no page of its own to measure against.
         if (redirectedAway(sourceUrl, want.url)) return { have: 0, want: 0 };
         return {
@@ -887,8 +980,17 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           if (page.status !== 200)
             return `${p.path} answered ${page.status || 'nothing'} on the editing host`;
           const have = titleOf(page.body);
-          return have.toLowerCase() === p.title.toLowerCase()
-            ? null
+          if (have.toLowerCase() === p.title.toLowerCase()) return null;
+          // The item may hold the right title while the head renders another (Microsoft: the
+          // homepage's metadata title set, the tab showing the site name): that's head code.
+          const home = `${sitecoreBindings(ctx.target).sitePath}/Home`;
+          const it = await item(ctx, p.path === '/' ? home : `${home}${p.path}`).catch(() => null);
+          const set = (it?.fields?.nodes ?? []).find(
+            (f) =>
+              /title/i.test(f.name) && visibleText(f.value).toLowerCase() === p.title.toLowerCase(),
+          );
+          return set
+            ? `${p.path} has the title "${have}", but its item's ${set.name} holds the source's "${p.title}": the head's <title> doesn't read the page's title field. That's head code (generateMetadata in the page route): send it back to integrate-head, not to content`
             : `${p.path} has the title "${have}"; the source page's is "${p.title}"`;
         })
       ).filter((x): x is string => !!x);
@@ -926,6 +1028,9 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
 }
 
 /** Copy a component shows when its fields are empty or its datasource is missing. */
+const UNRESOLVED =
+  "gets no content: the layout service couldn't resolve its datasource (isContentResolved: false). Its rendering is broken, not its content: check the rendering's Component Query names only fields and templates that exist, and that its datasource item resolves. Adding content won't fix it.";
+
 const PLACEHOLDERS = [
   'Section heading',
   'Describe this section',
@@ -965,10 +1070,33 @@ export function redirectedAway(requested: string, final: string | undefined): bo
   if (!final) return false;
   try {
     const at = (u: string) => new URL(u).pathname.replace(/\/$/, '').toLowerCase() || '/';
-    return at(final) !== at(requested);
+    const from = at(requested);
+    const to = at(final);
+    if (to === from) return false;
+    // The same page under a locale (microsoft.com/ → /en-us, /about → /en-us/about) is still the
+    // page: compare with it. Treated as "moved", Microsoft's homepage was never compared at all.
+    const locale = /^\/[a-z]{2}(?:-[a-z]{2,4})?(?=\/|$)/.exec(to)?.[0];
+    if (locale && (to.slice(locale.length) || '/') === from) return false;
+    return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * A page that isn't the site: a bot check or a script that sets a cookie and reloads (Paylocity
+ * answered a plain request with 1.4 KB of "cf_bypass" script, status 200). Comparing with it
+ * passes any page, so it counts as unreadable.
+ */
+export function isChallengePage(html: string): boolean {
+  if (
+    /Just a moment\.\.\.|Verify you are human|Checking your browser|cf-chl-|cf_bypass|challenges\.cloudflare\.com|captcha-delivery|Attention Required! \| Cloudflare/i.test(
+      html.slice(0, 20_000),
+    )
+  )
+    return true;
+  const words = visibleText(html).split(' ').filter(Boolean).length;
+  return words < 40 && /location\.reload|document\.cookie|window\.location\s*=/.test(html);
 }
 
 /** What a visitor reads on an HTML page: scripts, styles and markup removed. */
@@ -1024,6 +1152,29 @@ export const headingsOf = (html: string) =>
  * The components in a Content SDK page's layout data, with the fields each received: read from
  * the React Server Components payload the page carries.
  */
+/**
+ * Components the layout service couldn't fill: `isContentResolved: false` and no fields. Their
+ * datasource never reached the head: the rendering's Component Query fails (a field or template it
+ * names doesn't exist), or the datasource item doesn't resolve. Adding content never fixes it.
+ */
+export function unresolvedComponents(html: string): string[] {
+  const payload = [...html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)]
+    .map((m) => {
+      try {
+        return JSON.parse(m[1]!) as string;
+      } catch {
+        return '';
+      }
+    })
+    .join('');
+  const out = new Set<string>();
+  for (const m of payload.matchAll(
+    /"componentName":"([A-Za-z0-9]+)"(?:,"dataSource":"[^"]*")?,"isContentResolved":false/g,
+  ))
+    out.add(m[1]!);
+  return [...out];
+}
+
 export function layoutComponents(html: string): { name: string; fields: unknown }[] {
   const payload = [...html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)]
     .map((m) => {

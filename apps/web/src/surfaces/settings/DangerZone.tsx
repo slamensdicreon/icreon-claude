@@ -1,15 +1,19 @@
 /*
  * The danger zone: pause or resume the whole project, roll back the current phase, reset to
- * intake (with or without a new build repository), archive. Everything but Resume asks first in a
- * TypedConfirm; what can't be undone asks for a typed word.
+ * intake (with or without a new build repository), archive and restore, and delete: in 30 days
+ * from the archive, or now (for a mistake or a test). Everything but Resume and Restore asks first
+ * in a TypedConfirm; what changes the most asks for a typed word. An archived project shows only
+ * Restore and Delete: the API refuses everything else while it is archived.
  */
 import type { ProjectSummary, SettingsSnapshot } from '@lw/contracts';
-import type { ReactNode } from 'react';
-import { post } from '../../lib/api';
+import { useState, type ReactNode } from 'react';
+import { API, del, post } from '../../lib/api';
 import { TypedConfirm } from '../../overlays/Dialogs';
 import { useApp } from '../../state';
+import { Checkbox } from '../../ui/cypher/forms';
 import { Panel } from '../../ui/cypher/parts';
 import { Action, Actions } from '../intake/shared';
+import { DeletionReady } from './DeletionReady';
 import s from './settings.module.css';
 
 function Row({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
@@ -24,6 +28,49 @@ function Row({ title, note, children }: { title: string; note?: string; children
   );
 }
 
+/** Delete now: the typed name, plus whether to keep the build repository and the hosting project. */
+function DeleteNow({
+  project: p,
+  zip,
+  onConfirm,
+}: {
+  project: ProjectSummary;
+  zip: string;
+  onConfirm: (keep: { keepRepository: boolean; keepHosting: boolean }) => void;
+}) {
+  const [keepRepository, setKeepRepository] = useState(false);
+  const [keepHosting, setKeepHosting] = useState(false);
+  return (
+    <TypedConfirm
+      title="Delete this project now?"
+      body="Everything held for it goes right away, with no grace period: its history, documents, screenshots, credentials, and its own rules and lessons. Lessons it taught other projects stay, without its name, and a saved connection another project uses is kept. This can’t be undone."
+      confirmLabel="Delete now"
+      typed={p.name}
+      onConfirm={() => onConfirm({ keepRepository, keepHosting })}
+    >
+      {p.buildRepo && (
+        <Checkbox
+          label="Keep the build repository"
+          hint={p.buildRepo.repo}
+          checked={keepRepository}
+          onChange={setKeepRepository}
+        />
+      )}
+      {p.hosting && (
+        <Checkbox
+          label="Keep the Vercel project"
+          hint={`${p.hosting.project}: its preview links keep working`}
+          checked={keepHosting}
+          onChange={setKeepHosting}
+        />
+      )}
+      <a className={s.download} href={zip} download>
+        Download everything first (.zip)
+      </a>
+    </TypedConfirm>
+  );
+}
+
 export function DangerZone({
   project: p,
   rollback,
@@ -33,9 +80,11 @@ export function DangerZone({
   rollback: SettingsSnapshot['rollback'];
   running: number;
 }) {
-  const { projectId, run, openOverlay, closeOverlay } = useApp();
+  const { projectId, run, openOverlay, closeOverlay, home } = useApp();
   const base = `/projects/${projectId}`;
   const paused = p.status === 'paused';
+  const archived = p.status === 'archived';
+  const live = p.status === 'running';
   const control = (verb: 'pause' | 'resume') =>
     run(
       () => post(`${base}/control`, { verb, scope: { kind: 'project', id: projectId } }),
@@ -101,22 +150,160 @@ export function DangerZone({
     openOverlay(
       <TypedConfirm
         title="Archive this project?"
-        body="The project becomes read-only with its audit trail, artifacts and handover pack. This cannot be undone."
+        body={`${paused ? 'Its open tasks are cancelled first. ' : ''}Nothing runs from then on and nothing can be changed. Its history, documents and handover pack stay, and you can restore it.`}
         confirmLabel="Archive project"
         typed={p.name}
         onConfirm={() => {
           closeOverlay();
-          void run(() => post(`${base}/archive`, { confirmation: p.name }), `${p.name} archived`);
+          void run(
+            () => post(`${base}/archive`, { confirmation: p.name }),
+            { title: `${p.name} archived`, detail: 'Read-only. Restore it here at any time.' },
+            'Archiving the project',
+          );
         }}
       />,
     );
+  const restore = () =>
+    run(
+      () => post(`${base}/restore`, {}),
+      {
+        title: `${p.name} restored`,
+        detail: 'Back as it was before the archive, to read and export.',
+      },
+      'Restoring the project',
+    );
+
+  // What the purge removes outside our stores, by name, so nobody is surprised.
+  const created = [
+    p.buildRepo && `the build repository ${p.buildRepo.repo}`,
+    p.hosting && `the Vercel project ${p.hosting.project}`,
+  ].filter(Boolean);
+  const outside = created.length
+    ? `${created.join(' and ').replace(/^t/, 'T')} ${created.length > 1 ? 'are' : 'is'} deleted too, unless already handed to the client.`
+    : '';
+  const deleteProject = () =>
+    openOverlay(
+      <TypedConfirm
+        title="Delete this project?"
+        body={`After a 30-day grace period, everything held for it is deleted: its history, documents, screenshots, credentials, and its own rules and lessons.${outside ? ` ${outside}` : ''} Lessons it taught other projects stay, without its name. You can cancel until then. Download anything you need first.`}
+        confirmLabel="Schedule deletion"
+        typed={p.name}
+        onConfirm={() => {
+          closeOverlay();
+          void run(
+            () => post(`${base}/deletion`, { confirmation: p.name }),
+            {
+              title: `${p.name} scheduled for deletion`,
+              detail: 'Cancel it here any time before then.',
+            },
+            'Scheduling the deletion',
+          );
+        }}
+      />,
+    );
+  const deleteNow = () =>
+    openOverlay(
+      <DeleteNow
+        project={p}
+        zip={`${API}${base}/documents.zip`}
+        onConfirm={(keep) => {
+          closeOverlay();
+          void run(
+            () => post(`${base}/delete-now`, { confirmation: p.name, ...keep }),
+            {
+              title: `${p.name} deleted`,
+              detail: 'Only its record under Deleted projects is left.',
+            },
+            'Deleting the project',
+          ).then((ok) => ok && home());
+        }}
+      />,
+    );
+  const cancelDeletion = () =>
+    run(
+      () => del(`${base}/deletion`),
+      { title: 'Deletion cancelled', detail: `${p.name} stays archived.` },
+      'Cancelling the deletion',
+    );
+
+  if (archived) {
+    const due = p.deletion
+      ? new Date(p.deletion.due).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : null;
+    return (
+      <div className={s.danger}>
+        <Panel title="Archived">
+          <p className={`${s.lead} ${s.sentence}`}>
+            {due
+              ? `This project is archived and will be deleted on ${due}.`
+              : 'This project is archived and read-only. Nothing runs and nothing can be changed.'}
+          </p>
+          <DeletionReady />
+          <ul className={s.dangerRows}>
+            <Row
+              title="Download everything"
+              note="Every document’s latest version and the activity log, in one zip. Do this before deleting."
+            >
+              <a className={s.download} href={`${API}${base}/documents.zip`} download>
+                Documents (.zip)
+              </a>
+              <a className={s.download} href={`${API}${base}/activity.csv?view=all`} download>
+                Activity (.csv)
+              </a>
+            </Row>
+            {due ? (
+              <Row
+                title={`Deletion scheduled for ${due}`}
+                note="Everything held for this project goes on that date. Cancel to keep it archived; then it can be restored."
+              >
+                <Action kind="primary" onClick={() => void cancelDeletion()}>
+                  Cancel deletion
+                </Action>
+                <Action kind="danger" onClick={deleteNow}>
+                  Delete now instead
+                </Action>
+              </Row>
+            ) : (
+              <>
+                <Row
+                  title="Restore the project"
+                  note="Brings it back as completed or cancelled, to read and export. To do more work, start a new project from it with Remix."
+                >
+                  <Action kind="primary" onClick={() => void restore()}>
+                    Restore project
+                  </Action>
+                </Row>
+                <Row
+                  title="Delete the project"
+                  note={`After a 30-day grace period, everything held for it is deleted for good${created.length ? ', with its build repository and hosting project' : ''}. You can cancel until then.`}
+                >
+                  <Action kind="danger" onClick={deleteProject}>
+                    Delete in 30 days
+                  </Action>
+                  <Action kind="danger" onClick={deleteNow}>
+                    Delete now
+                  </Action>
+                </Row>
+              </>
+            )}
+          </ul>
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className={s.danger}>
       <Panel title="Danger zone">
         <p className={`${s.lead} ${s.sentence}`}>
-          Each of these asks you to confirm first. Pausing can be undone; nothing else here can.
+          Each of these asks you to confirm first. Pausing and archiving can be undone; rolling
+          back, resetting and deleting can’t.
         </p>
+        <DeletionReady />
         <ul className={s.dangerRows}>
           <Row
             title={paused ? 'Resume the project' : 'Pause the whole project'}
@@ -158,10 +345,26 @@ export function DangerZone({
           )}
           <Row
             title="Archive project"
-            note="Read-only from then on, with its audit trail, artifacts and handover pack."
+            note={
+              live
+                ? 'Pause the project first. A project is archived only once nothing is running.'
+                : 'Stops it for good and makes it read-only, with its history, documents and handover pack. You can restore it.'
+            }
           >
-            <Action kind="danger" onClick={archive}>
+            <Action kind="danger" onClick={archive} disabled={live}>
               Archive
+            </Action>
+          </Row>
+          <Row
+            title="Delete now"
+            note={
+              live
+                ? 'Pause the project first. A project is deleted only once nothing is running.'
+                : 'For a project made by mistake, a test, or a demo you won’t open again: everything goes at once, with no archive and no grace period. This can’t be undone.'
+            }
+          >
+            <Action kind="danger" onClick={deleteNow} disabled={live}>
+              Delete now
             </Action>
           </Row>
         </ul>

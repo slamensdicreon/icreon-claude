@@ -79,7 +79,7 @@ site that serves `/about/` redirects `/about`, so after the first such redirect 
 
 ## Storage and resuming
 
-`CrawlStore` has two implementations: `PostgresCrawlStore` (migration `007_crawls.sql`:
+`CrawlStore` has two implementations: `PostgresCrawlStore` (migration `008_crawls.sql`:
 `lw_crawls` for the job, `lw_crawl_urls` for every URL with its state, summary and extract) and
 `MemoryCrawlStore` for tests and single-process runs.
 
@@ -174,7 +174,7 @@ background:
    built, a mapped value is missing from its source, its source answers an error, or a write
    is refused. Timeouts and throttling are retried. `import.start` with `retry: true` queues
    exceptions again after a fix.
-5. **Imports live in Postgres** (migration `008_imports.sql`), each held by one worker through a
+5. **Imports live in Postgres** (migration `009_imports.sql`), each held by one worker through a
    lease, and resumed after a restart. When an import finishes it writes `template-import-<key>`.
 
 **Canary.** An import writes its first 5 pages, then runs the page checks on the ones written

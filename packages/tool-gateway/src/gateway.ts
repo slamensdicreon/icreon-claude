@@ -85,6 +85,19 @@ export class ToolGateway {
   }
 
   async call(call: ToolCall): Promise<GatewayResult> {
+    try {
+      return await this.run(call);
+    } finally {
+      // A one-call lock frees as soon as the call is answered, whatever the answer.
+      this.briefs.get(call)?.();
+      this.briefs.delete(call);
+    }
+  }
+
+  /** One-call locks held by calls in flight (see OperationSpec.merges). */
+  private readonly briefs = new Map<ToolCall, () => void>();
+
+  private async run(call: ToolCall): Promise<GatewayResult> {
     const started = this.now();
     const requestHash = hashRequest(call);
 
@@ -236,6 +249,11 @@ export class ToolGateway {
     call: ToolCall,
   ): Promise<(GatewayResult & { ok: false; denied: Denial }) | null> {
     const deny = (denied: Denial, message: string) => ({ ok: false as const, denied, message });
+    const lockedDenial = (path: string, heldBy: string) =>
+      deny(
+        'locked',
+        `${path} is being changed right now by another task's session (${heldBy}); this is temporary and frees when that session ends. Do your other work first and try this again at the end. If it is still locked then, finish with everything else done and say this one change waits on ${heldBy}: don't ask the Director about a lock, and don't retry it in a loop.${LOCKED_HINT}`,
+      );
     const server = this.servers.get(call.server);
     if (!server) return deny('unknown_server', `No tool server "${call.server}".`);
     const spec = server.catalog[call.op];
@@ -282,14 +300,22 @@ export class ToolGateway {
       const paths = spec.lockPaths
         ? spec.lockPaths(call.args)
         : (spec.pathArgs ?? []).flatMap((a) => readArg(call.args, a).map(String));
-      if (paths.length) {
-        const lock = await this.deps.locks.acquire(call.projectId, call.taskId, paths);
-        if (!lock.ok) {
-          return deny(
-            'locked',
-            `${lock.path} is being changed right now by another task's session (${lock.heldBy}); this is temporary and frees when that session ends. Do your other work first and try this again at the end. If it is still locked then, finish with everything else done and say this one change waits on ${lock.heldBy}: don't ask the Director about a lock, and don't retry it in a loop.`,
-          );
+      const locks = this.deps.locks;
+      if (paths.length && spec.merges?.(call.args) && locks.acquireBrief) {
+        // A merging write holds its items for the call only. Another task's one-call lock frees
+        // within seconds: wait for it rather than send the agent away.
+        for (let tries = 0; ; tries++) {
+          const lock = await locks.acquireBrief(call.projectId, call.taskId, paths);
+          if (lock.ok) {
+            this.briefs.set(call, lock.release);
+            break;
+          }
+          if (!lock.brief || tries >= 60) return lockedDenial(lock.path, lock.heldBy);
+          await new Promise((r) => setTimeout(r, 500));
         }
+      } else if (paths.length) {
+        const lock = await locks.acquire(call.projectId, call.taskId, paths);
+        if (!lock.ok) return lockedDenial(lock.path, lock.heldBy);
       }
     }
     return null;
@@ -349,6 +375,9 @@ function reasonOf(body: unknown): string | null {
   const text = typeof e === 'string' ? e : typeof body === 'string' ? body : null;
   return text ? clip(text, 200) : null;
 }
+
+const LOCKED_HINT =
+  " For a list of item IDs other tasks also add to (Available Renderings, Allowed Controls, __Masters), item.update with add: true doesn't wait for another task's session; nor does page-designs.map with add: true.";
 
 const clip = (text: string, max: number) => text.replace(/\s+/g, ' ').trim().slice(0, max);
 

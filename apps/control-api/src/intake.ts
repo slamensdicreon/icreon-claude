@@ -171,6 +171,12 @@ export class IntakeService {
     return pack ? { id: pack.id, name: pack.name } : undefined;
   }
 
+  /** The playbook a project runs, by its catalog name; absent when the catalog no longer has it. */
+  playbookOf(s: ProjectState): { id: string; name: string } | undefined {
+    const pb = s.playbook && this.deps.catalog.get(s.playbook.id)?.playbook;
+    return pb ? { id: pb.manifest.id, name: pb.manifest.name } : undefined;
+  }
+
   /** The platform pack a project runs on, from its intake. */
   /** The release steps of the project's playbook, for standing approvals. */
   releaseSteps(s: ProjectState): { id: string; title: string; standing: boolean }[] {

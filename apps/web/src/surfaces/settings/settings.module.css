@@ -418,3 +418,73 @@
     border-bottom: 0;
   }
 }
+
+/* A download in the danger zone: a link that looks like the secondary buttons beside it. */
+.download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--row) - var(--space-3));
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  line-height: 1.25;
+  transition: border-color 200ms ease-out;
+}
+.download:hover {
+  border-color: var(--text-3);
+}
+.download:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Whether deletion reaches GitHub and Vercel (DeletionReady). */
+.ready {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--gold-tint);
+  color: var(--text-2);
+}
+.ready[data-fine] {
+  background: var(--surface-quiet);
+}
+.readyLead {
+  color: var(--ink);
+  font-weight: 600;
+}
+.readyRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-1);
+}
+.readyRow b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.readyDetail {
+  color: var(--text-2);
+}
+.readyDot {
+  flex: none;
+  align-self: center;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--text-3);
+}
+.readyDot[data-state='ok'] {
+  background: var(--green);
+}
+.readyDot[data-state='missing'] {
+  background: var(--coral);
+}

@@ -9,6 +9,11 @@ export interface LayoutComponent {
   name: string;
   dataSource: string | null;
   fields: unknown;
+  /**
+   * False when the layout service couldn't fill it (`isContentResolved: false`): its rendering's
+   * Component Query failed or its datasource didn't resolve. Absent when it resolved.
+   */
+  contentResolved?: false;
 }
 
 /** The page's components in order, with their datasource and fields; none when it embeds no layout data. */
@@ -55,6 +60,7 @@ function fromText(text: string): LayoutComponent[] {
     );
     const end = nextComponent < 0 ? text.length : nextComponent;
     const ds = /"dataSource":"([^"]*)"/.exec(text.slice(index, end));
+    const unresolved = /"isContentResolved":false/.test(text.slice(index, end));
     const at = text.indexOf('"fields":', index);
     let fields: unknown = null;
     if (at >= 0 && at < end) {
@@ -65,7 +71,12 @@ function fromText(text: string): LayoutComponent[] {
         fields = null;
       }
     }
-    return { name, dataSource: ds?.[1] || null, fields };
+    return {
+      name,
+      dataSource: ds?.[1] || null,
+      fields,
+      ...(unresolved ? { contentResolved: false as const } : {}),
+    };
   });
 }
 
@@ -78,6 +89,7 @@ function walk(v: unknown, out: LayoutComponent[]): void {
       name: o.componentName,
       dataSource: typeof o.dataSource === 'string' && o.dataSource ? o.dataSource : null,
       fields: o.fields === undefined ? null : compact(o.fields),
+      ...(o.isContentResolved === false ? { contentResolved: false as const } : {}),
     });
     // Nested components sit in its placeholders.
     if (o.placeholders) walk(o.placeholders, out);

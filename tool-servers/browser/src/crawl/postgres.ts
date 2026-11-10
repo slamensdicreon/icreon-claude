@@ -76,7 +76,7 @@ const url = (r: UrlRow): CrawlUrl => ({
 const URL_COLS = 'url, state, depth, source, lastmod, attempts, reason, summary';
 
 /**
- * Crawls in the shared database (migration 007_crawls.sql), so every worker sees them, a crawl
+ * Crawls in the shared database (migration 008_crawls.sql), so every worker sees them, a crawl
  * outlives the process that started it, and several workers could share one crawl's queue (claims
  * use SKIP LOCKED).
  */

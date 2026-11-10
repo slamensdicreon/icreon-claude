@@ -211,6 +211,22 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(create).toContain('value: "About \\"us\\""');
   });
 
+  it('cleans an item name Sitecore would refuse, keeping the original as its display name', async () => {
+    const home = '/sitecore/content/Brands/ansco/Home';
+    const tpl = '/sitecore/templates/Project/Brands/Page';
+    const cm = fakeCm({ [home]: 'home-id', [tpl]: 'tpl-id' });
+    const s = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: cm.fetch });
+    // Microsoft: a card named after its product, '03 Surface Laptop 13"'.
+    await s.call(
+      'item.create',
+      { parentPath: home, name: '03 Surface Laptop 13"', templatePath: tpl },
+      ctx,
+    );
+    const create = cm.queries.find((q) => q.includes('createItem'))!;
+    expect(create).toContain('name: "03 Surface Laptop 13"');
+    expect(create).toContain('__Display name');
+  });
+
   it('reads every write back, reuses an existing item, and reconciles a dropped request', async () => {
     const home = '/sitecore/content/Brands/ansco/Home';
     const tpl = '/sitecore/templates/Project/Brands/Page';
@@ -312,6 +328,30 @@ describe('SitecoreAuthoringToolServer', () => {
     );
     expect(typed.code).toBe(422);
     expect(JSON.stringify(typed.body)).toContain('a1b2c3d4-0000-4000-8000-00000000000c');
+    // Another system's ID in a text field (a HubSpot form GUID) is written, with a warning.
+    const hubspot = await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [{ name: 'formId', value: '3f1c2a9e-5b7d-4e2f-9a01-6c8d7e5f4b3a' }],
+      },
+      ctx,
+    );
+    expect(hubspot.code).toBe(200);
+    expect(hubspot.body).toMatchObject({
+      notItems: ['formId (3f1c2a9e-5b7d-4e2f-9a01-6c8d7e5f4b3a)'],
+    });
+    expect(hubspot.summary).toContain('kept as text');
+    // In a field that references items it is still refused.
+    const ds = await s3.call(
+      'item.update',
+      {
+        path: `${home}/Contact`,
+        fields: [{ name: 'Datasource Template', value: '3f1c2a9e-5b7d-4e2f-9a01-6c8d7e5f4b3a' }],
+      },
+      ctx,
+    );
+    expect(ds.code).toBe(422);
     const masters = await s3.call(
       'item.read',
       { path: `${home}/Contact`, fields: ['__Masters', 'Nope'] },
@@ -502,6 +542,39 @@ describe('SitecoreAuthoringToolServer', () => {
     expect(
       (await s2.call('page-designs.map', { pageDesignsPath: designs, mappings }, ctx)).code,
     ).toBe(409);
+    // add: true maps only the template given and keeps every other template's design as stored.
+    const tpl2 = '/sitecore/templates/Project/Brands/ansco/Pages/Error Page';
+    const both = fakeCm({ ...items, [tpl2]: 'd1d2d3d4e5e5f6f6a7a7b8b8b8b8b8b8' });
+    const s3 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: both.fetch });
+    await s3.call('page-designs.map', { pageDesignsPath: designs, mappings }, ctx);
+    const added = await s3.call(
+      'page-designs.map',
+      {
+        pageDesignsPath: designs,
+        mappings: [{ templatePath: tpl2, pageDesignPath: `${designs}/Default` }],
+        add: true,
+      },
+      ctx,
+    );
+    expect(added).toMatchObject({ code: 200, body: { mapped: 1, kept: 1 } });
+    const sent = both.queries.filter((q) => q.includes('configurePageDesigns')).at(-1)!;
+    expect(sent).toContain('{D1D2D3D4-E5E5-F6F6-A7A7-B8B8B8B8B8B8}');
+    expect(sent).toContain('{C029D916-F6ED-4CBA-9BCB-2C679FD14800}');
+    expect(s3.catalog['page-designs.map']!.merges?.({ add: true })).toBe(true);
+    expect(s3.catalog['page-designs.map']!.merges?.({})).toBe(false);
+    expect(
+      s3.catalog['item.update']!.merges?.({
+        fields: [{ name: 'Renderings', value: 'x', add: true }],
+      }),
+    ).toBe(true);
+    expect(
+      s3.catalog['item.update']!.merges?.({
+        fields: [
+          { name: 'Renderings', value: 'x', add: true },
+          { name: 'Title', value: 'y' },
+        ],
+      }),
+    ).toBe(false);
     // Page designs come from the site's own Page Designs item.
     const elsewhere = [{ templatePath: tpl, pageDesignPath: '/sitecore/content/Other/Default' }];
     expect(

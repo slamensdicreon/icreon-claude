@@ -233,6 +233,18 @@ export type RollbackPhase = z.infer<typeof RollbackPhase>;
 export const ArchiveProject = z.object({ confirmation: z.string() });
 export type ArchiveProject = z.infer<typeof ArchiveProject>;
 
+/**
+ * POST /projects/:id/delete-now: deletes a project at once, with no grace period, from any state
+ * but running. For a project made by mistake, a test, or a demo nobody will open again. The build
+ * repository and the hosting project can be kept (handed over, or wanted for reference).
+ */
+export const DeleteProjectNow = z.object({
+  confirmation: z.string(),
+  keepRepository: z.boolean().default(false),
+  keepHosting: z.boolean().default(false),
+});
+export type DeleteProjectNow = z.infer<typeof DeleteProjectNow>;
+
 /** PUT /projects/:id/settings/:key */
 export const ChangeSetting = z.object({ value: z.json() });
 
@@ -352,3 +364,39 @@ export type EditKnowledge = z.infer<typeof EditKnowledge>;
 /** POST /projects/:id/retrospectives — run a finished phase's retrospective. */
 export const RunRetrospective = z.object({ phase: z.number().int().min(0).max(20) });
 export type RunRetrospective = z.infer<typeof RunRetrospective>;
+
+/** POST /projects/:id/files: a file for the team, as base64 (up to 10 MB). */
+export const AttachFile = z.object({
+  name: z.string().trim().min(1).max(200),
+  contentType: z.string().trim().min(3).max(120),
+  dataBase64: z.string().min(1),
+  note: z.string().trim().max(1000).optional(),
+  about: z.string().max(80).optional(),
+});
+export type AttachFile = z.infer<typeof AttachFile>;
+
+/** POST /proposals/apply: the Director's decisions on waiting proposals, applied in one go. */
+export const ApplyProposals = z.object({
+  decisions: z
+    .array(
+      z.object({
+        kind: z.enum(['knowledge', 'rule']),
+        id: z.string(),
+        action: z.enum(['approve', 'edit', 'reject']),
+        edit: z
+          .object({
+            title: z.string().trim().min(3).max(200).optional(),
+            text: z.string().trim().min(3).max(2000).optional(),
+            when: z.string().trim().min(3).max(600).optional(),
+            then: z.string().trim().min(3).max(600).optional(),
+            scope: z.object({ kind: z.string(), id: z.string().min(1).max(120) }).optional(),
+            roles: z.array(z.string().max(120)).max(30).optional(),
+          })
+          .nullable()
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type ApplyProposals = z.infer<typeof ApplyProposals>;

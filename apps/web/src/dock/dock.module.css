@@ -506,6 +506,22 @@
   justify-content: center;
   cursor: pointer;
 }
+.attach {
+  flex: none;
+  width: calc(var(--row) - var(--space-3));
+  height: calc(var(--row) - var(--space-3));
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.attach:hover {
+  color: var(--ink);
+}
 .send:hover {
   background: var(--ink-2);
 }

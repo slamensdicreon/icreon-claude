@@ -16,9 +16,30 @@ export const BlueprintItem = z.object({
 });
 export type BlueprintItem = z.infer<typeof BlueprintItem>;
 
+/**
+ * What the Blueprint covers of the site, when Discovery read only part of it: the pages the crawl
+ * and the sitemap found, and how the rest is handled (built from these templates, imported, left
+ * out), so a sample never silently becomes the scope. Shown at Gate 1.
+ */
+export const BlueprintScope = z.object({
+  /** Pages the crawl and the sitemap found. */
+  pagesFound: z.number().int().nonnegative(),
+  /** How the pages beyond `pages` are handled, and why: one or two sentences. */
+  approach: z.string().min(10).max(1000),
+  /** Sections (sitemap paths) handled another way, with their page counts. */
+  sections: z
+    .array(z.object({ path: z.string(), pages: z.number().int().nonnegative(), plan: z.string() }))
+    .default([]),
+});
+export type BlueprintScope = z.infer<typeof BlueprintScope>;
+
 export const Blueprint = z.object({
   version: z.number().int().positive(),
   collections: z.record(z.string(), z.array(BlueprintItem)),
+  // A scope in another shape (a demo's Solution Architect wrote one naming its two pages, with no
+  // `approach`) is set aside rather than rejecting the whole Blueprint: blueprint.coverage still
+  // asks for a proper one where Discovery read only part of the site.
+  scope: BlueprintScope.optional().catch(undefined),
 });
 export type Blueprint = z.infer<typeof Blueprint>;
 

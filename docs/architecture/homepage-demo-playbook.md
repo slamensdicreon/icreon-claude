@@ -55,46 +55,42 @@ gets a real `extends`, the copy goes.
 
 ## Scope
 
-| | Audited (phases 1–2) | Built (phases 3–8) |
+Revised 2026-11-07 after the UtiliQuest run (version 0.2.0). Version 0.1.0 put the whole site in the
+Blueprint and held everything but the homepage. Every held item was a way for agents and checks
+built for "everything in the Blueprint gets built" to trip (a kept component merged into a held one
+looped the rendering checks), and each fix meant teaching shared checks about the demo. Now the
+audit and the build are separate:
+
+| | Audited (in numbers) | Inventoried and built |
 | --- | --- | --- |
-| Pages | Every page, crawled and in the Blueprint | The homepage and the 404 page |
-| Templates | Every template | The homepage's template; the 404's if different |
-| Components | Every component, with its model contract | The homepage's components, the header, the footer and the navigation |
-| Media | Every media item in the manifest | Media the homepage and the header, footer and navigation use |
-| Site-wide | Redirects, forms, languages, integrations listed | Header and footer partial designs, the page design, error page setting |
+| Pages | Every page the crawl finds, in the page inventory's `siteAudit` | The homepage and the 404 page |
+| Templates | Page layouts told apart, with counts | The two pages' templates |
+| Components | Not mapped | The homepage's and 404's components, the header, the footer and the navigation |
+| Forms, languages, sites | Counted | Only what the two pages use |
 
-### The slice
+- **Content Analyst:** crawls the whole site, writes the page inventory for the two pages in full,
+  with `crawl.partial` true and a `siteAudit` of the whole site.
+- **Repo Analyst:** inventories only the two pages' components, design system and assets.
+- **Solution Architect:** writes the Blueprint for those two pages only. To every agent and check
+  it is simply a small two-page site, so the website playbook's team runs it unchanged.
+- **The demo summary** takes the whole-site numbers from `siteAudit`.
 
-The Architect writes the whole Blueprint, then keeps the slice and holds the rest:
+**Navigation is its own component**, with a shared datasource, so a marketer can visibly edit the
+menu.
 
-- **Pages**: `attrs.path: "/"`, and `attrs.errorPage: 404`.
-- **Templates**: those pages' `attrs.template`.
-- **Components**: those with a variant whose `pages` include `/` or the 404, those with
-  `datasource: "shared"` (header, footer, navigation), and whatever they're merged into.
-- **Media**: items whose `attrs.pages` include those pages, or `attrs.shared: true`.
-
-Everything else is `status: "drop"` with `attrs.held: true`. The Workbench shows these as
-**audited, not built**, not as dropped. Dropped (without `held`) still means "won't move", with a
-reason.
-
-**Nobody has to trust the Architect on this.** `blueprint.demo-slice` runs at Gate 1 with the other
-Blueprint checks. It derives the slice from the Blueprint and fails on any mismatch: a page kept
-outside the slice, a homepage component held, the navigation merged, a template or media item kept
-that nothing in the slice uses, a held component without its model contract, a drop with neither
-`held` nor a reason. Because held items are `drop` to everything else, the plan compiler, the
-acceptance checks and the agents' context all work unchanged and build only the slice.
-
-**Navigation is its own component.** The Architect often merges navigation into the header. In
-this playbook it stays a component of its own with a shared datasource (menu items as child items
-with a `max`), so a marketer can visibly edit the menu. The demo's Architect prompt says so.
+`blueprint.demo-slice` checks the Blueprint: only the homepage and 404 page, the templates they
+use, components on them or shared, the navigation as its own component, merges only into
+components it builds, and media they use. Projects started on 0.1.0 keep their team
+(`playbooks/.versions/sitecoreai-homepage-demo/0.1.0`), and their held items still read as
+"audited, not built".
 
 ## Phases
 
 | # | Phase | Runs | Exit |
 | --- | --- | --- | --- |
 | 0 | Intake | Today's intake on our tenant; the site is created by hand first (see *Where it's built*) | Credentials verified, the paths the project owns fixed |
-| 1 | Discovery | **Unchanged** | Full inventories, asset manifest, risk list; every sitemap URL crawled or excluded |
-| 2 | Blueprint, **Gate 1** | **Unchanged**, plus: navigation kept as its own component; acceptance always checks `/` | Whole Blueprint approved; the gate card shows the slice |
+| 1 | Discovery | The whole site crawled and audited in numbers; the two pages and their chrome inventoried in full | `siteAudit` written; the homepage, 404, header, footer and navigation inventoried |
+| 2 | Blueprint, **Gate 1** | A Blueprint for the two pages only; navigation its own component | Approved at Gate 1 |
 | 3 | Foundation | **Unchanged** | Site, tokens, primitives, hosting; an empty page renders on the editing host |
 | 4 | Components | Slice components ported, registered, integrated and enabled in Page builder. The slice is the pilot, so there's no separate pilot checkpoint | Every slice component passes `structural.renderings`, `editor.component-enabled`, `editor.new-datasource` |
 | 5 | Templates | The homepage's template with insert options and placeholder settings that allow every slice component; header and footer partial designs; the page design | `head.header-footer`; the page design assigned |
@@ -209,5 +205,5 @@ Made by the Director on 2026-11-07:
    `sitecoreai-migration`, on their own tenant.
 3. **The outcome:** marketer-friendly drag and drop in Page builder on the homepage, header, footer
    and navigation, with parity on the homepage, through deploy.
-4. **The 404 page** is part of the slice.
+4. **The 404 page** was part of the slice; **dropped on 2026-11-08 (0.2.4)**. On Paylocity and Microsoft it failed the same way every time (the head serves its own fallback for a missing URL, so no header or footer) and closed "done with gaps"; the demo is the homepage, header, footer and navigation. The Blueprint records the 404 page as dropped, so the decision stays on record.
 5. **Retention:** 30 days, then the demo is deleted.

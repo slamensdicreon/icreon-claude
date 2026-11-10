@@ -68,6 +68,19 @@ const MEDIA_TYPES: Record<string, string> = {
   mp4: 'video/mp4',
 };
 
+/** An image's type from its first bytes. */
+function sniffImage(b: Uint8Array): string | null {
+  const at = (i: number, ...v: number[]) => v.every((x, j) => b[i + j] === x);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'png';
+  if (at(0, 0xff, 0xd8, 0xff)) return 'jpg';
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'gif';
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'webp';
+  if (at(4, 0x66, 0x74, 0x79, 0x70) && at(8, 0x61, 0x76, 0x69, 0x66)) return 'avif';
+  const head = new TextDecoder().decode(b.slice(0, 256)).trimStart();
+  if (/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(head)) return 'svg';
+  return null;
+}
+
 const Path = z.string().startsWith('/sitecore/').max(500);
 const Field = z.object({ name: z.string().min(1), value: z.string() });
 const ReadArgs = z.object({
@@ -178,6 +191,8 @@ const MediaArgs = z
     ref: z.string().startsWith('blob://').max(500).optional(),
     fileName: z.string().min(1).max(200).optional(),
     alt: z.string().max(500).optional(),
+    /** Replace a media item already at itemPath (a wrong upload): it goes to the recycle bin first. */
+    replace: z.boolean().optional(),
   })
   .refine((a) => Boolean(a.sourceUrl) !== Boolean(a.ref), 'give either ref or sourceUrl');
 const ThumbnailArgs = z.object({
@@ -214,6 +229,8 @@ const PageDesignsArgs = z.object({
     .array(z.object({ templatePath: Path, pageDesignPath: Path }))
     .min(1)
     .max(50),
+  /** Keep every other template's page design as stored now, and map only these. */
+  add: z.boolean().optional(),
 });
 const LanguageArgs = z.object({
   /** e.g. "es-US" */
@@ -281,7 +298,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'item.update': {
       description:
-        "Set field values on an item (by absolute path) in one language. For a field that lists item IDs and that other tasks also write (an Available Renderings group's Renderings, __Masters), pass add: true with the IDs to add: they join the value stored at the moment of the write, and every ID already there stays. Writing back a list you read earlier drops whatever another task added since.",
+        "Set field values on an item (by absolute path) in one language. For a field that lists item IDs and that other tasks also write (an Available Renderings group's Renderings, __Masters), pass add: true with the IDs to add: they join the value stored at the moment of the write, and every ID already there stays. Writing back a list you read earlier drops whatever another task added since. A write whose every field has add: true never waits for another task's session (a placeholder settings item's Allowed Controls too).",
       inputSchema: {
         type: 'object',
         properties: {
@@ -304,6 +321,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         additionalProperties: false,
       },
       mutates: true,
+      // Every field adds IDs to what is stored when it writes: it can't drop another task's IDs.
+      merges: (a) =>
+        Array.isArray(a.fields) &&
+        a.fields.length > 0 &&
+        a.fields.every((f) => (f as { add?: unknown })?.add === true),
       pathArgs: ['path'],
     },
     'item.rename': {
@@ -332,11 +354,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'page-designs.map': {
       description:
-        "Map page templates to page designs on the project's site (Sitecore's configurePageDesigns): each page template's pages then show its page design's partial designs (header, footer). Give every page template: the mapping replaces the site's whole mapping. Reads the Page Designs item back to confirm each pair. Don't write TemplatesMapping by hand: Sitecore ignores a value not in its URL-encoded form.",
+        "Map page templates to page designs on the project's site (Sitecore's configurePageDesigns): each page template's pages then show its page design's partial designs (header, footer). Give every page template, or pass add: true to map only the templates you give and keep every other template's page design as stored at the moment of the write (a template task mapping its own template; it then never waits for another task's session). Reads the Page Designs item back to confirm each pair. Don't write TemplatesMapping by hand: Sitecore ignores a value not in its URL-encoded form.",
       inputSchema: {
         type: 'object',
         properties: {
           pageDesignsPath: { type: 'string' },
+          add: { type: 'boolean' },
           mappings: {
             type: 'array',
             items: {
@@ -350,6 +373,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         additionalProperties: false,
       },
       mutates: true,
+      merges: (a) => a.add === true,
       pathArgs: ['pageDesignsPath'],
     },
     'template.create': {
@@ -437,7 +461,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     },
     'media.upload': {
       description:
-        "Upload an image or file into the media library. itemPath is the absolute media item path (under /sitecore/media library/). Give `ref`, the stored file browser.fetch.asset returned (preferred: it may come from the site's CDN or the Blueprint's URL), with `fileName`; or `sourceUrl` on the source site itself.",
+        'Upload an image or file into the media library. itemPath is the absolute media item path (under /sitecore/media library/). Give `ref`, the stored file browser.fetch.asset returned (preferred: it may come from the site\'s CDN or the Blueprint\'s URL) or the ref of a file the Director gave the team (listed in your context), with `fileName`; or `sourceUrl` on the source site itself. An item already at itemPath is refused ("already defined on this level"); to replace a wrong upload (a plain File where an Image belongs), give `replace: true` and it goes to the recycle bin first.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -446,6 +470,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           fileName: { type: 'string' },
           sourceUrl: { type: 'string' },
           alt: { type: 'string' },
+          replace: { type: 'boolean' },
         },
         required: ['itemPath'],
         additionalProperties: false,
@@ -673,6 +698,19 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 
   private async create(q: Gql, a: Parsed<typeof CreateArgs>, lang: Lang): Promise<ToolResult> {
     if (!a.success) return rejected(a.error.issues[0]!.message);
+    // Sitecore refuses \/:?"<>|[] in item names (InvalidItemNameChars). A name taken from the
+    // source's copy ("03 Surface Laptop 13\"") is cleaned, and the original kept as its display name.
+    const given = a.data.name;
+    const clean =
+      given
+        .replace(/[\\/:?"<>|[\]]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || 'item';
+    if (clean !== given) {
+      a.data.name = clean;
+      if (!(a.data.fields ?? []).some((f) => f.name === '__Display name'))
+        a.data.fields = [...(a.data.fields ?? []), { name: '__Display name', value: given }];
+    }
     const path = `${a.data.parentPath.replace(/\/$/, '')}/${a.data.name}`;
     const language = lang(a.data.language);
     const fields = a.data.fields ?? [];
@@ -756,6 +794,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         asImage.push(`${f.name} (rich-text images as media links)`);
       }
     }
+    const notItems: string[] = [];
     const isIdList = (v: string) => !!v.trim() && v.split('|').every((p) => HEX_ID.test(p.trim()));
     const adds = a.data.fields.filter((f) => f.add);
     if (adds.some((f) => !isIdList(f.value)))
@@ -783,10 +822,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           .map((p) => p.trim())
           .filter((id) => !had.has(bare(id)));
         const missing = fresh.length ? await this.missingIds(q, fresh) : [];
-        if (missing.length)
-          return rejected(
-            `${f.name}: no item has the ID ${missing.join(', ')}. Copy IDs from an item.read rather than typing them; nothing was written`,
-          );
+        if (!missing.length) continue;
+        // One ID-shaped value in a field that isn't a known item reference may be another
+        // system's ID (a HubSpot form GUID in a text field, Paylocity): written, with a warning.
+        // Lists, added IDs and reference fields still have to name items.
+        if (!f.add && !f.value.includes('|') && !ITEM_REFERENCE.test(f.name)) {
+          notItems.push(`${f.name} (${missing.join(', ')})`);
+          continue;
+        }
+        return rejected(
+          `${f.name}: no item has the ID ${missing.join(', ')}. Copy IDs from an item.read rather than typing them; nothing was written`,
+        );
       }
     }
     let reconciled = false;
@@ -826,10 +872,11 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         verified: !mismatches.length,
         mismatches,
         reconciled,
+        ...(notItems.length ? { notItems } : {}),
       },
       summary: mismatches.length
         ? `Updated ${a.data.path}, but ${mismatches.join(', ')} read back differently`
-        : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back${asImage.length ? `; ${asImage.join(', ')} given a media path, stored as Sitecore XML by the media item's ID` : ''}`,
+        : `Updated ${a.data.fields.length} field${a.data.fields.length === 1 ? '' : 's'} on ${a.data.path}, read back${asImage.length ? `; ${asImage.join(', ')} given a media path, stored as Sitecore XML by the media item's ID` : ''}${notItems.length ? `; ${notItems.join(', ')} kept as text: no Sitecore item has that ID, so if the field should link to an item, that link is broken` : ''}`,
     };
   }
 
@@ -917,6 +964,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         pageDesignId: sitecoreId(await this.idOf(q, m.pageDesignPath)),
       });
     }
+    let kept = 0;
+    if (a.data.add) {
+      // The mapping replaces the site's whole mapping: keep each template's design as stored now.
+      const now = await readBack(q, root, 'en', ['TemplatesMapping']);
+      const given = new Set(pairs.map((p) => bare(p.templateId)));
+      for (const [t, d] of templatesMapping(now?.fields.get('templatesmapping') ?? ''))
+        if (!given.has(t) && /^[0-9a-f]{32}$/.test(t) && /^[0-9a-f]{32}$/.test(d)) {
+          pairs.push({ templateId: sitecoreId(t), pageDesignId: sitecoreId(d) });
+          kept++;
+        }
+    }
     await q.run<{ configurePageDesigns: boolean }>(
       `mutation { configurePageDesigns(input: { siteName: ${gql(facts.site)}, mapping: [${pairs
         .map((p) => `{ templateId: ${gql(p.templateId)}, pageDesignId: ${gql(p.pageDesignId)} }`)
@@ -931,13 +989,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     return missing.length
       ? {
           code: 409,
-          body: { mapped: pairs.length - missing.length, missing },
+          body: { mapped: a.data.mappings.length - missing.length, missing },
           summary: `Mapped page designs, but ${missing.map((m) => m.templatePath).join(', ')} doesn't read back`,
         }
       : {
           code: 200,
-          body: { mapped: pairs.length },
-          summary: `Mapped ${pairs.length} page template${pairs.length === 1 ? '' : 's'} to their page designs, read back`,
+          body: { mapped: a.data.mappings.length, ...(a.data.add ? { kept } : {}) },
+          summary: `Mapped ${a.data.mappings.length} page template${a.data.mappings.length === 1 ? '' : 's'} to their page designs${a.data.add ? `, kept ${kept} other${kept === 1 ? '' : 's'}` : ''}, read back`,
         };
   }
 
@@ -1127,9 +1185,15 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     let name: string;
     let from: string;
     if (a.data.ref) {
-      // A file the browser downloaded for this project; its host was checked there.
-      if (!a.data.ref.startsWith(`blob://${projectId}/assets/`))
-        return rejected(`${a.data.ref} isn't a file downloaded for this project.`);
+      // A file the browser downloaded for this project (its host was checked there), or one the
+      // Director gave the team (the files route, theirs alone to write).
+      if (
+        !a.data.ref.startsWith(`blob://${projectId}/assets/`) &&
+        !a.data.ref.startsWith(`blob://${projectId}/files/`)
+      )
+        return rejected(
+          `${a.data.ref} isn't a file downloaded for this project or one the Director gave it.`,
+        );
       if (!this.opts.blobs)
         return rejected('Stored files are not available here; give sourceUrl.', 501);
       try {
@@ -1140,9 +1204,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           404,
         );
       }
-      const ext = /\.([a-z0-9]{2,5})$/i.exec(a.data.ref)?.[1]?.toLowerCase() ?? 'bin';
+      let ext = /\.([a-z0-9]{2,5})$/i.exec(a.data.ref)?.[1]?.toLowerCase() ?? 'bin';
+      // A file stored before its type was known (an image server's URL with no extension).
+      if (!MEDIA_TYPES[ext]) ext = sniffImage(bytes) ?? ext;
+      if (ext === 'avif')
+        return rejected(
+          'SitecoreAI stores AVIF as a plain file, not an image (no alt text, no size). Download it as PNG or JPEG instead (Scene7: add ?fmt=png-alpha or ?fmt=jpg to the URL) with browser.fetch.asset, and upload that ref.',
+        );
       type = MEDIA_TYPES[ext] ?? 'application/octet-stream';
-      name = a.data.fileName ?? `${a.data.itemPath.split('/').pop() || 'file'}.${ext}`;
+      // The file name's extension is what the media library files it by: keep it true to the bytes.
+      const given = a.data.fileName?.replace(/\.[a-z0-9]{2,5}$/i, '');
+      name = `${given || a.data.itemPath.split('/').pop() || 'file'}.${ext}`;
       from = a.data.ref;
     } else {
       const source = new URL(a.data.sourceUrl!);
@@ -1163,6 +1235,21 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       from = source.href;
     }
     if (bytes.length > MAX_MEDIA_BYTES) return rejected(`${from} is larger than 25 MB.`);
+    // Replacing a wrong upload: Sitecore won't upload over an item, so the old one goes to the
+    // recycle bin first (Microsoft's Xbox promo, stored as a File, had no way to become an Image).
+    if (a.data.replace) {
+      type Found = { item: { itemId: string; children: { nodes: unknown[] } } | null };
+      const old = await q.run<Found>(
+        `query { item(where: { database: "master", path: ${gql(a.data.itemPath)} }) { itemId children { nodes { itemId } } } }`,
+      );
+      if (old.item) {
+        if (old.item.children.nodes.length)
+          return rejected(`${a.data.itemPath} has child items; it can't be replaced.`);
+        await q.run(
+          `mutation { deleteItem(input: { database: "master", itemId: ${gql(old.item.itemId)}, permanently: false }) { successful } }`,
+        );
+      }
+    }
     const relative = a.data.itemPath.slice(MEDIA_ROOT.length);
     const d = await q.run<{ uploadMedia: { presignedUploadUrl: string } }>(
       `mutation { uploadMedia(input: { itemPath: ${gql(relative)} }) { presignedUploadUrl } }`,
@@ -1546,6 +1633,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 }
 
 type Lang = (l?: string) => string;
+
+/**
+ * Fields that hold item references by name: a value there must name an item. Others may hold an
+ * ID-shaped value from another system (a HubSpot form GUID).
+ */
+const ITEM_REFERENCE =
+  /^(__.*|renderings|allowed controls|partialdesigns|page design|parameters template|datasource template|datasource location|componentquery|fieldnames|.*(template|datasource|link|image|item|items|list|reference|target|source|variant|design)s?)$/i;
 
 const bare = (id: string) => id.replace(/[{}-]/g, '').toLowerCase();
 

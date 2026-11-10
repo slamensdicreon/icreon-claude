@@ -69,6 +69,12 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
         : 'Project settings updated';
     case 'project.status':
       return `Project ${e.data.status}`;
+    case 'project.deletion':
+      return e.data.action === 'requested'
+        ? `Deletion scheduled for ${e.data.due?.slice(0, 10) ?? 'later'}`
+        : e.data.action === 'cancelled'
+          ? 'Deletion cancelled'
+          : 'Deletion under way';
     case 'phase.entered':
       return `Phase ${e.data.phase} started`;
     case 'phase.exited':
@@ -103,6 +109,8 @@ export function describe(e: LwEvent, lookups: Lookups = IDENTITY): string {
       return e.data.summary;
     case 'director.message':
       return 'Director message';
+    case 'file.attached':
+      return `Director attached ${e.data.name}`;
     case 'cos.presence':
       return `Cypher ${e.data.presence}`;
     case 'artifact.versioned':

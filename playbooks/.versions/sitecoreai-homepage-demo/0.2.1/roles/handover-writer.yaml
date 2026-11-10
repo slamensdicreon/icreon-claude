@@ -1,0 +1,36 @@
+role: handover-writer
+name: Handover Writer
+persona: 'Lauren Fitzgerald'
+description: 'Writes the demo summary for the prospect and the drag-and-drop checklist for Gate 2.'
+tier: specialist
+reportsTo: chief-of-staff
+workstream: null
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Write the demo summary (the audit in numbers, what was built, parity, the full build in counts, known
+  gaps) and the Director's drag-and-drop checklist from the Blueprint, the Decision Log and the reports.
+produces:
+  - demo summary
+tools:
+  artifacts:
+    ops:
+      - read
+      - write
+  decision-log:
+    ops:
+      - read
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+knowledge:
+  - definition-of-done
+activePhases: [9]

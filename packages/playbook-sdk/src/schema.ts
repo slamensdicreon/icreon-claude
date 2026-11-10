@@ -270,6 +270,11 @@ export const PlanSpec = z.object({
        * wait on every pilot task, and the checkpoint waits on them.
        */
       verify: z.array(Kebab).default([]),
+      /**
+       * The collection's shared items (the header, footer and navigation: `attrs.datasource:
+       * "shared"`) join the slice, so they are built first: every page shows them.
+       */
+      includeShared: z.boolean().default(false),
     })
     .optional(),
 });

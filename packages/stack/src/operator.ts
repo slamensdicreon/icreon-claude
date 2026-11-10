@@ -283,7 +283,7 @@ export function reviewNotice(
     project: s.name,
     kind: 'review',
     title: 'The team proposes what to learn',
-    body: `${s.name}: ${parts.join(' and ')} drafted from settled cards wait for your review (Rules; Lessons learned). Approved, they settle the same questions next time without a card.`,
+    body: `${s.name}: ${parts.join(' and ')} drafted from settled cards wait for your review. Open Knowledge, Review proposals: Cypher recommends approving, editing or rejecting each one, and you apply them in one go. Nothing applies to the next build until you do.`,
     proposals: total,
   };
 }

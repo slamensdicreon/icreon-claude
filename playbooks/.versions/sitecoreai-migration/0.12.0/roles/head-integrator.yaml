@@ -1,0 +1,73 @@
+role: head-integrator
+name: Head Integrator
+persona: 'David Kim'
+description: 'Owns the Next.js head: Content SDK configuration, middleware, the editing host Page builder runs on, and every preview build.'
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: agent-sdk
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Configure sitecore.config.ts, the proxy/middleware chain (personalize, redirects, editing), next.config,
+  i18n and environment variables; make the app a working editing host; pass build and type checks.
+produces:
+  - deployable head on the team branch
+tools:
+  sandbox:
+    ops:
+      - workspace.open
+      - fs.list
+      - fs.read
+      - fs.write
+      - exec.build
+      - exec.content-sdk-cli
+      - git.commit
+      - git.integrate
+  hosting:
+    ops:
+      - project.read
+      - deploy.preview
+      - deploy.status
+      - logs.runtime
+  build-repo:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+      - branch.commit
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:build.green
+  - validator:editing-host.responds
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 4
+  - 5
+  - 8

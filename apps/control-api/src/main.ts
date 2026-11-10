@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { anthropicModelClient, draftRule, retrospect, triageQuestion } from '@lw/agent-runtime';
+import {
+  anthropicModelClient,
+  draftRule,
+  retrospect,
+  sortProposals,
+  triageQuestion,
+} from '@lw/agent-runtime';
 import {
   CommandBus,
   masterKey,
@@ -12,7 +18,9 @@ import {
   PostgresRuleStore,
   MemoryRuleStore,
   MemoryKnowledgeStore,
+  MemoryTombstoneStore,
   PostgresKnowledgeStore,
+  PostgresTombstoneStore,
   PostgresVault,
   Projections,
   type SecretVault,
@@ -30,6 +38,8 @@ import { createPlatforms } from '@lw/platforms';
 import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
 import {
   composeStack,
+  canDeleteHostingProjects,
+  deleteHostingProject,
   hostingStatus,
   recipients,
   resendNotifier,
@@ -143,8 +153,10 @@ const env = z
       .optional()
       .transform((v) => v?.trim() || undefined),
     OPERATOR_EMAIL_TO: z.string().optional(),
-    /** Vercel Cron's secret: the watchdog's scheduled calls carry it. */
+    /** Vercel Cron's secret: the watchdog's and the daily purge's scheduled calls carry it. */
     CRON_SECRET: z.string().optional(),
+    /** Days between asking for a project's deletion and the purge. */
+    DELETE_GRACE_DAYS: z.coerce.number().int().min(0).default(30),
     OPERATOR_EMAIL_FROM: z.string().default('Launchworks Operator <onboarding@resend.dev>'),
   })
   .parse(process.env);
@@ -230,6 +242,8 @@ let commands: (projectId: string) => ProjectCommands | undefined;
 let start: ((input: StartInput) => Promise<void>) | undefined;
 /** Stops a project's run for good, for a reset; only a real orchestrator has one. */
 let stop: ((projectId: string) => Promise<void>) | undefined;
+/** The same, for a project being deleted. */
+let stopForPurge: ((projectId: string) => Promise<void>) | undefined;
 let seedSample: (() => Promise<void>) | null = null;
 
 if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
@@ -375,6 +389,7 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
     });
   };
   stop = (projectId) => stopProject(client, projectId, 'Reset by the Director');
+  stopForPurge = (projectId) => stopProject(client, projectId, 'Project deleted');
   // A sample project for local runs only: deployed instances start cold and in parallel.
   if (env.INLINE_WORKER === 'true' && !(await store.projectIds()).length) {
     seedSample = async () => {
@@ -410,7 +425,8 @@ function openVault(): SecretVault {
       'Credentials can be checked but not stored: CREDENTIALS_KEY is not set on the server.',
     );
   };
-  return { seal: refuse, open: refuse };
+  // Nothing can have been stored, so there is nothing to delete.
+  return { seal: refuse, open: refuse, deleteProject: async () => 0 };
 }
 
 const vault = openVault();
@@ -427,6 +443,12 @@ const rules = opened.sql
   ? new PostgresRuleStore(opened.sql)
   : env.STORE === 'memory'
     ? new MemoryRuleStore()
+    : undefined;
+// Deletion records: what is left of a deleted project. Beside the event log; memory for local runs.
+const tombstones = opened.sql
+  ? new PostgresTombstoneStore(opened.sql)
+  : env.STORE === 'memory'
+    ? new MemoryTombstoneStore()
     : undefined;
 // The team's knowledge across projects; the worker seeds it too, and seeding adds only what's new.
 const knowledge = opened.sql
@@ -518,6 +540,7 @@ const app = await buildApp({
       }
     : undefined,
   artifactContent: async (_projectId, ref) => blobs.get(ref).catch(() => null),
+  putFile: (projectId, key, bytes, contentType) => blobs.put(projectId, key, bytes, contentType),
   policyDefaults: (projectId) => policyRows(pinnedPlaybook(projectId)),
   autonomyDefaults: (projectId) => pinnedPlaybook(projectId).manifest.defaults.autonomy,
   corsOrigin: env.CORS_ORIGIN,
@@ -559,7 +582,40 @@ const app = await buildApp({
       }
     : null,
   rules,
+  purge: tombstones
+    ? {
+        store,
+        tombstones,
+        stop: stopForPurge,
+        blobs,
+        vault,
+        integrations,
+        rules,
+        knowledge,
+        commands: opened.sql ? new CommandBus(opened.sql) : null,
+        github,
+        buildOrg: env.GITHUB_BUILD_ORG ?? null,
+        hosting: hosting
+          ? {
+              deleteProject: (name) => deleteHostingProject(hosting, name),
+              canDelete: () => canDeleteHostingProjects(hosting),
+            }
+          : null,
+        projects: () => projections.all(),
+      }
+    : undefined,
+  deleteGraceDays: env.DELETE_GRACE_DAYS,
   ruleDrafter: process.env.ANTHROPIC_API_KEY ? (input) => draftRule(input) : null,
+  proposalSorter: process.env.ANTHROPIC_API_KEY ? (input) => sortProposals(input) : null,
+  // What changed in the product since older proposals were written, so the sort can call them out
+  // of date. Add a line when a fix lands that a proposal or gap describes.
+  productNotes: [
+    'The browser crawl is bounded: its result is compacted to fit the context, it stops after 7 minutes and returns what it read, with the sitemap count.',
+    "A page the source site refuses (401/403) is the site's answer, not a refused credential; a 404 page comes back with its content.",
+    'Checks skip components merged into another; the homepage demo (0.2.0) blueprints only the homepage and 404 page, with no held components.',
+    "The Director's notes in a project's conversation reach every agent's context.",
+    'Cypher posts a heads-up when the source site throttles or refuses the team.',
+  ],
   knowledge,
   retrospective:
     knowledge && process.env.ANTHROPIC_API_KEY

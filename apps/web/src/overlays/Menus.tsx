@@ -1,3 +1,4 @@
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { post } from '../lib/api';
 import { live } from '../lib/live';
 import { MANAGE, useApp, useProjectResource, type Surface } from '../state';
@@ -7,13 +8,104 @@ import s from './overlays.module.css';
 
 const HEALTH = { healthy: 'Healthy', attention: 'Needs attention', blocked: 'Blocked' } as const;
 
+/** The projects opened from the switcher, newest first: its Recent section. */
+const RECENT = 'lw-recent-projects';
+const recentIds = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+const remember = (id: string) => {
+  try {
+    localStorage.setItem(
+      RECENT,
+      JSON.stringify([id, ...recentIds().filter((x) => x !== id)].slice(0, 8)),
+    );
+  } catch {
+    /* private mode: Recent just stays empty */
+  }
+};
+/** Past this many projects the switcher leads with a search and splits into sections. */
+const MANY = 6;
+
+/**
+ * The project switcher. A short list reads top to bottom; a long one (30 to 50 projects) leads
+ * with a search, then what needs you, what you opened lately, and the rest. Enter opens the first
+ * match; the arrow keys move between rows. Archived projects live under the Dashboard's Archived
+ * view instead.
+ */
 export function ProjectMenu() {
   const { projects, projectId, switchProject, home, closeOverlay, newProject } = useApp();
+  const [query, setQuery] = useState('');
+  const list = useRef<HTMLDivElement>(null);
+  const open = (id: string) => {
+    remember(id);
+    closeOverlay();
+    switchProject(id);
+  };
+  const shown = projects.filter((p) => p.status !== 'archived' || p.id === projectId);
+  const many = shown.length > MANY;
+  const q = query.trim().toLowerCase();
+  const sections: { title: string; items: typeof shown }[] = [];
+  if (q) {
+    const hits = shown.filter((p) =>
+      [p.name, p.client, p.subtitle ?? '', p.platform?.name ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    );
+    sections.push({ title: 'Matches', items: hits });
+  } else if (!many) {
+    sections.push({ title: 'Projects', items: shown });
+  } else {
+    const needs = shown.filter((p) => p.waitingCount > 0);
+    const recent = recentIds()
+      .map((id) => shown.find((p) => p.id === id))
+      .filter((p): p is (typeof shown)[number] => !!p && !needs.includes(p))
+      .slice(0, 4);
+    const rest = shown.filter((p) => !needs.includes(p) && !recent.includes(p));
+    if (needs.length) sections.push({ title: 'Needs you', items: needs });
+    if (recent.length) sections.push({ title: 'Recent', items: recent });
+    if (rest.length)
+      sections.push({
+        title: needs.length || recent.length ? 'Everything else' : 'Projects',
+        items: rest,
+      });
+  }
+  const first = sections.find((x) => x.items.length)?.items[0];
+  const rows = () => [...(list.current?.querySelectorAll<HTMLButtonElement>('[data-row]') ?? [])];
+  const move = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const all = rows();
+    if (!all.length) return;
+    e.preventDefault();
+    const at = all.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      e.key === 'ArrowDown'
+        ? at < 0
+          ? 0
+          : Math.min(at + 1, all.length - 1)
+        : at <= 0
+          ? -1
+          : at - 1;
+    if (next < 0) list.current?.querySelector<HTMLInputElement>('input')?.focus();
+    else all[next]!.focus();
+  };
+
   return (
     <Scrim place="nav-top">
-      <div className={`${s.float} ${s.menu}`} role="menu" aria-label="Projects">
+      <div
+        ref={list}
+        className={`${s.float} ${s.menu}`}
+        role="dialog"
+        aria-label="Projects"
+        onKeyDown={move}
+      >
         <button
-          role="menuitem"
+          data-row=""
           className={s.row}
           aria-current={!projectId || undefined}
           onClick={() => {
@@ -26,59 +118,90 @@ export function ProjectMenu() {
           </span>
           <span className={s.rowText}>
             <span className="type-body-small">Dashboard</span>
-            <span className="type-meta">Every project and where it stands</span>
+            <span className="type-meta">
+              {many
+                ? `All ${shown.length} projects and where they stand`
+                : 'Every project and where it stands'}
+            </span>
           </span>
         </button>
-        <h3 className={`${s.menuHead} type-label`}>Projects</h3>
-        {projects.map((p) => (
-          <button
-            key={p.id}
-            role="menuitem"
-            className={s.row}
-            aria-current={p.id === projectId || undefined}
-            onClick={() => {
-              closeOverlay();
-              switchProject(p.id);
-            }}
-          >
-            <span className={`${s.tile} type-label`} aria-hidden="true">
-              {p.initials}
-            </span>
-            <span className={s.rowText}>
-              <span className="type-body-small">
-                {p.name}
-                {p.demo && <span className={`${s.tag} type-meta`}>Demo</span>}
-              </span>
-              <span className="type-meta">
-                {p.currentPhase
-                  ? `Phase ${p.currentPhase.number}, ${p.currentPhase.name}`
-                  : p.status === 'intake'
-                    ? 'Ready to start'
-                    : p.status}{' '}
-                · {p.subtitle ?? p.client}
-              </span>
-            </span>
-            <span className={s.rowEnd}>
-              <span
-                className={s.dot}
-                data-tone={p.health}
-                role="img"
-                aria-label={HEALTH[p.health]}
-              />
-              {p.waitingCount > 0 && (
-                <span
-                  className={`${s.badge} type-label`}
-                  aria-label={`${p.waitingCount} waiting on you`}
-                >
-                  {p.waitingCount}
+        {many && (
+          <label className={s.menuSearch}>
+            <Icon name="search" size={18} />
+            <input
+              className="type-body-small"
+              type="search"
+              autoFocus
+              placeholder={`Find a project among ${shown.length}`}
+              aria-label="Find a project"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && first) open(first.id);
+              }}
+            />
+          </label>
+        )}
+        {sections.map((sec) => (
+          <section key={sec.title} aria-label={sec.title} className={s.menuSection}>
+            <h3 className={`${s.menuHead} type-label`}>
+              {sec.title}
+              {many && <span className={s.menuCount}> {sec.items.length}</span>}
+            </h3>
+            {sec.items.length === 0 && (
+              <p className={`${s.menuEmpty} type-body-small`}>
+                Nothing matches. Archived projects are on the Dashboard.
+              </p>
+            )}
+            {sec.items.map((p) => (
+              <button
+                key={p.id}
+                data-row=""
+                className={s.row}
+                aria-current={p.id === projectId || undefined}
+                onClick={() => open(p.id)}
+              >
+                <span className={`${s.tile} type-label`} aria-hidden="true">
+                  {p.initials}
                 </span>
-              )}
-            </span>
-          </button>
+                <span className={s.rowText}>
+                  <span className="type-body-small">
+                    {p.name}
+                    {p.demo && <span className={`${s.tag} type-meta`}>Demo</span>}
+                  </span>
+                  <span className="type-meta">
+                    {p.currentPhase
+                      ? `Phase ${p.currentPhase.number}, ${p.currentPhase.name}`
+                      : p.status === 'intake'
+                        ? 'Ready to start'
+                        : p.status}{' '}
+                    · {p.platform && many ? `${p.platform.name} · ` : ''}
+                    {p.subtitle ?? p.client}
+                  </span>
+                </span>
+                <span className={s.rowEnd}>
+                  <span
+                    className={s.dot}
+                    data-tone={p.health}
+                    role="img"
+                    aria-label={HEALTH[p.health]}
+                  />
+                  {p.waitingCount > 0 && (
+                    <span
+                      className={`${s.badge} type-label`}
+                      aria-label={`${p.waitingCount} waiting on you`}
+                    >
+                      {p.waitingCount}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </section>
         ))}
         <div className={s.sep} />
         <button
-          role="menuitem"
+          data-row=""
           className={s.row}
           onClick={() => {
             closeOverlay();

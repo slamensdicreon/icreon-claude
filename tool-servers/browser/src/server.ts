@@ -2,14 +2,12 @@ import { createHash } from 'node:crypto';
 import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/tool-gateway';
 import type { BrowserContext, Page } from 'playwright-core';
 import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
-import type { PageExtract } from './extract';
-import { canonical, loadPage, safeCanonical } from './page-load';
+import { extractContent, extractPage, type PageExtract } from './extract';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
 import { layoutData } from './layout-data';
-import { assertNavigable, BlockedUrlError, type UrlPolicy } from './ssrf';
+import { assertNavigable, BlockedUrlError, type UrlPolicy, withSibling } from './ssrf';
 import { Crawler, CRAWL_LIMITS } from './crawl/crawler';
 import { CrawlReports } from './crawl/report';
-import { discover } from './crawl/sitemap';
 import { MemoryCrawlStore, type CrawlJob, type CrawlStore } from './crawl/store';
 import {
   designFrom,
@@ -41,6 +39,14 @@ export interface BrowserServerOptions {
    * stop short of that and hand back the pages read.
    */
   crawlTimeMs?: number;
+  /**
+   * The source site's hosts per project. Reads of their pages are kept for `readCacheMs` and
+   * answered again without going back to the site: a large site throttles, then bot-checks, a team
+   * that re-reads the same pages on every attempt. The new site's pages are always read fresh.
+   */
+  sourceHosts?: (projectId: string) => string[];
+  /** How long a source page read is reused (default 6 hours; 0 turns reuse off). */
+  readCacheMs?: number;
   /**
    * Background crawls (crawl.start and the rest). Share one across servers in a process so each
    * crawl runs once; without it, one is made over `crawls` (or memory).
@@ -128,6 +134,21 @@ const BROWSER_HEADERS = {
   'accept-language': 'en-US,en;q=0.9',
 };
 
+/**
+ * What an asset download accepts: formats the media library files as images. Image CDNs pick the
+ * format from Accept and the user agent, not the URL (Scene7 sent Microsoft's promo as AVIF, then
+ * WebP, even with ?fmt=png), and SitecoreAI stores AVIF as a plain file.
+ */
+const ASSET_HEADERS = {
+  // Not a browser's: image CDNs (Akamai in front of Scene7) convert for what the user agent can
+  // show, so Chrome's gets WebP or AVIF whatever the URL asks for (Microsoft's promo: 3.7 KB WebP
+  // as Chrome, the real 57 KB PNG as anything else). A site that refuses this gets the real
+  // browser, below.
+  'user-agent': 'Launchworks-media/1.0 (asset download for a site migration)',
+  accept: 'image/png,image/jpeg,image/gif,image/svg+xml,*/*;q=0.5',
+  'accept-language': 'en-US,en;q=0.9',
+};
+
 const crawlId = {
   type: 'string',
   description: "The crawl's id from crawl.start; the project's latest crawl when left out.",
@@ -208,7 +229,7 @@ const CATALOG: OperationCatalog = {
   },
   crawl: {
     description:
-      'Crawl a small site in one call (up to 500 pages and about 7 minutes) from a start URL plus its sitemap: page inventory with titles, headings, word counts, images and alt text, internal links, and header/nav/footer regions repeated across pages. Same host only. For a site of more than a few hundred pages, use crawl.start instead.',
+      'Crawl the source site from a start URL (plus its sitemap): page inventory with titles, headings, word counts, images and alt text, internal links, and header/nav/footer regions repeated across pages. Same host only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -278,7 +299,7 @@ const CATALOG: OperationCatalog = {
   },
   'fetch.asset': {
     description:
-      'Download a media asset from the source site; returns its content hash (for de-duplication), type, size and stored reference.',
+      'Download a media asset from the source site; returns its content hash (for de-duplication), type, size and stored reference. `url` may also be a data: URI the page embeds (an inline SVG or image in its markup or CSS, as page.styles shows a background-image): it is decoded, not fetched, and stored the same way.',
     inputSchema: {
       type: 'object',
       properties: { url: { type: 'string' } },
@@ -306,7 +327,7 @@ const CATALOG: OperationCatalog = {
   },
   'page.data': {
     description:
-      "A page's content as its CMS delivered it, when the page embeds its layout data (Next.js sites on Sitecore, SitecoreAI or XM Cloud do): each component in order, with its datasource and fields (text, rich text, images with src and alt, links with href, child items with their fields). It includes what the page renders only in the browser (carousels, tabs, team and award lists) and link targets a snapshot shows only as button text. Without `component`, every component up to `maxChars` (default 40000); give `component` (a name from the list) for that one in full. Returns no components when the page embeds no layout data: use snapshot and page.markup then.",
+      "A page's content as its CMS delivered it, when the page embeds its layout data (Next.js sites on Sitecore, SitecoreAI or XM Cloud do): each component in order, with its datasource and fields (text, rich text, images with src and alt, links with href, child items with their fields). It includes what the page renders only in the browser (carousels, tabs, team and award lists) and link targets a snapshot shows only as button text. Without `component`, every component up to `maxChars` (default 40000); give `component` (a name from the list) for that one in full. Returns no components when the page embeds no layout data: use snapshot and page.markup then. A component with `contentResolved: false` got no content at all: its rendering's Component Query failed (a field or template it names doesn't exist) or its datasource didn't resolve; adding content won't fix it.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -339,6 +360,32 @@ const CATALOG: OperationCatalog = {
 };
 
 /** Tool server for everything that needs a real browser against the source site. */
+/** Words and images on a page as it stands, the measure of whether it has rendered yet. */
+const PAGE_SIZE = `(() => {
+  const words = (document.body ? document.body.innerText : '').split(/\\s+/).filter(Boolean).length;
+  return words + 10 * document.images.length;
+})()`;
+
+/**
+ * A page built in the browser (client-side rendering) is nearly empty when its HTML has loaded:
+ * its copy and images arrive once its scripts and their requests run. For such a page, wait for
+ * the network to go quiet and the page to stop growing, up to `maxMs`. A page that arrived with
+ * its content (server-rendered) is read at once.
+ */
+async function settle(page: Page, maxMs: number): Promise<void> {
+  let size = (await page.evaluate(PAGE_SIZE)) as number;
+  if (size >= 80 || maxMs <= 0) return;
+  const deadline = Date.now() + maxMs;
+  await page.waitForLoadState('networkidle', { timeout: maxMs }).catch(() => {});
+  let steady = 0;
+  while (steady < 2 && Date.now() < deadline) {
+    await page.waitForTimeout(300);
+    const next = (await page.evaluate(PAGE_SIZE)) as number;
+    steady = next === size ? steady + 1 : 0;
+    size = next;
+  }
+}
+
 export class BrowserToolServer implements ToolServer {
   readonly name = 'browser';
   readonly catalog = CATALOG;
@@ -383,7 +430,50 @@ export class BrowserToolServer implements ToolServer {
     return this.browser.withContext(policy, fn);
   }
 
+  /** Source page reads, by project, operation and arguments: reused, not re-read (see `sourceHosts`). */
+  private readonly reads = new Map<string, { at: number; result: ToolResult }>();
+
   async call(
+    op: string,
+    args: Record<string, unknown>,
+    ctx: { projectId: string },
+  ): Promise<ToolResult> {
+    if (!SOURCE_READS.has(op)) return this.callFresh(op, args, ctx);
+    const host = (() => {
+      try {
+        return new URL(String(args.url)).hostname.toLowerCase();
+      } catch {
+        return '';
+      }
+    })();
+    const fromSource =
+      !!host &&
+      (this.opts.sourceHosts?.(ctx.projectId) ?? []).some((h) => h.toLowerCase() === host);
+    if (!fromSource) return this.callFresh(op, args, ctx);
+    const ttl = this.opts.readCacheMs ?? 6 * 60 * 60 * 1000;
+    const key = `${ctx.projectId}|${op}|${JSON.stringify(args)}`;
+    const kept = this.reads.get(key);
+    if (ttl > 0 && kept && Date.now() - kept.at < ttl)
+      return {
+        ...kept.result,
+        summary: `${kept.result.summary ?? ''} (read earlier, not re-read)`,
+      };
+    const result = await this.callFresh(op, args, ctx);
+    // A bot check or a challenge page is not the page: say so, and never keep it.
+    if (result.code < 400 && looksLikeBotCheck(result.body))
+      return {
+        code: 422,
+        body: { error: 'The site answered with a bot check, not the page.', url: args.url },
+        summary: `${host} answered with a bot check (a Cloudflare or captcha challenge), not the page: don't build or compare from it; use what Discovery captured, or try later`,
+      };
+    if (ttl > 0 && result.code === 200) {
+      this.reads.set(key, { at: Date.now(), result });
+      if (this.reads.size > 500) this.reads.delete(this.reads.keys().next().value!);
+    }
+    return result;
+  }
+
+  private async callFresh(
     op: string,
     args: Record<string, unknown>,
     ctx: { projectId: string },
@@ -397,6 +487,8 @@ export class BrowserToolServer implements ToolServer {
         case 'crawl.page':
         case 'crawl.stop':
           return await this.background(op, args, ctx.projectId);
+        case 'brand.thumbnail':
+          return await this.thumbnail(ctx.projectId, policy, args);
         case 'crawl':
           return await this.crawl(policy, String(args.url), Number(args.maxPages ?? 200));
         case 'snapshot':
@@ -417,8 +509,6 @@ export class BrowserToolServer implements ToolServer {
           );
         case 'fetch.asset':
           return await this.fetchAsset(ctx.projectId, policy, String(args.url));
-        case 'brand.thumbnail':
-          return await this.thumbnail(ctx.projectId, policy, args);
         case 'page.markup':
         case 'page.styles':
           return await this.structure(policy, op, args);
@@ -431,8 +521,356 @@ export class BrowserToolServer implements ToolServer {
       // A refused URL is the agent's to correct (another URL), not an access problem.
       if (err instanceof BlockedUrlError)
         return { code: 422, body: { error: err.message }, summary: `Blocked: ${err.message}` };
+      // A selector the page can't use is the agent's to correct, not the browser being down.
+      if (err instanceof BadSelector)
+        return { code: 422, body: { error: err.message }, summary: err.message };
       throw err;
     }
+  }
+
+  /** Section outline, one section's markup, or styles: read as rendered at desktop width, or styles at another `width`. */
+  private async structure(
+    policy: UrlPolicy,
+    op: 'page.markup' | 'page.styles',
+    args: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const url = await assertNavigable(String(args.url), policy);
+    return this.withPage(policy, async (context) => {
+      const page = await context.newPage();
+      const width = Number(args.width);
+      await page.setViewportSize(
+        op === 'page.styles' && Number.isInteger(width) && width >= 320 && width <= 2560
+          ? { width, height: BREAKPOINTS.desktop.height }
+          : BREAKPOINTS.desktop,
+      );
+      const response = await gotoPolitely(page, url.toString(), {
+        waitUntil: 'load',
+        timeout: this.opts.navigationTimeoutMs ?? 30_000,
+      });
+      const status = response?.status() ?? 0;
+      const code = pageCode(status);
+      const refused = refusedNote(status);
+      const run = <T>(fn: (...a: never[]) => T, ...a: unknown[]) =>
+        page.evaluate(
+          `(${fn.toString()})(${a.map((x) => JSON.stringify(x)).join(',')})`,
+        ) as Promise<T>;
+      try {
+        if (op === 'page.styles') {
+          const selectors = ((args.selectors as string[] | undefined) ?? []).slice(0, 20);
+          const styles = await run(readStyles, selectors, STYLE_PROPS).catch((err: Error) => {
+            const bad = /'([^']+)' is not a valid selector/.exec(err.message)?.[1];
+            throw bad !== undefined ? new BadSelector(bad) : err;
+          });
+          return {
+            code,
+            body: { url: canonical(page.url()), width: page.viewportSize()?.width, ...styles },
+            summary: `Styles of ${canonical(page.url())} at ${page.viewportSize()?.width}px wide: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties${refused}`,
+          };
+        }
+        if (typeof args.selector !== 'string' || !args.selector) {
+          const sections = await run(outlineSections);
+          return {
+            code,
+            body: { url: canonical(page.url()), sections },
+            summary: `${sections.length} sections on ${canonical(page.url())}${refused}`,
+          };
+        }
+        const markup = await run(cleanMarkup, args.selector, Number(args.maxChars ?? 30_000)).catch(
+          (err: Error) => {
+            throw /is not a valid selector/.test(err.message)
+              ? new BadSelector(args.selector as string)
+              : err;
+          },
+        );
+        if (!markup.found)
+          return {
+            code: 404,
+            body: { error: `Nothing matches ${args.selector} on ${canonical(page.url())}` },
+            summary: `No element matches ${args.selector}`,
+          };
+        return {
+          code,
+          body: { url: canonical(page.url()), selector: args.selector, ...markup },
+          summary: `Markup of ${args.selector}: ${markup.html.length} characters${markup.truncated ? ' (truncated)' : ''}${refused}`,
+        };
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  private async load(context: BrowserContext, policy: UrlPolicy, raw: string, full = false) {
+    const url = await assertNavigable(raw, policy);
+    const page = await context.newPage();
+    const response = await gotoPolitely(page, url.toString(), {
+      waitUntil: 'domcontentloaded',
+      timeout: this.opts.navigationTimeoutMs ?? 30_000,
+    });
+    const status = response?.status() ?? 0;
+    const contentType = response?.headers()['content-type'] ?? '';
+    if (!contentType.includes('html')) {
+      await page.close();
+      return { status, page: null as never, contentType };
+    }
+    await settle(page, this.opts.settleMs ?? 6_000);
+    const extract = (await page.evaluate(`(${extractPage.toString()})()`)) as PageExtract;
+    // The full text only where it's asked for (a snapshot): a crawl keeps the short form.
+    let text = full
+      ? ((await page.evaluate(`(${extractContent.toString()})()`)) as ReturnType<
+          typeof extractContent
+        > & { from?: 'served-html' })
+      : null;
+    // Some page builders take the copy out of the page once their scripts run (sliders, reveal
+    // effects), though the server sent it. When the page as served holds far more words than
+    // the page as rendered, read the served HTML with its scripts removed.
+    if (text && response) {
+      const served = await response.text().catch(() => '');
+      const rendered = text.content.reduce((n, c) => n + words(c.text), 0);
+      if (words(plainText(served)) > Math.max(150, rendered * 2.5)) {
+        const copy = await context.newPage();
+        try {
+          await copy.setContent(withoutScripts(served, url.toString()), {
+            waitUntil: 'domcontentloaded',
+          });
+          const fromServed = (await copy.evaluate(
+            `(${extractContent.toString()})()`,
+          )) as ReturnType<typeof extractContent>;
+          if (fromServed.content.reduce((n, c) => n + words(c.text), 0) > rendered)
+            text = { ...fromServed, from: 'served-html' };
+        } finally {
+          await copy.close();
+        }
+      }
+    }
+    await page.close();
+    return {
+      status,
+      contentType,
+      page: { url: canonical(page.url()), status, ...extract, ...(text ?? {}) },
+    };
+  }
+
+  private async crawl(policy: UrlPolicy, start: string, maxPages: number): Promise<ToolResult> {
+    // The site is where the start URL lands: microsoft.com sends every visitor to
+    // www.microsoft.com, whose links all point there. Crawling the first address kept one page.
+    const landed = await this.landing(policy, (await assertNavigable(start, policy)).toString());
+    const origin = landed.origin;
+    const fromSitemap = await this.sitemap(policy, origin);
+    const queue = [canonical(landed.toString()), ...fromSitemap];
+    const deadline = Date.now() + (this.opts.crawlTimeMs ?? 7 * 60_000);
+    let outOfTime = false;
+    const seen = new Set<string>();
+    const pages: (PageExtract & { url: string; status: number })[] = [];
+    const excluded: { url: string; reason: string }[] = [];
+
+    await this.withPage(policy, async (context) => {
+      while (queue.length && pages.length < maxPages) {
+        // The home page is always read, however long the sitemap took.
+        if (pages.length && Date.now() > deadline) {
+          outOfTime = true;
+          break;
+        }
+        const next = queue.shift()!;
+        if (seen.has(next)) continue;
+        seen.add(next);
+        if (
+          /\.(pdf|zip|docx?|xlsx?|pptx?|jpe?g|png|gif|svg|webp|mp4|mp3)$/i.test(
+            new URL(next).pathname,
+          )
+        ) {
+          excluded.push({ url: next, reason: 'not a page (file download)' });
+          continue;
+        }
+        try {
+          const r = await this.load(context, policy, next);
+          if (!r.page) {
+            excluded.push({
+              url: next,
+              reason: `not a page (${r.contentType || 'no content type'})`,
+            });
+            continue;
+          }
+          if (r.status >= 400) {
+            excluded.push({ url: next, reason: `HTTP ${r.status}` });
+            continue;
+          }
+          pages.push(r.page);
+          for (const link of r.page.links) {
+            const c = safeCanonical(link);
+            if (c && new URL(c).origin === origin && !seen.has(c)) queue.push(c);
+          }
+        } catch (err) {
+          excluded.push({
+            url: next,
+            reason: err instanceof Error ? err.message.split('\n')[0]! : String(err),
+          });
+        }
+      }
+    });
+
+    // Regions present on at least half the pages are partial-design candidates.
+    const counts = new Map<string, { region: string; hash: string; text: string; pages: number }>();
+    for (const p of pages) {
+      for (const [region, r] of Object.entries(p.regions)) {
+        if (!r) continue;
+        const key = `${region}:${r.hash}`;
+        const c = counts.get(key) ?? { region, hash: r.hash, text: r.text, pages: 0 };
+        c.pages++;
+        counts.set(key, c);
+      }
+    }
+    const repeatedRegions = [...counts.values()].filter(
+      (c) => pages.length > 1 && c.pages >= pages.length / 2,
+    );
+    const truncated = queue.some((u) => !seen.has(u));
+    const compact = compactCrawl(pages, this.opts.crawlBudget ?? 400_000);
+    // Pages the site refused (401/403): its bot protection turning our browser away.
+    const refused = excluded.filter((e) => /^HTTP 40[13]$/.test(e.reason));
+    if (!pages.length && refused.length)
+      return {
+        code: 422,
+        body: { origin, ...compact, excluded, repeatedRegions, truncated, refusedBySite: true },
+        summary: siteRefused(origin, refused[0]!.reason, refused.length, excluded.length),
+      };
+    const sitemapUrls = new Set(fromSitemap).size;
+    return {
+      code: 200,
+      body: {
+        origin,
+        ...compact,
+        excluded,
+        repeatedRegions,
+        truncated,
+        sitemapUrls,
+        ...(outOfTime ? { stoppedForTime: true } : {}),
+      },
+      summary: `Crawled ${pages.length} pages from ${origin}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions${
+        outOfTime
+          ? `. Stopped for time after ${pages.length} pages: the sitemap lists ${sitemapUrls} URLs. Use the sitemap for the page count, and read the pages a template still needs with browser.snapshot`
+          : ''
+      }${
+        refused.length
+          ? `. The site refused ${refused.length} of them (${refused[0]!.reason}): list those pages as not read, they aren't an access problem of ours`
+          : ''
+      }`,
+    };
+  }
+
+  /** Where a URL lands after its redirects, each hop checked like the first; the URL itself if not. */
+  private async landing(policy: UrlPolicy, raw: string): Promise<URL> {
+    let url = new URL(raw);
+    try {
+      for (let hop = 0; hop < 5; hop++) {
+        const res = await fetchPolitely(url, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: BROWSER_HEADERS,
+          signal: AbortSignal.timeout(10_000),
+        });
+        await res.body?.cancel().catch(() => {});
+        const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+        if (!to) break;
+        url = await assertNavigable(new URL(to, url).toString(), policy);
+      }
+    } catch {
+      /* unreachable or off the project's hosts: crawl from where we are */
+    }
+    return url;
+  }
+
+  /**
+   * The site's page URLs from its sitemaps: /sitemap.xml and every sitemap robots.txt lists,
+   * following redirects on the project's hosts and opening sitemap indexes (Microsoft lists one
+   * index per section in robots.txt and has no /sitemap.xml), within a URL and time budget.
+   */
+  private async sitemap(policy: UrlPolicy, origin: string): Promise<string[]> {
+    const deadline = Date.now() + 60_000;
+    const MAX_URLS = 20_000;
+    const MAX_FILES = 40;
+    const read = async (raw: string): Promise<string | null> => {
+      try {
+        let url = await assertNavigable(raw, policy);
+        for (let hop = 0; hop < 5; hop++) {
+          const res = await fetchPolitely(url, {
+            redirect: 'manual',
+            headers: BROWSER_HEADERS,
+            signal: AbortSignal.timeout(10_000),
+          });
+          const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+          if (to) {
+            await res.body?.cancel().catch(() => {});
+            url = await assertNavigable(new URL(to, url).toString(), policy);
+            continue;
+          }
+          return res.ok ? await res.text() : null;
+        }
+      } catch {
+        /* unreachable, refused, or off the project's hosts */
+      }
+      return null;
+    };
+    const robots = (await read(`${origin}/robots.txt`)) ?? '';
+    const queue = [
+      `${origin}/sitemap.xml`,
+      ...[...robots.matchAll(/^\s*sitemap:\s*(\S+)/gim)].map((m) => m[1]!),
+    ];
+    const seen = new Set<string>();
+    const urls = new Set<string>();
+    while (queue.length && seen.size < MAX_FILES && urls.size < MAX_URLS && Date.now() < deadline) {
+      const next = queue.shift()!;
+      if (seen.has(next)) continue;
+      seen.add(next);
+      const xml = await read(next);
+      if (!xml) continue;
+      const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map((m) =>
+        m[1]!.replace(/&amp;/g, '&'),
+      );
+      if (/<sitemapindex[\s>]/i.test(xml)) queue.push(...locs);
+      else
+        for (const u of locs) {
+          const c = safeCanonical(u);
+          if (c && new URL(c).origin === origin) urls.add(c);
+          if (urls.size >= MAX_URLS) break;
+        }
+    }
+    return [...urls];
+  }
+
+  private async screenshot(
+    projectId: string,
+    policy: UrlPolicy,
+    raw: string,
+    breakpoints: Breakpoint[],
+  ): Promise<ToolResult> {
+    const url = await assertNavigable(raw, policy);
+    const shots = await this.withPage(policy, async (context) => {
+      const out = [];
+      for (const bp of breakpoints) {
+        const page = await context.newPage();
+        await page.setViewportSize(BREAKPOINTS[bp]);
+        await page.goto(url.toString(), {
+          waitUntil: 'load',
+          timeout: this.opts.navigationTimeoutMs ?? 30_000,
+        });
+        await settleForScreenshot(page);
+        const png = await page.screenshot({ fullPage: true, type: 'png' });
+        await page.close();
+        const sha256 = createHash('sha256').update(png).digest('hex');
+        const ref = await this.opts.blobs.put(
+          projectId,
+          `screenshots/${sha256}.png`,
+          png,
+          'image/png',
+        );
+        out.push({ breakpoint: bp, width: BREAKPOINTS[bp].width, bytes: png.length, sha256, ref });
+      }
+      return out;
+    });
+    return {
+      code: 200,
+      body: { url: url.toString(), shots },
+      summary: `Screenshots of ${url.pathname} at ${breakpoints.join(', ')}`,
+    };
   }
 
   /** The background crawl operations. */
@@ -546,225 +984,6 @@ export class BrowserToolServer implements ToolServer {
       return j && j.projectId === projectId ? j : null;
     }
     return this.crawler.store.latest(projectId);
-  }
-
-  /** Section outline, one section's markup, or styles: read as rendered at desktop width, or styles at another `width`. */
-  private async structure(
-    policy: UrlPolicy,
-    op: 'page.markup' | 'page.styles',
-    args: Record<string, unknown>,
-  ): Promise<ToolResult> {
-    const url = await assertNavigable(String(args.url), policy);
-    return this.withPage(policy, async (context) => {
-      const page = await context.newPage();
-      const width = Number(args.width);
-      await page.setViewportSize(
-        op === 'page.styles' && Number.isInteger(width) && width >= 320 && width <= 2560
-          ? { width, height: BREAKPOINTS.desktop.height }
-          : BREAKPOINTS.desktop,
-      );
-      const response = await page.goto(url.toString(), {
-        waitUntil: 'load',
-        timeout: this.opts.navigationTimeoutMs ?? 30_000,
-      });
-      const status = response?.status() ?? 0;
-      const code = pageCode(status);
-      const refused = refusedNote(status);
-      const run = <T>(fn: (...a: never[]) => T, ...a: unknown[]) =>
-        page.evaluate(
-          `(${fn.toString()})(${a.map((x) => JSON.stringify(x)).join(',')})`,
-        ) as Promise<T>;
-      try {
-        if (op === 'page.styles') {
-          const selectors = ((args.selectors as string[] | undefined) ?? []).slice(0, 20);
-          const styles = await run(readStyles, selectors, STYLE_PROPS);
-          return {
-            code,
-            body: { url: canonical(page.url()), width: page.viewportSize()?.width, ...styles },
-            summary: `Styles of ${canonical(page.url())} at ${page.viewportSize()?.width}px wide: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties${refused}`,
-          };
-        }
-        if (typeof args.selector !== 'string' || !args.selector) {
-          const sections = await run(outlineSections);
-          return {
-            code,
-            body: { url: canonical(page.url()), sections },
-            summary: `${sections.length} sections on ${canonical(page.url())}${refused}`,
-          };
-        }
-        const markup = await run(cleanMarkup, args.selector, Number(args.maxChars ?? 30_000));
-        if (!markup.found)
-          return {
-            code: 404,
-            body: { error: `Nothing matches ${args.selector} on ${canonical(page.url())}` },
-            summary: `No element matches ${args.selector}`,
-          };
-        return {
-          code,
-          body: { url: canonical(page.url()), selector: args.selector, ...markup },
-          summary: `Markup of ${args.selector}: ${markup.html.length} characters${markup.truncated ? ' (truncated)' : ''}${refused}`,
-        };
-      } finally {
-        await page.close();
-      }
-    });
-  }
-
-  private load(context: BrowserContext, policy: UrlPolicy, raw: string, full = false) {
-    return loadPage(context, policy, raw, {
-      full,
-      settleMs: this.opts.settleMs,
-      navigationTimeoutMs: this.opts.navigationTimeoutMs,
-    });
-  }
-
-  private async crawl(policy: UrlPolicy, start: string, maxPages: number): Promise<ToolResult> {
-    const origin = (await assertNavigable(start, policy)).origin;
-    const fromSitemap = await this.sitemap(policy, origin);
-    const queue = [canonical(start), ...fromSitemap];
-    const deadline = Date.now() + (this.opts.crawlTimeMs ?? 7 * 60_000);
-    let outOfTime = false;
-    const seen = new Set<string>();
-    const pages: (PageExtract & { url: string; status: number })[] = [];
-    const excluded: { url: string; reason: string }[] = [];
-
-    await this.withPage(policy, async (context) => {
-      while (queue.length && pages.length < maxPages) {
-        // The home page is always read, however long the sitemap took.
-        if (pages.length && Date.now() > deadline) {
-          outOfTime = true;
-          break;
-        }
-        const next = queue.shift()!;
-        if (seen.has(next)) continue;
-        seen.add(next);
-        if (
-          /\.(pdf|zip|docx?|xlsx?|pptx?|jpe?g|png|gif|svg|webp|mp4|mp3)$/i.test(
-            new URL(next).pathname,
-          )
-        ) {
-          excluded.push({ url: next, reason: 'not a page (file download)' });
-          continue;
-        }
-        try {
-          const r = await this.load(context, policy, next);
-          if (!r.page) {
-            excluded.push({
-              url: next,
-              reason: `not a page (${r.contentType || 'no content type'})`,
-            });
-            continue;
-          }
-          if (r.status >= 400) {
-            excluded.push({ url: next, reason: `HTTP ${r.status}` });
-            continue;
-          }
-          pages.push(r.page);
-          for (const link of r.page.links) {
-            const c = safeCanonical(link);
-            if (c && new URL(c).origin === origin && !seen.has(c)) queue.push(c);
-          }
-        } catch (err) {
-          excluded.push({
-            url: next,
-            reason: err instanceof Error ? err.message.split('\n')[0]! : String(err),
-          });
-        }
-      }
-    });
-
-    // Regions present on at least half the pages are partial-design candidates.
-    const counts = new Map<string, { region: string; hash: string; text: string; pages: number }>();
-    for (const p of pages) {
-      for (const [region, r] of Object.entries(p.regions)) {
-        if (!r) continue;
-        const key = `${region}:${r.hash}`;
-        const c = counts.get(key) ?? { region, hash: r.hash, text: r.text, pages: 0 };
-        c.pages++;
-        counts.set(key, c);
-      }
-    }
-    const repeatedRegions = [...counts.values()].filter(
-      (c) => pages.length > 1 && c.pages >= pages.length / 2,
-    );
-    const truncated = queue.some((u) => !seen.has(u));
-    const compact = compactCrawl(pages, this.opts.crawlBudget ?? 400_000);
-    // Pages the site refused (401/403): its bot protection turning our browser away.
-    const refused = excluded.filter((e) => /^HTTP 40[13]$/.test(e.reason));
-    if (!pages.length && refused.length)
-      return {
-        code: 422,
-        body: { origin, ...compact, excluded, repeatedRegions, truncated, refusedBySite: true },
-        summary: siteRefused(origin, refused[0]!.reason, refused.length, excluded.length),
-      };
-    const sitemapUrls = new Set(fromSitemap).size;
-    return {
-      code: 200,
-      body: {
-        origin,
-        ...compact,
-        excluded,
-        repeatedRegions,
-        truncated,
-        sitemapUrls,
-        ...(outOfTime ? { stoppedForTime: true } : {}),
-      },
-      summary: `Crawled ${pages.length} pages from ${origin}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions${
-        outOfTime
-          ? `. Stopped for time after ${pages.length} pages: the sitemap lists ${sitemapUrls} URLs. Use the sitemap for the page count, and read the pages a template still needs with browser.snapshot`
-          : ''
-      }${
-        refused.length
-          ? `. The site refused ${refused.length} of them (${refused[0]!.reason}): list those pages as not read, they aren't an access problem of ours`
-          : ''
-      }`,
-    };
-  }
-
-  /** The sitemaps' page URLs (robots.txt's sitemaps, indexes and gzipped ones included). */
-  private async sitemap(policy: UrlPolicy, origin: string): Promise<string[]> {
-    try {
-      return (await discover(`${origin}/`, policy)).entries.map((e) => e.url);
-    } catch {
-      return [];
-    }
-  }
-
-  private async screenshot(
-    projectId: string,
-    policy: UrlPolicy,
-    raw: string,
-    breakpoints: Breakpoint[],
-  ): Promise<ToolResult> {
-    const url = await assertNavigable(raw, policy);
-    const shots = await this.withPage(policy, async (context) => {
-      const out = [];
-      for (const bp of breakpoints) {
-        const page = await context.newPage();
-        await page.setViewportSize(BREAKPOINTS[bp]);
-        await page.goto(url.toString(), {
-          waitUntil: 'load',
-          timeout: this.opts.navigationTimeoutMs ?? 30_000,
-        });
-        await settleForScreenshot(page);
-        const png = await page.screenshot({ fullPage: true, type: 'png' });
-        await page.close();
-        const sha256 = createHash('sha256').update(png).digest('hex');
-        const ref = await this.opts.blobs.put(
-          projectId,
-          `screenshots/${sha256}.png`,
-          png,
-          'image/png',
-        );
-        out.push({ breakpoint: bp, width: BREAKPOINTS[bp].width, bytes: png.length, sha256, ref });
-      }
-      return out;
-    });
-    return {
-      code: 200,
-      body: { url: url.toString(), shots },
-      summary: `Screenshots of ${url.pathname} at ${breakpoints.join(', ')}`,
-    };
   }
 
   /** The site's dashboard thumbnail, from its home page's brand and what the agent gave. */
@@ -884,7 +1103,7 @@ export class BrowserToolServer implements ToolServer {
     let url = await assertNavigable(String(args.url), policy);
     let res: Response | null = null;
     for (let hop = 0; hop < 5; hop++) {
-      res = await fetch(url, {
+      res = await fetchPolitely(url, {
         redirect: 'manual',
         headers: BROWSER_HEADERS,
         signal: AbortSignal.timeout(30_000),
@@ -951,24 +1170,62 @@ export class BrowserToolServer implements ToolServer {
     };
   }
 
+  /** An embedded data: URI, decoded and stored like a downloaded asset. */
+  private async storeDataUri(projectId: string, raw: string): Promise<ToolResult> {
+    const d = decodeDataUri(raw);
+    if ('error' in d)
+      return { code: 422, body: { error: d.error }, summary: `Couldn't store it: ${d.error}` };
+    const sha256 = createHash('sha256').update(d.bytes).digest('hex');
+    const ref = await this.opts.blobs.put(
+      projectId,
+      `assets/${sha256}.${d.ext}`,
+      d.bytes,
+      d.contentType,
+    );
+    return {
+      code: 200,
+      body: {
+        url: `data:${d.contentType}`,
+        contentType: d.contentType,
+        bytes: d.bytes.length,
+        sha256,
+        ref,
+      },
+      summary: `Stored an embedded ${d.contentType} (${d.bytes.length} bytes) from a data: URI`,
+    };
+  }
+
   private async fetchAsset(projectId: string, base: UrlPolicy, raw: string): Promise<ToolResult> {
+    if (/^\s*(url\(\s*['"]?)?data:/i.test(raw)) return this.storeDataUri(projectId, raw.trim());
     const extra = (await this.opts.assetHosts?.(projectId)) ?? [];
-    const policy: UrlPolicy = {
+    let policy: UrlPolicy = {
       ...base,
       allowedHosts: [...new Set([...base.allowedHosts, ...extra].map((h) => h.toLowerCase()))],
     };
+    // A media host's sibling on the same site (its CDN) is allowed too, asked for directly or
+    // reached by a redirect: Paylocity's play.vidyard.com thumbnails redirect to cdn.vidyard.com.
+    const hostOf = (u: string) => {
+      try {
+        return new URL(u).hostname;
+      } catch {
+        return '';
+      }
+    };
+    policy = withSibling(policy, hostOf(raw));
     let url = await assertNavigable(raw, policy);
     let res: Response | null = null;
     // Follow redirects one hop at a time, each checked like the first.
     for (let hop = 0; hop < 5; hop++) {
-      res = await fetch(url, {
+      res = await fetchPolitely(url, {
         redirect: 'manual',
-        headers: BROWSER_HEADERS,
+        headers: ASSET_HEADERS,
         signal: AbortSignal.timeout(30_000),
       });
       const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
       if (!to) break;
-      url = await assertNavigable(new URL(to, url).toString(), policy);
+      const next = new URL(to, url).toString();
+      policy = withSibling(policy, hostOf(next));
+      url = await assertNavigable(next, policy);
     }
     let bytes: Uint8Array | null = null;
     let contentType = 'application/octet-stream';
@@ -1008,13 +1265,78 @@ export class BrowserToolServer implements ToolServer {
         summary: `Couldn't download ${url.pathname}: HTTP ${status} from ${url.host}${status === 403 ? ' (the site refused it, also to a real browser)' : ''}`,
       };
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const ext = (/\.([a-z0-9]{2,5})$/i.exec(url.pathname)?.[1] ?? 'bin').toLowerCase();
+    // An image server's URL often has no extension (Scene7: /is/image/microsoftcorp/Promo-Card):
+    // name the file from what the server says it sent, so the media library files it as an image.
+    const ext = (
+      /\.([a-z0-9]{2,5})$/i.exec(url.pathname)?.[1] ??
+      TYPE_EXT[contentType.split(';')[0]!.trim().toLowerCase()] ??
+      sniffExt(bytes) ??
+      'bin'
+    ).toLowerCase();
     const ref = await this.opts.blobs.put(projectId, `assets/${sha256}.${ext}`, bytes, contentType);
     return {
       code: 200,
       body: { url: url.toString(), contentType, bytes: bytes.length, sha256, ref },
-      summary: `Fetched ${url.pathname} (${bytes.length} bytes)`,
+      summary: `Fetched ${url.pathname} (${bytes.length} bytes, ${ext})${ext === 'avif' ? AVIF_NOTE : ''}`,
     };
+  }
+}
+
+/** Image types an embedded data: URI may hold, and the extension each is stored with. */
+const DATA_TYPES: Record<string, string> = {
+  'image/svg+xml': 'svg',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/avif': 'avif',
+};
+const DATA_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * An embedded data: URI's bytes and type: a logo or icon the page writes into its markup or CSS
+ * instead of linking a file. Decoded, never fetched; images only, and no more than 5 MB.
+ */
+export function decodeDataUri(
+  raw: string,
+): { bytes: Uint8Array; contentType: string; ext: string } | { error: string } {
+  // The CSS form wraps it in url("…") and may escape quotes.
+  const uri = raw.replace(/^url\(\s*(['"]?)(.*)\1\s*\)$/s, '$2');
+  const m = /^data:([^,]*?),(.*)$/s.exec(uri);
+  if (!m) return { error: 'not a data: URI (data:<type>[;base64],<data>)' };
+  const params = m[1]!.split(';').map((x) => x.trim().toLowerCase());
+  const contentType = params[0] || 'text/plain';
+  const ext = DATA_TYPES[contentType];
+  if (!ext) return { error: `a data: URI of ${contentType} isn't an image this can store` };
+  const body = m[2]!;
+  let bytes: Uint8Array;
+  try {
+    bytes = params.includes('base64')
+      ? new Uint8Array(Buffer.from(body.replace(/\s+/g, ''), 'base64'))
+      : new TextEncoder().encode(decodeURIComponent(body));
+  } catch {
+    return { error: "the data: URI's contents couldn't be decoded" };
+  }
+  if (!bytes.length) return { error: 'the data: URI is empty' };
+  if (bytes.length > DATA_MAX_BYTES)
+    return { error: `the data: URI holds ${bytes.length} bytes, over the 5 MB limit` };
+  return { bytes, contentType, ext };
+}
+
+/** Same page, one spelling: no fragment, no trailing slash (except the root). */
+export function canonical(raw: string): string {
+  const u = new URL(raw);
+  u.hash = '';
+  if (u.pathname.length > 1 && u.pathname.endsWith('/')) u.pathname = u.pathname.slice(0, -1);
+  return u.toString();
+}
+
+function safeCanonical(raw: string): string | null {
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? canonical(raw) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -1046,20 +1368,37 @@ async function settleForScreenshot(page: {
   });
 }
 
+const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
+
+/** A page's text as served, without its markup, scripts or styles. */
+const plainText = (html: string) =>
+  html.replace(/<(script|style|noscript|template)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
+
+/** The served HTML with its scripts removed, resolving links against the page's own URL. */
+const withoutScripts = (html: string, url: string) =>
+  `<base href="${url.replace(/"/g, '&quot;')}">${html.replace(/<script[\s\S]*?<\/script>/gi, '')}`;
+
 /**
  * A tool result's code for a page the browser loaded. The page's own HTTP status passes through,
- * except a refusal: a source site answering 401 or 403 (often bot protection at its CDN, or how
- * it answers a URL it doesn't have) says nothing about our access, and a 401 or 403 from a tool
- * means a credential was refused, which stops the task for the Director. So it's a 422: the
- * agent's to work around.
+ * except two cases where it would mislead:
+ * - A not-found page (404, 410) was read all the same, and it's often what the agent asked for
+ *   (the missing-page probe, the site's 404 page). An error code would hand the agent only the
+ *   summary, without the page's title, headings and text, so it's a 200 with the status in the
+ *   body and the summary.
+ * - A refusal (401, 403: bot protection at the site's CDN, or how it answers a URL it doesn't
+ *   have) says nothing about our access, but a 401 or 403 from a tool means a credential was
+ *   refused, which stops the task for the Director. So it's a 422: the agent's to work around.
  */
-export const pageCode = (status: number) => (status === 401 || status === 403 ? 422 : status);
+export const pageCode = (status: number) =>
+  status === 401 || status === 403 ? 422 : status === 404 || status === 410 ? 200 : status;
 
-/** What the agent is told about a page the site refused. */
+/** What the agent is told about a page the site refused, or a not-found page it read. */
 const refusedNote = (status: number) =>
-  status === 401 || status === 403
-    ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access: for the missing-page probe, record errorPage as null; otherwise leave the page out and say so`
-    : '';
+  status === 404 || status === 410
+    ? `. The site answered HTTP ${status}: this is its not-found page, read as served. Its title, headings and text are in the result (for the missing-page probe, they are the errorPage)`
+    : status === 401 || status === 403
+      ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access: for the missing-page probe, record errorPage as null; otherwise leave the page out and say so`
+      : '';
 
 /**
  * The source site turned our browser away on every page it was asked for: Discovery can't read it
@@ -1070,6 +1409,97 @@ export const siteRefused = (origin: string, reason: string, refused: number, tri
   `${origin} refused our browser: ${refused} of ${tried} pages answered ${reason}, so no page could be read. ` +
   `That is the site's bot protection, not our access, and retrying won't change it. ` +
   `Stop and submit needs_decision for the Director: the client allows our crawler, or gives the source repository, or the project uses another site`;
+
+/** A selector in another tool's dialect (`:has-text`, `:-soup-contains`, `:contains`) or malformed. */
+class BadSelector extends Error {
+  constructor(selector: string) {
+    super(
+      `"${selector}" is not a valid CSS selector: use standard CSS (tags, classes, ids, attributes, :nth-of-type, :has()), not Playwright's :has-text or BeautifulSoup's :-soup-contains. To find a section by its heading, call page.markup without a selector for the outline, then use the selector it gives.`,
+    );
+  }
+}
+
+/** How long to wait before asking again after a 429 or 503: the site's Retry-After, capped. */
+export function retryDelayMs(retryAfter: string | null | undefined, attempt: number): number {
+  const fallback = [4_000, 10_000][attempt] ?? 10_000;
+  if (!retryAfter) return fallback;
+  const secs = Number(retryAfter);
+  const ms = Number.isFinite(secs) ? secs * 1000 : Date.parse(retryAfter) - Date.now();
+  return Number.isFinite(ms) && ms > 0 ? Math.min(ms, 15_000) : fallback;
+}
+
+/** Test seam: how the polite helpers wait. */
+export const pause = { ms: (n: number) => new Promise<void>((r) => setTimeout(r, n)) };
+
+const SLOW_DOWN = [429, 503];
+
+/**
+ * fetch that slows down when the site asks: on 429 or 503 it waits the Retry-After (at most 15 s;
+ * 4 s then 10 s without one) and asks again, twice. The last answer is returned as it is.
+ */
+export async function fetchPolitely(url: URL | string, init: RequestInit): Promise<Response> {
+  let res = await fetch(url, init);
+  for (let attempt = 0; attempt < 2 && SLOW_DOWN.includes(res.status); attempt++) {
+    await pause.ms(retryDelayMs(res.headers.get('retry-after'), attempt));
+    res = await fetch(url, init);
+  }
+  return res;
+}
+
+/** page.goto with the same slow-down: a throttled page is asked for again, twice. */
+export async function gotoPolitely(
+  page: Page,
+  url: string,
+  opts: Parameters<Page['goto']>[1],
+): ReturnType<Page['goto']> {
+  let res = await page.goto(url, opts);
+  for (let attempt = 0; attempt < 2 && res && SLOW_DOWN.includes(res.status()); attempt++) {
+    await pause.ms(retryDelayMs(res.headers()['retry-after'], attempt));
+    res = await page.goto(url, opts);
+  }
+  return res;
+}
+
+/** Read-only page operations whose source-site results are reused (see `sourceHosts`). */
+const SOURCE_READS = new Set(['snapshot', 'page.markup', 'page.styles', 'page.data']);
+
+/** A challenge page in place of the site: Cloudflare's, a captcha, a "checking your browser". */
+export function looksLikeBotCheck(body: unknown): boolean {
+  const text = JSON.stringify(body ?? '').slice(0, 20_000);
+  return /Just a moment\.\.\.|Verify you are human|Checking your browser|cf-chl-|Attention Required! \| Cloudflare|challenges\.cloudflare\.com|captcha-delivery|Please enable JS and disable any ad blocker/i.test(
+    text,
+  );
+}
+
+/** File extensions by the type a server reports, for URLs that carry none. */
+const TYPE_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'application/pdf': 'pdf',
+  'video/mp4': 'mp4',
+};
+
+/** An image's type from its first bytes, when neither the URL nor the server says. */
+export function sniffExt(b: Uint8Array): string | null {
+  const at = (i: number, ...v: number[]) => v.every((x, j) => b[i + j] === x);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'png';
+  if (at(0, 0xff, 0xd8, 0xff)) return 'jpg';
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'gif';
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'webp';
+  if (at(4, 0x66, 0x74, 0x79, 0x70) && at(8, 0x61, 0x76, 0x69, 0x66)) return 'avif';
+  const head = new TextDecoder().decode(b.slice(0, 256)).trimStart();
+  if (/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(head)) return 'svg';
+  return null;
+}
+
+/** SitecoreAI doesn't file AVIF as an image: no alt text, no size. */
+const AVIF_NOTE =
+  '. AVIF: the media library would store it as a plain file, not an image. The download already asks for PNG or JPEG; this server sent AVIF anyway, so add a format parameter (Scene7: ?fmt=png-alpha or ?fmt=jpg) and fetch it again';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);

@@ -50,11 +50,18 @@ export function Glyph({ look }: { look: Look }) {
   );
 }
 
-/** The state as a word with its glyph: "Waiting". */
-export function StateWord({ state }: { state: TaskState }) {
-  const { word, look } = stateOf(state);
+/** The state as a word with its glyph: "Waiting", or "Done with gaps" for a task finished with them. */
+export function StateWord({ state, gaps }: { state: TaskState; gaps?: string | null }) {
+  const withGaps = state === 'done' && !!gaps;
+  const { word, look } = withGaps
+    ? { word: 'Done with gaps', look: 'waiting' as const }
+    : stateOf(state);
   return (
-    <span className={s.stateWord} data-look={look}>
+    <span
+      className={s.stateWord}
+      data-look={look}
+      title={withGaps ? (gaps ?? undefined) : undefined}
+    >
       <Glyph look={look} />
       {word}
     </span>
