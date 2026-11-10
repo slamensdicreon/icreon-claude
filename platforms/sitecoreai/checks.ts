@@ -71,6 +71,30 @@ async function findByName(
   return found;
 }
 
+/**
+ * Where a rendering missing from the project's folder actually is: the rest of the Renderings tree
+ * (Project and Feature, three levels down), so the failure names its path and ID rather than only
+ * a display name (UtiliQuest's team argued over which "Card Row" was meant).
+ */
+async function missingRendering(
+  ctx: PlatformCheckContext,
+  root: string,
+  name: string,
+): Promise<string> {
+  const elsewhere = new Map<string, Child[]>();
+  for (const base of ['/sitecore/layout/Renderings/Project', '/sitecore/layout/Renderings/Feature'])
+    await findByName(ctx, base, [name], elsewhere);
+  const hits = (elsewhere.get(name.toLowerCase()) ?? []).filter(
+    (h) => !h.path.toLowerCase().startsWith(`${root.toLowerCase()}/`),
+  );
+  return hits.length
+    ? `rendering ${name} not under ${root}; found at ${hits
+        .slice(0, 3)
+        .map((h) => `${h.path} (${h.itemId})`)
+        .join(', ')}: move the project's own under ${root}, or create it there`
+    : `rendering ${name} not under ${root}, nor anywhere under /sitecore/layout/Renderings/Project or Feature: create it under ${root} with componentName ${name}`;
+}
+
 /** The collection's kept items, or only the task's own when it covers some of them. */
 const inScope = (ctx: PlatformCheckContext, collection: string) => {
   const kept = (ctx.blueprint?.collections[collection] ?? []).filter((i) => i.status !== 'drop');
@@ -152,7 +176,7 @@ async function renderingsOf(ctx: PlatformCheckContext, components: Component[]) 
   const found: { component: Component; name: string; rendering: Item }[] = [];
   for (const [i, n] of names.entries()) {
     const hits = all.get(n.toLowerCase()) ?? [];
-    if (!hits.length) problems.push(`rendering ${n} not under ${root}`);
+    if (!hits.length) problems.push(await missingRendering(ctx, root, n));
     else if (hits.length > 1)
       problems.push(
         `${hits.length} renderings named ${n} (${hits.map((h) => `${h.path} ${h.itemId}`).join(', ')}): keep one, delete the others, and offer the one kept`,
@@ -753,7 +777,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         const name = renderingName(c);
         const hit = all.get(name.toLowerCase())?.[0];
         if (!hit) {
-          problems.push(`rendering ${name} not under ${root}`);
+          problems.push(await missingRendering(ctx, root, name));
           continue;
         }
         const r = await ctx.read('sitecore-authoring', 'item.read', {

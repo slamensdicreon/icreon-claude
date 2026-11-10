@@ -26,6 +26,17 @@ function setup() {
         return Response.json({
           data: { uploadMedia: { presignedUploadUrl: 'https://up.example/x' } },
         });
+      // A file's Title reads back as written.
+      if (/item\(where/.test(query) && /code-of-conduct/.test(query) && /"Title"/.test(query))
+        return Response.json({
+          data: {
+            item: {
+              itemId: 'pdf1',
+              path: '/sitecore/media library/Project/Brands/ansco/files/code-of-conduct',
+              f0: { value: 'Supplier Code of Conduct' },
+            },
+          },
+        });
       // A file's template (Pdf, File) has no Alt field.
       if (/updateItem\(/.test(query) && /name: "Alt"/.test(query))
         return Response.json({ errors: [{ message: 'Cannot find a field with the name Alt.' }] });
@@ -166,8 +177,8 @@ describe('media.upload', () => {
     expect(uploads).toHaveLength(1);
   });
 
-  it('uploads a file whose media type has no Alt field, without alt text', async () => {
-    const { s, uploads } = setup();
+  it('uploads a file whose media type has no Alt field, its description in Title', async () => {
+    const { s, uploads, queries } = setup();
     const r = await s.call(
       'media.upload',
       {
@@ -178,8 +189,11 @@ describe('media.upload', () => {
       },
       ctx,
     );
-    expect(r).toMatchObject({ code: 200, body: { alt: null } });
-    expect(r.summary).toContain('no Alt field on this media type');
+    expect(r).toMatchObject({ code: 200, body: { alt: null, title: 'Supplier Code of Conduct' } });
+    expect(r.summary).toContain(
+      'no Alt field on this media type, so its description went in Title',
+    );
+    expect(queries.some((q) => /updateItem\(/.test(q) && /name: "Title"/.test(q))).toBe(true);
     expect(uploads).toHaveLength(1);
   });
 
