@@ -630,6 +630,24 @@ describe('SitecoreAuthoringToolServer', () => {
       ctx,
     );
     expect(ghost).toMatchObject({ code: 404 });
+    // An empty call says what to send instead of a bare validation error (Paylocity: ~10 of them).
+    const empty = await s.call('layout.compose', { path: page, renderings: [] }, ctx);
+    expect(empty.code).toBe(422);
+    expect(JSON.stringify(empty.body)).toContain('renderings is empty');
+    const neither = await s.call('layout.compose', { path: page }, ctx);
+    expect(JSON.stringify(neither.body)).toContain('give either renderings');
+    // A list sent as JSON text is read as the list.
+    const asText = await s.call(
+      'layout.compose',
+      {
+        path: page,
+        renderings: JSON.stringify([
+          { rendering: 'ffffffff000040008000000000000000', placeholder: 'headless-main' },
+        ]),
+      },
+      ctx,
+    );
+    expect(asText).toMatchObject({ code: 404 });
     // Hand-written XML with bare-hex IDs is written with IDs Sitecore can read.
     await s.call(
       'layout.compose',

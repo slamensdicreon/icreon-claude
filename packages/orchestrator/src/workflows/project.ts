@@ -238,7 +238,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   /** Counts a background job without awaiting it, so its scheduling stays as it was. */
   const track = (job: Promise<unknown>) => {
     busy += 1;
-    const finished = () => void (busy -= 1);
+    const finished = () => {
+      busy -= 1;
+      // The stall check waits for background work to settle: look again once it has.
+      if (busy === 0 && patched('stall-after-outcomes')) poke();
+    };
     void job.then(finished, finished);
   };
   /** The same, for a job the caller awaits. */
@@ -1756,6 +1760,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   // -------------------------------------------------------------------------------------------
 
   async function applyPlan(newPlan: Plan, newBlueprint: Blueprint, cause: string) {
+    // Work the Director asked for isn't compiled from the Blueprint: it stays through a re-plan.
+    for (const t of plan.tasks)
+      if (t.templateId === 'director-task' && !newPlan.tasks.some((n) => n.taskId === t.taskId))
+        newPlan.tasks.push(t);
     const diff = diffPlans(plan, newPlan);
     const events: NewEvent[] = [];
     for (const t of diff.removed) {
@@ -1817,6 +1825,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       tasks: plan.tasks
         .filter((t) => t.kind === 'work')
         .map((t) => ({ taskId: t.taskId, title: t.title, state: stateOf(t.taskId) })),
+      // The team, for new work the Director asks for to name its owner.
+      roles: playbook.roles
+        .filter((r) => r.tier !== 'lead' && r.role !== 'chief-of-staff')
+        .map((r) => ({ role: r.role, name: r.name, mandate: r.mandate })),
       // The cards waiting on the Director, for "answer them with your recommendation". Gates stay
       // the Director's own: they are never offered.
       cards: [...escalations.values()]
@@ -1883,6 +1895,57 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       await send(...say('status', 'Status', statusLine(), { sections: statusSections() }));
       return;
     }
+    if (reading.kind === 'add' && patched('director-add-task')) {
+      // New work the Director asked for, which no task covered (Paylocity's footer note was
+      // acknowledged and nothing happened): a task of its own for the role named, in the phase
+      // it follows or the current one, run even if that phase has ended. Its Lead reviews it.
+      const role = roles.get(reading.task.role);
+      const after = reading.task.after ? task(reading.task.after) : undefined;
+      const current = [...started].filter((n) => !done.has(n)).sort((a, b) => a - b)[0];
+      const phase = after?.phase ?? current ?? Math.max(...plan.tasks.map((t) => t.phase), 0);
+      const taskId = `requested-${uuid4().slice(0, 8)}`;
+      const t: PlannedTask = {
+        taskId,
+        templateId: 'director-task',
+        phase,
+        role: reading.task.role,
+        workstream: role?.workstream ?? null,
+        title: clip(reading.task.title),
+        kind: 'work',
+        itemKeys: [],
+        collection: null,
+        dependsOn: after ? [after.taskId] : [],
+        acceptance: [],
+        gate: null,
+        batchSize: 1,
+        metric: null,
+        estimateHours: null,
+        groupTitle: null,
+        contract: null,
+      };
+      plan.tasks.push(t);
+      instructions[taskId] =
+        `The Director asked for this: ${reading.task.instructions.trim() || reading.interpretation}.`;
+      reruns.add(taskId);
+      await send(
+        planned(t),
+        ...say(
+          'directive_ack',
+          'Directive',
+          `Added a task for ${role?.name ?? reading.task.role}: ${t.title}${after ? `, after ${after.title}` : ''}. It starts ${after && stateOf(after.taskId) !== 'done' ? `once ${after.title} is done` : 'now'}, and its Lead reviews it like any other.`,
+        ),
+        decision(
+          text,
+          reading.interpretation,
+          `New task ${taskId} for ${reading.task.role}.`,
+          'director',
+          `directive:add:${taskId}`,
+          null,
+        ),
+      );
+      poke();
+      return;
+    }
     if (reading.kind === 'rerun') {
       // Queued tasks became re-runnable later: a directive read before that replays as it ran.
       const queued = patched('rerun-queued-tasks');
@@ -1913,9 +1976,16 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       );
       return;
     }
-    if (reading.kind === 'note' || reading.kind === 'answer' || !blueprint) {
+    if (
+      reading.kind === 'note' ||
+      reading.kind === 'answer' ||
+      reading.kind === 'add' ||
+      !blueprint
+    ) {
       const interpretation =
-        reading.kind === 'note' || reading.kind === 'answer' ? reading.interpretation : text;
+        reading.kind === 'note' || reading.kind === 'answer' || reading.kind === 'add'
+          ? reading.interpretation
+          : text;
       await send(
         ...say(
           'directive_ack',
@@ -2825,10 +2895,13 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     }
 
     // Nobody working, nothing waiting on the Director, yet tasks wait on each other: no wait can
-    // end, so release them all to finish what is theirs.
+    // end, so release them all to finish what is theirs. Not while an outcome is still being
+    // recorded: a finished session leaves `children` before its send-backs and re-queues are
+    // done, and a busy worker once released every wait in that gap (agent-waiting on CI).
     if (
       waitingOn.size &&
       !children.size &&
+      !(busy > 0 && patched('stall-after-outcomes')) &&
       !projectPaused &&
       !budgetHold &&
       ![...escalations.values()].some((e) => e.status === 'open') &&

@@ -159,6 +159,27 @@ describe('crawl', () => {
     );
   }, 60_000);
 
+  it('crawls one section of a big site, or exactly the pages given, and counts the sitemap by section', async () => {
+    const blog = await browser.call('crawl', { url: `${origin}/`, section: '/blog/' }, ctx);
+    expect(blog.code).toBe(200);
+    const pathsOf = (b: unknown) =>
+      (b as { pages: { url: string }[] }).pages.map((p) => new URL(p.url).pathname).sort();
+    expect(pathsOf(blog.body)).toEqual(['/blog/post-1']);
+    expect(blog.summary).toContain('under /blog/');
+    // The parity re-crawl reads the Blueprint's pages and follows no links.
+    const given = await browser.call(
+      'crawl',
+      { url: `${origin}/`, paths: ['/about', '/contact'] },
+      ctx,
+    );
+    expect(pathsOf(given.body)).toEqual(['/about', '/contact']);
+    expect(given.summary).toContain('(the 2 pages given)');
+    // What a section-by-section crawl has to cover, from the sitemap.
+    expect((given.body as { sections: unknown }).sections).toEqual(
+      expect.arrayContaining([{ section: '/about/', urls: 1 }]),
+    );
+  }, 60_000);
+
   it('keeps its result small: links counted, images on most pages listed once', async () => {
     const r = await browser.call('crawl', { url: `${origin}/` }, ctx);
     const body = r.body as {
