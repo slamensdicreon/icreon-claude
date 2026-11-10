@@ -699,10 +699,17 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
           items,
           tasks: req.tasks ?? [],
           cards: req.cards ?? [],
+          roles: req.roles ?? [],
         });
         if (r.kind === 'status') return { kind: 'status' };
         if (r.kind === 'answer')
           return { kind: 'answer', interpretation: r.interpretation, answers: r.answers };
+        if (r.kind === 'add')
+          return {
+            kind: 'add',
+            interpretation: r.interpretation,
+            task: { ...r.task, after: r.task.after || null },
+          };
         if (r.kind === 'rerun')
           return {
             kind: 'rerun',

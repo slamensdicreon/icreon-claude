@@ -126,7 +126,11 @@ it('answers at most twice in a row on one task, then the Director gets the quest
     runner: heroAsks(3),
     triage: async (req) => (asked.push(req), answer(req)),
   });
-  const bot = directorBot(p, (x) => (x.title === HERO_Q ? { optionId: 'opt-2' } : null));
+  // The Director answers only the card forwarded to them; the Lead's own answers are left to it
+  // (answering those in the same instant raced the Lead).
+  const bot = directorBot(p, (x) =>
+    x.title === HERO_Q ? (x.triage?.mode === 'decided' ? 'leave' : { optionId: 'opt-2' }) : null,
+  );
   await p.handle.result();
   await bot.stop();
   const cards = heroCards(p.state()).sort((a, b) => a.raisedAt.localeCompare(b.raisedAt));

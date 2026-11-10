@@ -129,7 +129,15 @@ export function createStubActivities(deps: StubDeps): Activities {
     async finishPastLimit() {
       return true;
     },
-    async interpretDirective({ text, blueprint, cards }) {
+    async interpretDirective({ text, blueprint, cards, roles }) {
+      // "Add a task for <role>: <title>": new work for one of the team's roles.
+      const add = /^add a task for ([a-z-]+):\s*(.+?)\.?$/i.exec(text.trim());
+      if (add && roles?.some((r) => r.role === add[1]))
+        return {
+          kind: 'add',
+          interpretation: add[2]!,
+          task: { title: add[2]!, role: add[1]!, after: null, instructions: add[2]! },
+        };
       // "Clear (all) the cards with your recommendation": each card's recommended option, else its
       // default. Anything less explicit is a note.
       if (

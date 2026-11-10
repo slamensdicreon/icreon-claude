@@ -153,20 +153,35 @@ const LayoutArgs = z
   .object({
     path: Path,
     /** The page's components in order: what Page builder shows, top to bottom per placeholder. */
+    // A list sent as JSON text is read as the list (agents do; fs.write learned the same).
     renderings: z
-      .array(
-        z.object({
-          /** The rendering item: its path or ID. */
-          rendering: z.string().min(1),
-          placeholder: z.string().min(1).max(200),
-          /** The datasource item: its path or ID (omit for none). */
-          datasource: z.string().min(1).optional(),
-          /** Rendering parameters, as name/value pairs. */
-          parameters: z.record(z.string(), z.string()).optional(),
-        }),
+      .preprocess(
+        (v) => {
+          if (typeof v !== 'string') return v;
+          try {
+            return JSON.parse(v);
+          } catch {
+            return v;
+          }
+        },
+        z
+          .array(
+            z.object({
+              /** The rendering item: its path or ID. */
+              rendering: z.string().min(1),
+              placeholder: z.string().min(1).max(200),
+              /** The datasource item: its path or ID (omit for none). */
+              datasource: z.string().min(1).optional(),
+              /** Rendering parameters, as name/value pairs. */
+              parameters: z.record(z.string(), z.string()).optional(),
+            }),
+          )
+          .min(
+            1,
+            'renderings is empty: list every component the page shows, each with its rendering (path or ID), placeholder and datasource; the call replaces the whole layout, so an empty list is refused',
+          )
+          .max(100),
       )
-      .min(1)
-      .max(100)
       .optional(),
     /** Layout definition XML instead of `renderings`: `<r><d id=… l=…><r uid=… id=… ph=… ds=…/></d></r>`. */
     renderingsXml: z.string().min(1).max(500_000).optional(),
@@ -174,7 +189,7 @@ const LayoutArgs = z
   })
   .refine(
     (a) => Boolean(a.renderings) !== Boolean(a.renderingsXml),
-    'give renderings or renderingsXml',
+    'give either renderings (every component the page shows, in order: { rendering, placeholder, datasource }) or renderingsXml, not neither and not both; nothing was written',
   );
 /** The Default device, and the JSS/SXA headless layout every headless page uses. */
 const DEFAULT_DEVICE = '{FE5D7FDF-89C0-4D99-9AA3-B5FBD009C9F3}';
@@ -1270,9 +1285,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         },
       };
     }
-    // Images carry alt text; a file (a PDF, a document) has no Alt field, and its link text
-    // describes it where it's used.
+    // Images carry alt text; a file (a PDF, a document) has no Alt field: its description goes in
+    // its Title, the name screen readers and the media library show for it (Lambert's Cable).
     let alt = a.data.alt ?? null;
+    let titled = false;
+    const noField = (err: unknown, name: string) =>
+      err instanceof GqlError && new RegExp(`field with the name ${name}`, 'i').test(err.message);
     if (alt) {
       try {
         await this.update(
@@ -1281,7 +1299,20 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           lang,
         );
       } catch (err) {
-        if (!(err instanceof GqlError) || !/field with the name Alt/i.test(err.message)) throw err;
+        if (!noField(err, 'Alt')) throw err;
+        try {
+          const t = await this.update(
+            q,
+            UpdateArgs.safeParse({
+              path: a.data.itemPath,
+              fields: [{ name: 'Title', value: alt }],
+            }),
+            lang,
+          );
+          titled = t.code < 300;
+        } catch (e) {
+          if (!noField(e, 'Title')) throw e;
+        }
         alt = null;
       }
     }
@@ -1289,8 +1320,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     const back = await readBack(q, a.data.itemPath, lang()).catch(() => null);
     return {
       code: 200,
-      body: { itemPath: a.data.itemPath, itemId: back?.itemId ?? null, bytes: bytes.length, alt },
-      summary: `Uploaded ${a.data.itemPath} (${Math.round(bytes.length / 1024)} KB)${a.data.alt && !alt ? '; no Alt field on this media type, so no alt text' : ''}`,
+      body: {
+        itemPath: a.data.itemPath,
+        itemId: back?.itemId ?? null,
+        bytes: bytes.length,
+        alt,
+        ...(titled ? { title: a.data.alt } : {}),
+      },
+      summary: `Uploaded ${a.data.itemPath} (${Math.round(bytes.length / 1024)} KB)${a.data.alt && !alt ? (titled ? '; no Alt field on this media type, so its description went in Title' : '; no Alt or Title field on this media type, so no description') : ''}`,
     };
   }
 
