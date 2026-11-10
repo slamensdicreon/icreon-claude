@@ -1,4 +1,6 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
+import { ProjectIcon } from '../ui/project-icon';
+import { showActiveProjects } from '../surfaces/dashboard/ProjectsTable';
 import { post } from '../lib/api';
 import { live } from '../lib/live';
 import { MANAGE, useApp, useProjectResource, type Surface } from '../state';
@@ -110,6 +112,7 @@ export function ProjectMenu() {
           aria-current={!projectId || undefined}
           onClick={() => {
             closeOverlay();
+            showActiveProjects();
             home();
           }}
         >
@@ -163,6 +166,7 @@ export function ProjectMenu() {
               >
                 <span className={`${s.tile} type-label`} aria-hidden="true">
                   {p.initials}
+                  <ProjectIcon projectId={p.id} />
                 </span>
                 <span className={s.rowText}>
                   <span className="type-body-small">

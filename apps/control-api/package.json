@@ -23,6 +23,7 @@
     "@lw/playbook-sdk": "workspace:*",
     "@lw/simulator": "workspace:*",
     "@lw/stack": "workspace:*",
+    "@lw/tool-browser": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
     "@temporalio/client": "^1.24.0",
     "@temporalio/testing": "^1.24.0",

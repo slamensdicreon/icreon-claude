@@ -213,3 +213,47 @@ test('on a phone the projects come first: filters fold behind a button, nothing 
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   run.clean();
 });
+
+test('All projects opens the table on the projects still going, whatever view was picked last', async ({
+  page,
+}) => {
+  // One finished project beside the running ones.
+  await page.route(/\/portfolio\/overview$/, async (r) => {
+    const res = await r.fetch();
+    const o = await res.json();
+    o.projects.push({
+      ...o.projects[0],
+      projectId: 'x-done',
+      name: 'Finished site',
+      initials: 'FS',
+      status: 'completed',
+      archived: true,
+      yours: 0,
+    });
+    await r.fulfill({ response: res, json: o });
+  });
+  const run = await open(page, '/');
+  const table = page.getByRole('region', { name: 'Projects', exact: true });
+  const views = table.getByRole('group', { name: 'Show projects' });
+  await views.getByRole('button', { name: /^All/ }).click();
+  await expect(table.getByText('Finished site')).toBeVisible();
+
+  // Into a project, then back through All projects: the table is on Active again.
+  await page
+    .getByRole('button', { name: /Switch project/ })
+    .first()
+    .click();
+  const menu = page.getByRole('dialog', { name: 'Projects' });
+  // The first row is the Dashboard; the next is a project.
+  await menu.locator('[data-row]').nth(1).click();
+  await expect(page).toHaveURL(/\/p\//);
+  await page.getByRole('button', { name: 'All projects', exact: true }).first().click();
+  await expect(page).not.toHaveURL(/\/p\//);
+  await expect(views.getByRole('button', { name: /^Active/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(table.getByText('Finished site')).toHaveCount(0);
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  run.clean();
+});

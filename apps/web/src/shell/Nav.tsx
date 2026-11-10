@@ -4,7 +4,9 @@
  * portfolio's (Home or Dashboard, Needs you, Projects, Team, Workbench, Activity, Scorecard); inside
  * one, the project's.
  */
+import { ProjectIcon } from '../ui/project-icon';
 import { DemoMenu, ManageMenu, ProjectMenu } from '../overlays/Menus';
+import { showActiveProjects } from '../surfaces/dashboard/ProjectsTable';
 import { isManagePage, useApp, useProjectResource } from '../state';
 import { Icon } from '../theme/icons';
 import { useRef, useState } from 'react';
@@ -18,6 +20,14 @@ import styles from './Shell.module.css';
 
 /** Sections of the Dashboard the portfolio nav jumps to. */
 type Spot = 'top' | 'yours' | 'needs' | 'projects';
+
+/** "All projects": the Dashboard, its table on the projects still going. */
+function allProjectsFrom(home: () => void) {
+  return () => {
+    showActiveProjects();
+    home();
+  };
+}
 
 function useNavState() {
   const app = useApp();
@@ -68,6 +78,7 @@ export function Rail() {
     perk,
     perkProps,
   } = useNavState();
+  const allProjects = allProjectsFrom(home);
   const navRef = useRef<HTMLElement>(null);
   const glideRef = useRef<HTMLSpanElement>(null);
   useGlide(navRef, glideRef, `${projectId}:${surface}:${view}`, '[aria-current="page"]');
@@ -123,7 +134,7 @@ export function Rail() {
       <span className={styles.grow} />
       {scenarios.length > 0 &&
         item('demo', 'activity', 'Demo', false, () => openOverlay(<DemoMenu />))}
-      {projectId && item('all', 'projects', 'All projects', false, home)}
+      {projectId && item('all', 'projects', 'All projects', false, allProjects)}
       {item('settings', 'settings', 'Settings', projectId ? surface === 'settings' : false, () =>
         projectId ? go('settings') : openOverlay(<ManageMenu />),
       )}
@@ -153,6 +164,7 @@ export function Sidebar() {
     perk,
     perkProps,
   } = useNavState();
+  const allProjects = allProjectsFrom(home);
   const navRef = useRef<HTMLElement>(null);
   const glideRef = useRef<HTMLSpanElement>(null);
   useGlide(navRef, glideRef, `${projectId}:${surface}:${view}`, '[aria-current="page"]');
@@ -237,7 +249,7 @@ export function Sidebar() {
           null,
           true,
         )}
-      {projectId && item('all', 'projects', 'All projects', false, home, null, true)}
+      {projectId && item('all', 'projects', 'All projects', false, allProjects, null, true)}
       {item(
         'settings',
         'settings',
@@ -288,6 +300,7 @@ export function ProjectSwitcher({ onInk = false }: { onInk?: boolean }) {
     >
       <span className={`${styles.tile} type-label`} data-all={!p || undefined} aria-hidden="true">
         {p?.initials ?? <Icon name="projects" size={18} />}
+        {p && <ProjectIcon projectId={p.id} />}
       </span>
       <span className={styles.switcherText}>
         <span className="type-nav">{p?.name ?? 'All projects'}</span>

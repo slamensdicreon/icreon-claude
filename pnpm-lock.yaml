@@ -65,6 +65,9 @@ importers:
       '@lw/stack':
         specifier: workspace:*
         version: link:../../packages/stack
+      '@lw/tool-browser':
+        specifier: workspace:*
+        version: link:../../tool-servers/browser
       '@lw/tool-gateway':
         specifier: workspace:*
         version: link:../../packages/tool-gateway

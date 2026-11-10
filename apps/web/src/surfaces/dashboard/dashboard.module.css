@@ -120,6 +120,8 @@
   font: inherit;
 }
 .tile {
+  position: relative;
+  overflow: hidden;
   flex: none;
   width: calc(var(--space-6) + var(--space-1));
   height: calc(var(--space-6) + var(--space-1));
@@ -425,6 +427,8 @@
   gap: var(--space-1);
 }
 .miniTile {
+  position: relative;
+  overflow: hidden;
   width: 32px;
   height: 32px;
   border: 0;
