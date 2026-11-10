@@ -135,12 +135,14 @@ const ASSET_HEADERS = {
 const CATALOG: OperationCatalog = {
   crawl: {
     description:
-      'Crawl the source site from a start URL (plus its sitemap): page inventory with titles, headings, word counts, images and alt text, internal links, and header/nav/footer regions repeated across pages. Same host only.',
+      'Crawl the source site from a start URL (plus its sitemap): page inventory with titles, headings, word counts, images and alt text, internal links, and header/nav/footer regions repeated across pages. Same host only. `sections` counts the sitemap\'s URLs by first path segment. On a site too big for one crawl, crawl one `section` (a path prefix such as "/blog/") at a time; to read exactly some pages (the Blueprint\'s, for the parity re-crawl) give their `paths`, and no links are followed.',
     inputSchema: {
       type: 'object',
       properties: {
         url: { type: 'string' },
         maxPages: { type: 'integer', minimum: 1, maximum: 500 },
+        section: { type: 'string' },
+        paths: { type: 'array', items: { type: 'string' }, maxItems: 500 },
       },
       required: ['url'],
       additionalProperties: false,
@@ -341,7 +343,12 @@ export class BrowserToolServer implements ToolServer {
     try {
       switch (op) {
         case 'crawl':
-          return await this.crawl(policy, String(args.url), Number(args.maxPages ?? 200));
+          return await this.crawl(policy, String(args.url), Number(args.maxPages ?? 200), {
+            section: typeof args.section === 'string' && args.section ? args.section : undefined,
+            paths: Array.isArray(args.paths)
+              ? args.paths.filter((x): x is string => typeof x === 'string')
+              : undefined,
+          });
         case 'snapshot':
           return await this.withPage(policy, async (context) => {
             const r = await this.load(context, policy, String(args.url), true);
@@ -501,13 +508,36 @@ export class BrowserToolServer implements ToolServer {
     };
   }
 
-  private async crawl(policy: UrlPolicy, start: string, maxPages: number): Promise<ToolResult> {
+  private async crawl(
+    policy: UrlPolicy,
+    start: string,
+    maxPages: number,
+    scope: { section?: string; paths?: string[] } = {},
+  ): Promise<ToolResult> {
     // The site is where the start URL lands: microsoft.com sends every visitor to
     // www.microsoft.com, whose links all point there. Crawling the first address kept one page.
     const landed = await this.landing(policy, (await assertNavigable(start, policy)).toString());
     const origin = landed.origin;
     const fromSitemap = await this.sitemap(policy, origin);
-    const queue = [canonical(landed.toString()), ...fromSitemap];
+    // A big site is read a section at a time (Paylocity: 2,693 URLs, one crawl ran out of time),
+    // and the parity re-crawl reads only the Blueprint's pages, not the whole site again.
+    const prefix = scope.section
+      ? `/${scope.section.replace(/^https?:\/\/[^/]+/, '').replace(/^\/+/, '')}`
+      : null;
+    const listed = scope.paths?.length
+      ? scope.paths.map((p) => canonical(new URL(p, origin).toString()))
+      : null;
+    const inScope = (u: string) =>
+      listed ? listed.includes(u) : !prefix || new URL(u).pathname.startsWith(prefix);
+    // Outside the section, the landing page is read only for its links into it.
+    const home = canonical(landed.toString());
+    const queue = listed
+      ? [...listed]
+      : [
+          home,
+          ...(inScope(home) ? [] : [canonical(new URL(prefix!, origin).toString())]),
+          ...fromSitemap.filter(inScope),
+        ];
     const deadline = Date.now() + (this.opts.crawlTimeMs ?? 7 * 60_000);
     let outOfTime = false;
     const seen = new Set<string>();
@@ -545,11 +575,12 @@ export class BrowserToolServer implements ToolServer {
             excluded.push({ url: next, reason: `HTTP ${r.status}` });
             continue;
           }
-          pages.push(r.page);
-          for (const link of r.page.links) {
-            const c = safeCanonical(link);
-            if (c && new URL(c).origin === origin && !seen.has(c)) queue.push(c);
-          }
+          if (inScope(next)) pages.push(r.page);
+          if (!listed)
+            for (const link of r.page.links) {
+              const c = safeCanonical(link);
+              if (c && new URL(c).origin === origin && !seen.has(c) && inScope(c)) queue.push(c);
+            }
         } catch (err) {
           excluded.push({
             url: next,
@@ -584,6 +615,17 @@ export class BrowserToolServer implements ToolServer {
         summary: siteRefused(origin, refused[0]!.reason, refused.length, excluded.length),
       };
     const sitemapUrls = new Set(fromSitemap).size;
+    // The sitemap's URLs by first path segment: what a section-by-section crawl has to cover.
+    const bySection = new Map<string, number>();
+    for (const u of new Set(fromSitemap)) {
+      const first = new URL(u).pathname.split('/').filter(Boolean)[0];
+      const key = first ? `/${first}/` : '/';
+      bySection.set(key, (bySection.get(key) ?? 0) + 1);
+    }
+    const sections = [...bySection]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 40)
+      .map(([section, urls]) => ({ section, urls }));
     return {
       code: 200,
       body: {
@@ -593,11 +635,14 @@ export class BrowserToolServer implements ToolServer {
         repeatedRegions,
         truncated,
         sitemapUrls,
+        sections,
+        ...(prefix ? { section: prefix } : {}),
+        ...(listed ? { paths: listed.length } : {}),
         ...(outOfTime ? { stoppedForTime: true } : {}),
       },
-      summary: `Crawled ${pages.length} pages from ${origin}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions${
+      summary: `Crawled ${pages.length} pages from ${origin}${prefix ? ` under ${prefix}` : listed ? ` (the ${listed.length} pages given)` : ''}; ${excluded.length} excluded; ${repeatedRegions.length} repeated regions${
         outOfTime
-          ? `. Stopped for time after ${pages.length} pages: the sitemap lists ${sitemapUrls} URLs. Use the sitemap for the page count, and read the pages a template still needs with browser.snapshot`
+          ? `. Stopped for time after ${pages.length} pages: the sitemap lists ${sitemapUrls} URLs. Use the sitemap for the page count, and crawl the rest one section at a time (sections lists them)`
           : ''
       }${
         refused.length
