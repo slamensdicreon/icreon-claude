@@ -15,7 +15,7 @@ them: sign-in, ownership of projects, the global integrations, and the catalog.
 | Topic               | Decision                                                                                                                                                       |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product             | A SaaS product. Client organizations run their own projects; their own people can be Directors.                                                               |
-| Kickoff             | Every customer starts with an Icreon Director, who is a member of the customer's organization for 3 months and can't be removed by the customer.             |
+| Kickoff             | Every customer starts with an Icreon Director, a member of the organization the customer can't remove for the first 3 months, and who stays after that unless the customer asks otherwise. |
 | Hosting             | Icreon hosts everything: build repositories in Icreon's GitHub org, sites in Icreon's Vercel team, agents on Icreon's Anthropic account.                       |
 | Leaving             | A customer can export their code and repository during the license and for 90 days after it ends.                                                           |
 | Sign-in             | Auth0. Email and social sign-in now; SSO per organization later, without changes on our side. GitHub stays one way in.                                         |
@@ -28,25 +28,23 @@ them: sign-in, ownership of projects, the global integrations, and the catalog.
 
 ## Licensing
 
-An organization holds one license per entity it is on. Most hold one. Each license says:
+An organization holds one license, renewed yearly. A large organization's license can cover
+several entities. The license says:
 
-- **The entity** (SitecoreAI, Optimizely, …). Every playbook and connection used under the license
-  is on that entity.
-- **Active playbook slots.** How many playbooks can be active at once. The starting license has 1;
-  an organization that buys every playbook on the entity has them all active.
+- **Entities** (SitecoreAI, Optimizely, …). Every playbook and connection the organization uses is
+  on one of them.
+- **Playbooks.** Which playbooks on those entities the organization can run, for the full year.
+  Customers don't swap them; adding one is an upgrade Icreon makes in `/admin`.
 - **Projects.** How many projects can exist at once. The starting license includes 1; each further
   project is bought (for example, 1 entity, 1 playbook, 10 projects).
-- **Playbook switches.** 3 per license year.
-- **Term.** Start and end dates.
+- **Term.** One year from the start date.
 
 ```
 License
   organizationId
-  entity              'sitecoreai'
-  playbookSlots       2              // or 'all'
-  activePlaybooks     ['sitecoreai-migration', 'sitecoreai-homepage-demo']
+  entities            ['sitecoreai']
+  playbooks           ['sitecoreai-migration']
   projectsIncluded    10
-  switchesPerYear     3
   startsAt, endsAt
 ```
 
@@ -55,27 +53,22 @@ License
 Every rule is checked by the Control API. Hiding something in the Control Center is never the
 only guard.
 
-- **Creating a project** needs a license in its term on the project's entity, an active playbook,
-  and fewer existing projects than `projectsIncluded`.
-- **Deleting a project gives its slot back** as soon as the deletion is requested. Restoring it
-  during the deletion grace period (`DELETE_GRACE_DAYS`) needs a free slot. An archived project
-  keeps its slot.
-- **Switching playbooks.** A Director, in the Control Center, replaces one active playbook with
-  another on the same entity. That is one switch; the organization has 3 per license year, counted
-  from `startsAt`, and unused switches don't carry over. The Control Center shows how many are left.
-  A switch affects only new projects: a project already running on the playbook switched out
-  continues to completion.
-- **The catalog** shows active playbooks as available, other playbooks on the entity as "switch
-  to" (while switches remain) or "upgrade", and nothing from unlicensed entities.
-- **Entities are Icreon's to change.** Only a super admin, in `/admin`, adds an entity (a second
-  license) or moves a license to another entity when the customer changes platforms. Projects on
-  the entity left behind are treated like an ended license.
+- **Creating a project** needs a license in its term that includes the project's entity and
+  playbook, and fewer existing projects than `projectsIncluded`.
+- **Deleting a project frees its place** in the project count as soon as the deletion is
+  requested. Restoring it during the deletion grace period (`DELETE_GRACE_DAYS`) needs a free
+  place. An archived project keeps its place.
+- **The catalog** shows licensed playbooks as available, other playbooks on licensed entities as
+  "upgrade", and nothing from unlicensed entities.
+- **Only Icreon changes a license**, in `/admin`: adding playbooks, projects or entities, and
+  replacing an entity when the customer changes platforms. Projects on the entity that was
+  replaced are paused and become read-only, with the same export window as an ended license.
 - **When the term ends**, a scheduled check (the existing cron path pattern) pauses every running
-  workflow and marks the license's projects read-only. Everyone can still sign in and read; no
-  command is accepted. Export stays available for 90 days. Renewal resumes the paused projects
+  workflow and marks the organization's projects read-only. Everyone can still sign in and read;
+  no command is accepted. Export stays available for 90 days. Renewal resumes the paused projects
   where they stopped.
-- **Every change to a license** (granted, playbook switched, projects added, entity changed,
-  ended) is an event, so there is an audit trail for billing disputes.
+- **Every change to a license** (granted, playbooks or projects added, entity added or replaced,
+  renewed, ended) is an event, so there is an audit trail for billing disputes.
 
 ### Usage to meter
 
@@ -106,13 +99,13 @@ A person (an Auth0 user) can belong to several organizations; Icreon Directors b
 customer they start. The Control Center gets an organization switcher.
 
 Customers never reach `/admin`. It is a separate area for Icreon super admins: every organization,
-its licenses and usage, swapping playbooks or entities, and diagnostics. Whatever role someone
+its licenses and usage, changing playbooks or entities, and diagnostics. Whatever role someone
 holds inside an organization, it never opens `/admin`.
 
 | Role                   | Who                                    | Can                                                                                                                                       |
 | ---------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Super admin**        | Icreon staff                           | `/admin`: every organization, licenses, entities, playbook swaps, usage, diagnostics. Not inside projects, except through a logged, time-limited support grant. |
-| **Director**           | Icreon's kickoff Director; client DIDs | Everything inside the organization: intake, commands, cards and gates, connections, invites, playbook switching, export, delete.          |
+| **Super admin**        | Icreon staff                           | `/admin`: every organization, licenses, entities, playbooks, usage, diagnostics. Not inside projects, except through a logged, time-limited support grant. |
+| **Director**           | Icreon's kickoff Director; client DIDs | Everything inside the organization: intake, commands, cards and gates, connections, invites, export, delete.                              |
 | **Watcher**            | Client stakeholders                    | See everything about progress (plans, status, the agent view, cards, documents, the scorecard). Change nothing.                          |
 
 Roles are stored in our database as permission sets, not in Auth0, so we can add a role (a client
@@ -121,9 +114,9 @@ without a rewrite. Auth0 holds identity, organization membership and invitations
 
 ### The Icreon kickoff Director
 
-The kickoff Director's membership carries an end date 3 months after the organization starts.
-Until then the customer can't remove them or lower their role; the API refuses it. On that date
-the membership ends on its own. Icreon can extend it in `/admin`.
+For the first 3 months the customer can't remove the kickoff Director or lower their role; the API
+refuses it. After that nothing changes on its own: Icreon keeps providing service and support, and
+the Director stays until the customer asks for them to be removed.
 
 ### Enforcing Watcher
 
@@ -196,15 +189,10 @@ the name, and make the playbook validator refuse client names so new ones can't 
    organization #1.
 3. Roles enforced in the API; Watcher with the read allowlist and redaction.
 4. Auth0 sign-in, invitations, organization switcher.
-5. Licenses: entity, playbook slots, project count, term; the catalog filtered by them;
+5. Licenses: entities, playbooks, project count, term; the catalog filtered by them;
    the end-of-term pause.
 6. Hosting per organization: prefixed names, usage recorded per organization.
 7. Onboarding: connection step with the hand-off to the client's admin.
 8. Export.
-9. `/admin` (Icreon only): organizations, licenses, entity changes, playbook swaps, usage,
+9. `/admin` (Icreon only): organizations, licenses, entity changes, playbooks, usage,
    diagnostics, support grants.
-
-## Open questions
-
-- When a customer changes platforms, do projects on the old entity become read-only (as written
-  above), or carry on until they finish?
