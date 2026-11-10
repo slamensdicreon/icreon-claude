@@ -3,7 +3,7 @@
  * applies, against a live editing host and the source site.
  *
  *   pnpm --filter @lw/platforms exec tsx scripts/parity-report.ts \
- *     --host dycom-ansco-associates-sitecoreai-v2 --origin https://anscollc.com \
+ *     --host acme-sitecoreai --origin https://www.example.com \
  *     --pages /,/about,/quality --lists CardGrid,StatsCounter,Accordion
  *
  * `--host` is the Vercel project (its editing host is <host>-editing.vercel.app); `--lists` names

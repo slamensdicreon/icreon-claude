@@ -18,6 +18,8 @@ export interface StreamOptions {
    * time limit cuts it. The client reopens at once from the last seq it saw. Null: no limit.
    */
   maxMs: number | null;
+  /** What each event looks like to this reader (a Watcher's copy is redacted). */
+  view?: (e: LwEvent) => unknown;
 }
 
 /**
@@ -70,7 +72,8 @@ export async function streamProject(
   req.raw.on('close', close);
 
   const send = (e: LwEvent) => {
-    res.write(`id: ${e.seq}\nevent: lw\ndata: ${JSON.stringify(e)}\n\n`);
+    const data = JSON.stringify(opts.view ? opts.view(e) : e);
+    res.write(`id: ${e.seq}\nevent: lw\ndata: ${data}\n\n`);
     last = e.seq;
   };
 

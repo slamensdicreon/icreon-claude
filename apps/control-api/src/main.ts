@@ -23,6 +23,12 @@ import {
   PostgresTombstoneStore,
   PostgresVault,
   Projections,
+  DEFAULT_ORGANIZATION,
+  githubSubject,
+  MemoryOrganizationStore,
+  PostgresOrganizationStore,
+  workosSubject,
+  type OrganizationStore,
   type SecretVault,
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
@@ -58,6 +64,7 @@ import { z } from 'zod';
 import { buildApp, type WorkerHeartbeat } from './app';
 import { GithubApp, VaultCredentials } from '@lw/connectors';
 import { IntakeService, type StartInput } from './intake';
+import { workosInvitations } from './people';
 import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
 import { policyRows } from './policy';
 import { demoCommands, remoteCommands, simulationCommands, type ProjectCommands } from './commands';
@@ -112,12 +119,21 @@ const env = z
     CREDENTIALS_KEY_PREVIOUS: z.string().optional(),
     INLINE_WORKER: z.enum(['true', 'false']).default('true'),
     AGENTS: z.enum(['stub', 'claude']).default('stub'),
-    AUTH: z.enum(['none', 'github']).default('none'),
+    /**
+     * github: GitHub sign-in for OPERATORS, plus WorkOS when it is configured; workos: WorkOS only.
+     */
+    AUTH: z.enum(['none', 'github', 'workos']).default('none'),
+    /** WorkOS AuthKit: the client ID (public) and the API key (WORKOS_KEY or WORKOS_API_KEY). */
+    WORKOS_CLIENT_ID: z.string().optional(),
+    WORKOS_KEY: z.string().optional(),
+    WORKOS_API_KEY: z.string().optional(),
     /**
      * Allow AUTH=none on a non-local HOST. Only for a container whose port is published to
      * 127.0.0.1 (compose.yaml); never on a reachable host.
      */
     INSECURE_NO_AUTH: z.enum(['true', 'false']).default('false'),
+    /** Local runs only (no sign-in): the role of the one local operator, to see the app as a Watcher does. */
+    LOCAL_ROLE: z.enum(['director', 'watcher']).optional(),
     GITHUB_CLIENT_ID: z.string().optional(),
     GITHUB_CLIENT_SECRET: z.string().optional(),
     /** Comma-separated GitHub logins allowed in. */
@@ -178,11 +194,41 @@ const extraOrigins = [env.VERCEL_URL, env.VERCEL_BRANCH_URL]
   .filter((h): h is string => Boolean(h))
   .map((h) => `https://${h}`);
 
+const workosKey = (env.WORKOS_KEY ?? env.WORKOS_API_KEY)?.trim() || null;
+// WorkOS signs people in where both halves are set; AUTH=workos insists on them.
+const workos =
+  env.AUTH !== 'none' && env.WORKOS_CLIENT_ID && workosKey
+    ? { clientId: env.WORKOS_CLIENT_ID.trim(), apiKey: workosKey }
+    : null;
+if (env.AUTH === 'workos' && !workos)
+  throw new Error('AUTH=workos needs WORKOS_CLIENT_ID and WORKOS_KEY (or WORKOS_API_KEY).');
 const auth =
-  env.AUTH === 'github'
+  env.AUTH !== 'none'
     ? {
-        clientId: required('GITHUB_CLIENT_ID', env.GITHUB_CLIENT_ID),
-        clientSecret: required('GITHUB_CLIENT_SECRET', env.GITHUB_CLIENT_SECRET),
+        ...(env.AUTH === 'github' || (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET)
+          ? {
+              clientId: required('GITHUB_CLIENT_ID', env.GITHUB_CLIENT_ID),
+              clientSecret: required('GITHUB_CLIENT_SECRET', env.GITHUB_CLIENT_SECRET),
+            }
+          : {}),
+        ...(workos
+          ? {
+              workos: {
+                ...workos,
+                // Their invitations become memberships; someone with none is turned away.
+                admit: async (user: { id: string; email: string }) => {
+                  const subject = workosSubject(user.id);
+                  await organizations.acceptInvitations(user.email, subject);
+                  return (await organizations.membershipsOf(subject)).length
+                    ? ({ ok: true } as const)
+                    : ({
+                        ok: false,
+                        message: `${user.email} hasn't been invited to Launchworks yet. Ask your organization's Director for an invitation.`,
+                      } as const);
+                },
+              },
+            }
+          : {}),
         sessionSecret: required('SESSION_SECRET', env.SESSION_SECRET),
         publicUrl: required('PUBLIC_URL', publicUrl),
         appUrl: required('APP_URL', appUrl),
@@ -198,10 +244,12 @@ const auth =
         secureCookies: required('PUBLIC_URL', publicUrl).startsWith('https://'),
       }
     : undefined;
-if (auth && !auth.operators.length) throw new Error('AUTH=github needs OPERATORS (GitHub logins).');
+if (env.AUTH === 'github' && !auth?.operators.length)
+  throw new Error('AUTH=github needs OPERATORS (GitHub logins).');
+if (workos) console.log('Sign-in: WorkOS AuthKit is on.');
 
 function required(name: string, value: string | undefined): string {
-  if (!value) throw new Error(`AUTH=github needs ${name}`);
+  if (!value) throw new Error(`AUTH=${env.AUTH} needs ${name}`);
   return value;
 }
 
@@ -450,6 +498,24 @@ const tombstones = opened.sql
   : env.STORE === 'memory'
     ? new MemoryTombstoneStore()
     : undefined;
+// Organizations: who owns each project and who belongs where. Beside the event log (its migration
+// gives every existing project to organization #1, Icreon); memory for local runs.
+const organizations: OrganizationStore = opened.sql
+  ? new PostgresOrganizationStore(opened.sql)
+  : new MemoryOrganizationStore();
+// A local run's operator in the role asked for (LOCAL_ROLE=watcher shows the app as a client
+// stakeholder sees it). Without sign-in only: a deployment's roles come from its memberships.
+if (!auth && env.LOCAL_ROLE)
+  await organizations.setMember(DEFAULT_ORGANIZATION, 'local', env.LOCAL_ROLE, 'LOCAL_ROLE');
+// Today's operators (and their API keys) are Icreon's Directors. Only added, never changed: a role
+// set since is kept.
+if (auth)
+  for (const login of new Set([...auth.operators, ...auth.apiKeys.map((k) => k.login)])) {
+    const subject = githubSubject(login);
+    const mine = await organizations.membershipsOf(subject);
+    if (!mine.some((m) => m.organizationId === DEFAULT_ORGANIZATION))
+      await organizations.setMember(DEFAULT_ORGANIZATION, subject, 'director', 'OPERATORS');
+  }
 // The team's knowledge across projects; the worker seeds it too, and seeding adds only what's new.
 const knowledge = opened.sql
   ? new PostgresKnowledgeStore(opened.sql)
@@ -531,7 +597,10 @@ const app = await buildApp({
     github,
     buildOrg: env.GITHUB_BUILD_ORG,
     connections: integrations ?? undefined,
+    organizations,
   }),
+  organizations,
+  sendInvitation: workos ? workosInvitations({ apiKey: workos.apiKey }) : null,
   github,
   hosting: hosting
     ? {

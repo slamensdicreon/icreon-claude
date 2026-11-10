@@ -1,14 +1,44 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-export interface GithubAuthOptions {
+/** A person as WorkOS signs them in (AuthKit). */
+export interface WorkosUser {
+  id: string;
+  email: string;
+  email_verified: boolean;
+  first_name: string | null;
+  last_name: string | null;
+  profile_picture_url: string | null;
+}
+
+/** Sign-in with WorkOS AuthKit: email, Google and Microsoft, and each organization's own SSO. */
+export interface WorkosAuthOptions {
   clientId: string;
-  clientSecret: string;
+  /** The WorkOS API key (its client secret). */
+  apiKey: string;
+  /**
+   * Whether a person WorkOS signed in may use Launchworks: their invitations are accepted here,
+   * and someone who belongs to no organization is turned away with the message given.
+   */
+  admit(user: WorkosUser): Promise<{ ok: true } | { ok: false; message: string }>;
+  /** Defaults to https://api.workos.com. */
+  baseUrl?: string;
+}
+
+export interface GithubAuthOptions {
+  /** GitHub sign-in; without both, only WorkOS signs people in. */
+  clientId?: string;
+  clientSecret?: string;
+  /** WorkOS sign-in, beside GitHub's or alone. */
+  workos?: WorkosAuthOptions;
   /** This API's public base URL; GitHub redirects to `${publicUrl}/auth/callback`. */
   publicUrl: string;
   /** Where the Control Center lives; sign-in returns there. */
   appUrl: string;
-  /** GitHub logins allowed in. Checked on every request, so removal is immediate on redeploy. */
+  /**
+   * GitHub logins allowed in. Checked on every request, so removal is immediate on redeploy.
+   * People who sign in through WorkOS are let in by their memberships instead.
+   */
   operators: string[];
   /**
    * API keys for scripts and agents acting as an operator (`Authorization: Bearer lwk_…`): the
@@ -31,9 +61,22 @@ export interface GithubAuthOptions {
 }
 
 export interface Operator {
+  /** A GitHub login, or the email of someone who signed in through WorkOS. */
   login: string;
   name: string | null;
   avatarUrl: string | null;
+  /** Who they are in memberships, when it isn't their GitHub login (`workos:<user id>`). */
+  subject?: string;
+}
+
+interface Session {
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  exp: number;
+  /** Absent on GitHub sessions (and every session from before WorkOS). */
+  provider?: 'workos';
+  subject?: string;
 }
 
 declare module 'fastify' {
@@ -53,9 +96,10 @@ const pathOf = (url: string) => url.split('?')[0]!;
 const CRON_PATHS = ['/portfolio/watchdog', '/portfolio/purge-due'];
 
 /**
- * Sign-in with GitHub for the one or two operators who run Launchworks. Only identity is kept:
- * the GitHub token is used once at sign-in and discarded. Sessions are HMAC-signed cookies;
- * every request re-checks the operator list.
+ * Sign-in: GitHub for Icreon's operators, and WorkOS for everyone else (and for them too). Only
+ * identity is kept: each provider's token is used once at sign-in and discarded. Sessions are
+ * HMAC-signed cookies; every request re-checks a GitHub session against the operator list, and
+ * organizations check everyone's memberships.
  */
 export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions): void {
   if (opts.sessionSecret.length < 32)
@@ -101,6 +145,18 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
   const isCron = (header: string | undefined) =>
     !!cron && !!header && timingSafeEqual(createHash('sha256').update(header).digest(), cron);
 
+  const github =
+    opts.clientId && opts.clientSecret ? { id: opts.clientId, secret: opts.clientSecret } : null;
+  const workos = opts.workos ?? null;
+  if (!github && !workos) throw new Error('Sign-in needs GitHub or WorkOS configured.');
+  /** A live session: unexpired, and for GitHub still on the operator list. */
+  const sessionOf = (req: FastifyRequest): Session | null => {
+    const session = read<Session>(cookies(req)[SESSION]);
+    if (!session || session.exp < Date.now()) return null;
+    if (session.provider === 'workos') return workos && session.subject ? session : null;
+    return github && allowed.has(session.login.toLowerCase()) ? session : null;
+  };
+
   app.addHook('onRequest', async (req, reply) => {
     if (
       req.method === 'OPTIONS' ||
@@ -118,24 +174,50 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
       req.operator = { login: key.login, name: `${key.login} (API key)`, avatarUrl: null };
       return;
     }
-    const session = read<{
-      login: string;
-      name: string | null;
-      avatarUrl: string | null;
-      exp: number;
-    }>(cookies(req)[SESSION]);
-    if (!session || session.exp < Date.now() || !allowed.has(session.login.toLowerCase())) {
-      return deny(reply, 401, 'unauthenticated', 'Sign in with GitHub to use the Control Center.');
-    }
-    req.operator = { login: session.login, name: session.name, avatarUrl: session.avatarUrl };
+    const session = sessionOf(req);
+    if (!session) return deny(reply, 401, 'unauthenticated', 'Sign in to use the Control Center.');
+    req.operator = {
+      login: session.login,
+      name: session.name,
+      avatarUrl: session.avatarUrl,
+      ...(session.subject ? { subject: session.subject } : {}),
+    };
   });
 
-  app.get<{ Querystring: { returnTo?: string } }>('/auth/login', async (req, reply) => {
+  app.get<{
+    Querystring: { returnTo?: string; provider?: string; invitation_token?: string };
+  }>('/auth/login', async (req, reply) => {
     const state = randomBytes(16).toString('base64url');
     const returnTo = safeReturn(req.query.returnTo, opts.appUrl);
-    reply.header('set-cookie', cookie(STATE, sign({ state, returnTo }), 10 * 60 * 1000));
+    const invitation = req.query.invitation_token?.slice(0, 200) || null;
+    // An invitation link from WorkOS's email lands here: it goes straight to WorkOS.
+    const provider =
+      req.query.provider === 'github' && github
+        ? 'github'
+        : (req.query.provider === 'workos' || invitation) && workos
+          ? 'workos'
+          : !workos
+            ? 'github'
+            : !github
+              ? 'workos'
+              : null;
+    if (!provider) return page(reply, 200, chooser(returnTo));
+    reply.header(
+      'set-cookie',
+      cookie(STATE, sign({ state, returnTo, invitation }), 10 * 60 * 1000),
+    );
+    if (provider === 'workos') {
+      const url = new URL(`${workos!.baseUrl ?? WORKOS_API}/user_management/authorize`);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('client_id', workos!.clientId);
+      url.searchParams.set('redirect_uri', `${opts.publicUrl}/auth/workos/callback`);
+      url.searchParams.set('provider', 'authkit');
+      url.searchParams.set('state', state);
+      if (invitation) url.searchParams.set('invitation_token', invitation);
+      return reply.redirect(url.toString());
+    }
     const url = new URL('https://github.com/login/oauth/authorize');
-    url.searchParams.set('client_id', opts.clientId);
+    url.searchParams.set('client_id', github!.id);
     url.searchParams.set('redirect_uri', `${opts.publicUrl}/auth/callback`);
     url.searchParams.set('scope', opts.requiredOrg ? 'read:user read:org' : 'read:user');
     url.searchParams.set('state', state);
@@ -144,10 +226,55 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
   });
 
   app.get<{ Querystring: { code?: string; state?: string } }>(
+    '/auth/workos/callback',
+    async (req, reply) => {
+      const pending = read<{ state: string; returnTo: string; invitation: string | null }>(
+        cookies(req)[STATE],
+      );
+      reply.header('set-cookie', cookie(STATE, '', 0));
+      if (!workos) return deny(reply, 404, 'not_found', 'WorkOS sign-in is not set up here.');
+      if (!pending || !req.query.state || pending.state !== req.query.state || !req.query.code)
+        return page(reply, 400, 'Sign-in expired or was tampered with. Start again.');
+      const res = await doFetch(`${workos.baseUrl ?? WORKOS_API}/user_management/authenticate`, {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          client_id: workos.clientId,
+          client_secret: workos.apiKey,
+          code: req.query.code,
+          ...(pending.invitation ? { invitation_token: pending.invitation } : {}),
+          user_agent: req.headers['user-agent'],
+        }),
+      });
+      const body = (await res.json().catch(() => null)) as { user?: WorkosUser } | null;
+      const user = body?.user;
+      if (!res.ok || !user?.id || !user.email)
+        return page(reply, 502, 'WorkOS did not complete sign-in. Try again.');
+      if (!user.email_verified)
+        return page(reply, 403, `Verify ${user.email} first: WorkOS sent you a link.`);
+      const admitted = await workos.admit(user);
+      if (!admitted.ok) return page(reply, 403, admitted.message);
+      const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || null;
+      const session: Session = {
+        login: user.email.toLowerCase(),
+        name,
+        avatarUrl: user.profile_picture_url ?? null,
+        provider: 'workos',
+        subject: `workos:${user.id}`,
+        exp: Date.now() + ttl,
+      };
+      reply.header('set-cookie', [cookie(STATE, '', 0), cookie(SESSION, sign(session), ttl)]);
+      return reply.redirect(pending.returnTo);
+    },
+  );
+
+  app.get<{ Querystring: { code?: string; state?: string } }>(
     '/auth/callback',
     async (req, reply) => {
       const pending = read<{ state: string; returnTo: string }>(cookies(req)[STATE]);
       reply.header('set-cookie', cookie(STATE, '', 0));
+      if (!github) return deny(reply, 404, 'not_found', 'GitHub sign-in is not set up here.');
       if (!pending || !req.query.state || pending.state !== req.query.state || !req.query.code) {
         return deny(reply, 400, 'bad_state', 'Sign-in expired or was tampered with. Start again.');
       }
@@ -156,8 +283,8 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
         method: 'POST',
         headers: { accept: 'application/json', 'content-type': 'application/json' },
         body: JSON.stringify({
-          client_id: opts.clientId,
-          client_secret: opts.clientSecret,
+          client_id: github.id,
+          client_secret: github.secret,
           code: req.query.code,
           redirect_uri: `${opts.publicUrl}/auth/callback`,
         }),
@@ -211,10 +338,8 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
   );
 
   app.get('/auth/me', async (req, reply) => {
-    const session = read<Operator & { exp: number }>(cookies(req)[SESSION]);
-    if (!session || session.exp < Date.now() || !allowed.has(session.login.toLowerCase())) {
-      return deny(reply, 401, 'unauthenticated', 'Not signed in.');
-    }
+    const session = sessionOf(req);
+    if (!session) return deny(reply, 401, 'unauthenticated', 'Not signed in.');
     const { login, name, avatarUrl } = session;
     return { login, name, avatarUrl };
   });
@@ -276,4 +401,36 @@ function safeReturn(returnTo: string | undefined, appUrl: string): string {
   } catch {
     return appUrl;
   }
+}
+
+const WORKOS_API = 'https://api.workos.com';
+
+const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+const PAGE_STYLE = `body{font:16px/1.5 system-ui,sans-serif;margin:0;display:grid;place-items:center;
+min-height:100vh;background:#f6f5f2;color:#1d1c1a}main{max-width:26rem;padding:2rem}h1{font-size:1.25rem}
+a.b{display:block;margin:.75rem 0;padding:.75rem 1rem;border-radius:999px;background:#1d1c1a;color:#fff;
+text-align:center;text-decoration:none}a.b.s{background:transparent;color:inherit;border:1px solid #c9c7c1}
+@media (prefers-color-scheme:dark){body{background:#161614;color:#ecebe7}a.b{background:#ecebe7;color:#161614}
+a.b.s{background:transparent;color:inherit;border-color:#4a4945}}`;
+
+/** A small page of the API's own: the sign-in choice, or why sign-in stopped. */
+function page(reply: FastifyReply, status: number, body: string) {
+  const inner = body.startsWith('<') ? body : `<h1>Sign-in stopped</h1><p>${escapeHtml(body)}</p>`;
+  return reply
+    .status(status)
+    .type('text/html; charset=utf-8')
+    .header('cache-control', 'no-store')
+    .send(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Launchworks</title><style>${PAGE_STYLE}</style></head><body><main>${inner}</main></body></html>`,
+    );
+}
+
+/** Both ways in: WorkOS for everyone, GitHub for Icreon's operators. */
+function chooser(returnTo: string) {
+  const q = (provider: string) =>
+    `/auth/login?provider=${provider}&returnTo=${encodeURIComponent(returnTo)}`;
+  return `<h1>Sign in to Launchworks</h1>
+<a class="b" href="${escapeHtml(q('workos'))}">Continue with email, Google or Microsoft</a>
+<a class="b s" href="${escapeHtml(q('github'))}">Icreon operators: continue with GitHub</a>`;
 }

@@ -186,6 +186,18 @@
       }
     },
     {
+      "source": "/organization",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/organization/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/health",
       "destination": {
         "service": "api"

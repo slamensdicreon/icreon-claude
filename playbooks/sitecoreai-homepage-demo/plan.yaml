@@ -118,8 +118,8 @@ templates:
     title: Configure the head as the editing host
     dependsOn: [prepare-hosting]
     # Ends with its change live on the editing host (from 0.17.0/0.2.7): a task waiting on it is
-    # checked again the moment it finishes, and on Microsoft and Ervin Cable that check ran
-    # against a build without the fix, three times over.
+    # checked again the moment it finishes, and on two earlier projects that check ran against a
+    # build without the fix, three times over.
     acceptance: [validator:head.editing-scripts, validator:editing-host.deployed]
   # Each component is built on its own branch. Page builder only offers components the editing
   # host's code has, so each accepted component joins one integration branch, deployed at the

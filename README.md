@@ -3,6 +3,7 @@
 Home of **Launchworks**, Icreon's agentic implementation studio for SitecoreAI (working codename).
 
 - [Backend, architecture & build plan](docs/architecture/backend-plan.md)
+- [Organizations, roles and licensing](docs/architecture/multi-tenancy.md)
 - [Running the Control Center against the mock backend](docs/mock-backend.md)
 - [Deploying on Vercel](docs/deploy/vercel.md)
 - [Crawling large sites](docs/architecture/large-site-crawl.md)
@@ -25,19 +26,24 @@ is deployed (Postgres, the API image and the demo runner); see [Deploying on Ver
 
 ## Sign-in
 
-Locally the API is open and listens on localhost only. Anywhere else it requires GitHub sign-in and
-refuses to start without it:
+Locally the API is open and listens on localhost only (`LOCAL_ROLE=watcher` shows it as a Watcher
+sees it). Anywhere else it requires sign-in and refuses to start without it:
 
 ```bash
-AUTH=github
+AUTH=github                     # GitHub for OPERATORS, plus WorkOS when set; AUTH=workos: WorkOS only
 GITHUB_CLIENT_ID=...            # a GitHub OAuth app; callback: $PUBLIC_URL/auth/callback
 GITHUB_CLIENT_SECRET=...
-OPERATORS=login1,login2         # the only accounts allowed in
+OPERATORS=login1,login2         # GitHub accounts allowed in (Icreon's operators)
 GITHUB_ORG=icreon               # optional: also require active org membership (2FA lives there)
+WORKOS_CLIENT_ID=client_...     # WorkOS AuthKit: everyone else, by invitation; see docs/deploy/workos.md
+WORKOS_KEY=sk_...               # the WorkOS API key (WORKOS_API_KEY works too)
 SESSION_SECRET=...              # 32+ random characters
 PUBLIC_URL=https://api.example  # this API
 APP_URL=https://app.example     # the Control Center (CORS and post-sign-in redirect)
 ```
+
+Every signed-in request acts in one organization the person belongs to (`x-lw-organization` picks
+one); see [Organizations, roles and licensing](docs/architecture/multi-tenancy.md).
 
 The Control Center calls `GET /auth/me` to know who is signed in, sends people to
 `/auth/login?returnTo=...` when it gets a 401, and uses `POST /auth/logout`. Fetches and

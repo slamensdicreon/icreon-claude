@@ -9,7 +9,10 @@ import { expect, it } from 'vitest';
  */
 it('routes every API path prefix to the API service in vercel.json', () => {
   const root = join(__dirname, '..', '..', '..');
-  const source = readFileSync(join(root, 'apps/control-api/src/app.ts'), 'utf8');
+  // Every file that registers routes.
+  const source = ['app.ts', 'people.ts']
+    .map((f) => readFileSync(join(root, 'apps/control-api/src', f), 'utf8'))
+    .join('\n');
   const prefixes = new Set(
     [
       ...source.matchAll(

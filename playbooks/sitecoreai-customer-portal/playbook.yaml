@@ -1,6 +1,6 @@
 # Playbook manifest: what the team delivers, what intake collects, phases and gates. Roles live in
 # roles/*.yaml, tasks in plan.yaml. Platform facts (credentials, scopes, pitfalls) come from the
-# SitecoreAI platform pack in platforms/sitecoreai. Learned building the TASB member portal demo.
+# SitecoreAI platform pack in platforms/sitecoreai. Learned building an earlier member portal demo.
 id: sitecoreai-customer-portal
 version: 0.2.8
 name: Build a SitecoreAI customer portal
