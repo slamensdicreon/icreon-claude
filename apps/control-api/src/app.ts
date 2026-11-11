@@ -2109,6 +2109,53 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .send(zip(files));
   });
 
+  /**
+   * Everything a customer takes with them: the documents (zip), the build repository's code (a
+   * short-lived GitHub link: a large repository never passes through here) and the hosting
+   * project's name. Open during the license and for 90 days after it ends.
+   */
+  app.get<P>('/projects/:id/export', async (req) => {
+    const s = known(req.params.id);
+    const org = req.organization;
+    let availableUntil: string | null = null;
+    if (org && license) {
+      const st = await license.standing(org.id);
+      if (st.kind === 'ended') {
+        availableUntil = st.exportUntil;
+        if (now() > Date.parse(st.exportUntil))
+          throw new CommandError(
+            410,
+            'export_closed',
+            `Export closed on ${st.exportUntil.slice(0, 10)}, 90 days after the license ended.`,
+          );
+      }
+    }
+    let repository: {
+      repo: string;
+      branch: string;
+      url: string | null;
+      detail: string | null;
+    } | null = null;
+    if (s.buildRepo) {
+      const { repo, branch } = s.buildRepo;
+      try {
+        if (!deps.github) throw new Error('The GitHub App is not set up here.');
+        repository = { repo, branch, url: await deps.github.archiveUrl(s.buildRepo), detail: null };
+      } catch (err) {
+        repository = { repo, branch, url: null, detail: (err as Error).message };
+      }
+    }
+    const hosting = s.intake?.target.hostingProject;
+    return {
+      project: { id: s.projectId, name: s.name },
+      documents: `/projects/${s.projectId}/documents.zip`,
+      activity: `/projects/${s.projectId}/activity.csv?view=all`,
+      repository,
+      hostingProject: typeof hosting === 'string' ? hosting : null,
+      availableUntil,
+    };
+  });
+
   app.get<P & { Querystring: Record<string, string> }>(
     '/projects/:id/activity.csv',
     async (req, reply) => {

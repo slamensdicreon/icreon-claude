@@ -208,6 +208,15 @@ describe('licenses', () => {
       standing: 'ended',
       exportUntil: new Date(T0 + 120 * DAY).toISOString(),
     });
+    // Export stays open: documents and the (missing) repository, until 90 days after the end.
+    const exported = await bob('GET', `/projects/${id}/export`);
+    expect(exported.status).toBe(200);
+    expect(exported.body).toMatchObject({
+      documents: `/projects/${id}/documents.zip`,
+      repository: null,
+      hostingProject: 'acme-site-website',
+      availableUntil: new Date(T0 + 120 * DAY).toISOString(),
+    });
     const check = await steve('GET', '/portfolio/licenses');
     expect(check.body.results).toEqual([
       { organizationId: acme.id, action: 'suspended', projects: [id] },
@@ -233,6 +242,11 @@ describe('licenses', () => {
       403,
     );
     const history = (await steve('GET', `/admin/organizations/${acme.id}/license`)).body.history;
+    // Long after a term that wasn't renewed, export closes.
+    await grant(acme.id, { projectsIncluded: 3, endsAt: new Date(T0 + 40 * DAY).toISOString() });
+    clock.now = T0 + 140 * DAY;
+    const closed = await bob('GET', `/projects/${id}/export`);
+    expect([closed.status, closed.body.error.code]).toEqual([410, 'export_closed']);
     expect(history.map((h: { kind: string }) => h.kind)).toEqual([
       'granted',
       'suspended',

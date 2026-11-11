@@ -641,6 +641,28 @@ export class GithubApp {
     throw new Error(`GitHub answered ${gone.status} deleting ${repo.repo}.`);
   }
 
+  /**
+   * A short-lived link (GitHub's own, valid minutes) to download a repository's code as a zip, so
+   * a large repository never passes through the API. Read access to that one repository only.
+   */
+  async archiveUrl(repo: Pick<BuildRepo, 'repo' | 'branch' | 'installationId'>): Promise<string> {
+    const token = await this.installationToken(repo.installationId, [repo.repo.split('/')[1]!], {
+      contents: 'read',
+    });
+    const res = await this.fetch(
+      `${this.api}/repos/${repo.repo}/zipball/${encodeURIComponent(repo.branch)}`,
+      {
+        headers: { ...this.headers(), authorization: `token ${token}` },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    const to = res.headers.get('location');
+    if (res.status < 300 || res.status >= 400 || !to)
+      throw new Error(`GitHub answered ${res.status} for ${repo.repo}'s archive.`);
+    return to;
+  }
+
   async installationToken(
     installationId: number,
     repositories?: string[],
