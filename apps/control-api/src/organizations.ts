@@ -115,6 +115,7 @@ const SUPER_ADMIN_ROUTES = [
   /^\/projects\/:id\/scenarios(\/|$)/,
   /^\/portfolio\/diagnostics$/,
   /^\/portfolio\/watchdog$/,
+  /^\/portfolio\/licenses$/,
 ];
 export const isSuperAdminRoute = (url: string) => SUPER_ADMIN_ROUTES.some((r) => r.test(url));
 

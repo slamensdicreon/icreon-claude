@@ -12,6 +12,7 @@ import { Knowledge } from './Knowledge';
 import { Playbooks } from './Playbooks';
 import { Rules } from './Rules';
 import { PeoplePanel } from '../settings/PeoplePanel';
+import { LicensePanel } from '../settings/LicensePanel';
 import { Organizations } from './Organizations';
 import { Lead, usePortfolio } from './shared';
 import s from './manage.module.css';
@@ -42,6 +43,7 @@ export function ManagePage({ page }: { page: Page }) {
             along.
           </Lead>
           <PeoplePanel />
+          <LicensePanel />
         </div>
       )}
       {page === 'organizations' && <Organizations />}

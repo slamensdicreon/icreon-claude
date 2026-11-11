@@ -9,3 +9,4 @@ export * from './rules';
 export * from './knowledge';
 export * from './tombstones';
 export * from './organizations';
+export * from './licenses';

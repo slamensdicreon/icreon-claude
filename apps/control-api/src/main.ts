@@ -27,6 +27,8 @@ import {
   githubSubject,
   MemoryOrganizationStore,
   PostgresOrganizationStore,
+  MemoryLicenseStore,
+  PostgresLicenseStore,
   workosSubject,
   type OrganizationStore,
   type SecretVault,
@@ -516,6 +518,8 @@ if (auth)
     if (!mine.some((m) => m.organizationId === DEFAULT_ORGANIZATION))
       await organizations.setMember(DEFAULT_ORGANIZATION, subject, 'director', 'OPERATORS');
   }
+// Each organization's license, beside the organizations; memory for local runs.
+const licenses = opened.sql ? new PostgresLicenseStore(opened.sql) : new MemoryLicenseStore();
 // The team's knowledge across projects; the worker seeds it too, and seeding adds only what's new.
 const knowledge = opened.sql
   ? new PostgresKnowledgeStore(opened.sql)
@@ -600,6 +604,7 @@ const app = await buildApp({
     organizations,
   }),
   organizations,
+  licenses,
   sendInvitation: workos ? workosInvitations({ apiKey: workos.apiKey }) : null,
   github,
   hosting: hosting

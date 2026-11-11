@@ -95,7 +95,7 @@ const OPEN_PATHS = ['/health', '/auth/', '/integrations/github/installed'];
 /** The path alone, without its query: routes are matched exactly, not by prefix. */
 const pathOf = (url: string) => url.split('?')[0]!;
 // What a scheduled call (Vercel Cron) may reach with the cron secret.
-const CRON_PATHS = ['/portfolio/watchdog', '/portfolio/purge-due'];
+const CRON_PATHS = ['/portfolio/watchdog', '/portfolio/purge-due', '/portfolio/licenses'];
 
 /**
  * Sign-in: GitHub for Icreon's operators, and WorkOS for everyone else (and for them too). Only
