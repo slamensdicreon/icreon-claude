@@ -1,6 +1,7 @@
 /*
  * Every project, made to hold 30 to 50 (the Projects at Scale design). Views across the top
- * (Active, Needs you, Running…), then the platform and the playbook, then how to group; search
+ * (Active, Needs you, Running…); below them one toolbar line holds the search and compact menus
+ * for the platform, the playbook and how to group, so the projects start high on the page; search
  * matches the name, the client and the playbook. Groups fold, and their heads carry the count,
  * the spend and what's yours. The choices stay for this browser; the search doesn't.
  */
@@ -14,6 +15,7 @@ import { Bar, Button, Chips, hueOf, Panel } from '../../ui/cypher/parts';
 import s from './dashboard.module.css';
 import { BulkBar } from './BulkActions';
 import { DeletedProjects } from './DeletedProjects';
+import { Facet } from './Facet';
 import { platformOf, playbookShort } from './projectNames';
 
 export type View = 'active' | 'yours' | 'running' | 'intake' | 'paused' | 'archived' | 'all';
@@ -121,8 +123,6 @@ export function ProjectsTable({ o, refresh }: { o: PortfolioOverview; refresh: (
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
-  // On a phone the filters fold behind a button, so the projects come first.
-  const [filtersOpen, setFiltersOpen] = useState(false);
   useEffect(() => {
     const reload = () => setPrefsState(loadPrefs());
     window.addEventListener(VIEW_EVENT, reload);
@@ -275,65 +275,53 @@ export function ProjectsTable({ o, refresh }: { o: PortfolioOverview; refresh: (
           </span>
         }
       >
-        <div className={s.filters} data-open={filtersOpen || undefined}>
-          <div className={s.searchRow}>
-            <label className={s.search}>
-              <Icon name="search" size={18} />
-              <input
-                className="type-body-small"
-                type="search"
-                placeholder="Search projects, clients, playbooks"
-                aria-label="Search projects"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              className={`${s.filtersToggle} type-button`}
-              aria-expanded={filtersOpen}
-              onClick={() => setFiltersOpen((v) => !v)}
-            >
-              Filters
-              {(filtered && !query.trim()) || prefs.group !== DEFAULTS.group ? ' •' : ''}
-            </button>
-          </div>
-          <div className={s.filterRow}>
-            <span className={`${s.filterLabel} type-label`}>Platform</span>
-            <Chips<string>
-              label="Platform"
-              value={model.platformKey}
-              onChange={(platform) => setPrefs({ platform, playbook: 'all' })}
-              options={[
-                { value: 'all', label: 'All', count: model.inViewCount },
-                ...model.platforms,
-              ]}
+        <div className={s.filters}>
+          <label className={s.search}>
+            <Icon name="search" size={18} />
+            <input
+              className="type-body-small"
+              type="search"
+              placeholder="Search projects, clients, playbooks"
+              aria-label="Search projects"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
             />
-          </div>
-          <div className={s.filterRow}>
-            <span className={`${s.filterLabel} type-label`}>Playbook</span>
-            <Chips<string>
+          </label>
+          <div className={s.facets}>
+            {/* One platform has nothing to choose between. */}
+            {model.platforms.length > 1 && (
+              <Facet<string>
+                label="Platform"
+                value={model.platformKey}
+                isDefault={model.platformKey === 'all'}
+                onChange={(platform) => setPrefs({ platform, playbook: 'all' })}
+                options={[
+                  { value: 'all', label: 'All', count: model.inViewCount },
+                  ...model.platforms,
+                ]}
+              />
+            )}
+            <Facet<string>
               label="Playbook"
               value={model.playbookKey}
+              isDefault={model.playbookKey === 'all'}
               onChange={(playbook) => setPrefs({ playbook })}
               options={[
                 { value: 'all', label: 'All', count: model.onPlatformCount },
                 ...model.playbooks,
               ]}
             />
-          </div>
-          <div className={s.filterRow}>
-            <span className={`${s.filterLabel} type-label`}>Group by</span>
-            <Chips<Group>
+            <Facet<Group>
               label="Group by"
               value={prefs.group}
+              isDefault={prefs.group === DEFAULTS.group}
               onChange={(group) => setPrefs({ group })}
               options={GROUPS}
             />
             {filtered && (
-              <Button kind="secondary" onClick={clear}>
+              <button type="button" className={`${s.linkButton} type-body-small`} onClick={clear}>
                 Clear filters
-              </Button>
+              </button>
             )}
           </div>
         </div>
