@@ -116,6 +116,7 @@ import { deletionReadiness, purgeDue, purgeProject, type PurgeDeps } from './pur
 import { escalationsCsv } from './escalations-csv';
 import { redactForWatcher, redactJsonForWatcher } from './redact';
 import { registerPeople, type SendInvitation } from './people';
+import { registerAdmin } from './admin';
 import {
   LOCAL_SUBJECT,
   organizationOf,
@@ -320,6 +321,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       orgs,
       signedIn: Boolean(deps.auth),
       sendInvitation: deps.sendInvitation ?? null,
+      secureCookies: deps.auth?.secureCookies,
+    });
+    registerAdmin(app, {
+      orgs,
+      signedIn: Boolean(deps.auth),
+      sendInvitation: deps.sendInvitation ?? null,
+      projects: async () => {
+        await projections.catchUpAll();
+        return projections.all();
+      },
     });
   }
   /** The request's organization's projects (every project for system calls and without orgs). */

@@ -186,6 +186,18 @@
       }
     },
     {
+      "source": "/admin",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/admin/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/organization",
       "destination": {
         "service": "api"

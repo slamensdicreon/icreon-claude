@@ -7,10 +7,20 @@ export interface Role {
   role: 'director' | 'watcher';
   /** One of Icreon's administrators (a Director of Icreon): the pages every licensee shares. */
   superAdmin: boolean;
+  /** The organization the app shows. */
+  organizationId: string | null;
+  /** Every organization the person belongs to, for the switcher. */
+  organizations: { id: string; name: string; role: 'director' | 'watcher' }[];
 }
 
 // Without organizations (an older API, or a local run) the person runs everything, as before.
-let current: Role = { organization: null, role: 'director', superAdmin: true };
+let current: Role = {
+  organization: null,
+  role: 'director',
+  superAdmin: true,
+  organizationId: null,
+  organizations: [],
+};
 
 export const role = (): Role => current;
 export const isWatching = () => current.role === 'watcher';
@@ -28,13 +38,21 @@ export async function loadRole(api: string): Promise<Role> {
     const res = await fetch(`${api}/me/organizations`, { credentials: 'include' });
     if (res.ok) {
       const body = (await res.json()) as {
-        current: { name: string; role: 'director' | 'watcher'; superAdmin?: boolean } | null;
+        current: {
+          id: string;
+          name: string;
+          role: 'director' | 'watcher';
+          superAdmin?: boolean;
+        } | null;
+        organizations?: { id: string; name: string; role: 'director' | 'watcher' }[];
       };
       if (body.current)
         current = {
           organization: body.current.name,
           role: body.current.role,
           superAdmin: body.current.superAdmin ?? false,
+          organizationId: body.current.id,
+          organizations: body.organizations ?? [],
         };
     }
   } catch {

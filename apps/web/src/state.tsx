@@ -132,6 +132,7 @@ export interface NewProjectIntent {
 
 /** Pages above any one project, opened from the header's menu. */
 export type ManagePage =
+  | 'organizations'
   | 'people'
   | 'settings'
   | 'connections'
@@ -144,6 +145,7 @@ export type ManagePage =
 /** The header menu's pages: each one's title and what it is for. */
 export const MANAGE: [ManagePage, string, string][] = [
   ['people', 'People', 'Who can see and run your projects, and invitations'],
+  ['organizations', 'Organizations', 'Every customer on Launchworks, and starting a new one'],
   ['settings', 'Global settings', 'The GitHub App every project commits through'],
   ['connections', 'Connections', 'Tenants shared by the sites on them'],
   ['playbooks', 'Playbooks', 'What a new project can run'],

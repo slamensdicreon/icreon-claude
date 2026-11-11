@@ -28,6 +28,21 @@ declare module 'fastify' {
 
 /** Picks one of the caller's organizations (by id or slug); the first one otherwise. */
 export const ORGANIZATION_HEADER = 'x-lw-organization';
+/**
+ * The organization the person chose in the Control Center. A cookie, not the header, because the
+ * live stream (an EventSource) can't send headers. A choice that no longer holds is ignored.
+ */
+export const ORGANIZATION_COOKIE = 'lw_org';
+
+/** One cookie's value from the request, if present. */
+export function cookieOf(req: FastifyRequest, name: string): string | null {
+  for (const part of (req.headers.cookie ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name)
+      return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+}
 /** Who a local run without sign-in is. */
 export const LOCAL_SUBJECT = 'local';
 /** The scheduled caller the sign-in hook lets through with CRON_SECRET. */
@@ -43,6 +58,8 @@ export const WATCHER_ROUTES = new Set([
   'GET /me/preferences',
   // Their own screen modes, not the project's.
   'PUT /me/preferences',
+  // Which of their organizations they look at.
+  'PUT /me/organization',
   'GET /health',
   'GET /projects',
   'GET /playbooks',
@@ -82,6 +99,7 @@ export const WATCHER_ROUTES = new Set([
  * every licensee's playbooks learn from, the GitHub App, and the system's diagnostics and tests.
  */
 const SUPER_ADMIN_ROUTES = [
+  /^\/admin(\/|$)/,
   /^\/integrations\/github(\/manifest|\/callback)?$/,
   /^\/rules(\/|$)/,
   /^\/knowledge(\/|$)/,
@@ -133,9 +151,10 @@ export function registerOrganizationScope(
     const mine = await orgs.membershipsOf(subject);
     const raw = req.headers[ORGANIZATION_HEADER];
     const wanted = typeof raw === 'string' && raw ? raw : null;
-    const m = wanted
-      ? mine.find((x) => x.organizationId === wanted || x.organization.slug === wanted)
-      : mine[0];
+    const chosen = cookieOf(req, ORGANIZATION_COOKIE);
+    const named = (key: string) =>
+      mine.find((x) => x.organizationId === key || x.organization.slug === key);
+    const m = wanted ? named(wanted) : ((chosen && named(chosen)) ?? mine[0]);
     if (!m)
       return wanted
         ? deny(reply, 403, 'not_a_member', `You are not a member of "${wanted}".`)
