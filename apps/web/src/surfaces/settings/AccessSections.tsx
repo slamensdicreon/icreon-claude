@@ -4,7 +4,7 @@
  */
 import type { IntakeCredentialSpec } from '@lw/contracts';
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { get, messageOf, post, put } from '../../lib/api';
+import { get, messageOf, post, postFor, put } from '../../lib/api';
 import { stamp } from '../../lib/fmt';
 import { useApp, useTz } from '../../state';
 import { Facts, Field, TextInput } from '../../ui/cypher/forms';
@@ -130,6 +130,44 @@ export function CredentialsPanel({
   );
 }
 
+/**
+ * A link for the client's own administrator, who can create this credential when the Director
+ * can't: copied to send, good for 7 days and one save.
+ */
+function HandoffAction({ credentialId, system }: { credentialId: string; system: string }) {
+  const { projectId, toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    try {
+      const r = await postFor<{ url: string; expiresAt: string }>(
+        `/projects/${projectId}/credentials/${credentialId}/handoff`,
+        {},
+      );
+      await navigator.clipboard.writeText(r.url).catch(() => {});
+      toast({
+        title: 'Link copied',
+        detail: `Send it to whoever can create the ${system}. It works once, for 7 days; Launchworks checks it and seals it, and nobody sees it.`,
+        tone: 'done',
+      });
+    } catch (err) {
+      toast(messageOf(err, 'Could not make the link.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Action
+      kind="quiet"
+      disabled={busy}
+      onClick={() => void send()}
+      label={`Send ${system} to their admin`}
+    >
+      Send to their admin
+    </Action>
+  );
+}
+
 function CredentialLine({
   c,
   spec,
@@ -195,6 +233,7 @@ function CredentialLine({
                 {act.editLabel}
               </Action>
             )}
+            {act.canEdit && <HandoffAction credentialId={c.credentialId} system={c.system} />}
           </Actions>
         </td>
       </tr>

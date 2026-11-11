@@ -16,6 +16,21 @@ const MONEY_LINES: Record<string, string> = {
   'budget.updated': 'Spend recorded',
 };
 
+/** Cypher's lines speak to the Director; a Watcher reads them about the Director. */
+const VOICE = new Set(['text', 'emphasis', 'read', 'closing', 'subtitle']);
+const ABOUT_THE_DIRECTOR: [RegExp, string][] = [
+  [/\bOne thing is yours\b/g, 'One thing waits on the Director'],
+  [/\b(\w+) things are yours\b/g, '$1 things wait on the Director'],
+  [/\bNothing needs you\b/g, 'Nothing waits on the Director'],
+  [/\bnothing needs you\b/g, 'nothing waits on the Director'],
+  [/\bneeds you\b/g, 'needs the Director'],
+  [/\bneed you\b/g, 'need the Director'],
+  [/\bis yours\b/g, "is the Director's"],
+  [/\bare yours\b/g, "are the Director's"],
+];
+const aboutTheDirector = (t: string) =>
+  ABOUT_THE_DIRECTOR.reduce((x, [re, to]) => x.replace(re, to), t);
+
 const zeroed = (v: unknown): unknown =>
   typeof v === 'number'
     ? 0
@@ -34,6 +49,7 @@ export function redactForWatcher(value: unknown): unknown {
     if (MONEY.has(k) && typeof v === 'number') out[k] = 0;
     else if (AMOUNTS.has(k) && v && typeof v === 'object') out[k] = zeroed(v);
     else if (SECRET_DETAIL.has(k) && typeof v === 'string') out[k] = '';
+    else if (VOICE.has(k) && typeof v === 'string') out[k] = aboutTheDirector(v);
     else out[k] = redactForWatcher(v);
   }
   const type = typeof o.type === 'string' ? o.type : null;

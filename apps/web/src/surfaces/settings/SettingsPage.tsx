@@ -13,6 +13,7 @@ import { usePlaybooks } from '../intake/shared';
 import { CredentialsPanel, GithubAppPanel } from './AccessSections';
 import { BudgetPanel } from './BudgetSection';
 import { DangerZone } from './DangerZone';
+import { ExportPanel } from './ExportPanel';
 import {
   AutonomyPanel,
   EscalationPolicyPanel,
@@ -161,6 +162,14 @@ export function SettingsPage() {
     left: [<ConventionsPanel key="conventions" conventions={snapshot.conventions} />],
     right: [<CapabilityGapsPanel key="gaps" gaps={snapshot.capabilityGaps} />],
   });
+
+  if (live)
+    groups.push({
+      id: 'export',
+      label: 'Take it with you',
+      solo: true,
+      full: [<ExportPanel key="export" projectId={p.id} />],
+    });
 
   groups.push({
     id: 'danger',

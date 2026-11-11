@@ -36,7 +36,7 @@ export function Playbooks({ projects }: { projects: PortfolioItem[] }) {
 
 function Entity({ group, projects }: { group: CatalogGroup; projects: PortfolioItem[] }) {
   const { entity, playbooks } = group;
-  const ready = playbooks.filter((p) => p.status === 'ready' && p.summary);
+  const ready = playbooks.filter((p) => p.status !== 'coming' && p.summary);
   const coming = playbooks.filter((p) => p.status === 'coming');
   const headingId = `entity-${entity.id}`;
   return (

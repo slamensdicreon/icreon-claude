@@ -24,6 +24,8 @@ interface People {
     since: string;
     you: boolean;
     icreon: boolean;
+    /** Icreon's support access: when it ends. */
+    until: string | null;
   }[];
   invitations: { id: string; email: string; role: Role; invitedBy: string; expiresAt: string }[];
 }
@@ -112,7 +114,8 @@ export function PeoplePanel() {
                   </span>
                   <span className={`${s.quiet} type-meta`}>
                     {roleName(m.role)}
-                    {m.icreon ? ' · Icreon' : ''} ·{' '}
+                    {m.icreon ? ' · Icreon' : ''}
+                    {m.until ? ` · Icreon support until ${stamp(m.until, tz)}` : ''} ·{' '}
                     {m.via === 'github' ? 'GitHub' : m.via === 'email' ? 'Email' : 'Local run'} ·
                     since {stamp(m.since, tz)}
                   </span>

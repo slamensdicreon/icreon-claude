@@ -23,6 +23,8 @@ export interface Membership {
   createdAt: string;
   /** How the member is shown: their email or GitHub login. */
   label: string | null;
+  /** When the membership ends on its own (Icreon's support access); null: it doesn't. */
+  expiresAt: string | null;
 }
 
 /** An open invitation: someone asked, by email, to join an organization in a role. */
@@ -49,13 +51,17 @@ export interface OrganizationStore {
   /** The organizations a person belongs to, oldest organization first. */
   membershipsOf(subject: string): Promise<(Membership & { organization: Organization })[]>;
   members(organizationId: string): Promise<Membership[]>;
-  /** Adds a person, or changes their role (and label, when given). */
+  /**
+   * Adds a person, or changes their role (and label, when given). With `expiresAt`, the
+   * membership ends on its own then; without, it lasts.
+   */
   setMember(
     organizationId: string,
     subject: string,
     role: MemberRole,
     addedBy: string,
     label?: string,
+    expiresAt?: Date | null,
   ): Promise<void>;
   removeMember(organizationId: string, subject: string): Promise<void>;
   /** Invites an email address; an open invitation for the same address is replaced. */
@@ -116,6 +122,7 @@ interface MemberRow {
   added_by: string;
   created_at: string | Date;
   label?: string | null;
+  expires_at?: string | Date | null;
 }
 interface InvitationRow {
   id: string;
@@ -140,6 +147,7 @@ const member = (r: MemberRow): Membership => ({
   addedBy: r.added_by,
   createdAt: iso(r.created_at),
   label: r.label ?? null,
+  expiresAt: r.expires_at ? iso(r.expires_at) : null,
 });
 const invitation = (r: InvitationRow): Invitation => ({
   id: r.id,
@@ -196,9 +204,9 @@ export class PostgresOrganizationStore implements OrganizationStore {
       MemberRow & { name: string; slug: string; org_created_at: string | Date }
     >(
       `SELECT m.organization_id, m.subject, m.role, m.added_by, m.created_at, m.label,
-              o.name, o.slug, o.created_at AS org_created_at
+              m.expires_at, o.name, o.slug, o.created_at AS org_created_at
          FROM lw_memberships m JOIN lw_organizations o ON o.id = m.organization_id
-        WHERE m.subject = $1
+        WHERE m.subject = $1 AND (m.expires_at IS NULL OR m.expires_at > now())
         ORDER BY o.created_at, o.id`,
       [subject],
     );
@@ -215,8 +223,10 @@ export class PostgresOrganizationStore implements OrganizationStore {
 
   async members(organizationId: string): Promise<Membership[]> {
     const { rows } = await this.sql.query<MemberRow>(
-      `SELECT organization_id, subject, role, added_by, created_at, label FROM lw_memberships
-        WHERE organization_id = $1 ORDER BY created_at, subject`,
+      `SELECT organization_id, subject, role, added_by, created_at, label, expires_at
+         FROM lw_memberships
+        WHERE organization_id = $1 AND (expires_at IS NULL OR expires_at > now())
+        ORDER BY created_at, subject`,
       [organizationId],
     );
     return rows.map(member);
@@ -228,14 +238,16 @@ export class PostgresOrganizationStore implements OrganizationStore {
     role: MemberRole,
     addedBy: string,
     label?: string,
+    expiresAt?: Date | null,
   ) {
     checkRole(role);
     await this.sql.query(
-      `INSERT INTO lw_memberships (organization_id, subject, role, added_by, label)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO lw_memberships (organization_id, subject, role, added_by, label, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (organization_id, subject) DO UPDATE
-         SET role = EXCLUDED.role, label = COALESCE(EXCLUDED.label, lw_memberships.label)`,
-      [organizationId, subject, role, addedBy, label ?? null],
+         SET role = EXCLUDED.role, label = COALESCE(EXCLUDED.label, lw_memberships.label),
+             expires_at = EXCLUDED.expires_at`,
+      [organizationId, subject, role, addedBy, label ?? null, expiresAt?.toISOString() ?? null],
     );
   }
 
@@ -400,13 +412,15 @@ export class MemoryOrganizationStore implements OrganizationStore {
   async membershipsOf(subject: string) {
     const orgs = await this.list();
     return orgs.flatMap((o) => {
-      const m = this.memberships.get(`${o.id}\n${subject}`);
+      const m = this.live(this.memberships.get(`${o.id}\n${subject}`));
       return m ? [{ ...m, organization: o }] : [];
     });
   }
 
   async members(organizationId: string): Promise<Membership[]> {
-    return [...this.memberships.values()].filter((m) => m.organizationId === organizationId);
+    return [...this.memberships.values()].filter(
+      (m) => m.organizationId === organizationId && this.live(m),
+    );
   }
 
   async setMember(
@@ -415,12 +429,13 @@ export class MemoryOrganizationStore implements OrganizationStore {
     role: MemberRole,
     addedBy: string,
     label?: string,
+    expiresAt?: Date | null,
   ) {
     checkRole(role);
     if (!this.orgs.has(organizationId))
       throw new OrganizationError(`No organization "${organizationId}".`);
     const key = `${organizationId}\n${subject}`;
-    const was = this.memberships.get(key);
+    const was = this.live(this.memberships.get(key));
     this.memberships.set(key, {
       organizationId,
       subject,
@@ -428,7 +443,13 @@ export class MemoryOrganizationStore implements OrganizationStore {
       addedBy: was?.addedBy ?? addedBy,
       createdAt: was?.createdAt ?? this.now().toISOString(),
       label: label ?? was?.label ?? null,
+      expiresAt: expiresAt?.toISOString() ?? null,
     });
+  }
+
+  /** A membership that hasn't ended. */
+  private live(m: Membership | undefined): Membership | undefined {
+    return m && (!m.expiresAt || m.expiresAt > this.now().toISOString()) ? m : undefined;
   }
 
   private open(i: Invitation & { closed: boolean }) {

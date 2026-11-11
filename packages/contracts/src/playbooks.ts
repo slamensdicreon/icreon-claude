@@ -101,6 +101,8 @@ export const PlaybookSummary = z.object({
   kept: z.array(z.string()).default([]),
   name: z.string(),
   description: z.string(),
+  /** In the organization's license: a playbook outside it is shown, not started. */
+  licensed: z.boolean().optional(),
   /** The entity (platform) the playbook runs on; the catalog groups playbooks by it. */
   platform: z.object({
     id: z.string(),

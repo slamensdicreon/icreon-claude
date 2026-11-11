@@ -88,6 +88,7 @@ import {
   type EventStore,
   type IntegrationStore,
   type KnowledgeStore,
+  type LicenseStore,
   type OrganizationStore,
   type Projections,
   type RuleStore,
@@ -116,6 +117,9 @@ import { deletionReadiness, purgeDue, purgeProject, type PurgeDeps } from './pur
 import { escalationsCsv } from './escalations-csv';
 import { redactForWatcher, redactJsonForWatcher } from './redact';
 import { registerPeople, type SendInvitation } from './people';
+import { registerAdmin } from './admin';
+import { registerLicenses } from './licenses';
+import { registerHandoff } from './handoff';
 import {
   LOCAL_SUBJECT,
   organizationOf,
@@ -246,6 +250,8 @@ export interface AppDeps {
   organizations?: OrganizationStore;
   /** Sends a new member's invitation email (WorkOS); without it, invitations wait for sign-in. */
   sendInvitation?: SendInvitation | null;
+  /** Each organization's license; without it (tests), nothing is limited. */
+  licenses?: LicenseStore;
 }
 
 /** What the worker reports about itself. */
@@ -304,6 +310,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   }
 
   const orgs = deps.organizations;
+  let license: ReturnType<typeof registerLicenses> | null = null;
   if (orgs) {
     // A local run's one operator is a Director of organization #1.
     if (!deps.auth && !(await orgs.membershipsOf(LOCAL_SUBJECT)).length)
@@ -320,7 +327,38 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       orgs,
       signedIn: Boolean(deps.auth),
       sendInvitation: deps.sendInvitation ?? null,
+      secureCookies: deps.auth?.secureCookies,
     });
+    registerAdmin(app, {
+      orgs,
+      signedIn: Boolean(deps.auth),
+      sendInvitation: deps.sendInvitation ?? null,
+      licenses: deps.licenses,
+      now: () => (deps.now ?? Date.now)(),
+      projects: async () => {
+        await projections.catchUpAll();
+        return projections.all();
+      },
+    });
+    if (deps.licenses)
+      license = registerLicenses(app, {
+        orgs,
+        licenses: deps.licenses,
+        projects: async () => {
+          await projections.catchUpAll();
+          return projections.all();
+        },
+        project: (id) => projections.get(id),
+        platformOf: (playbookId) =>
+          deps.intake?.playbooks().find((p) => p.id === playbookId)?.platform.id ?? null,
+        control: async (projectId, cmd) => {
+          const o = deps.commands(projectId);
+          if (!o) throw new Error(`No orchestrator for ${projectId}`);
+          await o.control(cmd);
+        },
+        signedIn: Boolean(deps.auth),
+        now: () => (deps.now ?? Date.now)(),
+      });
   }
   /** The request's organization's projects (every project for system calls and without orgs). */
   const mine = (req: FastifyRequest) => scoped(orgs, req, projections.all(), (s) => s.projectId);
@@ -465,6 +503,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
 
   app.get('/health', async () => ({ ok: true }));
+
+  registerHandoff(app, {
+    secret: deps.auth?.sessionSecret,
+    publicUrl: deps.auth?.publicUrl,
+    intake: deps.intake,
+    project: (id) => projections.get(id) ?? null,
+    catchUp: (id) => projections.catchUp(id),
+    now: () => (deps.now ?? Date.now)(),
+  });
 
   const github = (reply: FastifyReply) => {
     if (!deps.github) {
@@ -1325,10 +1372,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // The playbooks a new project can run: what each team delivers and what its intake collects.
-  app.get('/playbooks', async (_req, reply) => {
+  app.get('/playbooks', async (req, reply) => {
     const service = intake(reply);
     if (!service) return;
-    return service.playbooks();
+    // Every playbook stays readable; those outside the organization's license say so.
+    const licensed = license ? await license.licensedPlaybooks(req) : () => true;
+    return service.playbooks().map((p) => ({ ...p, licensed: licensed(p.id, p.platform.id) }));
   });
 
   app.post('/intake/verify', async (req, reply) => {
@@ -1340,7 +1389,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post('/projects', async (req, reply) => {
     const service = intake(reply);
     if (!service) return;
-    const projectId = await service.create(ProjectIntake.parse(req.body), organizationOf(req));
+    const input = ProjectIntake.parse(req.body);
+    await license?.mayCreate(req, input.playbookId);
+    const projectId = await service.create(input, organizationOf(req));
     await projections.catchUp(projectId);
     return reply.status(201).send({ projectId, canStart: service.canStart });
   });
@@ -2061,6 +2112,53 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .send(zip(files));
   });
 
+  /**
+   * Everything a customer takes with them: the documents (zip), the build repository's code (a
+   * short-lived GitHub link: a large repository never passes through here) and the hosting
+   * project's name. Open during the license and for 90 days after it ends.
+   */
+  app.get<P>('/projects/:id/export', async (req) => {
+    const s = known(req.params.id);
+    const org = req.organization;
+    let availableUntil: string | null = null;
+    if (org && license) {
+      const st = await license.standing(org.id);
+      if (st.kind === 'ended') {
+        availableUntil = st.exportUntil;
+        if (now() > Date.parse(st.exportUntil))
+          throw new CommandError(
+            410,
+            'export_closed',
+            `Export closed on ${st.exportUntil.slice(0, 10)}, 90 days after the license ended.`,
+          );
+      }
+    }
+    let repository: {
+      repo: string;
+      branch: string;
+      url: string | null;
+      detail: string | null;
+    } | null = null;
+    if (s.buildRepo) {
+      const { repo, branch } = s.buildRepo;
+      try {
+        if (!deps.github) throw new Error('The GitHub App is not set up here.');
+        repository = { repo, branch, url: await deps.github.archiveUrl(s.buildRepo), detail: null };
+      } catch (err) {
+        repository = { repo, branch, url: null, detail: (err as Error).message };
+      }
+    }
+    const hosting = s.intake?.target.hostingProject;
+    return {
+      project: { id: s.projectId, name: s.name },
+      documents: `/projects/${s.projectId}/documents.zip`,
+      activity: `/projects/${s.projectId}/activity.csv?view=all`,
+      repository,
+      hostingProject: typeof hosting === 'string' ? hosting : null,
+      availableUntil,
+    };
+  });
+
   app.get<P & { Querystring: Record<string, string> }>(
     '/projects/:id/activity.csv',
     async (req, reply) => {
@@ -2298,6 +2396,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const s = known(id);
     if (!s.deletion)
       throw new CommandError(409, 'no_deletion', `${s.name} isn't scheduled for deletion.`);
+    // Kept after all, it takes its place in the license back: there must be one free.
+    if (s.playbook) await license?.mayCreate(req, s.playbook.id);
     const by = operatorActor(req);
     await store.append(id, [
       {

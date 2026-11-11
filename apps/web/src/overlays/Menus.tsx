@@ -1,8 +1,9 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ProjectIcon } from '../ui/project-icon';
 import { showActiveProjects } from '../surfaces/dashboard/ProjectsTable';
-import { messageOf, post, postFor } from '../lib/api';
+import { get, messageOf, post, postFor } from '../lib/api';
 import { isWatching, role } from '../lib/role';
+import { switchTo } from '../surfaces/manage/Organizations';
 import { live } from '../lib/live';
 import { MANAGE, useApp, useProjectResource, type ManagePage, type Surface } from '../state';
 import { Icon, type IconName } from '../theme/icons';
@@ -232,6 +233,7 @@ export function ProjectMenu() {
 /** The header's menu, top right: the pages above any one project. */
 /** Icreon's own pages: what every licensee shares, and the system itself. */
 const ICREON_ONLY = new Set<ManagePage>([
+  'organizations',
   'settings',
   'in-force',
   'rules',
@@ -275,6 +277,13 @@ export function AccountMenu() {
   const { me, manage, closeOverlay, toast } = useApp();
   const r = role();
   const [leaving, setLeaving] = useState(false);
+  // Read when the menu opens: an organization made or joined since the app loaded shows up.
+  const [orgs, setOrgs] = useState(r.organizations);
+  useEffect(() => {
+    get<{ organizations: typeof r.organizations }>('/me/organizations')
+      .then((x) => setOrgs(x.organizations))
+      .catch(() => {});
+  }, []);
   // A local run has no sign-in to leave.
   const signedIn = Boolean(me.login && me.login !== 'local');
   const signOut = async () => {
@@ -297,6 +306,29 @@ export function AccountMenu() {
             ? ` · ${r.role === 'watcher' ? 'Watcher' : 'Director'} of ${r.organization}`
             : ''}
         </h3>
+        {orgs.length > 1 &&
+          orgs.map((o) => (
+            <button
+              key={o.id}
+              role="menuitemradio"
+              aria-checked={o.id === r.organizationId}
+              className={s.row}
+              onClick={() => {
+                if (o.id === r.organizationId) return closeOverlay();
+                void switchTo(o.id).catch((err) =>
+                  toast(messageOf(err, 'Could not switch organization.')),
+                );
+              }}
+            >
+              <span className={s.rowText}>
+                <span className="type-body-small">
+                  {o.name}
+                  {o.id === r.organizationId ? ' ✓' : ''}
+                </span>
+                <span className="type-meta">{o.role === 'watcher' ? 'Watcher' : 'Director'}</span>
+              </span>
+            </button>
+          ))}
         {!isWatching() && (
           <button
             role="menuitem"

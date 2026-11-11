@@ -54,18 +54,25 @@ export function EntityStep({
   onPick: (id: string) => void;
 }) {
   const tiles: Tile<string>[] = groups.map((g) => {
-    const coming = g.entity.status !== 'ready';
+    const coming = g.entity.status === 'coming';
+    const locked = g.entity.status === 'locked';
     return {
       value: g.entity.id,
       eyebrow: g.entity.vendor,
       title: g.entity.name,
       body: g.entity.description,
-      tag: coming ? 'Coming soon' : undefined,
-      disabled: coming,
+      tag: coming ? 'Coming soon' : locked ? 'Not in your license' : undefined,
+      disabled: coming || locked,
       foot: (
         <span className={s.lines}>
           <span>{g.entity.category}</span>
-          <span>{coming ? 'On the roadmap: readable now, runnable later' : readiness(g)}</span>
+          <span>
+            {coming
+              ? 'On the roadmap: readable now, runnable later'
+              : locked
+                ? 'Ask Icreon to add it to your license'
+                : readiness(g)}
+          </span>
         </span>
       ),
     };
@@ -95,14 +102,15 @@ export function PlaybookStep({
   onPick: (id: string) => void;
 }) {
   const tiles: Tile<string>[] = (entity?.playbooks ?? []).map((p) => {
-    const coming = p.status !== 'ready';
+    const coming = p.status === 'coming';
+    const locked = p.status === 'locked';
     const sum = p.summary;
     return {
       value: p.id,
       eyebrow: entity?.entity.name ?? '',
-      tag: coming ? 'Coming soon' : 'Ready',
+      tag: coming ? 'Coming soon' : locked ? 'Not in your license' : 'Ready',
       title: p.name,
-      disabled: coming,
+      disabled: coming || locked,
       body: (
         <>
           <span className={s.tileText}>{sum ? sum.charter.mission : p.description}</span>
@@ -119,7 +127,9 @@ export function PlaybookStep({
       ),
       foot: coming
         ? 'On the roadmap: readable now, runnable later'
-        : `Version ${sum?.version ?? ''}`,
+        : locked
+          ? 'Ask Icreon to add it to your license'
+          : `Version ${sum?.version ?? ''}`,
     };
   });
   return (

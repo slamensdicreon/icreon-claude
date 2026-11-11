@@ -12,8 +12,11 @@ export interface CatalogEntity {
   vendor: string;
   category: string;
   description: string;
-  /** `ready` when at least one playbook can run today. */
-  status: 'ready' | 'coming';
+  /**
+   * `ready` when at least one playbook can run today; `locked` when it can, but not under the
+   * organization's license.
+   */
+  status: 'ready' | 'coming' | 'locked';
 }
 
 export interface CatalogPlaybook {
@@ -21,7 +24,8 @@ export interface CatalogPlaybook {
   entityId: string;
   name: string;
   description: string;
-  status: 'ready' | 'coming';
+  /** `locked`: it runs today, but isn't in the organization's license. */
+  status: 'ready' | 'coming' | 'locked';
   /** The API's summary, for a playbook that can run today. */
   summary: PlaybookSummary | null;
 }
@@ -426,10 +430,13 @@ export function catalogGroups(api: PlaybookSummary[]): CatalogGroup[] {
       entityId: p.platform.id,
       name: p.name,
       description: p.description,
-      status: 'ready',
+      status: p.licensed === false ? 'locked' : 'ready',
       summary: p,
     });
   }
+  // An entity none of whose playbooks are licensed is locked as a whole.
+  for (const g of groups)
+    if (g.playbooks.every((p) => p.status === 'locked')) g.entity.status = 'locked';
   for (const e of ROADMAP_ENTITIES) {
     if (!groups.some((g) => g.entity.id === e.id))
       groups.push({ entity: { ...e, status: 'coming' }, playbooks: [] });

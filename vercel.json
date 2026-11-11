@@ -186,6 +186,24 @@
       }
     },
     {
+      "source": "/handoff/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/admin",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/admin/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/organization",
       "destination": {
         "service": "api"
@@ -233,6 +251,10 @@
     {
       "path": "/portfolio/purge-due",
       "schedule": "41 7 * * *"
+    },
+    {
+      "path": "/portfolio/licenses",
+      "schedule": "17 * * * *"
     }
   ]
 }

@@ -2,7 +2,7 @@ import { DEFAULT_ORGANIZATION, MEMBER_ROLES, type OrganizationStore } from '@lw/
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { CommandError } from '@lw/domain';
-import { subjectOf } from './organizations';
+import { ORGANIZATION_COOKIE, subjectOf } from './organizations';
 
 /** How long an invitation stays open (WorkOS's own default). */
 export const INVITATION_DAYS = 7;
@@ -52,7 +52,13 @@ const ChangeRole = z.object({ role: z.enum(MEMBER_ROLES as ['director', 'watcher
  */
 export function registerPeople(
   app: FastifyInstance,
-  deps: { orgs: OrganizationStore; signedIn: boolean; sendInvitation: SendInvitation | null },
+  deps: {
+    orgs: OrganizationStore;
+    signedIn: boolean;
+    sendInvitation: SendInvitation | null;
+    /** Cookies only over HTTPS (deployments); off for local runs. */
+    secureCookies?: boolean;
+  },
 ): void {
   const { orgs } = deps;
   const here = (req: FastifyRequest) => {
@@ -89,6 +95,30 @@ export function registerPeople(
     return { org, target };
   };
 
+  // Which of their organizations the Control Center shows: kept in a cookie, which the live stream
+  // sends too. Only an organization the person belongs to.
+  app.put('/me/organization', async (req, reply) => {
+    const { id } = z.object({ id: z.string().min(1).max(80) }).parse(req.body ?? {});
+    const subject = subjectOf(req, deps.signedIn);
+    const m = subject
+      ? (await orgs.membershipsOf(subject)).find((x) => x.organizationId === id)
+      : undefined;
+    if (!m)
+      throw new CommandError(404, 'unknown_organization', 'You are not a member of that one.');
+    reply.header(
+      'set-cookie',
+      [
+        `${ORGANIZATION_COOKIE}=${encodeURIComponent(m.organization.id)}`,
+        'Path=/',
+        'HttpOnly',
+        'SameSite=Lax',
+        `Max-Age=${365 * 86_400}`,
+        ...(deps.secureCookies ? ['Secure'] : []),
+      ].join('; '),
+    );
+    return { ok: true, organization: { id: m.organization.id, name: m.organization.name } };
+  });
+
   app.get('/organization/people', async (req) => {
     const org = here(req);
     const [members, invitations] = await Promise.all([
@@ -111,6 +141,8 @@ export function registerPeople(
           role: m.role,
           since: m.createdAt,
           you: m.subject === me,
+          // Icreon's support access, and when it ends.
+          until: m.expiresAt,
           icreon: org.id !== DEFAULT_ORGANIZATION && (await isIcreonDirector(m.subject)),
         })),
       ),

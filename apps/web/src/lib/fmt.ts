@@ -34,6 +34,10 @@ export function shortDay(t: string | number | Date, tz: string): string {
 export const longDay = (t: string | number | Date, tz: string) =>
   fmt(tz, { weekday: 'long', month: 'long', day: 'numeric' }).format(at(t));
 
+/** "November 11, 2027": a date that may be a year or more away (a license term). */
+export const fullDate = (t: string | number | Date, tz: string) =>
+  fmt(tz, { year: 'numeric', month: 'long', day: 'numeric' }).format(at(t));
+
 export const localDate = (t: string | number | Date, tz: string) =>
   fmt(tz, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(at(t));
 

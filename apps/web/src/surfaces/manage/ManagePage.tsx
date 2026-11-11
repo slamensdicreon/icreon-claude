@@ -12,6 +12,8 @@ import { Knowledge } from './Knowledge';
 import { Playbooks } from './Playbooks';
 import { Rules } from './Rules';
 import { PeoplePanel } from '../settings/PeoplePanel';
+import { LicensePanel } from '../settings/LicensePanel';
+import { Organizations } from './Organizations';
 import { Lead, usePortfolio } from './shared';
 import s from './manage.module.css';
 
@@ -20,7 +22,9 @@ export { LessonsLearned } from './LessonsLearned';
 
 export function ManagePage({ page }: { page: Page }) {
   // Only the pages that name projects need the portfolio.
-  const projects = usePortfolio(page !== 'settings' && page !== 'diagnostics' && page !== 'people');
+  const projects = usePortfolio(
+    !['settings', 'diagnostics', 'people', 'organizations'].includes(page),
+  );
   return (
     <div className={s.manage}>
       {page === 'settings' && (
@@ -39,8 +43,10 @@ export function ManagePage({ page }: { page: Page }) {
             along.
           </Lead>
           <PeoplePanel />
+          <LicensePanel />
         </div>
       )}
+      {page === 'organizations' && <Organizations />}
       {page === 'connections' && <Connections projects={projects} />}
       {page === 'playbooks' && <Playbooks projects={projects} />}
       {page === 'in-force' && <InForce />}

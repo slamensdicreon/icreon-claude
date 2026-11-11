@@ -5,6 +5,7 @@
  */
 import type { EscalationView } from '@lw/contracts';
 import { post } from '../../lib/api';
+import { isWatching } from '../../lib/role';
 import { clock } from '../../lib/fmt';
 import { TypedConfirm } from '../../overlays/Dialogs';
 import { useApp, type Surface } from '../../state';
@@ -161,6 +162,14 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
     x: EscalationView,
     where: 'portfolio' | 'project' = 'portfolio',
   ): { primary: CardAction; secondary: CardAction | null } => {
+    // A Watcher reads and follows; the Director decides.
+    if (isWatching())
+      return x.type === 'gate'
+        ? { primary: { label: 'Read it', run: () => open('workbench') }, secondary: null }
+        : {
+            primary: { label: 'Open', run: () => open('inbox', { expanded: x.escalationId }) },
+            secondary: null,
+          };
     if (x.type === 'gate')
       return where === 'portfolio'
         ? {
