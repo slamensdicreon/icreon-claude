@@ -161,6 +161,16 @@ describe('organizations', () => {
     expect(write.status).toBe(404);
   });
 
+  it('names a customer’s Vercel project under its organization; Icreon’s keep theirs', async () => {
+    const { projections } = await start();
+    const theirs = (await as('bob')('POST', '/projects', intake('Globex site'))).body.projectId;
+    const ours = (await as('alice')('POST', '/projects', intake('Globex site'))).body.projectId;
+    await projections.catchUpAll();
+    const hosting = (id: string) => projections.get(id)?.intake?.target.hostingProject;
+    expect(hosting(theirs)).toBe('acme-globex-site-website');
+    expect(hosting(ours)).toBe('globex-site-website');
+  });
+
   it('keeps saved connections in their organization', async () => {
     await start();
     const alice = as('alice');

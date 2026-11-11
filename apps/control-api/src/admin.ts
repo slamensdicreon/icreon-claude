@@ -60,6 +60,17 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
           invitations: invitations.length,
           projects: own.filter((p) => p.mode === 'live').length,
           running: own.filter((p) => p.status === 'running').length,
+          // What the organization's agents have cost Icreon (Claude), across its live projects.
+          usage: own
+            .filter((p) => p.mode === 'live')
+            .reduce(
+              (u, p) => ({
+                usd: u.usd + p.spent.usd,
+                tokens: u.tokens + p.spent.tokens,
+                hours: u.hours + p.spent.hours,
+              }),
+              { usd: 0, tokens: 0, hours: 0 },
+            ),
         };
       }),
     );

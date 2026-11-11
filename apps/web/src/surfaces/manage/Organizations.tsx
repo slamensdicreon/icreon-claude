@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { messageOf, postFor, put } from '../../lib/api';
-import { stamp } from '../../lib/fmt';
+import { stamp, usd } from '../../lib/fmt';
 import { useApp, useTz } from '../../state';
 import { Field, TextInput } from '../../ui/cypher/forms';
 import { Panel } from '../../ui/cypher/parts';
@@ -22,6 +22,7 @@ export interface OrganizationRow {
   invitations: number;
   projects: number;
   running: number;
+  usage: { usd: number; tokens: number; hours: number };
 }
 
 /** Into another organization: the cookie the API sets, then the app again from the top. */
@@ -98,6 +99,9 @@ export function Organizations() {
                 <th scope="col" className={s.num}>
                   Running
                 </th>
+                <th scope="col" className={s.num}>
+                  Agent spend
+                </th>
                 <th scope="col">
                   <span className="sr-only">Open</span>
                 </th>
@@ -117,6 +121,7 @@ export function Organizations() {
                   <td className={s.num}>{o.invitations}</td>
                   <td className={s.num}>{o.projects}</td>
                   <td className={s.num}>{o.running}</td>
+                  <td className={s.num}>{usd(o.usage.usd)}</td>
                   <td>
                     <Action
                       kind="quiet"

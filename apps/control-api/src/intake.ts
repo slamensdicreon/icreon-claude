@@ -90,6 +90,15 @@ interface ConnectionRecord {
 }
 
 const CONNECTION = 'connection:';
+
+/** A name under a prefix, once; Vercel's and GitHub's limit is 100 characters. */
+export const prefixed = (prefix: string, name: string) =>
+  !prefix || name.startsWith(prefix) ? name : `${prefix}${name}`.slice(0, 100).replace(/-+$/, '');
+/** The hosting project in a target, prefixed. */
+const withPrefix = (target: TargetValues, prefix: string): TargetValues =>
+  typeof target.hostingProject === 'string' && target.hostingProject
+    ? { ...target, hostingProject: prefixed(prefix, target.hostingProject) }
+    : target;
 /** Connections saved before organizations belong to organization #1, as their projects do. */
 const ownerOf = (c: ConnectionRecord) => c.organizationId ?? DEFAULT_ORGANIZATION;
 
@@ -296,6 +305,9 @@ export class IntakeService {
       if (err instanceof IntakeError) throw new CommandError(422, 'invalid', err.message);
       throw err;
     }
+
+    // A customer's Vercel project is named under their organization in Icreon's team.
+    target = withPrefix(target, await this.prefixFor(organizationId));
 
     // The credentials this playbook takes: required ones must be given, and every one given
     // is checked server-side, whatever the wizard showed. Nothing is stored on a failure.
@@ -533,8 +545,10 @@ export class IntakeService {
       );
     }
     const source = s.intake.repo ?? s.sourceUrl ?? s.name;
-    const repoName =
-      name ?? `${s.intake.repo ? s.intake.repo.split('/')[1] : slug(s.name)}-${pack.id}`;
+    const repoName = prefixed(
+      await this.prefixFor(await this.ownerOf(s.projectId)),
+      name ?? `${s.intake.repo ? s.intake.repo.split('/')[1] : slug(s.name)}-${pack.id}`,
+    );
     const buildRepo = await github.createBuildRepo(
       buildOrg,
       repoName,
@@ -748,6 +762,7 @@ export class IntakeService {
       if (err instanceof IntakeError) throw new CommandError(422, 'invalid', err.message);
       throw err;
     }
+    target = withPrefix(target, await this.prefixFor(await this.ownerOf(s.projectId)));
     await this.deps.store.append(s.projectId, [
       {
         type: 'project.updated',
@@ -757,6 +772,23 @@ export class IntakeService {
         data: { intakeTarget: { [key]: target[key]! }, target: pack.describe(target).target },
       },
     ]);
+  }
+
+  // ---- Names in Icreon's GitHub and Vercel ----------------------------------------------------
+
+  /**
+   * What a customer organization's repositories and Vercel projects start with (its slug), so two
+   * customers' names can't collide in Icreon's accounts. Icreon's own keep their names.
+   */
+  private async prefixFor(organizationId: string): Promise<string> {
+    if (organizationId === DEFAULT_ORGANIZATION || !this.deps.organizations) return '';
+    const org = await this.deps.organizations.get(organizationId);
+    return org ? `${org.slug}-` : '';
+  }
+
+  private async ownerOf(projectId: string): Promise<string> {
+    const owners = await this.deps.organizations?.ownersOf([projectId]);
+    return owners?.get(projectId) ?? DEFAULT_ORGANIZATION;
   }
 
   // ---- Saved connections ------------------------------------------------------------------
