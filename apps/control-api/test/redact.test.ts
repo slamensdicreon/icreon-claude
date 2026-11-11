@@ -62,4 +62,19 @@ describe('a Watcher’s copy', () => {
     ]);
     expect(redactJsonForWatcher('not json')).toBe('not json');
   });
+
+  it('reads Cypher’s lines to the Director as lines about the Director', () => {
+    const voice = {
+      text: 'Four things are yours. Three need you soon, the first before 1:35.',
+      emphasis: 'Four things are yours.',
+      closing: 'Nothing needs you.',
+      title: 'Where search reads its content',
+    };
+    expect(redactForWatcher(voice)).toEqual({
+      text: 'Four things wait on the Director. Three need the Director soon, the first before 1:35.',
+      emphasis: 'Four things wait on the Director.',
+      closing: 'Nothing waits on the Director.',
+      title: 'Where search reads its content',
+    });
+  });
 });

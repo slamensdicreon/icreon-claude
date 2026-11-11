@@ -1,6 +1,7 @@
 import type { EscalationView, MissionControlSnapshot } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
 import { API } from '../../lib/api';
+import { isWatching } from '../../lib/role';
 import { age, clock } from '../../lib/fmt';
 import { Mode } from '../../mode/Mode';
 import { TextForm } from '../../overlays/Dialogs';
@@ -307,68 +308,74 @@ function Fold({
         <div id={id} className={s.foldBody}>
           <p className="type-body-small">{x.context}</p>
           {x.recommendation && <Verdict rec={x.recommendation} />}
-          <div className={s.options}>
-            {x.type === 'gate' ? (
-              <>
-                <Button onClick={() => act.approve(x)} trailing="A">
-                  Approve
-                </Button>
-                <Button
-                  kind="secondary"
-                  onClick={() =>
-                    openOverlay(
-                      <TextForm
-                        title={`Send back ${x.title}`}
-                        body="Say what has to change. The team picks it up from your notes."
-                        label="Notes"
-                        placeholder="What needs to change"
-                        submitLabel="Send back"
-                        onSubmit={(notes) => {
-                          closeOverlay();
-                          act.sendBack(x, notes);
-                        }}
-                      />,
-                    )
-                  }
+          {isWatching() ? (
+            <p className="type-meta">You are watching: the Director decides this one.</p>
+          ) : (
+            <>
+              <div className={s.options}>
+                {x.type === 'gate' ? (
+                  <>
+                    <Button onClick={() => act.approve(x)} trailing="A">
+                      Approve
+                    </Button>
+                    <Button
+                      kind="secondary"
+                      onClick={() =>
+                        openOverlay(
+                          <TextForm
+                            title={`Send back ${x.title}`}
+                            body="Say what has to change. The team picks it up from your notes."
+                            label="Notes"
+                            placeholder="What needs to change"
+                            submitLabel="Send back"
+                            onSubmit={(notes) => {
+                              closeOverlay();
+                              act.sendBack(x, notes);
+                            }}
+                          />,
+                        )
+                      }
+                    >
+                      Send back with notes
+                    </Button>
+                  </>
+                ) : (
+                  x.options.map((o, i) => (
+                    <Button
+                      key={o.id}
+                      kind={o.id === pick?.id ? 'primary' : 'secondary'}
+                      onClick={() => act.resolve(x, o.id)}
+                      trailing={
+                        o.id === pick?.id && x.recommendation
+                          ? `Cypher's pick · ${o.key ?? i + 1}`
+                          : (o.key ?? String(i + 1))
+                      }
+                    >
+                      {o.label}
+                    </Button>
+                  ))
+                )}
+              </div>
+              <div className={`${s.foldFoot} type-meta`}>
+                {x.type !== 'gate' && (
+                  <button type="button" className={s.link} onClick={() => act.defer(x)}>
+                    Defer half an hour (D)
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={s.link}
+                  onClick={() => {
+                    setComposer({ text: `About ${x.title}: `, about: x.escalationId, focus: true });
+                    setLayout({ dockOpen: true });
+                  }}
                 >
-                  Send back with notes
-                </Button>
-              </>
-            ) : (
-              x.options.map((o, i) => (
-                <Button
-                  key={o.id}
-                  kind={o.id === pick?.id ? 'primary' : 'secondary'}
-                  onClick={() => act.resolve(x, o.id)}
-                  trailing={
-                    o.id === pick?.id && x.recommendation
-                      ? `Cypher's pick · ${o.key ?? i + 1}`
-                      : (o.key ?? String(i + 1))
-                  }
-                >
-                  {o.label}
-                </Button>
-              ))
-            )}
-          </div>
-          <div className={`${s.foldFoot} type-meta`}>
-            {x.type !== 'gate' && (
-              <button type="button" className={s.link} onClick={() => act.defer(x)}>
-                Defer half an hour (D)
-              </button>
-            )}
-            <button
-              type="button"
-              className={s.link}
-              onClick={() => {
-                setComposer({ text: `About ${x.title}: `, about: x.escalationId, focus: true });
-                setLayout({ dockOpen: true });
-              }}
-            >
-              Ask a question
-            </button>
-            {x.waitNote && <span className={s.quiet}>{x.waitNote}</span>}
-          </div>
+                  Ask a question
+                </button>
+                {x.waitNote && <span className={s.quiet}>{x.waitNote}</span>}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

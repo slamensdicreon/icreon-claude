@@ -254,17 +254,51 @@ before it reaches a playbook.
 
 ## Order of work
 
-1. Remove client names from the playbooks; a test that refuses them. **Done:** `packages/playbook-sdk/test/client-names.test.ts`.
+1. Remove client names from the playbooks; a test that refuses them. **Done**
+   (`packages/playbook-sdk/test/client-names.test.ts`).
 2. Organizations, memberships and roles in the data model, today's projects as organization #1.
-   **Done**, except row-level security (see "Not yet" above).
-3. Roles enforced in the API; Watcher with the read allowlist and redaction. **Done** (see
-   "Enforcing roles").
-4. WorkOS sign-in, invitations, organization switcher. **Built**, except the switcher (see
-   "Sign-in"); live once WorkOS is configured (`docs/deploy/workos.md`).
-5. Licenses: entities, playbooks, project count, term; the catalog filtered by them;
-   the end-of-term pause.
-6. Hosting per organization: prefixed names, usage recorded per organization.
-7. Onboarding: connection step with the hand-off to the client's admin.
-8. Export.
-9. `/admin` (Icreon only): organizations, licenses, entity changes, playbooks, usage,
-   diagnostics, support grants.
+   **Done**; row-level security deferred (below).
+3. Roles enforced in the API; Watcher with the read allowlist and redaction. **Done.** Watchers
+   see no decision buttons (cards offer "Read it" / "Open"; Needs you says the Director decides)
+   and Cypher's lines read about the Director ("One thing waits on the Director").
+4. WorkOS sign-in, invitations, organization switcher. **Done.** The switcher keeps the choice in
+   an `lw_org` cookie (the stream sends it too); the account menu lists the person's
+   organizations. API keys follow memberships like people do: a key's login is
+   `github:<login>`, so it acts in that login's organizations, in that role.
+5. Licenses. **Done** (`apps/control-api/src/licenses.ts`, migration 012): platforms, playbooks,
+   projects included and term per customer organization, every change kept; creating a project
+   checks it (a project holds a place while live and not on its way to deletion); the catalog
+   marks unlicensed playbooks; after the term the organization is read only, and an hourly
+   scheduled call (`/portfolio/licenses`) pauses its running projects and resumes exactly those on
+   renewal. A platform taken out of a license does the same to that platform's projects.
+6. Hosting per organization. **Done**: a customer's Vercel project and build repository are named
+   with its slug first; `/admin/organizations` reports agent spend per organization. Vercel build
+   minutes and sandbox time are not metered yet.
+7. Onboarding. **Done**: "Send to their admin" beside each credential gives a signed link (7 days,
+   one save) to a page where the client's administrator enters it; it is checked and sealed as if
+   the Director had (`apps/control-api/src/handoff.ts`).
+8. Export. **Done**: `GET /projects/:id/export` and "Take it with you" in project Settings:
+   documents, activity, and a fresh GitHub link to the code; open during the license and 90 days
+   after. Moving the repository and the Vercel project to the customer's accounts is still done by
+   Icreon by hand, and the purge 90 days after a license ends is not automatic.
+9. `/admin`. **Done**: Organizations (create, standing, use, spend), Manage (license editor with
+   its history), support access (1 to 72 hours, Watcher or Director, shown in the customer's
+   People; migration 013), switching. Diagnostics stays the Diagnostics page.
+
+### Row-level security: deferred
+
+Not built, on purpose. Postgres policies keyed on the request's organization only protect anything
+when each request runs on its own connection, as a database role that doesn't own the tables, with
+the organization set for that transaction. Today:
+
+- every API instance reads all projects through one shared pool (the read models catch up across
+  every project, then filter by organization in memory);
+- the worker, the demo runner and the scheduled calls work across organizations by design;
+- the API connects as the tables' owner, which policies don't bind.
+
+What it takes: a second database role for the API, a connection (and transaction) per request with
+`set_config('lw.org', …)`, read models built per organization instead of across all, and the
+system paths (worker, cron, migrations) kept on the owner role. That is a restructuring of the data
+layer, best done as its own piece of work before the first customer whose contract asks for
+database-level isolation. Until then, isolation rests on the single API checks (organization scope,
+project ownership, allowlists), which the tests cover.
