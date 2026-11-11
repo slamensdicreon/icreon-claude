@@ -8,6 +8,7 @@ import {
   MemoryIntegrationStore,
   MemoryLicenseStore,
   MemoryOrganizationStore,
+  MemoryTombstoneStore,
   MemoryVault,
   Projections,
 } from '@lw/events';
@@ -91,6 +92,12 @@ async function start() {
       }) as never,
     organizations: orgs,
     licenses: new MemoryLicenseStore(),
+    purge: {
+      store,
+      tombstones: new MemoryTombstoneStore(),
+      projects: () => projections.all(),
+      now: () => clock.now,
+    },
     intake: new IntakeService({
       store,
       catalog: playbooks,
@@ -292,6 +299,31 @@ describe('licenses', () => {
       [id, 'pause'],
       [id, 'resume'],
     ]);
+  });
+
+  it('purges the organization’s data once export has closed, and only then', async () => {
+    const { store, acme, clock } = await start();
+    await grant(acme.id, { projectsIncluded: 3, endsAt: new Date(T0 + 10 * DAY).toISOString() });
+    const id = (await bob('POST', '/projects', migration('Acme site'))).body.projectId as string;
+    // The term has ended, but export is still open: nothing goes.
+    clock.now = T0 + 50 * DAY;
+    await steve('GET', '/portfolio/licenses');
+    expect(await store.head(id)).toBeGreaterThan(0);
+    // 90 days after the end, it does: the project and its log, with a tombstone left.
+    clock.now = T0 + 101 * DAY;
+    const run = await steve('GET', '/portfolio/licenses');
+    expect(run.body.results).toContainEqual({
+      organizationId: acme.id,
+      action: 'purged',
+      projects: [id],
+      failed: [],
+    });
+    expect(await store.head(id)).toBe(0);
+    const history = (await steve('GET', `/admin/organizations/${acme.id}/license`)).body;
+    expect(history.license.purgedAt).not.toBeNull();
+    expect(history.history.at(-1).kind).toBe('purged');
+    // Once done, later runs leave it alone.
+    expect((await steve('GET', '/portfolio/licenses')).body.results).toEqual([]);
   });
 
   it('keeps license changes to Icreon', async () => {

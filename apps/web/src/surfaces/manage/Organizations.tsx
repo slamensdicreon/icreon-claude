@@ -29,6 +29,7 @@ export interface OrganizationRow {
     used: number;
     projectsIncluded?: number;
     endsAt?: string;
+    purgedAt?: string | null;
   };
 }
 
@@ -141,6 +142,7 @@ export function Organizations() {
                   <td className={s.num}>{usd(o.usage.usd)}</td>
                   <td>
                     {STANDING[o.license.standing]}
+                    {o.license.purgedAt ? ', data purged' : ''}
                     {o.license.projectsIncluded !== undefined && (
                       <span className={`${s.under} type-meta`}>
                         {o.license.used} of {o.license.projectsIncluded} projects

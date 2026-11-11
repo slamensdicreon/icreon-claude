@@ -89,6 +89,7 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
                   projectsIncluded: license.projectsIncluded,
                   startsAt: license.startsAt,
                   endsAt: license.endsAt,
+                  purgedAt: license.purgedAt,
                 }
               : {}),
           },

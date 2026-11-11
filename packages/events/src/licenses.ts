@@ -13,6 +13,8 @@ export interface License {
   endsAt: string;
   /** The term ended and these projects were paused; a renewal resumes them. */
   suspended: { at: string; projects: string[] } | null;
+  /** When its data was purged, after export closed; the license is kept as the record. */
+  purgedAt: string | null;
   updatedAt: string;
   updatedBy: string;
 }
@@ -25,7 +27,7 @@ export type LicenseTerms = Pick<
 export interface LicenseChange {
   at: string;
   by: string;
-  kind: 'granted' | 'changed' | 'suspended' | 'resumed';
+  kind: 'granted' | 'changed' | 'suspended' | 'resumed' | 'purged';
   license: LicenseTerms & { suspended: License['suspended'] };
 }
 
@@ -40,6 +42,8 @@ export interface LicenseStore {
     suspended: License['suspended'],
     by: string,
   ): Promise<License | null>;
+  /** Records that the organization's data is gone (export closed, every project purged). */
+  setPurged(organizationId: string, by: string): Promise<License | null>;
   /** Every change, oldest first. */
   history(organizationId: string): Promise<LicenseChange[]>;
 }
@@ -82,6 +86,7 @@ interface Row {
   starts_at: string | Date;
   ends_at: string | Date;
   suspended: License['suspended'];
+  purged_at?: string | Date | null;
   updated_at: string | Date;
   updated_by: string;
 }
@@ -94,11 +99,12 @@ const view = (r: Row): License => ({
   startsAt: iso(r.starts_at),
   endsAt: iso(r.ends_at),
   suspended: r.suspended ?? null,
+  purgedAt: r.purged_at ? iso(r.purged_at) : null,
   updatedAt: iso(r.updated_at),
   updatedBy: r.updated_by,
 });
 const COLUMNS =
-  'organization_id, entities, playbooks, projects_included, starts_at, ends_at, suspended, updated_at, updated_by';
+  'organization_id, entities, playbooks, projects_included, starts_at, ends_at, suspended, purged_at, updated_at, updated_by';
 
 export class PostgresLicenseStore implements LicenseStore {
   constructor(private readonly sql: SqlClient) {}
@@ -126,7 +132,8 @@ export class PostgresLicenseStore implements LicenseStore {
        ON CONFLICT (organization_id) DO UPDATE SET
          entities = EXCLUDED.entities, playbooks = EXCLUDED.playbooks,
          projects_included = EXCLUDED.projects_included, starts_at = EXCLUDED.starts_at,
-         ends_at = EXCLUDED.ends_at, updated_at = now(), updated_by = EXCLUDED.updated_by
+         ends_at = EXCLUDED.ends_at, purged_at = NULL, updated_at = now(),
+         updated_by = EXCLUDED.updated_by
        RETURNING ${COLUMNS}`,
       [
         organizationId,
@@ -156,6 +163,18 @@ export class PostgresLicenseStore implements LicenseStore {
     if (!rows[0]) return null;
     const l = view(rows[0]);
     await this.record(organizationId, by, suspended ? 'suspended' : 'resumed', l);
+    return l;
+  }
+
+  async setPurged(organizationId: string, by: string): Promise<License | null> {
+    const { rows } = await this.sql.query<Row>(
+      `UPDATE lw_licenses SET purged_at = now(), updated_at = now(), updated_by = $2
+        WHERE organization_id = $1 RETURNING ${COLUMNS}`,
+      [organizationId, by],
+    );
+    if (!rows[0]) return null;
+    const l = view(rows[0]);
+    await this.record(organizationId, by, 'purged', l);
     return l;
   }
 
@@ -204,6 +223,8 @@ export class MemoryLicenseStore implements LicenseStore {
       organizationId,
       ...t,
       suspended: had?.suspended ?? null,
+      // A renewal after a purge starts the organization again.
+      purgedAt: null,
       updatedAt: this.now().toISOString(),
       updatedBy: by,
     };
@@ -222,6 +243,20 @@ export class MemoryLicenseStore implements LicenseStore {
     const l = { ...had, suspended, updatedAt: this.now().toISOString(), updatedBy: by };
     this.licenses.set(organizationId, l);
     this.record(organizationId, by, suspended ? 'suspended' : 'resumed', l);
+    return l;
+  }
+
+  async setPurged(organizationId: string, by: string): Promise<License | null> {
+    const had = this.licenses.get(organizationId);
+    if (!had) return null;
+    const l = {
+      ...had,
+      purgedAt: this.now().toISOString(),
+      updatedAt: this.now().toISOString(),
+      updatedBy: by,
+    };
+    this.licenses.set(organizationId, l);
+    this.record(organizationId, by, 'purged', l);
     return l;
   }
 
