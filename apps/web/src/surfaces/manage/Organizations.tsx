@@ -10,6 +10,7 @@ import { Field, TextInput } from '../../ui/cypher/forms';
 import { Panel } from '../../ui/cypher/parts';
 import { Action, BesideField } from '../intake/shared';
 import { Lead, Pending, useResource } from './shared';
+import { OrganizationEditor } from './OrganizationEditor';
 import s from './manage.module.css';
 
 export interface OrganizationRow {
@@ -23,7 +24,21 @@ export interface OrganizationRow {
   projects: number;
   running: number;
   usage: { usd: number; tokens: number; hours: number };
+  license: {
+    standing: 'unlimited' | 'none' | 'upcoming' | 'active' | 'ended';
+    used: number;
+    projectsIncluded?: number;
+    endsAt?: string;
+  };
 }
+
+const STANDING: Record<OrganizationRow['license']['standing'], string> = {
+  unlimited: 'No license needed',
+  none: 'No license',
+  upcoming: 'Starts later',
+  active: 'Active',
+  ended: 'Ended',
+};
 
 /** Into another organization: the cookie the API sets, then the app again from the top. */
 export async function switchTo(id: string) {
@@ -42,6 +57,7 @@ export function Organizations() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
 
   const create = async () => {
     setBusy(true);
@@ -102,6 +118,7 @@ export function Organizations() {
                 <th scope="col" className={s.num}>
                   Agent spend
                 </th>
+                <th scope="col">License</th>
                 <th scope="col">
                   <span className="sr-only">Open</span>
                 </th>
@@ -123,11 +140,29 @@ export function Organizations() {
                   <td className={s.num}>{o.running}</td>
                   <td className={s.num}>{usd(o.usage.usd)}</td>
                   <td>
+                    {STANDING[o.license.standing]}
+                    {o.license.projectsIncluded !== undefined && (
+                      <span className={`${s.under} type-meta`}>
+                        {o.license.used} of {o.license.projectsIncluded} projects
+                        {o.license.endsAt ? ` · to ${o.license.endsAt.slice(0, 10)}` : ''}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {o.id !== 'org-icreon' && (
+                      <Action
+                        kind="quiet"
+                        expanded={open === o.id}
+                        onClick={() => setOpen(open === o.id ? null : o.id)}
+                      >
+                        Manage
+                      </Action>
+                    )}
                     <Action
                       kind="quiet"
                       onClick={() =>
                         void switchTo(o.id).catch((err) =>
-                          toast(messageOf(err, 'You are not a member of it.')),
+                          toast(messageOf(err, 'You are not a member of it: join it for support.')),
                         )
                       }
                     >
@@ -139,6 +174,15 @@ export function Organizations() {
             </tbody>
           </table>
         </div>
+      )}
+      {open && data?.some((o) => o.id === open) && (
+        <Panel title={data.find((o) => o.id === open)!.name} padded>
+          <OrganizationEditor
+            id={open}
+            name={data.find((o) => o.id === open)!.name}
+            onSaved={() => void reload()}
+          />
+        </Panel>
       )}
       <Panel title="New organization" padded>
         <form

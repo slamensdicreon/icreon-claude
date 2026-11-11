@@ -56,6 +56,8 @@ export interface LicenseDeps {
   projects: () => Promise<ProjectState[]>;
   /** The platform a playbook runs on. */
   platformOf: (playbookId: string) => string | null;
+  /** One project's read model, if the API has it. */
+  project?: (projectId: string) => ProjectState | undefined;
   /** A project's orchestrator, to pause and resume it; undefined where none runs it. */
   control?: (projectId: string, cmd: Control) => Promise<unknown>;
   signedIn: boolean;
@@ -89,7 +91,20 @@ export function registerLicenses(app: FastifyInstance, deps: LicenseDeps) {
     const url = req.routeOptions.url ?? '';
     if (OPEN_WHEN_ENDED.some((r) => r.test(url))) return;
     const s = await standing(org.id);
-    if (s.kind !== 'ended') return;
+    if (s.kind !== 'ended') {
+      // A project on a platform the license no longer covers is read only too.
+      const id = (req.params as { id?: string } | undefined)?.id;
+      if (!url.startsWith('/projects/:id') || !id || (s.kind !== 'active' && s.kind !== 'upcoming'))
+        return;
+      const platform = deps.project?.(id)?.intake?.platform;
+      if (!platform || s.license.entities.includes(platform)) return;
+      return reply.status(403).send({
+        error: {
+          code: 'platform_not_licensed',
+          message: `${org.name}'s license no longer covers this project's platform: it is paused and read only. Export stays open. Ask Icreon to add the platform back.`,
+        },
+      });
+    }
     return reply.status(403).send({
       error: {
         code: 'license_ended',
@@ -152,48 +167,66 @@ export function registerLicenses(app: FastifyInstance, deps: LicenseDeps) {
       s.license.entities.includes(platform) && s.license.playbooks.includes(playbookId);
   };
 
-  /** Pauses an ended term's running projects, and resumes what a renewal brings back. */
+  /**
+   * Keeps projects in step with the license. At the end of the term every running project
+   * pauses; while it runs, a project on a platform the license no longer covers pauses too. What
+   * this paused is recorded, and resumes exactly when its reason goes (a renewal, the platform
+   * added back). A project someone paused by hand is left as it is.
+   */
   const reconcile = async (organizationId: string, by: string) => {
     const s = await standing(organizationId);
-    if (s.kind === 'unlimited' || s.kind === 'none') return { organizationId, action: 'none' };
+    if (s.kind === 'unlimited' || s.kind === 'none')
+      return { organizationId, action: 'none', projects: [] as string[] };
     const license = s.license;
-    if (s.kind === 'ended' && !license.suspended) {
-      const running = (await owned(organizationId)).filter(
-        (p) => p.mode === 'live' && p.status === 'running',
-      );
-      const paused: string[] = [];
-      for (const p of running) {
-        try {
-          await deps.control?.(p.projectId, {
-            verb: 'pause',
-            scope: { kind: 'project', id: p.projectId },
-          });
-          paused.push(p.projectId);
-        } catch {
-          /* not running here (or already stopped): nothing to pause */
-        }
+    const projects = (await owned(organizationId)).filter((p) => p.mode === 'live');
+    const outside = (p: ProjectState) =>
+      s.kind === 'ended' || !license.entities.includes(p.intake?.platform ?? '');
+    const held = new Set(license.suspended?.projects ?? []);
+    const paused: string[] = [];
+    for (const p of projects) {
+      if (p.status !== 'running' || !outside(p) || held.has(p.projectId)) continue;
+      try {
+        await deps.control?.(p.projectId, {
+          verb: 'pause',
+          scope: { kind: 'project', id: p.projectId },
+        });
+        paused.push(p.projectId);
+      } catch {
+        /* not running here (or already stopped): nothing to pause */
       }
-      await licenses.setSuspended(
-        organizationId,
-        { at: new Date(deps.now()).toISOString(), projects: paused },
-        by,
-      );
-      return { organizationId, action: 'suspended', projects: paused };
     }
-    if (s.kind !== 'ended' && license.suspended) {
-      const resumed: string[] = [];
-      for (const id of license.suspended.projects) {
-        try {
-          await deps.control?.(id, { verb: 'resume', scope: { kind: 'project', id } });
-          resumed.push(id);
-        } catch {
-          /* deleted or finished since: nothing to resume */
-        }
-      }
-      await licenses.setSuspended(organizationId, null, by);
-      return { organizationId, action: 'resumed', projects: resumed };
+    const resumed: string[] = [];
+    for (const id of held) {
+      const p = projects.find((x) => x.projectId === id);
+      if (p && outside(p)) continue;
+      resumed.push(id);
+      // Deleted or finished since: nothing to resume, but it no longer counts as held.
+      if (p)
+        await deps
+          .control?.(id, { verb: 'resume', scope: { kind: 'project', id } })
+          .catch(() => {});
     }
-    return { organizationId, action: 'none' };
+    const still = [...held].filter((id) => !resumed.includes(id)).concat(paused);
+    const next =
+      still.length || s.kind === 'ended'
+        ? { at: license.suspended?.at ?? new Date(deps.now()).toISOString(), projects: still }
+        : null;
+    const same =
+      (next === null && license.suspended === null) ||
+      (next !== null &&
+        license.suspended !== null &&
+        JSON.stringify(next.projects) === JSON.stringify(license.suspended.projects));
+    if (!same) await licenses.setSuspended(organizationId, next, by);
+    const action = paused.length
+      ? 'suspended'
+      : resumed.length
+        ? 'resumed'
+        : same
+          ? 'none'
+          : next
+            ? 'suspended'
+            : 'resumed';
+    return { organizationId, action, projects: paused.length ? paused : resumed };
   };
 
   /** The request's organization's license: its terms and what is in use. */

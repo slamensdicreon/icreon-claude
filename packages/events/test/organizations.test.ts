@@ -131,6 +131,39 @@ function behaves(name: string, make: () => Promise<OrganizationStore>) {
       expect(await orgs.membershipsOf('workos:eve')).toEqual([]);
     });
 
+    it('ends a time-limited membership on its own, and keeps a lasting one', async () => {
+      const orgs = await make();
+      const acme = await orgs.create({
+        name: 'Acme',
+        slug: `acme-x-${Math.random().toString(36).slice(2, 8)}`,
+      });
+      await orgs.setMember(
+        acme.id,
+        'github:gone',
+        'watcher',
+        'x',
+        'gone',
+        new Date(Date.now() - 1000),
+      );
+      await orgs.setMember(
+        acme.id,
+        'github:soon',
+        'watcher',
+        'x',
+        'soon',
+        new Date(Date.now() + 3_600_000),
+      );
+      await orgs.setMember(acme.id, 'github:stays', 'director', 'x', 'stays');
+      expect((await orgs.members(acme.id)).map((m) => [m.subject, m.expiresAt === null])).toEqual([
+        ['github:soon', false],
+        ['github:stays', true],
+      ]);
+      expect(await orgs.membershipsOf('github:gone')).toEqual([]);
+      // Made a lasting member, the end date goes.
+      await orgs.setMember(acme.id, 'github:soon', 'director', 'x');
+      expect((await orgs.membershipsOf('github:soon'))[0]?.expiresAt).toBeNull();
+    });
+
     it('gives each project one owner for good; unassigned projects are Icreon’s', async () => {
       const orgs = await make();
       const acme = await orgs.create({ name: 'Acme', slug: 'acme-p' });

@@ -333,6 +333,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       orgs,
       signedIn: Boolean(deps.auth),
       sendInvitation: deps.sendInvitation ?? null,
+      licenses: deps.licenses,
+      now: () => (deps.now ?? Date.now)(),
       projects: async () => {
         await projections.catchUpAll();
         return projections.all();
@@ -346,6 +348,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           await projections.catchUpAll();
           return projections.all();
         },
+        project: (id) => projections.get(id),
         platformOf: (playbookId) =>
           deps.intake?.playbooks().find((p) => p.id === playbookId)?.platform.id ?? null,
         control: async (projectId, cmd) => {

@@ -28,6 +28,7 @@ const MIGRATIONS = [
   '010_organizations.sql',
   '011_invitations.sql',
   '012_licenses.sql',
+  '013_support_access.sql',
 ];
 
 /**

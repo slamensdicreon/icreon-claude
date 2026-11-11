@@ -141,6 +141,8 @@ export function registerPeople(
           role: m.role,
           since: m.createdAt,
           you: m.subject === me,
+          // Icreon's support access, and when it ends.
+          until: m.expiresAt,
           icreon: org.id !== DEFAULT_ORGANIZATION && (await isIcreonDirector(m.subject)),
         })),
       ),

@@ -123,6 +123,36 @@ describe('/admin', () => {
   });
 });
 
+describe('support access', () => {
+  it('lets Icreon into a customer for a few hours, in plain sight, and then not', async () => {
+    const { acme } = await start();
+    const r = await call('steve', 'POST', `/admin/organizations/${acme.id}/support`, { hours: 2 });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ role: 'watcher' });
+    const until = Date.parse(r.body.expiresAt as string);
+    expect(until - Date.now()).toBeGreaterThan(110 * 60_000);
+    // Acme's Director sees it, with when it ends.
+    const people = (await call('bob', 'GET', '/organization/people')).body.members;
+    expect(
+      people.find((m: { subject: string }) => m.subject === githubSubject('steve')),
+    ).toMatchObject({
+      role: 'watcher',
+      until: r.body.expiresAt,
+    });
+    const inAcme = await call('steve', 'GET', '/me/organizations', undefined, {
+      'x-lw-organization': acme.id,
+    });
+    expect(inAcme.body.current).toMatchObject({ id: acme.id, role: 'watcher' });
+    expect((await call('bob', 'POST', `/admin/organizations/${acme.id}/support`, {})).status).toBe(
+      403,
+    );
+    expect(
+      (await call('steve', 'POST', `/admin/organizations/${acme.id}/support`, { hours: 999 }))
+        .status,
+    ).toBe(400);
+  });
+});
+
 describe('the organization switcher', () => {
   it('keeps the chosen organization in a cookie, for every request and the stream', async () => {
     const { orgs, acme } = await start();

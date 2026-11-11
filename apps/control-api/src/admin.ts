@@ -1,6 +1,7 @@
 import type { ProjectState } from '@lw/domain';
 import { CommandError } from '@lw/domain';
-import type { OrganizationStore } from '@lw/events';
+import { DEFAULT_ORGANIZATION, type LicenseStore, type OrganizationStore } from '@lw/events';
+import { holdsPlace, standingOf } from './licenses';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { subjectOf } from './organizations';
@@ -13,7 +14,12 @@ export interface AdminDeps {
   sendInvitation: SendInvitation | null;
   /** Every project the API has read (caught up). */
   projects: () => Promise<ProjectState[]>;
+  licenses?: LicenseStore;
+  now: () => number;
 }
+
+/** How long Icreon's support access lasts, at most. */
+export const SUPPORT_HOURS_MAX = 72;
 
 const slugOf = (name: string) =>
   name
@@ -50,6 +56,8 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
           orgs.invitations(o.id),
         ]);
         const own = projects.filter((p) => owners.get(p.projectId) === o.id);
+        const license = deps.licenses ? await deps.licenses.get(o.id) : null;
+        const standing = standingOf(o.id, license, deps.now());
         return {
           id: o.id,
           name: o.name,
@@ -71,6 +79,19 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
               }),
               { usd: 0, tokens: 0, hours: 0 },
             ),
+          license: {
+            standing: standing.kind,
+            used: own.filter(holdsPlace).length,
+            ...(license
+              ? {
+                  entities: license.entities,
+                  playbooks: license.playbooks,
+                  projectsIncluded: license.projectsIncluded,
+                  startsAt: license.startsAt,
+                  endsAt: license.endsAt,
+                }
+              : {}),
+          },
         };
       }),
     );
@@ -104,5 +125,34 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
       invited = { email: invitation.email, emailSent: mail.sent, detail: mail.detail };
     }
     return reply.status(201).send({ organization: org, invited });
+  });
+
+  /**
+   * Support access: an Icreon administrator joins a customer organization for a few hours, to
+   * look (Watcher) or to help (Director). It shows in the organization's People with when it
+   * ends, and ends on its own.
+   */
+  app.post<{ Params: { id: string } }>('/admin/organizations/:id/support', async (req) => {
+    const { hours, role } = z
+      .object({
+        hours: z.number().int().min(1).max(SUPPORT_HOURS_MAX).default(4),
+        role: z.enum(['watcher', 'director']).default('watcher'),
+      })
+      .parse(req.body ?? {});
+    const org = await orgs.get(req.params.id);
+    if (!org) throw new CommandError(404, 'unknown_organization', 'No such organization.');
+    if (org.id === DEFAULT_ORGANIZATION)
+      throw new CommandError(409, 'icreon', 'You are already in Icreon.');
+    const me = who(req);
+    const mine = (await orgs.members(org.id)).find((m) => m.subject === me);
+    if (mine && !mine.expiresAt)
+      throw new CommandError(409, 'already_member', `You are already a member of ${org.name}.`);
+    const expiresAt = new Date(deps.now() + hours * 3_600_000);
+    await orgs.setMember(org.id, me, role, me, req.operator?.login ?? 'local', expiresAt);
+    return {
+      organization: { id: org.id, name: org.name },
+      role,
+      expiresAt: expiresAt.toISOString(),
+    };
   });
 }

@@ -255,6 +255,45 @@ describe('licenses', () => {
     ]);
   });
 
+  it('pauses projects on a platform taken out of the license, and resumes them when it is back', async () => {
+    const { store, acme, controls } = await start();
+    await grant(acme.id, { projectsIncluded: 3 });
+    const id = (await bob('POST', '/projects', migration('Acme site'))).body.projectId as string;
+    await store.append(id, [
+      {
+        type: 'project.status',
+        actor: { kind: 'system', id: 'test' },
+        subject: { kind: 'project', id },
+        severity: 'routine',
+        data: { status: 'running' },
+      },
+    ]);
+    // The customer moves to another platform: SitecoreAI comes out of the license.
+    const moved = await grant(acme.id, {
+      projectsIncluded: 3,
+      entities: ['optimizely'],
+      playbooks: [],
+    });
+    expect(moved.body.reconciled).toEqual({
+      organizationId: acme.id,
+      action: 'suspended',
+      projects: [id],
+    });
+    const write = await bob('PUT', `/projects/${id}/brief`, { key: 'x', answer: 'y' });
+    expect([write.status, write.body.error.code]).toEqual([403, 'platform_not_licensed']);
+    expect((await bob('GET', `/projects/${id}/export`)).status).toBe(200);
+    const back = await grant(acme.id, { projectsIncluded: 3 });
+    expect(back.body.reconciled).toEqual({
+      organizationId: acme.id,
+      action: 'resumed',
+      projects: [id],
+    });
+    expect(controls).toEqual([
+      [id, 'pause'],
+      [id, 'resume'],
+    ]);
+  });
+
   it('keeps license changes to Icreon', async () => {
     const { acme } = await start();
     const r = await bob('PUT', `/admin/organizations/${acme.id}/license`, {});
