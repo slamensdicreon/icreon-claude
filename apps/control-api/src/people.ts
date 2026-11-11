@@ -6,6 +6,8 @@ import { ORGANIZATION_COOKIE, subjectOf } from './organizations';
 
 /** How long an invitation stays open (WorkOS's own default). */
 export const INVITATION_DAYS = 7;
+/** How long Icreon's kickoff Director can't be removed by the customer. */
+export const KICKOFF_MONTHS = 3;
 
 /** Sends the invitation email; says whether it went, and why not. */
 export type SendInvitation = (email: string) => Promise<{ sent: boolean; detail: string | null }>;
@@ -58,6 +60,7 @@ export function registerPeople(
     sendInvitation: SendInvitation | null;
     /** Cookies only over HTTPS (deployments); off for local runs. */
     secureCookies?: boolean;
+    now?: () => number;
   },
 ): void {
   const { orgs } = deps;
@@ -75,6 +78,18 @@ export function registerPeople(
     (await orgs.membershipsOf(subject)).some(
       (m) => m.organizationId === DEFAULT_ORGANIZATION && m.role === 'director',
     );
+  const now = deps.now ?? Date.now;
+  /**
+   * Icreon's Director runs the kickoff: for its first 3 months the customer can't remove or demote
+   * them. After that they stay unless the customer asks, and the customer's Directors may.
+   */
+  const kickoffUntil = async (organizationId: string): Promise<string | null> => {
+    const org = await orgs.get(organizationId);
+    if (!org || organizationId === DEFAULT_ORGANIZATION) return null;
+    const end = new Date(org.createdAt);
+    end.setUTCMonth(end.getUTCMonth() + KICKOFF_MONTHS);
+    return end.getTime() > now() ? end.toISOString() : null;
+  };
   /** The checks before a member's role changes or they leave. */
   const mayChange = async (req: FastifyRequest, subject: string, nextRole: string | null) => {
     const org = here(req);
@@ -83,12 +98,15 @@ export function registerPeople(
     if (!target) throw new CommandError(404, 'unknown_member', 'No such member here.');
     if (subject === subjectOf(req, deps.signedIn))
       throw new CommandError(409, 'yourself', 'Ask another Director to change your own access.');
-    if (org.id !== DEFAULT_ORGANIZATION && !org.superAdmin && (await isIcreonDirector(subject)))
-      throw new CommandError(
-        409,
-        'icreon_director',
-        'Icreon’s Director stays with your organization. Ask Icreon to change this.',
-      );
+    if (org.id !== DEFAULT_ORGANIZATION && !org.superAdmin && (await isIcreonDirector(subject))) {
+      const until = await kickoffUntil(org.id);
+      if (until)
+        throw new CommandError(
+          409,
+          'icreon_director',
+          `Icreon’s Director stays with your organization through the kickoff, until ${until.slice(0, 10)}.`,
+        );
+    }
     const directors = members.filter((m) => m.role === 'director');
     if (target.role === 'director' && nextRole !== 'director' && directors.length <= 1)
       throw new CommandError(409, 'last_director', 'An organization needs at least one Director.');
@@ -126,8 +144,11 @@ export function registerPeople(
       orgs.invitations(org.id),
     ]);
     const me = subjectOf(req, deps.signedIn);
+    const kickoff = await kickoffUntil(org.id);
     return {
       organization: { id: org.id, name: org.name, slug: org.slug },
+      /** Until when Icreon's Director can't be removed or demoted (null: they can be now). */
+      kickoffUntil: kickoff,
       emailInvitations: Boolean(deps.sendInvitation),
       members: await Promise.all(
         members.map(async (m) => ({

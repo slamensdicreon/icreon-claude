@@ -15,6 +15,8 @@ import s from './settings.module.css';
 type Role = 'director' | 'watcher';
 interface People {
   organization: { id: string; name: string; slug: string };
+  /** Until when Icreon's Director can't be removed or demoted; null once they can. */
+  kickoffUntil: string | null;
   emailInvitations: boolean;
   members: {
     subject: string;
@@ -120,7 +122,7 @@ export function PeoplePanel() {
                     since {stamp(m.since, tz)}
                   </span>
                 </span>
-                {!m.you && !m.icreon && (
+                {!m.you && !(m.icreon && people.kickoffUntil) && (
                   <>
                     <Action
                       kind="quiet"

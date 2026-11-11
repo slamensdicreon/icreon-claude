@@ -328,6 +328,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       signedIn: Boolean(deps.auth),
       sendInvitation: deps.sendInvitation ?? null,
       secureCookies: deps.auth?.secureCookies,
+      now: () => (deps.now ?? Date.now)(),
     });
     registerAdmin(app, {
       orgs,

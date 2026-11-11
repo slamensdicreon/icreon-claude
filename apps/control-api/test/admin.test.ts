@@ -28,7 +28,9 @@ async function start() {
   await orgs.setMember(DEFAULT_ORGANIZATION, githubSubject('steve'), 'director', 'test', 'steve');
   await orgs.setMember(acme.id, githubSubject('bob'), 'director', 'test', 'bob');
   const invited: string[] = [];
+  const clock = { offset: 0 };
   app = await buildApp({
+    now: () => Date.now() + clock.offset,
     store,
     projections,
     commands: () => undefined,
@@ -51,7 +53,7 @@ async function start() {
       secureCookies: true,
     },
   });
-  return { orgs, acme, invited };
+  return { orgs, acme, invited, clock };
 }
 
 const call = async (
@@ -150,6 +152,30 @@ describe('support access', () => {
       (await call('steve', 'POST', `/admin/organizations/${acme.id}/support`, { hours: 999 }))
         .status,
     ).toBe(400);
+  });
+});
+
+describe('the kickoff Director', () => {
+  it('stays for the first 3 months; after that the customer’s Directors may remove them', async () => {
+    const { orgs, acme, clock } = await start();
+    await orgs.setMember(acme.id, githubSubject('steve'), 'director', 'test', 'steve');
+    const steve = `/organization/members/${encodeURIComponent(githubSubject('steve'))}`;
+    const people = (await call('bob', 'GET', '/organization/people')).body;
+    expect(people.kickoffUntil).not.toBeNull();
+    const early = await app!.inject({
+      method: 'DELETE',
+      url: steve,
+      headers: { authorization: `Bearer ${keyOf('bob')}` },
+    });
+    expect([early.statusCode, early.json().error.code]).toEqual([409, 'icreon_director']);
+    clock.offset = 95 * 86_400_000;
+    expect((await call('bob', 'GET', '/organization/people')).body.kickoffUntil).toBeNull();
+    const later = await app!.inject({
+      method: 'DELETE',
+      url: steve,
+      headers: { authorization: `Bearer ${keyOf('bob')}` },
+    });
+    expect(later.statusCode).toBe(204);
   });
 });
 
