@@ -244,8 +244,8 @@
   align-items: center;
   gap: var(--space-2);
   min-height: 44px;
-  width: min(100%, calc(var(--sidebar) * 1.6));
-  margin-bottom: var(--space-2);
+  flex: 1 1 calc(var(--sidebar) * 1.2);
+  max-width: calc(var(--sidebar) * 1.6);
   padding: 0 var(--space-4);
   border-radius: var(--radius-pill);
   border: 1px solid var(--mist);
@@ -270,21 +270,105 @@
 }
 .filters {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4) var(--space-4);
-  border-bottom: 1px solid var(--mist-2);
-}
-.filterRow {
-  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--mist-2);
 }
-.filterLabel {
-  flex: none;
-  width: calc(var(--space-6) * 3);
+.facets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.facet {
+  position: relative;
+}
+.facetButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.facetButton:hover {
+  background: var(--surface-quiet);
+}
+.facetButton:focus-visible,
+.facetOption:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  outline-offset: 2px;
+}
+.facetLabel {
   color: var(--text-3);
+}
+.facetValue {
+  font-weight: 600;
+  max-width: calc(var(--sidebar) * 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.facetButton[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+/* Narrowed: the button says so in ink, so a filtered table never hides it. */
+.facetButton[data-set] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+}
+.facetButton[data-set] .facetLabel {
+  color: color-mix(in srgb, var(--on-ink) 70%, transparent);
+}
+.facetList {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: 240px;
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 16%, transparent);
+}
+.facetOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.facetOption:hover {
+  background: var(--surface-quiet);
+}
+.facetOption[aria-pressed='true'] {
+  color: var(--ink);
+  font-weight: 700;
+  background: var(--surface-quiet);
+}
+.facetCount {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 .groupRow th {
   padding: 0 !important;
@@ -538,27 +622,6 @@
 }
 
 /* ---- Phones: the projects come first. */
-.searchRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.filtersToggle {
-  display: none;
-  flex: none;
-  min-height: 44px;
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--mist);
-  background: var(--surface);
-  color: var(--ink);
-  cursor: pointer;
-}
-.filtersToggle[aria-expanded='true'] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--on-ink);
-}
 .projectName b {
   white-space: nowrap;
 }
@@ -566,20 +629,9 @@
   min-width: calc(var(--sidebar) * 0.75);
 }
 @media (max-width: 760px) {
-  .filtersToggle {
-    display: inline-flex;
-    align-items: center;
-  }
   .search {
-    flex: 1 1 auto;
-    width: auto;
-    margin-bottom: 0;
-  }
-  .filters:not([data-open]) .filterRow {
-    display: none;
-  }
-  .filterLabel {
-    width: 100%;
+    flex: 1 1 100%;
+    max-width: none;
   }
   /* The views scroll sideways in one row instead of stacking three deep. */
   .viewChips {

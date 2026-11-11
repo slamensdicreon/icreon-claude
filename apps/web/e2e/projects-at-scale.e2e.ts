@@ -101,16 +101,30 @@ test('the projects table filters by platform and playbook, groups, searches and 
     table.getByRole('button', { name: /^CMS \(SaaS\) website 2 projects/ }),
   ).toBeVisible();
 
-  // Optimizely only: two projects, and the playbook chips narrow to its one playbook.
-  await table
+  // The facets are one toolbar line of menus, not rows of chips.
+  const facet = (name: string) => table.getByRole('button', { name: new RegExp(`^${name}`) });
+  await expect(facet('Platform')).toHaveText(/Platform\s*All/);
+  const search = await table.getByLabel('Search projects').boundingBox();
+  const group = await facet('Group by').boundingBox();
+  const mid = (b: { y: number; height: number } | null) => b!.y + b!.height / 2;
+  expect(Math.abs(mid(search) - mid(group))).toBeLessThan(8);
+
+  // Optimizely only: two projects, and the playbook menu narrows to its one playbook.
+  await facet('Platform').click();
+  await page
     .getByRole('group', { name: 'Platform' })
     .getByRole('button', { name: /Optimizely/ })
     .click();
+  await expect(page.getByRole('group', { name: 'Platform' })).toBeHidden();
+  await expect(facet('Platform')).toHaveText(/Optimizely/);
   await expect(rows).toHaveCount(2);
-  await expect(table.getByRole('group', { name: 'Playbook' }).getByRole('button')).toHaveText([
-    'All 2',
-    'CMS (SaaS) website 2',
+  await facet('Playbook').click();
+  await expect(page.getByRole('group', { name: 'Playbook' }).getByRole('button')).toHaveText([
+    'All2',
+    'CMS (SaaS) website2',
   ]);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('group', { name: 'Playbook' })).toBeHidden();
 
   // Folding a group hides its rows.
   await table.getByRole('button', { name: /^CMS \(SaaS\) website 2 projects/ }).click();
@@ -118,7 +132,8 @@ test('the projects table filters by platform and playbook, groups, searches and 
   await table.getByRole('button', { name: /^CMS \(SaaS\) website 2 projects/ }).click();
 
   // Grouped by state, then searched by client.
-  await table
+  await facet('Group by').click();
+  await page
     .getByRole('group', { name: 'Group by' })
     .getByRole('button', { name: 'State' })
     .click();
@@ -132,12 +147,8 @@ test('the projects table filters by platform and playbook, groups, searches and 
   // The platform and the grouping stay for this browser; the search doesn't.
   await page.reload();
   await page.waitForLoadState('networkidle');
-  await expect(
-    table.getByRole('group', { name: 'Platform' }).getByRole('button', { name: /Optimizely/ }),
-  ).toHaveAttribute('aria-pressed', 'true');
-  await expect(
-    table.getByRole('group', { name: 'Group by' }).getByRole('button', { name: 'State' }),
-  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(facet('Platform')).toHaveText(/Optimizely/);
+  await expect(facet('Group by')).toHaveText(/State/);
   await expect(table.getByLabel('Search projects')).toHaveValue('');
   await table.getByRole('button', { name: 'Clear filters' }).click();
   await expect.poll(() => rows.count()).toBeGreaterThanOrEqual(9);
@@ -210,24 +221,25 @@ test('a long project list makes the switcher search first, with Needs you and Re
   run.errors.length = 0; // The padded project has no API behind it.
 });
 
-test('on a phone the projects come first: filters fold behind a button, nothing scrolls sideways', async ({
+test('on a phone the filters stay compact: search, then the menus, nothing scrolls sideways', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await padOverview(page);
   const run = await open(page, '/');
   const table = page.getByRole('region', { name: 'Projects', exact: true });
-  const toggle = table.getByRole('button', { name: /^Filters/ });
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(table.getByRole('group', { name: 'Platform' })).toBeHidden();
   await expect(table.getByLabel('Search projects')).toBeVisible();
-  await toggle.click();
-  await table
-    .getByRole('group', { name: 'Platform' })
-    .getByRole('button', { name: /Optimizely/ })
-    .click();
-  await toggle.click();
-  await expect(toggle).toHaveText('Filters •');
+  const platform = table.getByRole('button', { name: /^Platform/ });
+  await platform.click();
+  const list = page.getByRole('group', { name: 'Platform' });
+  const box = await list.boundingBox();
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  await list.getByRole('button', { name: /Optimizely/ }).click();
+  await expect(platform).toHaveText(/Optimizely/);
+  // The search and the menus take a few lines, not a screen: the projects start close under them.
+  const search = await table.getByLabel('Search projects').boundingBox();
+  const first = await table.locator('tbody tr').first().boundingBox();
+  expect(first!.y - search!.y).toBeLessThan(260);
   await fitsWidth(page);
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   run.clean();
