@@ -186,6 +186,12 @@
       }
     },
     {
+      "source": "/handoff/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
       "source": "/admin",
       "destination": {
         "service": "api"

@@ -119,6 +119,7 @@ import { redactForWatcher, redactJsonForWatcher } from './redact';
 import { registerPeople, type SendInvitation } from './people';
 import { registerAdmin } from './admin';
 import { registerLicenses } from './licenses';
+import { registerHandoff } from './handoff';
 import {
   LOCAL_SUBJECT,
   organizationOf,
@@ -499,6 +500,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
 
   app.get('/health', async () => ({ ok: true }));
+
+  registerHandoff(app, {
+    secret: deps.auth?.sessionSecret,
+    publicUrl: deps.auth?.publicUrl,
+    intake: deps.intake,
+    project: (id) => projections.get(id) ?? null,
+    catchUp: (id) => projections.catchUp(id),
+    now: () => (deps.now ?? Date.now)(),
+  });
 
   const github = (reply: FastifyReply) => {
     if (!deps.github) {

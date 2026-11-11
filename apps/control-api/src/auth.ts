@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { escapeHtml, htmlPage } from './pages';
 
 /** A person as WorkOS signs them in (AuthKit). */
 export interface WorkosUser {
@@ -91,7 +92,9 @@ const SESSION = 'lw_session';
 const STATE = 'lw_oauth_state';
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 // The app's post-install page is open: it lands client repository owners, who aren't operators.
-const OPEN_PATHS = ['/health', '/auth/', '/integrations/github/installed'];
+// A credential hand-off is for the client's administrator, who has no account: its signed link is
+// the permission.
+const OPEN_PATHS = ['/health', '/auth/', '/integrations/github/installed', '/handoff/'];
 /** The path alone, without its query: routes are matched exactly, not by prefix. */
 const pathOf = (url: string) => url.split('?')[0]!;
 // What a scheduled call (Vercel Cron) may reach with the cron secret.
@@ -420,25 +423,10 @@ function safeReturn(returnTo: string | undefined, appUrl: string): string {
 
 const WORKOS_API = 'https://api.workos.com';
 
-const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
-const PAGE_STYLE = `body{font:16px/1.5 system-ui,sans-serif;margin:0;display:grid;place-items:center;
-min-height:100vh;background:#f6f5f2;color:#1d1c1a}main{max-width:26rem;padding:2rem}h1{font-size:1.25rem}
-a.b{display:block;margin:.75rem 0;padding:.75rem 1rem;border-radius:999px;background:#1d1c1a;color:#fff;
-text-align:center;text-decoration:none}a.b.s{background:transparent;color:inherit;border:1px solid #c9c7c1}
-@media (prefers-color-scheme:dark){body{background:#161614;color:#ecebe7}a.b{background:#ecebe7;color:#161614}
-a.b.s{background:transparent;color:inherit;border-color:#4a4945}}`;
-
 /** A small page of the API's own: the sign-in choice, or why sign-in stopped. */
 function page(reply: FastifyReply, status: number, body: string) {
   const inner = body.startsWith('<') ? body : `<h1>Sign-in stopped</h1><p>${escapeHtml(body)}</p>`;
-  return reply
-    .status(status)
-    .type('text/html; charset=utf-8')
-    .header('cache-control', 'no-store')
-    .send(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Launchworks</title><style>${PAGE_STYLE}</style></head><body><main>${inner}</main></body></html>`,
-    );
+  return htmlPage(reply, status, 'Sign in', inner);
 }
 
 /** Both ways in: WorkOS for everyone, GitHub for Icreon's operators. */
