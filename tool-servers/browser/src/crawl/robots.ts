@@ -1,7 +1,8 @@
+import { CRAWLER_NAME } from './http';
 /**
- * robots.txt, read the way major crawlers read it: the group for `*` (we announce no crawler name
- * of our own), Allow and Disallow with `*` and `$`, the longest matching rule wins and Allow wins
- * a tie. Also the sitemaps it lists and its Crawl-delay.
+ * robots.txt, read the way major crawlers read it: the group naming us (LaunchworksBot) if there
+ * is one, else the group for `*`; Allow and Disallow with `*` and `$`, the longest matching rule
+ * wins and Allow wins a tie. Also the sitemaps it lists and its Crawl-delay.
  */
 export interface Robots {
   allows(pathAndQuery: string): boolean;
@@ -54,7 +55,8 @@ export function parseRobots(text: string): Robots {
       if (Number.isFinite(n) && n >= 0) current.delay = n;
     }
   }
-  const mine = groups.filter((g) => g.agents.includes('*'));
+  const named = groups.filter((g) => g.agents.includes(CRAWLER_NAME.toLowerCase()));
+  const mine = named.length ? named : groups.filter((g) => g.agents.includes('*'));
   const rules = mine.flatMap((g) => g.rules);
   const delay = mine.map((g) => g.delay).find((d) => d !== null) ?? null;
   return {

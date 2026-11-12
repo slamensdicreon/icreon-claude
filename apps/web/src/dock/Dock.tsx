@@ -460,8 +460,10 @@ function Composer() {
    */
   const attach = async (file: File) => {
     if (!projectId) return;
-    if (file.size > 10 * 1024 * 1024) {
-      toast('Files can be up to 10 MB.');
+    // A saved page (Chrome's "Webpage, Single File", .mhtml) holds its images: up to 40 MB.
+    const savedPage = /\.mht(ml)?$/i.test(file.name);
+    if (file.size > (savedPage ? 40 : 10) * 1024 * 1024) {
+      toast(savedPage ? 'Saved pages can be up to 40 MB.' : 'Files can be up to 10 MB.');
       return;
     }
     const dataBase64 = await new Promise<string>((resolve, reject) => {

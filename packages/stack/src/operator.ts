@@ -143,7 +143,7 @@ export function sourceNotice(s: ProjectState, recent: LwEvent[], now: Date): Ope
   if (refused >= 2)
     return heads(
       `${site} is turning the team away`,
-      `Just so you know: ${site} is refusing our browser (${word(refused)} pages answered "access denied" in the last ${SOURCE_WINDOW_MINUTES} minutes). That's the site's bot protection, not our access. The team will skip what it can't read, and if it can't read enough it will ask you how to go on.`,
+      `Just so you know: ${site} is refusing our browser (${word(refused)} pages answered "access denied" in the last ${SOURCE_WINDOW_MINUTES} minutes). That's the site's bot protection, not our access, and we don't try to get past it. If the team needs a page it can't read, save it from your own browser (Chrome or Edge: Save page as, "Webpage, Single File") and attach the .mhtml file here: the team then works from your copy.`,
     );
   if (throttled >= 2)
     return heads(

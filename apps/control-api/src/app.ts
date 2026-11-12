@@ -1857,15 +1857,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
    * project, listed in every agent's context with the ref media.upload takes, and shown in the
    * conversation. JSON with the file as base64, up to 10 MB.
    */
-  app.post<P>('/projects/:id/files', { bodyLimit: 15 * 1024 * 1024 }, async (req, reply) => {
+  // A saved page (.mhtml, the page with its images and styles) runs larger than other files.
+  app.post<P>('/projects/:id/files', { bodyLimit: 60 * 1024 * 1024 }, async (req, reply) => {
     const s = known(req.params.id);
     if (!deps.putFile)
       return fail(reply, 501, 'files_unavailable', 'This server has nowhere to keep files.');
     const input = AttachFile.parse(req.body);
     const bytes = new Uint8Array(Buffer.from(input.dataBase64, 'base64'));
     if (!bytes.length) return fail(reply, 422, 'empty_file', 'The file is empty.');
-    if (bytes.length > 10 * 1024 * 1024)
-      return fail(reply, 413, 'file_too_large', 'Files can be up to 10 MB.');
+    const savedPage = /\.mht(ml)?$/i.test(input.name);
+    if (bytes.length > (savedPage ? 40 : 10) * 1024 * 1024)
+      return fail(
+        reply,
+        413,
+        'file_too_large',
+        savedPage ? 'Saved pages can be up to 40 MB.' : 'Files can be up to 10 MB.',
+      );
     const fileId = `file-${randomUUID().slice(0, 8)}`;
     // The stored name keeps its extension (what media.upload and the download route go by).
     const safe =

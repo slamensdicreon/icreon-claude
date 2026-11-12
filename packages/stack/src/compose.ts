@@ -424,6 +424,11 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
     browser: chromium,
     crawler: opts.crawler,
     assetHosts: (projectId) => assetHosts(opts.projections, library, projectId, hostsSeen),
+    // Pages the Director saved from their own browser (.mhtml): read before the live site.
+    captures: async (projectId) =>
+      (opts.projections.get(projectId)?.files ?? [])
+        .filter((f) => isSavedPage(f.name, f.contentType))
+        .map((f) => ({ ref: f.ref, name: f.name })),
     // The source site's pages are read once and reused for six hours; the new site's never.
     sourceHosts: (projectId) => {
       const url = opts.projections.get(projectId)?.sourceUrl;
@@ -1052,4 +1057,9 @@ export function projectContext(projections: Projections, platform: PlatformPack)
       ].join('\n');
     },
   };
+}
+
+/** A page saved from a browser as one file ("Webpage, Single File"): MHTML. */
+export function isSavedPage(name: string, contentType: string): boolean {
+  return /\.mht(ml)?$/i.test(name) || /multipart\/related|message\/rfc822|mhtml/i.test(contentType);
 }

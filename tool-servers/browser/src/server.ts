@@ -5,8 +5,10 @@ import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
 import { extractContent, extractPage, type PageExtract } from './extract';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
 import { layoutData } from './layout-data';
+import { captureHtml, openCapture, pageKey, parseMhtml, partFor, type Capture } from './capture';
 import { assertNavigable, BlockedUrlError, type UrlPolicy, withSibling } from './ssrf';
 import { Crawler, CRAWL_LIMITS } from './crawl/crawler';
+import { CRAWLER_UA } from './crawl/http';
 import { CrawlReports } from './crawl/report';
 import { MemoryCrawlStore, type CrawlJob, type CrawlStore } from './crawl/store';
 import {
@@ -54,6 +56,12 @@ export interface BrowserServerOptions {
   crawler?: Crawler;
   /** Where background crawls are kept when this server makes its own crawler. */
   crawls?: CrawlStore;
+  /**
+   * Pages the Director saved from their own browser and attached (.mhtml), per project. A page
+   * read asks these first: the team works from the Director's copy, offline, and the live site
+   * is never asked (a site that refuses automated browsers can still be demoed).
+   */
+  captures?: (projectId: string) => Promise<{ ref: string; name: string }[]>;
 }
 
 /**
@@ -126,10 +134,9 @@ export function compactCrawl(
   };
 }
 
-/** What a browser sends for an image, so sites that turn away bare clients serve the file. */
+/** What we send for a page read or an image outside the browser: who we are, said plainly. */
 const BROWSER_HEADERS = {
-  'user-agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'user-agent': CRAWLER_UA,
   accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
   'accept-language': 'en-US,en;q=0.9',
 };
@@ -432,6 +439,40 @@ export class BrowserToolServer implements ToolServer {
     return this.browser.withContext(policy, fn);
   }
 
+  /** Parsed captures by blob ref (null: not a saved page). */
+  private readonly parsed = new Map<string, Capture | null>();
+
+  /** The Director's saved copy of this page, newest first, if there is one. */
+  private async captureFor(projectId: string, url: unknown): Promise<Capture | null> {
+    if (typeof url !== 'string' || !this.opts.captures) return null;
+    const files = await this.opts.captures(projectId).catch(() => []);
+    for (const f of [...files].reverse()) {
+      const c = await this.capture(f.ref);
+      if (c && pageKey(c.url) === pageKey(url)) return c;
+    }
+    return null;
+  }
+
+  private async capture(ref: string): Promise<Capture | null> {
+    if (!this.parsed.has(ref)) {
+      const bytes = await this.opts.blobs.get(ref).catch(() => null);
+      this.parsed.set(ref, bytes ? parseMhtml(Buffer.from(bytes)) : null);
+    }
+    return this.parsed.get(ref) ?? null;
+  }
+
+  /** Every resource saved in the project's captures (an image the page showed). */
+  private async capturedPart(projectId: string, url: string) {
+    for (const f of [
+      ...((await this.opts.captures?.(projectId).catch(() => [])) ?? []),
+    ].reverse()) {
+      const c = await this.capture(f.ref);
+      const part = c && partFor(c, url);
+      if (part && part.location !== c.url) return { capture: c, part };
+    }
+    return null;
+  }
+
   /** Source page reads, by project, operation and arguments: reused, not re-read (see `sourceHosts`). */
   private readonly reads = new Map<string, { at: number; result: ToolResult }>();
 
@@ -482,6 +523,11 @@ export class BrowserToolServer implements ToolServer {
   ): Promise<ToolResult> {
     const policy = this.opts.policy(ctx.projectId);
     try {
+      // The Director's saved copy of the page answers before the live site is asked.
+      if (CAPTURE_READS.has(op)) {
+        const c = await this.captureFor(ctx.projectId, args.url);
+        if (c) return await this.fromCapture(ctx.projectId, policy, op, args, c);
+      }
       switch (op) {
         case 'crawl.start':
         case 'crawl.status':
@@ -514,8 +560,12 @@ export class BrowserToolServer implements ToolServer {
             String(args.url),
             (args.breakpoints as Breakpoint[]) ?? ['desktop', 'tablet', 'phone'],
           );
-        case 'fetch.asset':
+        case 'fetch.asset': {
+          // An image the Director's saved copy holds is taken from it, not the live site.
+          const saved = await this.capturedPart(ctx.projectId, String(args.url));
+          if (saved) return await this.storePart(ctx.projectId, String(args.url), saved);
           return await this.fetchAsset(ctx.projectId, policy, String(args.url));
+        }
         case 'page.markup':
         case 'page.styles':
           return await this.structure(policy, op, args);
@@ -535,26 +585,135 @@ export class BrowserToolServer implements ToolServer {
     }
   }
 
+  /**
+   * A page read answered from the Director's saved copy: opened offline (nothing reaches the live
+   * site), read the way the live page would be. Results say where they came from and when.
+   */
+  private async fromCapture(
+    projectId: string,
+    policy: UrlPolicy,
+    op: string,
+    args: Record<string, unknown>,
+    c: Capture,
+  ): Promise<ToolResult> {
+    const from = `from the Director's saved copy${c.savedAt ? ` (saved ${c.savedAt.slice(0, 10)})` : ''}`;
+    const note = (r: ToolResult): ToolResult => ({
+      ...r,
+      body:
+        r.body && typeof r.body === 'object'
+          ? { ...(r.body as object), capture: { url: c.url, savedAt: c.savedAt } }
+          : r.body,
+      summary: `${r.summary ?? ''} (${from})`,
+    });
+    if (op === 'page.data') return note(this.layoutDataFrom(c.url, captureHtml(c), args));
+    if (op === 'screenshot') {
+      const breakpoints = (args.breakpoints as Breakpoint[]) ?? ['desktop', 'tablet', 'phone'];
+      const shots = await this.withPage(policy, async (context) => {
+        const out = [];
+        for (const bp of breakpoints) {
+          const page = await openCapture(context, c);
+          await page.setViewportSize(BREAKPOINTS[bp]);
+          await page.waitForTimeout(300);
+          const png = await page.screenshot({ fullPage: true, type: 'png' });
+          await page.close();
+          const sha256 = createHash('sha256').update(png).digest('hex');
+          const ref = await this.opts.blobs.put(
+            projectId,
+            `screenshots/${sha256}.png`,
+            png,
+            'image/png',
+          );
+          out.push({
+            breakpoint: bp,
+            width: BREAKPOINTS[bp].width,
+            bytes: png.length,
+            sha256,
+            ref,
+          });
+        }
+        return out;
+      });
+      return note({
+        code: 200,
+        body: { url: c.url, shots },
+        summary: `Screenshots of ${new URL(c.url).pathname} at ${breakpoints.join(', ')}`,
+      });
+    }
+    if (op === 'page.markup' || op === 'page.styles')
+      return note(await this.structure(policy, op, args, c));
+    // snapshot
+    return note(
+      await this.withPage(policy, async (context) => {
+        const page = await openCapture(context, c);
+        try {
+          const extract = (await page.evaluate(`(${extractPage.toString()})()`)) as PageExtract;
+          const text = (await page.evaluate(`(${extractContent.toString()})()`)) as ReturnType<
+            typeof extractContent
+          >;
+          const body = { url: c.url, status: 200, ...extract, ...text };
+          return {
+            code: 200,
+            body,
+            summary: `Snapshot of ${c.url}: ${body.blocks.length} blocks, ${body.content?.length ?? 0} text items in full`,
+          };
+        } finally {
+          await page.close();
+        }
+      }),
+    );
+  }
+
+  /** A resource from a capture, kept like a downloaded asset. */
+  private async storePart(
+    projectId: string,
+    url: string,
+    saved: { capture: Capture; part: Capture['parts'][number] },
+  ): Promise<ToolResult> {
+    const { part } = saved;
+    const sha256 = createHash('sha256').update(part.body).digest('hex');
+    const ext = TYPE_EXT[part.contentType] ?? 'bin';
+    const ref = await this.opts.blobs.put(
+      projectId,
+      `assets/${sha256}.${ext}`,
+      new Uint8Array(part.body),
+      part.contentType || 'application/octet-stream',
+    );
+    return {
+      code: 200,
+      body: { url, contentType: part.contentType, bytes: part.body.length, sha256, ref },
+      summary: `Stored ${url} (${part.contentType}, ${part.body.length} bytes) from the Director's saved copy`,
+    };
+  }
+
   /** Section outline, one section's markup, or styles: read as rendered at desktop width, or styles at another `width`. */
   private async structure(
     policy: UrlPolicy,
     op: 'page.markup' | 'page.styles',
     args: Record<string, unknown>,
+    capture?: Capture,
   ): Promise<ToolResult> {
-    const url = await assertNavigable(String(args.url), policy);
+    const url = capture ? new URL(capture.url) : await assertNavigable(String(args.url), policy);
     return this.withPage(policy, async (context) => {
-      const page = await context.newPage();
       const width = Number(args.width);
-      await page.setViewportSize(
+      const size =
         op === 'page.styles' && Number.isInteger(width) && width >= 320 && width <= 2560
           ? { width, height: BREAKPOINTS.desktop.height }
-          : BREAKPOINTS.desktop,
-      );
-      const response = await gotoPolitely(page, url.toString(), {
-        waitUntil: 'load',
-        timeout: this.opts.navigationTimeoutMs ?? 30_000,
-      });
-      const status = response?.status() ?? 0;
+          : BREAKPOINTS.desktop;
+      let page: Page;
+      let status = 200;
+      if (capture) {
+        page = await openCapture(context, capture);
+        await page.setViewportSize(size);
+      } else {
+        page = await context.newPage();
+        await page.setViewportSize(size);
+        const response = await gotoPolitely(page, url.toString(), {
+          waitUntil: 'load',
+          timeout: this.opts.navigationTimeoutMs ?? 30_000,
+        });
+        status = response?.status() ?? 0;
+      }
+      const shown = () => (capture ? capture.url : canonical(page.url()));
       const code = pageCode(status);
       const refused = refusedNote(status);
       const run = <T>(fn: (...a: never[]) => T, ...a: unknown[]) =>
@@ -570,16 +729,16 @@ export class BrowserToolServer implements ToolServer {
           });
           return {
             code,
-            body: { url: canonical(page.url()), width: page.viewportSize()?.width, ...styles },
-            summary: `Styles of ${canonical(page.url())} at ${page.viewportSize()?.width}px wide: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties${refused}`,
+            body: { url: shown(), width: page.viewportSize()?.width, ...styles },
+            summary: `Styles of ${shown()} at ${page.viewportSize()?.width}px wide: ${styles.elements.filter((e) => e.matches).length}/${selectors.length} selectors matched, ${styles.tokens.fonts.length} fonts, ${Object.keys(styles.tokens.customProperties).length} custom properties${refused}`,
           };
         }
         if (typeof args.selector !== 'string' || !args.selector) {
           const sections = await run(outlineSections);
           return {
             code,
-            body: { url: canonical(page.url()), sections },
-            summary: `${sections.length} sections on ${canonical(page.url())}${refused}`,
+            body: { url: shown(), sections },
+            summary: `${sections.length} sections on ${shown()}${refused}`,
           };
         }
         const markup = await run(cleanMarkup, args.selector, Number(args.maxChars ?? 30_000)).catch(
@@ -592,12 +751,12 @@ export class BrowserToolServer implements ToolServer {
         if (!markup.found)
           return {
             code: 404,
-            body: { error: `Nothing matches ${args.selector} on ${canonical(page.url())}` },
+            body: { error: `Nothing matches ${args.selector} on ${shown()}` },
             summary: `No element matches ${args.selector}`,
           };
         return {
           code,
-          body: { url: canonical(page.url()), selector: args.selector, ...markup },
+          body: { url: shown(), selector: args.selector, ...markup },
           summary: `Markup of ${args.selector}: ${markup.html.length} characters${markup.truncated ? ' (truncated)' : ''}${refused}`,
         };
       } finally {
@@ -1159,8 +1318,9 @@ export class BrowserToolServer implements ToolServer {
     }
     let status = res?.status ?? 0;
     let html = res?.ok ? await res.text() : null;
-    if (!html && [401, 403, 429, 503].includes(status)) {
-      // Some sites turn away anything but a browser: ask the real one for the page as served.
+    if (!html && [429, 503].includes(status)) {
+      // Busy, not a refusal: the browser asks once more. A 401/403 is the site's answer to who we
+      // are, and we take it.
       const got = await this.withPage(policy, async (context) => {
         const page = await context.newPage();
         try {
@@ -1181,6 +1341,12 @@ export class BrowserToolServer implements ToolServer {
         body: { error: `HTTP ${status} from ${url.host}`, url: url.toString() },
         summary: `Couldn't read ${url.pathname}: HTTP ${status}`,
       };
+    return this.layoutDataFrom(url.toString(), html, args);
+  }
+
+  /** The layout data a page's HTML embeds (Next.js on Sitecore), as page.data answers it. */
+  private layoutDataFrom(pageUrl: string, html: string, args: Record<string, unknown>): ToolResult {
+    const url = new URL(pageUrl);
     const all = layoutData(html);
     const want = typeof args.component === 'string' ? args.component.toLowerCase() : null;
     const picked = want ? all.filter((c) => c.name.toLowerCase() === want) : all;
@@ -1278,8 +1444,9 @@ export class BrowserToolServer implements ToolServer {
     if (res?.ok) {
       bytes = new Uint8Array(await res.arrayBuffer());
       contentType = res.headers.get('content-type') ?? contentType;
-    } else if ([401, 403, 429, 503].includes(status)) {
-      // Some sites turn away anything but a browser: ask the real one.
+    } else if ([429, 503].includes(status)) {
+      // Busy, not a refusal: the browser asks once more for it. A 401/403 is the site's answer to
+      // who we are, and we take it (no other client is sent in its place).
       const got = await this.withPage(policy, async (context) => {
         const page = await context.newPage();
         try {
@@ -1307,7 +1474,7 @@ export class BrowserToolServer implements ToolServer {
         // it), never a credential problem.
         code: status === 404 ? 404 : 422,
         body: { error: `HTTP ${status} from ${url.host}`, url: url.toString() },
-        summary: `Couldn't download ${url.pathname}: HTTP ${status} from ${url.host}${status === 403 ? ' (the site refused it, also to a real browser)' : ''}`,
+        summary: `Couldn't download ${url.pathname}: HTTP ${status} from ${url.host}${status === 401 || status === 403 ? ". The site refused it: take the image from the Director's saved copy of its page (attach one if there is none), or report it" : ''}`,
       };
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     // An image server's URL often has no extension (Scene7: /is/image/microsoftcorp/Promo-Card):
@@ -1442,7 +1609,7 @@ const refusedNote = (status: number) =>
   status === 404 || status === 410
     ? `. The site answered HTTP ${status}: this is its not-found page, read as served. Its title, headings and text are in the result (for the missing-page probe, they are the errorPage)`
     : status === 401 || status === 403
-      ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access: for the missing-page probe, record errorPage as null; otherwise leave the page out and say so`
+      ? `. The site answered HTTP ${status} for this page: it refused it (often bot protection, or how the site answers a URL it doesn't have). That is the site, not our access, and retrying won't change it: for the missing-page probe, record errorPage as null. For a page the work needs, ask the Director (needs_decision) to save it from their own browser (Chrome or Edge: Save page as, \"Webpage, Single File\" .mhtml) and attach it in the project's conversation, or to use another site: once attached, every browser read of that page answers from their copy`
       : '';
 
 /**
@@ -1453,7 +1620,7 @@ const refusedNote = (status: number) =>
 export const siteRefused = (origin: string, reason: string, refused: number, tried: number) =>
   `${origin} refused our browser: ${refused} of ${tried} pages answered ${reason}, so no page could be read. ` +
   `That is the site's bot protection, not our access, and retrying won't change it. ` +
-  `Stop and submit needs_decision for the Director: the client allows our crawler, or gives the source repository, or the project uses another site`;
+  `Stop and submit needs_decision for the Director with these options: they save the pages the work needs from their own browser (Chrome or Edge: Save page as, "Webpage, Single File" .mhtml) and attach them in the project's conversation, and the browser tools read those copies; or the project uses another site; or, for a client whose web team is engaged, they allow our crawler or give the source repository. Never retry against the site meanwhile`;
 
 /** A selector in another tool's dialect (`:has-text`, `:-soup-contains`, `:contains`) or malformed. */
 class BadSelector extends Error {
@@ -1507,6 +1674,14 @@ export async function gotoPolitely(
 
 /** Read-only page operations whose source-site results are reused (see `sourceHosts`). */
 const SOURCE_READS = new Set(['snapshot', 'page.markup', 'page.styles', 'page.data']);
+/** Page reads the Director's saved copy of a page can answer. */
+const CAPTURE_READS = new Set([
+  'snapshot',
+  'page.markup',
+  'page.styles',
+  'page.data',
+  'screenshot',
+]);
 
 /** A challenge page in place of the site: Cloudflare's, a captcha, a "checking your browser". */
 export function looksLikeBotCheck(body: unknown): boolean {
