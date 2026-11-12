@@ -119,6 +119,8 @@ export interface ProjectSnapshot {
   retryFromBlocked: string[];
   /** Tasks whose last rejected-work card retried by default (absent before such cards waited). */
   defaultedRetry?: string[];
+  /** Questions each task stopped on in a row (absent before repeated questions waited). */
+  asksInARow?: Record<string, number>;
   /** The failing checks on each task's last rejected-work card (absent before such cards compared). */
   lastFailure?: Record<string, string>;
   reruns: string[];

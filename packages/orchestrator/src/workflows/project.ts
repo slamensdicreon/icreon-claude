@@ -153,6 +153,12 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
    */
   const defaultedRetry = new Set<string>();
   /**
+   * Questions a task has stopped on in a row, since it last finished. Liberty Mutual's inventory
+   * asked "the site refuses our browser" five times in four minutes, answered each time with a
+   * wait that could never end: from the second in a row, the card waits for the Director.
+   */
+  const asksInARow: Record<string, number> = {};
+  /**
    * The failing checks on each task's last rejected-work card. The same failure again is the same
    * decision: the next card says so and waits for the Director (Ervin Cable's SEO titles raised
    * three cards for one decision).
@@ -532,6 +538,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         resolver,
       );
     if (lead.decision === 'forward') return forward(lead.reasoning);
+    // Holding a task is the Director's call alone.
+    if (lead.optionId === 'hold')
+      return forward(`Holding ${t.title} is your call. ${lead.reasoning}`);
     // A Lead can send rejected work back again, never accept what it rejected.
     if (resolver.kind === 'blocked' && lead.optionId !== 'retry')
       return forward(`Accepting work its Lead rejected is your call. ${lead.reasoning}`);
@@ -708,6 +717,11 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         // An answer renews the task's waits: without it, a task past its limit of waits would
         // come back with another card at its very next wait, however the answer told it to go on.
         if (patched('answer-renews-waits')) delete waits[r.taskId];
+        if (optionId === 'hold') {
+          // Parked: blocked, with no retry and no further card, until it is run again from the plan.
+          instructions[r.taskId] = notes;
+          return;
+        }
         const chosen = r.options.find((o) => o.id === optionId)!.label;
         instructions[r.taskId] =
           `Decision on "${r.question}": ${chosen}.${notes ? ` ${notes}` : ''}`;
@@ -913,6 +927,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   async function onOutcome(t: PlannedTask, outcome: TaskOutcome) {
     if (outcome.outcome === 'done') {
       finishedCount += 1;
+      delete asksInARow[t.taskId];
       if (redoing.delete(t.taskId)) redoneAt[t.taskId] = finishedCount;
     }
     if (outcome.outcome === 'done' || outcome.outcome === 'cancelled') {
@@ -1280,26 +1295,64 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       }));
       const recommended = options.find((o) => o.recommended) ?? options[0]!;
       recommended.recommended = true;
-      const escalationId = await raiseTriaged(
-        t,
-        {
-          type: 'decision',
-          title: clip(d.question),
-          context: `${roles.get(t.role)?.name ?? t.role}: ${d.summary}`,
-          impact: `${t.title} and its dependents wait. Other work continues.`,
-          options,
-          defaultOptionId: recommended.id,
-          evidence: [{ kind: 'log', label: 'Agent session', ref: `task:${t.taskId}` }],
-          sourceTaskId: t.taskId,
-          gate: null,
-        },
-        {
-          kind: 'agent-decision',
-          taskId: t.taskId,
-          question: d.question,
-          options: options.map((o) => ({ id: o.id, label: o.label })),
-        },
-      );
+      const repeatQs = patched('repeat-question-waits');
+      const asked = repeatQs ? (asksInARow[t.taskId] = (asksInARow[t.taskId] ?? 0) + 1) : 1;
+      const again = asked >= 2;
+      if (again)
+        options.push({
+          id: 'hold',
+          label: 'Hold it: no retry and no further card until I run it again from the plan',
+          recommended: false,
+        });
+      const card = {
+        type: 'decision' as const,
+        title: clip(d.question),
+        context: [
+          again
+            ? `${t.title} has stopped on a question ${asked} times in a row, and each answer sent it straight back here: answering the same way again won't move it. Choose another way, or hold it until something has changed.`
+            : '',
+          `${roles.get(t.role)?.name ?? t.role}: ${d.summary}`,
+        ]
+          .filter(Boolean)
+          .join(' '),
+        impact: `${t.title} and its dependents wait. Other work continues.`,
+        options,
+        // Asked again: it waits for the Director, never a default or a Lead's same answer.
+        defaultOptionId: again ? null : recommended.id,
+        evidence: [{ kind: 'log' as const, label: 'Agent session', ref: `task:${t.taskId}` }],
+        sourceTaskId: t.taskId,
+        gate: null,
+      };
+      const resolver = {
+        kind: 'agent-decision' as const,
+        taskId: t.taskId,
+        question: d.question,
+        options: options.map((o) => ({ id: o.id, label: o.label })),
+      };
+      // Asked again: the card waits for a person (no default); its Lead may still answer, up to
+      // its limit in a row, but never holds a task for the Director.
+      const escalationId = again
+        ? await raiseTriaged(t, card, resolver)
+        : await raiseTriaged(
+            t,
+            {
+              type: 'decision',
+              title: clip(d.question),
+              context: `${roles.get(t.role)?.name ?? t.role}: ${d.summary}`,
+              impact: `${t.title} and its dependents wait. Other work continues.`,
+              options,
+              defaultOptionId: recommended.id,
+              evidence: [{ kind: 'log', label: 'Agent session', ref: `task:${t.taskId}` }],
+              sourceTaskId: t.taskId,
+              gate: null,
+            },
+            {
+              kind: 'agent-decision',
+              taskId: t.taskId,
+              question: d.question,
+              options: options.map((o) => ({ id: o.id, label: o.label })),
+            },
+          );
       // A Lead may have settled it already; then the task is retrying, not waiting on a card.
       if (unresolved(escalations.get(escalationId)!)) taskEscalation.set(t.taskId, escalationId);
     } else {
@@ -1578,6 +1631,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       retryFromBlocked.delete(taskId);
       revalidate.delete(taskId);
       holdUntil.delete(taskId);
+      // Run again by the Director: its questions start counting again.
+      delete asksInARow[taskId];
       instructions[taskId] = notes;
       if (st !== 'ready') await send(taskMove(t, 'ready', `Run again: ${by}`));
     }
@@ -2632,6 +2687,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     skipMerged = r.skipMerged ?? false;
     for (const id of r.retryFromBlocked) retryFromBlocked.add(id);
     for (const id of r.defaultedRetry ?? []) defaultedRetry.add(id);
+    Object.assign(asksInARow, r.asksInARow ?? {});
     Object.assign(lastFailure, r.lastFailure ?? {});
     for (const id of r.reruns) reruns.add(id);
     for (const [id, w] of r.waitingOn) waitingOn.set(id, w);
@@ -2671,6 +2727,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       instructions: { ...instructions },
       retryFromBlocked: [...retryFromBlocked],
       defaultedRetry: [...defaultedRetry],
+      asksInARow: { ...asksInARow },
       lastFailure: { ...lastFailure },
       reruns: [...reruns],
       waitingOn: [...waitingOn],

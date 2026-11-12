@@ -523,7 +523,7 @@ export class Crawler {
       status: 'done',
       stats: run.stats,
       message: refusedAll
-        ? `The site refused our browser on every page (${run.stats.refused} answered 401 or 403).`
+        ? `The site refused us on every page (${run.stats.refused} answered 401 or 403, or a challenge page). The Director can save the pages the work needs from their own browser (Chrome or Edge: Save page as, "Webpage, Single File") and attach them; the browser tools read those copies.`
         : null,
       finishedAt: new Date().toISOString(),
     });
@@ -687,19 +687,14 @@ export class Crawler {
       }
       let page: StoredPage | null = null;
       if (f.status === 401 || f.status === 403) {
-        // Bot protection often turns away plain clients only: ask a real browser.
-        page = await this.rendered(run, u.url);
-        if (!page || page.status >= 400 || challengeOf(page)) {
-          stats.refused++;
-          return await store.finish(job.id, u.url, {
-            state: 'excluded',
-            reason:
-              page && page.status < 400
-                ? 'blocked by bot protection (a challenge page, also to a real browser)'
-                : `HTTP ${page?.status ?? f.status}`,
-            attempts,
-          });
-        }
+        // The site's answer to who we are: we take it, and send no other client in our place.
+        // The Director can save the pages the work needs from their own browser instead.
+        stats.refused++;
+        return await store.finish(job.id, u.url, {
+          state: 'excluded',
+          reason: `refused by the site (HTTP ${f.status})`,
+          attempts,
+        });
       } else if (f.status >= 400) {
         return await store.finish(job.id, u.url, {
           state: 'excluded',
@@ -717,19 +712,15 @@ export class Crawler {
         page = { url: u.url, status: f.status, via: 'http', ...extract };
         const challenge = challengeOf(extract, f.body);
         if (challenge) {
-          // A challenge page served with 200: a real browser may pass it; if not, the site
-          // refused us, whatever the status said.
+          // A challenge page served with 200 is the site's bot protection asking who we are: we
+          // don't try to pass it. The page counts as refused, whatever the status said.
           stats.challenged++;
-          const r = await this.rendered(run, u.url);
-          if (!r || r.status >= 400 || challengeOf(r)) {
-            stats.refused++;
-            return await store.finish(job.id, u.url, {
-              state: 'excluded',
-              reason: `blocked by bot protection (${challenge} challenge page, also to a real browser)`,
-              attempts,
-            });
-          }
-          page = r;
+          stats.refused++;
+          return await store.finish(job.id, u.url, {
+            state: 'excluded',
+            reason: `blocked by bot protection (a ${challenge} challenge page)`,
+            attempts,
+          });
         }
         const pattern = urlPattern(u.url);
         if (

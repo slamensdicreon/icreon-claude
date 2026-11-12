@@ -248,14 +248,10 @@ function statusLine(job: CrawlJob, b: StatusBody): string {
   const suspect = b.suspect
     ? `. Check the content: ${b.suspect.pages} pages share the title "${b.suspect.title.slice(0, 80)}", which may be a challenge, error or consent page the site served instead of its pages. Read two of them with crawl.page before relying on the templates`
     : '';
-  const challenged =
-    b.how.challenged && b.how.http === 0 && b.how.rendered > 0
-      ? '. The site sends a bot check to every plain request and a real browser passes it, so every page is read in a browser (slower, but complete)'
-      : b.how.challenged > b.how.refused
-        ? `. ${b.how.challenged - b.how.refused} pages answered with a bot check that a real browser passed`
-        : '';
+  // A bot check is a refusal: we don't try to pass it (counted in refused).
+  const challenged = '';
   const refused = b.how.refused
-    ? `. The site refused ${b.how.refused} pages (401/403, also to a real browser): list them as not read, they aren't an access problem of ours`
+    ? `. The site refused ${b.how.refused} pages (401/403 or a bot check): list them as not read, they aren't an access problem of ours. For one the work needs, ask the Director for a saved copy (their browser's "Webpage, Single File" .mhtml, attached)`
     : '';
   const big =
     p.found >= 400
@@ -264,7 +260,7 @@ function statusLine(job: CrawlJob, b: StatusBody): string {
   if (job.status === 'running')
     return `${head}: running, ${p.read} of ${p.found} URLs read${p.perMinute ? ` (${p.perMinute}/min${p.etaMinutes ? `, about ${p.etaMinutes} min left` : ''})` : ''}; ${t} templates so far${suspect}${throttled}${refused}${challenged}${big}`;
   if (job.status === 'done' && p.read === 0 && b.how.refused)
-    return `${head} found no page it could read: ${job.message ?? 'the site refused our browser'}. That is the site's bot protection, not our access, and retrying won't change it. Stop and submit needs_decision for the Director: the client allows our crawler, or gives the source repository, or the project uses another site`;
+    return `${head} found no page it could read: ${job.message ?? 'the site refused our browser'}. That is the site's bot protection, not our access, and retrying won't change it. Stop and submit needs_decision for the Director with these options: they save the pages the work needs from their own browser (Chrome or Edge: Save page as, "Webpage, Single File" .mhtml) and attach them, and the browser tools read those copies; or the project uses another site; or, for a client whose web team is engaged, they allow our crawler or give the source repository`;
   const how = `${b.how.http} read directly, ${b.how.rendered} in a browser${b.how.reused ? `, ${b.how.reused} unchanged since the last crawl` : ''}`;
   const cut = b.limits.truncated
     ? `. Stopped at maxPages (${b.limits.maxPages}): ${b.limits.dropped} more URLs were found and not read; the inventory is partial`

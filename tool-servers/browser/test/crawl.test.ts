@@ -385,6 +385,11 @@ describe('pieces', () => {
     expect(r.crawlDelay).toBe(3);
     expect(r.sitemaps).toEqual(['https://x.example/s.xml']);
     expect(parseRobots('User-agent: *\nDisallow:\n').allows('/x')).toBe(true);
+    // We announce our name: a group for it is the one we follow.
+    const named = parseRobots(
+      'User-agent: *\nDisallow:\n\nUser-agent: LaunchworksBot\nDisallow: /\n',
+    );
+    expect(named.allows('/about')).toBe(false);
   });
 
   it('knows a page by where it sits', () => {
@@ -645,7 +650,7 @@ describe('bot protection that answers 200', () => {
     ).toBeNull();
   });
 
-  it('reads pages a real browser gets past the check, and counts them', async () => {
+  it("doesn't try to get past a site's bot check, even one a browser would pass", async () => {
     const s = await site('browsers-pass');
     const server = new BrowserToolServer({
       policy,
@@ -656,12 +661,12 @@ describe('bot protection that answers 200', () => {
     try {
       const r = await server.call('crawl.start', { url: `${s.origin}/p/0`, maxPages: 6 }, ctx);
       const status = await finish(server, (r.body as { crawlId: string }).crawlId);
-      expect(status.progress.read).toBe(6);
-      expect(status.how).toMatchObject({ rendered: 6, http: 0 });
-      const page = await server.call('crawl.page', { url: `${s.origin}/p/1` }, ctx);
-      expect(page.body).toMatchObject({ title: 'Product 1 | Acme', via: 'browser' });
-      expect((await server.call('crawl.status', {}, ctx)).summary).toMatch(
-        /sends a bot check to every plain request and a real browser passes it, so every page is read in a browser/,
+      expect(status.progress.read).toBe(0);
+      expect(status.how).toMatchObject({ rendered: 0 });
+      expect(status.excluded).toContainEqual(
+        expect.objectContaining({
+          reason: 'blocked by bot protection (a Cloudflare challenge page)',
+        }),
       );
     } finally {
       await server.close();
@@ -683,7 +688,7 @@ describe('bot protection that answers 200', () => {
       expect(status.progress.read).toBe(0);
       expect(status.excluded).toContainEqual(
         expect.objectContaining({
-          reason: 'blocked by bot protection (Cloudflare challenge page, also to a real browser)',
+          reason: 'blocked by bot protection (a Cloudflare challenge page)',
         }),
       );
       expect((await server.call('crawl.status', {}, ctx)).summary).toMatch(

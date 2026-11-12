@@ -495,7 +495,7 @@ describe('snapshot, screenshot, fetch.asset', () => {
     }
   }, 60_000);
 
-  it('follows redirects, asks a real browser when refused, and takes the Blueprint’s media hosts', async () => {
+  it('follows redirects, takes a refusal as the answer, and takes the Blueprint’s media hosts', async () => {
     const moved = await browser.call('fetch.asset', { url: `${origin}/moved/hero.png` }, ctx);
     expect(moved).toMatchObject({ code: 200, body: { url: `${origin}/media/hero.png` } });
     const guardedFile = await browser.call(
@@ -503,7 +503,9 @@ describe('snapshot, screenshot, fetch.asset', () => {
       { url: `${origin}/browser-only/hero.png` },
       ctx,
     );
-    expect(guardedFile).toMatchObject({ code: 200, body: { contentType: 'image/png' } });
+    // A refusal is the site's answer: no browser is sent in our place.
+    expect(guardedFile.code).toBe(422);
+    expect(guardedFile.summary).toContain("the Director's saved copy");
     const cdn = await browser.call(
       'fetch.asset',
       { url: origin.replace('127.0.0.1', 'localhost') + '/media/hero.png' },

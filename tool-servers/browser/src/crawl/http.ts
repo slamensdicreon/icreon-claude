@@ -1,10 +1,17 @@
 import { gunzipSync } from 'node:zlib';
 import { assertNavigable, type UrlPolicy } from '../ssrf';
 
-/** What a browser sends for a page, so sites that turn away bare clients serve it. */
+/**
+ * Who we are, said plainly: a site migration's crawler, not a person's browser. A site that wants
+ * to turn us away can, and robots.txt rules for this name are kept (until 2026-11 our reads posed
+ * as Chrome, which is how a site's choice to refuse automated readers gets sidestepped).
+ */
+export const CRAWLER_NAME = 'LaunchworksBot';
+export const CRAWLER_UA = `Mozilla/5.0 (compatible; ${CRAWLER_NAME}/1.0; website migration)`;
+
+/** What we send for a page. */
 export const PAGE_HEADERS = {
-  'user-agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'user-agent': CRAWLER_UA,
   accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'accept-language': 'en-US,en;q=0.9',
 };
