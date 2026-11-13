@@ -174,6 +174,8 @@ const env = z
     OPERATOR_EMAIL_TO: z.string().optional(),
     /** Vercel Cron's secret: the watchdog's and the daily purge's scheduled calls carry it. */
     CRON_SECRET: z.string().optional(),
+    /** Icreon's admin console (a separate site) calls the admin routes with this key. */
+    ADMIN_CONSOLE_KEY: z.string().optional(),
     /** Days between asking for a project's deletion and the purge. */
     DELETE_GRACE_DAYS: z.coerce.number().int().min(0).default(30),
     OPERATOR_EMAIL_FROM: z.string().default('Launchworks Operator <onboarding@resend.dev>'),
@@ -244,6 +246,10 @@ const auth =
           .map(([login, sha256]) => ({ login, sha256 })),
         requiredOrg: env.GITHUB_ORG,
         cronSecret: env.CRON_SECRET?.trim() || null,
+        adminConsoleKey:
+          env.ADMIN_CONSOLE_KEY && env.ADMIN_CONSOLE_KEY.trim().length >= 32
+            ? env.ADMIN_CONSOLE_KEY.trim()
+            : null,
         secureCookies: required('PUBLIC_URL', publicUrl).startsWith('https://'),
       }
     : undefined;

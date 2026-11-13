@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { isSuperAdminRoute } from './organizations';
 import { escapeHtml, htmlPage } from './pages';
 
 /** A person as WorkOS signs them in (AuthKit). */
@@ -51,6 +52,13 @@ export interface GithubAuthOptions {
    * may reach the paths in CRON_PATHS only.
    */
   cronSecret?: string | null;
+  /**
+   * The admin console's key (ADMIN_CONSOLE_KEY): Icreon's /admin, a separate site, calls the
+   * platform's admin routes with it, server to server, naming who is acting (CONSOLE_ACTOR). That
+   * person must be an Icreon Director here, like anyone else; the key only says the call came from
+   * the console. It reaches the console's routes alone (see `consoleRoute`).
+   */
+  adminConsoleKey?: string | null;
   /** If set, the account must also be an active member of this org (where 2FA is enforced). */
   requiredOrg?: string;
   /** At least 32 characters; signs session cookies. */
@@ -68,7 +76,48 @@ export interface Operator {
   avatarUrl: string | null;
   /** Who they are in memberships, when it isn't their GitHub login (`workos:<user id>`). */
   subject?: string;
+  /** Acting through Icreon's admin console (its key), not a session of their own. */
+  viaConsole?: boolean;
 }
+
+/**
+ * Who is acting through the admin console: the WorkOS user it signed in (`x-lw-actor`, the user's
+ * id), with their email and name for the record. The console has already checked them with WorkOS;
+ * the platform then checks they are an Icreon Director, on every call.
+ */
+export const CONSOLE_ACTOR = {
+  id: 'x-lw-actor',
+  email: 'x-lw-actor-email',
+  name: 'x-lw-actor-name',
+} as const;
+
+const header = (req: FastifyRequest, name: string) => {
+  const v = req.headers[name];
+  return typeof v === 'string' ? v.trim() : '';
+};
+
+function consoleActorOf(req: FastifyRequest): Operator | null {
+  const id = header(req, CONSOLE_ACTOR.id);
+  const email = header(req, CONSOLE_ACTOR.email).toLowerCase();
+  if (!/^user_[A-Za-z0-9]{10,64}$/.test(id) || !/^[^@\s]{1,64}@[^@\s]{1,190}$/.test(email))
+    return null;
+  let name: string | null = null;
+  try {
+    name = decodeURIComponent(header(req, CONSOLE_ACTOR.name)).slice(0, 120) || null;
+  } catch {
+    name = null;
+  }
+  return { login: email, name, avatarUrl: null, subject: `workos:${id}` };
+}
+
+/**
+ * What the admin console reaches: Icreon's own routes (the super-admin ones), and the reads its
+ * pages show beside them. Nothing of a customer's projects beyond what those routes already are.
+ */
+export const consoleRoute = (method: string, url: string | undefined) =>
+  !!url &&
+  (isSuperAdminRoute(url) || CONSOLE_READS.has(`${method === 'HEAD' ? 'GET' : method} ${url}`));
+const CONSOLE_READS = new Set(['GET /playbooks', 'GET /portfolio']);
 
 interface Session {
   login: string;
@@ -162,6 +211,14 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
     return github && allowed.has(session.login.toLowerCase()) ? session : null;
   };
 
+  const consoleKey = opts.adminConsoleKey
+    ? createHash('sha256').update(`Bearer ${opts.adminConsoleKey}`).digest()
+    : null;
+  const isConsole = (header: string | undefined) =>
+    !!consoleKey &&
+    !!header &&
+    timingSafeEqual(createHash('sha256').update(header).digest(), consoleKey);
+
   app.addHook('onRequest', async (req, reply) => {
     if (
       req.method === 'OPTIONS' ||
@@ -172,6 +229,14 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
       return;
     if (isCron(req.headers.authorization) && CRON_PATHS.includes(pathOf(req.url))) {
       req.operator = { login: 'vercel-cron', name: 'Scheduled check', avatarUrl: null };
+      return;
+    }
+    if (isConsole(req.headers.authorization)) {
+      const actor = consoleActorOf(req);
+      if (!actor) return deny(reply, 400, 'no_actor', 'The admin console must say who is acting.');
+      if (!consoleRoute(req.method, req.routeOptions.url))
+        return deny(reply, 403, 'console_only', 'The admin console key does not reach this.');
+      req.operator = { ...actor, viaConsole: true };
       return;
     }
     const key = byKey(req.headers.authorization);

@@ -53,6 +53,17 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
   const { orgs } = deps;
   const who = (req: FastifyRequest) => subjectOf(req, deps.signedIn) ?? 'local';
 
+  /**
+   * Who is asking, for the admin console's sign-in: it lets in only those this answers for, so
+   * Icreon's Directors here are the one list of who may administer the platform.
+   */
+  app.get('/admin/me', async (req) => ({
+    subject: who(req),
+    login: req.operator?.login ?? 'local',
+    name: req.operator?.name ?? null,
+    superAdmin: true,
+  }));
+
   app.get('/admin/organizations', async () => {
     const [list, projects] = await Promise.all([orgs.list(), deps.projects()]);
     const owners = await orgs.ownersOf(projects.map((p) => p.projectId));

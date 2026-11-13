@@ -63,7 +63,9 @@ afterEach(async () => {
 
 const keyOf = (who: string) => `lwk_${createHash('sha256').update(who).digest('hex').slice(0, 40)}`;
 
-async function start(opts: { github?: boolean; users?: Record<string, Partial<WorkosUser>> } = {}) {
+async function start(
+  opts: { github?: boolean; users?: Record<string, Partial<WorkosUser>>; console?: string } = {},
+) {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
@@ -97,6 +99,7 @@ async function start(opts: { github?: boolean; users?: Record<string, Partial<Wo
     sessionSecret: 'x'.repeat(40),
     secureCookies: true,
     fetch: wos.fetch,
+    ...(opts.console ? { adminConsoleKey: opts.console } : {}),
   };
   app = await buildApp({
     store,
@@ -330,5 +333,83 @@ describe('people', () => {
     await start();
     const r = await as('dana')('GET', '/organization/people');
     expect([r.status, r.body.error.code]).toEqual([403, 'read_only']);
+  });
+});
+
+describe('the admin console', () => {
+  const CONSOLE = 'console-key-'.padEnd(48, 'k');
+  const viaConsole =
+    (actor: { id?: string; email?: string } | null, key = CONSOLE) =>
+    async (method: 'GET' | 'POST' | 'PUT', url: string, payload?: unknown) => {
+      const r = await app!.inject({
+        method,
+        url,
+        payload: payload as object,
+        headers: {
+          authorization: `Bearer ${key}`,
+          'x-lw-organization': DEFAULT_ORGANIZATION,
+          ...(actor?.id ? { 'x-lw-actor': actor.id } : {}),
+          ...(actor?.email ? { 'x-lw-actor-email': actor.email } : {}),
+          'x-lw-actor-name': encodeURIComponent('Steve Lamensdorf'),
+        },
+      });
+      return { status: r.statusCode, body: r.body ? (r.json() as any) : null };
+    };
+  const steve = { id: 'user_01STEVE00000', email: 'steve@icreon.com' };
+
+  it('lets an Icreon Director administer the platform through it, recorded as themselves', async () => {
+    const { orgs } = await start({ console: CONSOLE });
+    await orgs.setMember(
+      DEFAULT_ORGANIZATION,
+      workosSubject(steve.id),
+      'director',
+      'test',
+      'Steve',
+    );
+    const call = viaConsole(steve);
+    expect((await call('GET', '/admin/me')).body).toMatchObject({
+      subject: workosSubject(steve.id),
+      login: 'steve@icreon.com',
+      name: 'Steve Lamensdorf',
+    });
+    expect((await call('GET', '/admin/organizations')).status).toBe(200);
+    const made = await call('POST', '/admin/organizations', { name: 'Globex Industries' });
+    expect(made.status).toBe(201);
+    // Whoever acted in the console is the new organization's kickoff Director.
+    const members = await orgs.members(made.body.organization.id);
+    expect(members.map((m) => [m.subject, m.role])).toEqual([
+      [workosSubject(steve.id), 'director'],
+    ]);
+  });
+
+  it('turns away anyone who isn’t an Icreon Director, a call that names nobody, and a wrong key', async () => {
+    const { orgs, acme } = await start({ console: CONSOLE });
+    const customer = { id: 'user_01CUSTOMER00', email: 'pat@acme.com' };
+    await orgs.setMember(acme.id, workosSubject(customer.id), 'director', 'test', 'Pat');
+    expect((await viaConsole(customer)('GET', '/admin/organizations')).status).toBe(403);
+    expect((await viaConsole(null)('GET', '/admin/organizations')).status).toBe(400);
+    expect(
+      (await viaConsole(steve, 'wrong'.padEnd(48, 'x'))('GET', '/admin/organizations')).status,
+    ).toBe(401);
+  });
+
+  it('reaches the admin routes only, not a customer’s projects', async () => {
+    const { orgs } = await start({ console: CONSOLE });
+    await orgs.setMember(
+      DEFAULT_ORGANIZATION,
+      workosSubject(steve.id),
+      'director',
+      'test',
+      'Steve',
+    );
+    const call = viaConsole(steve);
+    expect((await call('GET', '/me/organizations')).body.error.code).toBe('console_only');
+    expect((await call('POST', '/projects', {})).body.error.code).toBe('console_only');
+    expect((await call('GET', '/projects/p-1')).body.error.code).toBe('console_only');
+  });
+
+  it('is off unless the key is set', async () => {
+    await start();
+    expect((await viaConsole(steve)('GET', '/admin/organizations')).status).toBe(401);
   });
 });
