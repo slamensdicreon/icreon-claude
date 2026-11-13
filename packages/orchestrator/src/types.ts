@@ -149,6 +149,11 @@ export interface ProjectSnapshot {
   done: number[];
   gates: [string, GateState][];
   escalations: EscalationSnapshot[];
+  /**
+   * Cards settled in earlier runs, by id: an answer that reaches the new run late is "already
+   * resolved", not an unknown card. Absent on snapshots from before it was kept.
+   */
+  settledEscalations?: string[];
   agentStates: [string, AgentState][];
   pausedRoles: string[];
   pausedPhases: number[];
