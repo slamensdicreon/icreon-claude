@@ -305,7 +305,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: deps.logger ?? false, maxParamLength: 1000 });
   await app.register(cors, { origin: corsOrigin ?? false, credentials: Boolean(deps.auth) });
   if (deps.auth) {
-    registerGithubAuth(app, deps.auth);
+    const orgStore = deps.organizations;
+    registerGithubAuth(app, {
+      ...deps.auth,
+      consoleActor:
+        deps.auth.consoleActor ??
+        (orgStore
+          ? async (email) => {
+              const directors = (await orgStore.members(DEFAULT_ORGANIZATION)).filter(
+                (m) => m.role === 'director' && m.label?.toLowerCase() === email.toLowerCase(),
+              );
+              // A WorkOS membership's label is the address it signed in with, verified there.
+              return (
+                directors.find((m) => m.subject.startsWith('workos:'))?.subject ??
+                directors[0]?.subject ??
+                null
+              );
+            }
+          : undefined),
+    });
     registerOriginCheck(app, [deps.auth.appUrl, deps.auth.publicUrl, ...(deps.extraOrigins ?? [])]);
   } else {
     // Local development: no sign-in, one operator on this machine.
