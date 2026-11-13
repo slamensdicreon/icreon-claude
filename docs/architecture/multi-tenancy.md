@@ -289,18 +289,20 @@ before it reaches a playbook.
    People; migration 013), switching. Diagnostics stays the Diagnostics page.
 10. The admin console, apart from the product. **In progress.** Everything Icreon administers
     moves out of the Control Center into `/admin` on Icreon's own site (the `cypher-web`
-    repository), so customers' browsers carry none of it.
-    - The console signs people in with WorkOS (the same environment as the product) and lets in
-      only those the platform says are Icreon Directors (`GET /admin/me`): one list, Icreon's
-      Directors in People.
-    - It calls the platform server to server with `ADMIN_CONSOLE_KEY`, naming who is acting
-      (`x-lw-actor`, `x-lw-actor-email`, `x-lw-actor-name`). The platform treats that person like
-      anyone signed in: their memberships decide, every call, and the record names them. The key
-      reaches the super-admin routes and two reads (`GET /playbooks`, `GET /portfolio`), nothing
-      else.
-    - Phases: (1) the key, and Organizations in the console; (2) Rules, Knowledge, In force,
-      Diagnostics and the GitHub App; (3) those pages leave the Control Center, and the platform
-      stops taking browser sessions on the super-admin routes.
+    repository, built there), so customers' browsers carry none of it.
+    - The console has its own sign-in (one-time email links for named people). It lets in only
+      those the platform says are Icreon Directors (`GET /admin/me`): one list, Icreon's Directors
+      in People.
+    - It calls the platform server to server with `ADMIN_CONSOLE_KEY`, naming who is acting:
+      `x-lw-actor-email` (required), `x-lw-actor-name` (URI-encoded, optional), `x-lw-actor` (a
+      WorkOS user id, optional). By email alone, the person is the Icreon Director whose
+      membership carries that address (the address they accepted their invitation with). The
+      platform then treats them like anyone signed in: their memberships decide, every call, and
+      the record names them. The key reaches the super-admin routes and two reads
+      (`GET /playbooks`, `GET /portfolio`), nothing else.
+    - Phases: (1) the key; (2) the console's screens, built in `cypher-web`; (3) those pages leave
+      the Control Center, and the platform stops taking browser sessions on the super-admin
+      routes.
 
 ### Row-level security: deferred
 

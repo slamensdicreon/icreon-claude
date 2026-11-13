@@ -59,6 +59,11 @@ export interface GithubAuthOptions {
    * the console. It reaches the console's routes alone (see `consoleRoute`).
    */
   adminConsoleKey?: string | null;
+  /**
+   * Who an email is among Icreon's Directors (their membership's subject), for a console call that
+   * names the acting person by email alone. Wired from the organization store.
+   */
+  consoleActor?: (email: string) => Promise<string | null>;
   /** If set, the account must also be an active member of this org (where 2FA is enforced). */
   requiredOrg?: string;
   /** At least 32 characters; signs session cookies. */
@@ -81,9 +86,10 @@ export interface Operator {
 }
 
 /**
- * Who is acting through the admin console: the WorkOS user it signed in (`x-lw-actor`, the user's
- * id), with their email and name for the record. The console has already checked them with WorkOS;
- * the platform then checks they are an Icreon Director, on every call.
+ * Who is acting through the admin console: their email (`x-lw-actor-email`, which the console has
+ * verified by its own sign-in), their name for the record, and optionally their WorkOS user id
+ * (`x-lw-actor`). By email alone they are matched to one of Icreon's Directors here; either way the
+ * platform then checks their memberships on every call, like anyone signed in.
  */
 export const CONSOLE_ACTOR = {
   id: 'x-lw-actor',
@@ -99,7 +105,7 @@ const header = (req: FastifyRequest, name: string) => {
 function consoleActorOf(req: FastifyRequest): Operator | null {
   const id = header(req, CONSOLE_ACTOR.id);
   const email = header(req, CONSOLE_ACTOR.email).toLowerCase();
-  if (!/^user_[A-Za-z0-9]{10,64}$/.test(id) || !/^[^@\s]{1,64}@[^@\s]{1,190}$/.test(email))
+  if ((id && !/^user_[A-Za-z0-9]{10,64}$/.test(id)) || !/^[^@\s]{1,64}@[^@\s]{1,190}$/.test(email))
     return null;
   let name: string | null = null;
   try {
@@ -107,7 +113,7 @@ function consoleActorOf(req: FastifyRequest): Operator | null {
   } catch {
     name = null;
   }
-  return { login: email, name, avatarUrl: null, subject: `workos:${id}` };
+  return { login: email, name, avatarUrl: null, ...(id ? { subject: `workos:${id}` } : {}) };
 }
 
 /**
@@ -236,7 +242,16 @@ export function registerGithubAuth(app: FastifyInstance, opts: GithubAuthOptions
       if (!actor) return deny(reply, 400, 'no_actor', 'The admin console must say who is acting.');
       if (!consoleRoute(req.method, req.routeOptions.url))
         return deny(reply, 403, 'console_only', 'The admin console key does not reach this.');
-      req.operator = { ...actor, viaConsole: true };
+      // Named by email alone: they are whichever of Icreon's Directors has that address.
+      const subject = actor.subject ?? (await opts.consoleActor?.(actor.login)) ?? null;
+      if (!subject)
+        return deny(
+          reply,
+          403,
+          'not_icreon_director',
+          `${actor.login} is not one of Icreon's Directors on Launchworks.`,
+        );
+      req.operator = { ...actor, subject, viaConsole: true };
       return;
     }
     const key = byKey(req.headers.authorization);

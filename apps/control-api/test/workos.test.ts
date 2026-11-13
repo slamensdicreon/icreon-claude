@@ -393,6 +393,43 @@ describe('the admin console', () => {
     ).toBe(401);
   });
 
+  it('takes the acting person by email alone, as whichever Icreon Director has that address', async () => {
+    const { orgs, acme } = await start({ console: CONSOLE });
+    await orgs.setMember(
+      DEFAULT_ORGANIZATION,
+      workosSubject(steve.id),
+      'director',
+      'test',
+      steve.email,
+    );
+    const byEmail = viaConsole({ email: 'Steve@Icreon.com' });
+    const me = await byEmail('GET', '/admin/me');
+    expect(me.body, JSON.stringify(me.body)).toMatchObject({ subject: workosSubject(steve.id) });
+    const made = await byEmail('POST', '/admin/organizations', { name: 'Initech' });
+    expect((await orgs.members(made.body.organization.id)).map((m) => m.subject)).toEqual([
+      workosSubject(steve.id),
+    ]);
+    // A customer's Director, a Watcher of Icreon, or nobody at all: not an Icreon Director.
+    await orgs.setMember(
+      acme.id,
+      workosSubject('user_01CUSTOMER00'),
+      'director',
+      'test',
+      'pat@acme.com',
+    );
+    await orgs.setMember(
+      DEFAULT_ORGANIZATION,
+      workosSubject('user_01WATCHER000'),
+      'watcher',
+      'test',
+      'wes@icreon.com',
+    );
+    for (const email of ['pat@acme.com', 'wes@icreon.com', 'nobody@icreon.com']) {
+      const r = await viaConsole({ email })('GET', '/admin/organizations');
+      expect([r.status, r.body.error.code]).toEqual([403, 'not_icreon_director']);
+    }
+  });
+
   it('reaches the admin routes only, not a customer’s projects', async () => {
     const { orgs } = await start({ console: CONSOLE });
     await orgs.setMember(
