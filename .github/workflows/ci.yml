@@ -23,7 +23,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # The browser tool server's tests and the web app's browser checks drive a real Chromium
       # (one install: both use the same playwright-core).
-      - run: pnpm --filter @lw/tool-browser exec playwright-core install --with-deps chromium
+      # Its system packages come from Ubuntu's mirrors; when the runner can't reach them (an
+      # outage on GitHub's side, as on 2026-11-11), install Chromium alone rather than block
+      # every pull request: the runner image already carries what it needs to start.
+      - run: >-
+          pnpm --filter @lw/tool-browser exec playwright-core install --with-deps chromium
+          || pnpm --filter @lw/tool-browser exec playwright-core install chromium
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
