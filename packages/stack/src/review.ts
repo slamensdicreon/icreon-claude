@@ -279,6 +279,7 @@ export const CHECKS: Record<string, Check> = {
     const inv = (await readJson(ctx, 'page-inventory')) as {
       pages?: { path?: string; url?: string }[];
       crawl?: { pagesFound?: number; pagesInventoried?: number; partial?: boolean };
+      siteAudit?: { pagesFound?: number; pagesRead?: number; pages?: unknown[] };
     } | null;
     const inScope = (c: string) => (bp.collections![c] ?? []).filter((i) => i.status !== 'drop');
     // A sample isn't the site: when Discovery read only part of it, the Blueprint says what it
@@ -287,6 +288,14 @@ export const CHECKS: Record<string, Check> = {
     const listed = Number(inv?.crawl?.pagesInventoried ?? inv?.pages?.length ?? 0);
     const sampled = Boolean(inv?.crawl?.partial) || (found > 0 && found > listed);
     const scope = (bp as { scope?: { pagesFound?: number; approach?: string } }).scope;
+    // The homepage demo inventories one page on purpose and counts the rest in its site audit:
+    // that audit is the scope decision (Liberty Mutual's Blueprint was rejected three times for
+    // covering 1 of 440 pages, the demo's whole point).
+    const audit = inv?.siteAudit;
+    const audited =
+      audit && (Number(audit.pagesFound) > 0 || (Array.isArray(audit.pages) && audit.pages.length))
+        ? Number(audit.pagesFound) || found || audit.pages?.length || 0
+        : 0;
     const all = (c: string) => bp.collections![c] ?? [];
     const problems: string[] = [];
     const placed = new Set(
@@ -302,7 +311,7 @@ export const CHECKS: Record<string, Check> = {
       if (t && !templates.has(String(t)))
         problems.push(`page ${p.key} uses unknown template ${String(t)}`);
     }
-    if (sampled && !scope?.approach)
+    if (sampled && !scope?.approach && !audited)
       problems.push(
         `the inventory covers ${listed} of ${found || 'more'} pages found: write the Blueprint's \`scope\` (pagesFound, and how the other pages are handled: built from these templates later, imported, or left out, and why) so the Director sees it at Gate 1`,
       );
@@ -338,7 +347,7 @@ export const CHECKS: Record<string, Check> = {
     return problems.length
       ? failed(problems.slice(0, 8), Math.max(0, problems.length - 8))
       : pass(
-          `${inScope('pages').length} pages, ${templates.size} templates and ${components.length} components, each with a model contract.${scope?.approach ? ` Covers ${inScope('pages').length} of ${scope.pagesFound ?? found} pages found: ${scope.approach}` : ''}`,
+          `${inScope('pages').length} pages, ${templates.size} templates and ${components.length} components, each with a model contract.${scope?.approach ? ` Covers ${inScope('pages').length} of ${scope.pagesFound ?? found} pages found: ${scope.approach}` : sampled && audited ? ` Covers ${inScope('pages').length} of ${audited} pages found; the site audit counts the rest.` : ''}`,
         );
   },
 
