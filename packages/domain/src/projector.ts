@@ -70,6 +70,11 @@ export interface ProjectState {
   status: ProjectStatus;
   budgets: Budgets;
   spent: Spend;
+  /**
+   * Time agents' tools ran, in milliseconds, by tool server (`sandbox`, `browser`, …): what the
+   * project used beside the model, for metering what an organization costs.
+   */
+  toolTime: Record<string, number>;
   createdAt: string | null;
   startedAt: string | null;
   presence: CosPresence;
@@ -192,6 +197,7 @@ export function createProjectState(projectId: string): ProjectState {
     status: 'intake',
     budgets: { tokens: 1, usd: 1, hours: 1 },
     spent: { tokens: 0, usd: 0, hours: 0 },
+    toolTime: {},
     createdAt: null,
     startedAt: null,
     presence: 'listening',
@@ -422,6 +428,7 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
     }
     case 'step.recorded': {
       ledgerOf(s, e.data.taskId).tokens += e.data.tokens;
+      s.toolTime[e.data.toolServer] = (s.toolTime[e.data.toolServer] ?? 0) + e.data.durationMs;
       const a = s.agents[e.data.agentId];
       if (a) {
         a.tokensThisTask += e.data.tokens;

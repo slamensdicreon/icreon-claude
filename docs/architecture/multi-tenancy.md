@@ -272,8 +272,10 @@ before it reaches a playbook.
    scheduled call (`/portfolio/licenses`) pauses its running projects and resumes exactly those on
    renewal. A platform taken out of a license does the same to that platform's projects.
 6. Hosting per organization. **Done**: a customer's Vercel project and build repository are named
-   with its slug first; `/admin/organizations` reports agent spend per organization. Vercel build
-   minutes and sandbox time are not metered yet.
+   with its slug first; `/admin/organizations` reports agent spend per organization. Usage per
+   organization: Claude spend, time its agents' tools ran (sandbox, browser, …, from each step's
+   duration) and Vercel builds and build minutes per hosting project, in Manage → Usage. Vercel's
+   API gives no bandwidth or function time per project, so those aren't metered.
 7. Onboarding. **Done**: "Send to their admin" beside each credential gives a signed link (7 days,
    one save) to a page where the client's administrator enters it; it is checked and sealed as if
    the Director had (`apps/control-api/src/handoff.ts`).

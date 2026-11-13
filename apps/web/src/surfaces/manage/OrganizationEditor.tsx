@@ -9,6 +9,7 @@ import { useApp, useTz } from '../../state';
 import { Checkbox, Field, Select, TextInput } from '../../ui/cypher/forms';
 import { Action, Actions, Notice, usePlaybooks } from '../intake/shared';
 import { switchTo } from './Organizations';
+import { OrganizationUsage } from './OrganizationUsage';
 import s from './manage.module.css';
 
 interface LicenseTerms {
@@ -212,6 +213,9 @@ export function OrganizationEditor({
           ))}
         </ul>
       )}
+
+      <h3 className="type-section">Usage</h3>
+      <OrganizationUsage id={id} />
 
       <h3 className="type-section">Support access</h3>
       <p className={`${s.quiet} type-body-small`}>

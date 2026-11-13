@@ -81,6 +81,7 @@ async function start() {
   for (const e of playbooks.values()) e.playbook.manifest.intake.source.repo = 'optional';
   const clock = { now: T0 };
   const controls: [string, string][] = [];
+  const asked: string[] = [];
   app = await buildApp({
     store,
     projections,
@@ -92,6 +93,13 @@ async function start() {
       }) as never,
     organizations: orgs,
     licenses: new MemoryLicenseStore(),
+    // Vercel, for metering: one hosting project has builds, any other isn't in the team.
+    buildUsage: async (name: string) => {
+      asked.push(name);
+      return name === 'acme-site-website'
+        ? { deployments: 12, buildMs: 30 * 60_000, failed: 1 }
+        : null;
+    },
     purge: {
       store,
       tombstones: new MemoryTombstoneStore(),
@@ -120,7 +128,7 @@ async function start() {
       secureCookies: true,
     },
   });
-  return { store, acme, clock, controls };
+  return { store, acme, clock, controls, asked };
 }
 
 const as =
@@ -324,6 +332,50 @@ describe('licenses', () => {
     expect(history.history.at(-1).kind).toBe('purged');
     // Once done, later runs leave it alone.
     expect((await steve('GET', '/portfolio/licenses')).body.results).toEqual([]);
+  });
+
+  it('meters what an organization costs: Claude, tool time and Vercel builds', async () => {
+    const { store, acme, asked } = await start();
+    await grant(acme.id, { projectsIncluded: 3 });
+    const id = (await bob('POST', '/projects', migration('Acme site'))).body.projectId as string;
+    const step = (server: string, minutesRan: number, n: number) => ({
+      type: 'step.recorded' as const,
+      actor: { kind: 'agent' as const, id: 'builder' },
+      subject: { kind: 'task' as const, id: 't1' },
+      severity: 'routine' as const,
+      data: {
+        stepId: `s${n}`,
+        agentId: 'builder',
+        taskId: 't1',
+        toolServer: server,
+        operation: 'run',
+        resultCode: 0,
+        durationMs: minutesRan * 60_000,
+        tokens: 0,
+        summary: 'ran',
+      },
+    });
+    await store.append(id, [step('sandbox', 20, 1), step('sandbox', 10, 2), step('browser', 5, 3)]);
+    const usage = await steve('GET', `/admin/organizations/${acme.id}/usage`);
+    expect(usage.status).toBe(200);
+    expect(usage.body.totals).toMatchObject({
+      sandboxMinutes: 30,
+      toolMinutes: 35,
+      vercelDeployments: 12,
+      vercelBuildMinutes: 30,
+    });
+    expect(usage.body.projects[0]).toMatchObject({
+      name: 'Acme site',
+      toolMinutes: { sandbox: 30, browser: 5 },
+      vercel: { hostingProject: 'acme-site-website', deployments: 12, failed: 1, buildMinutes: 30 },
+      vercelNote: null,
+    });
+    // Vercel is asked once in a while, not on every load.
+    await steve('GET', `/admin/organizations/${acme.id}/usage`);
+    expect(asked).toEqual(['acme-site-website']);
+    const list = (await steve('GET', '/admin/organizations')).body;
+    expect(list.find((o: { id: string }) => o.id === acme.id).usage.sandboxMinutes).toBe(30);
+    expect((await bob('GET', `/admin/organizations/${acme.id}/usage`)).status).toBe(403);
   });
 
   it('keeps license changes to Icreon', async () => {

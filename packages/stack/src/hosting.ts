@@ -292,3 +292,59 @@ export async function deleteHostingProject(
     };
   throw new Error(`Vercel answered ${gone.status} deleting ${name}.`);
 }
+
+/** What a hosting project's builds have used on Vercel. */
+export interface BuildUsage {
+  /** Deployments built (finished or failed). */
+  deployments: number;
+  /** Build time, summed. */
+  buildMs: number;
+  /** Deployments whose build failed. */
+  failed: number;
+}
+
+/**
+ * A hosting project's builds in our Vercel team since a moment: how many, how long they built,
+ * how many failed. Null when the project isn't in the team (not set up yet, or handed over).
+ * Vercel's API gives deployments, not bandwidth or function time per project, so those aren't
+ * counted here.
+ */
+export async function hostingBuildUsage(
+  w: Pick<HostingWiring, 'token' | 'teamId' | 'fetch'>,
+  name: string,
+  since?: number,
+): Promise<BuildUsage | null> {
+  const doFetch = w.fetch ?? fetch;
+  const usage: BuildUsage = { deployments: 0, buildMs: 0, failed: 0 };
+  let until: number | null = null;
+  // A page is 100 deployments; 20 pages is far beyond any project's year.
+  for (let page = 0; page < 20; page++) {
+    const url = new URL('https://api.vercel.com/v6/deployments');
+    url.searchParams.set('projectId', name);
+    url.searchParams.set('teamId', w.teamId);
+    url.searchParams.set('limit', '100');
+    if (since) url.searchParams.set('since', String(since));
+    if (until) url.searchParams.set('until', String(until));
+    const res = await doFetch(url, {
+      headers: { authorization: `Bearer ${w.token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (res.status === 404 || res.status === 400) return page === 0 ? null : usage;
+    if (!res.ok) throw new Error(`Vercel answered ${res.status} listing ${name}'s deployments.`);
+    const body = (await res.json()) as {
+      deployments?: { state?: string; buildingAt?: number; ready?: number }[];
+      pagination?: { next?: number | null };
+    };
+    for (const d of body.deployments ?? []) {
+      if (d.state !== 'READY' && d.state !== 'ERROR') continue;
+      usage.deployments += 1;
+      if (d.state === 'ERROR') usage.failed += 1;
+      if (d.buildingAt && d.ready && d.ready >= d.buildingAt)
+        usage.buildMs += d.ready - d.buildingAt;
+    }
+    const next = body.pagination?.next;
+    if (!next || !body.deployments?.length) break;
+    until = next;
+  }
+  return usage;
+}

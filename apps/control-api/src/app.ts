@@ -94,7 +94,7 @@ import {
   type RuleStore,
 } from '@lw/events';
 import { CommandError } from '@lw/domain';
-import { harvestRules, type OperatorNotice } from '@lw/stack';
+import { harvestRules, type BuildUsage, type OperatorNotice } from '@lw/stack';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ProjectCommands } from './commands';
@@ -252,6 +252,8 @@ export interface AppDeps {
   sendInvitation?: SendInvitation | null;
   /** Each organization's license; without it (tests), nothing is limited. */
   licenses?: LicenseStore;
+  /** A hosting project's Vercel builds, for metering; absent without a Vercel token. */
+  buildUsage?: (hostingProject: string) => Promise<BuildUsage | null>;
 }
 
 /** What the worker reports about itself. */
@@ -335,6 +337,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       signedIn: Boolean(deps.auth),
       sendInvitation: deps.sendInvitation ?? null,
       licenses: deps.licenses,
+      buildUsage: deps.buildUsage,
       now: () => (deps.now ?? Date.now)(),
       projects: async () => {
         await projections.catchUpAll();
