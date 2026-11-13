@@ -36,12 +36,14 @@ beforeAll(async () => {
     if (req.url === '/s.css')
       return res
         .writeHead(200, { 'content-type': 'text/css' })
-        .end('h1{color:rgb(200,0,0)} .hero{padding:24px}');
+        .end(
+          'h1{color:rgb(200,0,0)} .hero{padding:24px} .logo-ink{fill:rgb(26,20,70)} .logo-alt{display:none}',
+        );
     if (req.url === '/hero.png')
       return res.writeHead(200, { 'content-type': 'image/png' }).end(PNG);
     res.writeHead(200, { 'content-type': 'text/html' }).end(
       `<html lang="en"><head><title>Acme Insurance</title><link rel="stylesheet" href="/s.css"></head>
-       <body><header><nav><a href="/auto">Auto</a></nav></header>
+       <body><header><svg aria-label="Acme logo" viewBox="0 0 20 10"><path class="logo-ink" d="M0 0h10v10z"/><path class="logo-alt" d="M10 0h10v10z"/><script>alert(1)</script></svg><nav><a href="/auto">Auto</a></nav></header>
        <section class="hero"><h1>Insurance made simple</h1><img src="/hero.png" alt="A family"></section>
        <section><h2>Get a quote</h2><p>Save up to 20 percent when you bundle.</p></section></body></html>`,
     );
@@ -100,7 +102,7 @@ it("answers page reads from the Director's saved copy, and never asks the live s
 
   const outline = await browser.call('page.markup', { url: `${origin}/` }, ctx);
   expect(outline.code).toBe(200);
-  expect(JSON.stringify(outline.body)).toContain('Insurance made simple');
+  expect(JSON.stringify(outline.body)).toContain('header > nav');
 
   const styles = await browser.call('page.styles', { url: origin, selectors: ['h1'] }, ctx);
   expect(styles.code).toBe(200);
@@ -121,6 +123,29 @@ it("answers page reads from the Director's saved copy, and never asks the live s
 
   expect(hits).toBe(0);
 }, 60_000);
+
+it('stores an inline logo as a standalone SVG, with the colours the page draws it in', async () => {
+  hits = 0;
+  const r = await browser.call('page.svg', { url: `${origin}/` }, ctx);
+  expect(r.code).toBe(200);
+  const [logo] = (r.body as { svgs: { label: string; region: string; ref: string }[] }).svgs;
+  expect(logo).toMatchObject({ label: 'Acme logo', region: 'header' });
+  const svg = new TextDecoder().decode(await blobs.get(logo!.ref));
+  expect(svg).toContain('fill="rgb(26, 20, 70)"');
+  expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
+  // The part the page hides, and anything that could run, are left out.
+  expect(svg).not.toContain('M10 0h10v10z');
+  expect(svg).not.toMatch(/<script|class=/);
+  expect(r.summary).toContain("from the Director's saved copy");
+  expect(hits).toBe(0);
+}, 60_000);
+
+it("answers a stored file's ref with the saved copy's image URLs", async () => {
+  const r = await browser.call('fetch.asset', { url: 'blob://p1/files/file-1-acme.mhtml' }, ctx);
+  expect(r.code).toBe(422);
+  expect(r.summary).toContain("The Director's saved copy holds 1 images");
+  expect(r.body).toMatchObject({ savedCopyImages: [`${origin}/hero.png`] });
+});
 
 it('asks for a saved copy, not an allowlist, when the site refuses a page it has none of', async () => {
   const r = await browser.call('snapshot', { url: `${origin}/auto` }, ctx);

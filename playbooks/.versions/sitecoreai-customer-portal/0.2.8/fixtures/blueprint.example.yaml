@@ -1,0 +1,207 @@
+# Example Blueprint for demos and tests: a member portal for a risk pool, with a business manager
+# and a finance contact (the shape of an earlier member portal).
+version: 1
+collections:
+  components:
+    - key: welcome
+      name: Welcome
+      pilot: true
+      attrs:
+        rendering: Welcome
+        fields:
+          - { name: Eyebrow, type: Single-Line Text }
+          - { name: Title, type: Single-Line Text }
+          - { name: Text, type: Multi-Line Text }
+          - { name: Image, type: Image }
+          - { name: PrimaryLink, type: General Link }
+          - { name: SecondaryLink, type: General Link }
+        data: { reads: [persona, district] }
+        interactive: true
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+    - key: page-header
+      name: PageHeader
+      pilot: true
+      attrs:
+        rendering: PageHeader
+        fields:
+          - { name: Eyebrow, type: Single-Line Text }
+          - { name: Title, type: Single-Line Text }
+          - { name: Subtitle, type: Multi-Line Text }
+        data: null
+        interactive: false
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+    - key: dashboard-grid
+      name: DashboardGrid
+      attrs:
+        rendering: DashboardGrid
+        fields: [{ name: Label, type: Single-Line Text }]
+        data: null
+        interactive: false
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+        placeholders:
+          - { key: 'dashboard-main-{*}', allows: [next-steps, claim-activity, resource-spotlight] }
+          - { key: 'dashboard-side-{*}', allows: [promo, fund-team] }
+    - key: next-steps
+      name: NextSteps
+      attrs:
+        rendering: NextSteps
+        fields:
+          - { name: Title, type: Single-Line Text }
+          - { name: Subtitle, type: Single-Line Text }
+          - { name: EmptyText, type: Single-Line Text }
+        data: { reads: [tasks] }
+        interactive: true
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+    - key: claims-table
+      name: ClaimsTable
+      pilot: true
+      attrs:
+        rendering: ClaimsTable
+        fields:
+          - { name: Title, type: Single-Line Text }
+          - { name: EmptyText, type: Single-Line Text }
+        data: { reads: [claims], actions: [addDocument] }
+        interactive: true
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+    - key: claim-report
+      name: ClaimReport
+      attrs:
+        rendering: ClaimReport
+        fields:
+          - { name: Title, type: Single-Line Text }
+          - { name: Intro, type: Multi-Line Text }
+          - { name: ReceivedTitle, type: Single-Line Text }
+          - { name: ReceivedText, type: Multi-Line Text }
+        data: { reads: [persona, district], actions: [submitClaim] }
+        interactive: true
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+    - key: financial-account
+      name: FinancialAccount
+      attrs:
+        rendering: FinancialAccount
+        fields:
+          - { name: BalanceLabel, type: Single-Line Text }
+          - { name: DueText, type: Single-Line Text }
+          - { name: PaidText, type: Single-Line Text }
+          - { name: WageTitle, type: Single-Line Text }
+        data: { reads: [balance, invoices, wages], actions: [payInvoice, submitWages] }
+        interactive: true
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+    - key: promo
+      name: Promo
+      attrs:
+        rendering: Promo
+        fields:
+          - { name: Eyebrow, type: Single-Line Text }
+          - { name: Title, type: Single-Line Text }
+          - { name: Text, type: Rich Text }
+          - { name: Link, type: General Link }
+        data: null
+        interactive: false
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+    - key: sign-in
+      name: SignIn
+      attrs:
+        rendering: SignIn
+        fields:
+          - { name: Title, type: Single-Line Text }
+          - { name: Intro, type: Rich Text }
+          - { name: Image, type: Image }
+        data: { reads: [personas] }
+        interactive: true
+        datasource: page
+        queryBudget: { maxItems: 1, depth: 1 }
+  pages:
+    - key: overview
+      name: Overview
+      attrs:
+        path: /
+        title: Overview
+        personas: [business-manager, finance-contact]
+        components:
+          - { component: welcome, placeholder: headless-main }
+          - { component: dashboard-grid, placeholder: headless-main }
+          - { component: next-steps, placeholder: /headless-main/dashboard-main-1 }
+          - { component: promo, placeholder: /headless-main/dashboard-side-1 }
+    - key: claims
+      name: Claims
+      attrs:
+        path: /claims
+        title: Claims
+        personas: [business-manager]
+        components:
+          - { component: page-header, placeholder: headless-main }
+          - { component: claims-table, placeholder: headless-main }
+    - key: report
+      name: Report a claim
+      attrs:
+        path: /report
+        title: Report a claim
+        personas: [business-manager]
+        components: [{ component: claim-report, placeholder: headless-main }]
+    - key: billing
+      name: Billing and payments
+      attrs:
+        path: /billing
+        title: Billing & payments
+        personas: [business-manager, finance-contact]
+        components:
+          - { component: page-header, placeholder: headless-main }
+          - { component: financial-account, placeholder: headless-main }
+    - key: sign-in
+      name: Sign in
+      attrs:
+        path: /sign-in
+        title: Sign in
+        bare: true
+        personas: []
+        components: [{ component: sign-in, placeholder: headless-main }]
+  media:
+    - key: campus-sunset
+      name: campus-sunset.jpg
+      attrs: { path: public/assets/campus-sunset.jpg }
+    - key: campus
+      name: campus.jpg
+      attrs: { path: public/assets/campus.jpg }
+  personas:
+    - key: business-manager
+      name: Angela Mitchell
+      attrs:
+        name: Angela Mitchell
+        email: angela.mitchell@cedargroveisd.example
+        role: District Business Manager
+        organisation: Cedar Grove ISD
+        audience: business-manager
+        navigation: [overview, claims, report, billing]
+        presentationPath:
+          - { page: overview, step: Sign in; the dashboard greets Angela with her tasks }
+          - { page: report, step: Report storm damage with the example details and a sample photo }
+          - { page: claims, step: The new claim is at the top of the list }
+        variants: []
+    - key: finance-contact
+      name: Elena Morris
+      attrs:
+        name: Elena Morris
+        email: elena.morris@pinehollowisd.example
+        role: Finance & Payroll Contact
+        organisation: Pine Hollow ISD
+        audience: finance-contact
+        navigation: [overview, billing]
+        presentationPath:
+          - { page: overview, step: Sign in as Elena; billing content instead of claims }
+          - { page: billing, step: Confirm the demo payment and record the Q3 wage submission }
+        variants:
+          - { page: overview, component: welcome, content: 'Primary button: Review billing' }
+          - {
+              page: overview,
+              component: promo,
+              content: 'Your fall contribution statement is ready.',
+            }

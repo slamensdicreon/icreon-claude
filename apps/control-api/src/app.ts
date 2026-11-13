@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { missingImages, parseMhtml } from '@lw/tool-browser';
 import { Favicons } from './favicon';
 import cors from '@fastify/cors';
 import {
@@ -1913,7 +1914,42 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         },
       },
     ]);
-    return reply.status(201).send({ fileId, ref, seq: stored?.seq ?? null });
+    // A saved page is checked at once for images left blank: ones that load only as the page is
+    // scrolled, saved before they loaded (Liberty Mutual's hero and two card images). Cypher says
+    // which, so the Director can save again rather than the team asking image by image.
+    let missing: { alt: string; hint: string | null }[] = [];
+    if (savedPage) {
+      const capture = parseMhtml(Buffer.from(bytes));
+      missing = capture ? missingImages(capture) : [];
+      if (missing.length)
+        await store.append(s.projectId, [
+          {
+            type: 'cos.message',
+            actor: { kind: 'chief_of_staff', id: 'chief-of-staff' },
+            subject: { kind: 'project', id: s.projectId },
+            severity: 'notable',
+            data: {
+              messageId: randomUUID(),
+              kind: 'text',
+              title: `Your saved copy is missing ${missing.length} image${missing.length === 1 ? '' : 's'}`,
+              body: `${input.name} has ${missing.length} image${missing.length === 1 ? '' : 's'} that load only as the page is scrolled, saved before ${missing.length === 1 ? 'it' : 'they'} loaded, so the team can't take ${missing.length === 1 ? 'it' : 'them'} from the copy. Open the page, scroll slowly to the bottom so every image shows, then save it again ("Webpage, Single File") and attach the new copy. Or send each image's URL here.`,
+              label: 'Saved copy',
+              bullets: missing
+                .slice(0, 12)
+                .map(
+                  (m) =>
+                    `${m.alt || 'An image with no description'}${m.hint ? ` (${m.hint})` : ''}`,
+                ),
+            },
+          },
+        ]);
+    }
+    return reply.status(201).send({
+      fileId,
+      ref,
+      seq: stored?.seq ?? null,
+      ...(savedPage ? { missingImages: missing } : {}),
+    });
   });
 
   /** Screenshots and images a project's documents refer to (`blob://<project>/<key>`). */

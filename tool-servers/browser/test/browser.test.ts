@@ -42,6 +42,9 @@ beforeAll(async () => {
   http = createServer(async (req, res) => {
     let path = new URL(req.url!, 'http://x').pathname;
     // A redirect, and a file only a real browser gets (a firewall turning away bare clients).
+    // A CDN that answers a file name it doesn't have with an empty 200.
+    if (path === '/media/empty.png')
+      return res.writeHead(200, { 'content-type': 'image/png' }).end();
     if (path === '/moved/hero.png')
       return res.writeHead(302, { location: '/media/hero.png' }).end();
     if (path === '/browser-only/hero.png') {
@@ -506,6 +509,9 @@ describe('snapshot, screenshot, fetch.asset', () => {
     // A refusal is the site's answer: no browser is sent in our place.
     expect(guardedFile.code).toBe(422);
     expect(guardedFile.summary).toContain("the Director's saved copy");
+    const empty = await browser.call('fetch.asset', { url: `${origin}/media/empty.png` }, ctx);
+    expect(empty.code).toBe(422);
+    expect(empty.summary).toContain('came back empty (0 bytes)');
     const cdn = await browser.call(
       'fetch.asset',
       { url: origin.replace('127.0.0.1', 'localhost') + '/media/hero.png' },

@@ -1,0 +1,63 @@
+role: media-migrator
+name: Media Migrator
+persona: 'Brandon Lee'
+description: 'Uploads every image and file in use as media content under the application’s media folder with alt text, and skips files nothing references.'
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-haiku-5-5
+  effort: low
+mandate: >-
+  Download, de-duplicate by content hash, and upload media as image, video or media content
+  with alt text; rewrite media references.
+produces:
+  - media content items
+  - reference map
+tools:
+  optimizely-cms:
+    ops:
+      - content.read
+      - media.upload
+    scope:
+      paths:
+        - /media/{application}/**
+      # The application's content, to see where a file is used: read only.
+      readPaths:
+        - '{contentRoot}/**'
+  browser:
+    ops:
+      - fetch.asset
+      # A source page's images, to find a file's real URL when the Blueprint has none.
+      - snapshot
+      # Images set by CSS (a section's background) aren't in a snapshot: computed styles give their URL.
+      - page.styles
+      # The page's content as its CMS delivered it (fields, images, links, lists the page builds
+      # in the browser), when it embeds its layout data: Next.js sites on Sitecore do.
+      - page.data
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:media.alt-text
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 6

@@ -131,3 +131,39 @@ function decodeWord(s: string | null): string | null {
       : quotedPrintable(body.replace(/_/g, ' ')).toString('utf8'),
   );
 }
+
+/**
+ * Images a saved copy shows blank: ones that load only as the page is scrolled (lazy), saved
+ * before they loaded. Liberty Mutual's homepage was saved without scrolling, and two of its card
+ * images had an empty src, so the team had nothing to take them from.
+ */
+export function missingImages(c: Capture): { alt: string; hint: string | null }[] {
+  const html = captureHtml(c);
+  const have = new Set(c.parts.filter((p) => p.body.length).map((p) => p.location));
+  const attr = (tag: string, name: string) =>
+    new RegExp(`\\s${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, 'i')
+      .exec(tag)
+      ?.slice(2)
+      .find((v) => v !== undefined) ?? null;
+  const out: { alt: string; hint: string | null }[] = [];
+  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+    const tag = m[0];
+    const src = (attr(tag, 'src') ?? '').trim();
+    const lazy = /\sloading\s*=\s*["']?lazy/i.test(tag) || /\sdata-(src|srcset|lazy)/i.test(tag);
+    const placeholder = !src || /^data:image\/(gif|svg)/i.test(src) || src === 'about:blank';
+    const absent = !placeholder && /^https?:/i.test(src) && !have.has(src);
+    if (!(placeholder || (lazy && absent))) continue;
+    const hint =
+      attr(tag, 'data-src') ??
+      (attr(tag, 'data-srcset') ?? attr(tag, 'srcset') ?? '')
+        .split(',')[0]
+        ?.trim()
+        .split(/\s+/)[0] ??
+      null;
+    out.push({
+      alt: (attr(tag, 'alt') ?? '').trim(),
+      hint: hint && /^https?:/i.test(hint) ? hint : null,
+    });
+  }
+  return out;
+}

@@ -1,0 +1,286 @@
+# Task templates for the Optimizely CMS (SaaS) rebuild. The plan compiler expands them over the
+# approved Blueprint's collections: components, templates, pages, media. Before Gate 1 each
+# forEach template shows as one placeholder task, so the whole plan is visible from day one.
+#
+# The loop per component is shorter than on SitecoreAI because the content model is code: build
+# (component, type and templates on one branch), integrate (merge, push the types, deploy the
+# editing host), compose (the Experience Builder), prove (Visual Builder QA).
+
+pilot:
+  phase: 4
+  collection: components
+  optionalGate: pilot-slice-review
+  # The rest of the build waits until the slice is proven through publishing, Graph and Visual
+  # Builder. The editing host becomes a hostname of the application once the pilot components
+  # are integrated into it.
+  verify: [register-editing-hostname, prove-pilot-slice]
+
+templates:
+  # 0 — Intake and access verification
+  - id: verify-access
+    phase: 0
+    role: deployment-engineer
+    title: Verify credentials and record instance facts
+    acceptance: [validator:credentials.verified]
+
+  # 1 — Discovery and analysis
+  - id: inventory-repo
+    phase: 1
+    role: repo-analyst
+    title: Inventory components, routes and assets
+    when: source-repo
+    uses: [github, artifacts]
+  # No source repository: the live site is the source, read as rendered.
+  - id: inventory-live-ui
+    phase: 1
+    role: repo-analyst
+    title: Inventory components and design system from the live site
+    unless: source-repo
+    uses: [browser, artifacts]
+  - id: crawl-site
+    phase: 1
+    role: content-analyst
+    title: Crawl the source site and build the page inventory
+  - id: platform-notes
+    phase: 1
+    role: research-agent
+    title: Verify platform facts and write Platform Notes
+
+  # 2 — Blueprint
+  - id: draft-blueprint
+    phase: 2
+    role: solution-architect
+    title: Draft the Implementation Blueprint
+    dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
+    acceptance: [validator:blueprint.coverage]
+
+  # 3 — Foundation
+  - id: provision-application
+    phase: 3
+    role: deployment-engineer
+    title: Create the application, locales and media folder
+    acceptance: [validator:structural.application]
+  - id: design-system
+    phase: 3
+    role: component-engineer
+    title: Extract the design system (tokens, type, spacing, primitives)
+  - id: prepare-hosting
+    phase: 3
+    role: deployment-engineer
+    title: Deploy the head to Vercel
+    dependsOn: [provision-application]
+    release:
+      rollback: >-
+        Delete the Vercel project; nothing is published, no hostname is registered and no
+        content changes.
+    acceptance: [validator:editing-host.responds]
+  - id: validate-foundation
+    phase: 3
+    role: structural-validator
+    title: Validate the application skeleton
+    dependsOn: [provision-application]
+    acceptance: [validator:structural.application]
+
+  # 4 — Component build and content types
+  # Each component is one branch: its React component, its content type and display templates
+  # in code (optimizely.config.mjs picks them up), built green, dry-run push clean.
+  - id: port-{key}
+    phase: 4
+    role: component-engineer
+    forEach: components
+    title: Build {name} on the Optimizely SDK
+    dependsOn: [design-system]
+    acceptance: [validator:build.green, validator:types.defined, validator:head.sections]
+  - id: integrate-head
+    phase: 4
+    role: head-integrator
+    title: Configure the head as the editing host
+    dependsOn: [prepare-hosting]
+    acceptance: [validator:head.preview-route]
+  # Visual Builder offers a component only when its type is in the CMS and its code is on the
+  # editing host: one task lands both. The accepted branch joins the integration branch, its
+  # types are pushed (this project's keys only), and the editing address is redeployed.
+  - id: integrate-{key}
+    phase: 4
+    role: head-integrator
+    forEach: components
+    title: Integrate {name} and push its content type
+    dependsOn: ['port-{key}', integrate-head]
+    acceptance:
+      [
+        validator:types.pushed,
+        validator:structural.content-types,
+        validator:editing-host.deployed,
+        validator:head.preview-route,
+      ]
+    metric: components_registered
+  - id: register-editing-hostname
+    phase: 4
+    role: deployment-engineer
+    title: Add the editing host to the application with live preview
+    # And on the pilot components' integrations (the pilot's verify list adds them).
+    dependsOn: [integrate-head]
+    release:
+      rollback: >-
+        Remove the hostname from the application and restore the Live Preview settings the result
+        records; nothing else refers to it.
+    acceptance: [validator:hostname.registered]
+  - id: prove-pilot-slice
+    phase: 4
+    role: editor-experience-qa
+    title: Prove the pilot slice end to end (publish, Graph, Visual Builder)
+    dependsOn: [register-editing-hostname]
+    acceptance:
+      [validator:graph.published, validator:editor.element-enabled, validator:editor.new-experience]
+  - id: validate-components
+    phase: 4
+    role: structural-validator
+    title: Validate content types and display templates
+    dependsOn: [integrate-*]
+    acceptance: [validator:structural.content-types]
+
+  # 5 — Page types, blueprints and site shell
+  # A page type is code (the Component Engineer), reaches the CMS through an integration (the
+  # Head Integrator), and gets its blueprint and shared content as content (the Experience Builder).
+  - id: define-type-{key}
+    phase: 5
+    role: component-engineer
+    forEach: templates
+    title: Define {name} page type
+    dependsOn: [design-system]
+    acceptance: [validator:build.green, validator:types.defined]
+  - id: push-type-{key}
+    phase: 5
+    role: head-integrator
+    forEach: templates
+    title: Integrate {name} page type and push it
+    dependsOn: ['define-type-{key}', integrate-head]
+    acceptance: [validator:types.pushed, validator:editing-host.deployed]
+  - id: site-shell
+    phase: 5
+    role: content-migrator
+    title: Create the shared header, footer and site settings content
+    # The shell's content types reach the CMS with their components' integrations.
+    dependsOn: [integrate-*]
+    acceptance: [validator:head.header-footer]
+  - id: blueprint-{key}
+    phase: 5
+    role: content-migrator
+    forEach: templates
+    title: Create {name} blueprint
+    dependsOn: ['push-type-{key}', site-shell]
+    acceptance: [validator:structural.templates]
+  - id: validate-templates
+    phase: 5
+    role: structural-validator
+    title: Validate page types and blueprints
+    dependsOn: [blueprint-*]
+    acceptance: [validator:structural.templates]
+
+  # 6 — Content and media migration
+  - id: migrate-pages-{key}
+    phase: 6
+    role: content-migrator
+    forEach: pages
+    batchSize: 8
+    title: Migrate {name}
+    metric: pages_migrated
+    acceptance:
+      [
+        validator:structural.experiences,
+        validator:head.pages-render,
+        validator:parity.render,
+        validator:parity.visual,
+      ]
+  - id: upload-media-{key}
+    phase: 6
+    role: media-migrator
+    forEach: media
+    batchSize: 20
+    title: Upload {name}
+    metric: media_uploaded
+    acceptance: [validator:media.alt-text]
+  - id: recrawl-source
+    phase: 6
+    role: content-analyst
+    title: Re-crawl the source for parity
+  - id: audit-parity
+    phase: 6
+    role: parity-auditor
+    title: Audit content parity
+    dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
+    acceptance: [validator:parity.render, validator:parity.visual, validator:parity.page]
+  - id: visual-sample
+    phase: 6
+    role: visual-qa
+    title: Screenshot-diff a page sample
+    dependsOn: [migrate-pages-*]
+    acceptance: [validator:parity.visual]
+
+  # 7 — Experience enablement
+  # Routing lives in the head on this platform; SEO values live on the pages.
+  - id: routing-and-seo
+    phase: 7
+    role: head-integrator
+    title: Redirects, sitemap, robots, error pages and Graph webhooks
+    uses: [sandbox, build-repo, optimizely-cms, blackboard, artifacts]
+    acceptance: [validator:experience.redirects-resolve]
+  - id: seo-properties
+    phase: 7
+    role: content-migrator
+    title: Fill every page's SEO properties from the source
+    uses: [optimizely-cms, browser, blackboard, artifacts]
+  - id: prove-experimentation
+    phase: 7
+    role: editor-experience-qa
+    when: experimentation
+    title: Proof experiment on the pilot experience
+    dependsOn: [routing-and-seo]
+
+  # 8 — Deployment and publishing
+  - id: finalize-head
+    phase: 8
+    role: head-integrator
+    title: Finalize production configuration
+  # Three separate releases: success in one proves nothing about the others.
+  - id: deploy-code
+    phase: 8
+    role: deployment-engineer
+    title: Deploy the reviewed commit to the editing and delivery hosts
+    dependsOn: [finalize-head]
+    release:
+      rollback: Promote the previous production deployment again in Vercel (instant rollback).
+    acceptance: [validator:deploy.commit-matches, validator:editing-host.responds]
+  - id: export-manifest
+    phase: 8
+    role: head-integrator
+    title: Export the content model into the build repository
+    dependsOn: [finalize-head]
+    acceptance: [validator:manifest.replays]
+  - id: publish-site
+    phase: 8
+    role: deployment-engineer
+    title: Publish every migrated page and verify every route in Graph
+    dependsOn: [deploy-code]
+    release:
+      rollback: >-
+        Publish the previous versions again (the ones now previouslyPublished can't be; create a
+        version from each and publish it); reverting the repository doesn't change what Graph
+        serves.
+    acceptance: [validator:graph.published, validator:routes.resolve]
+  - id: perf-a11y-audit
+    phase: 8
+    role: perf-a11y-qa
+    title: Lighthouse and axe on representative pages
+    dependsOn: [publish-site]
+  - id: smoke-test
+    phase: 8
+    role: editor-experience-qa
+    title: Smoke test Visual Builder on production
+    dependsOn: [deploy-code, export-manifest, publish-site]
+
+  # 9 — Handover and acceptance (the Director accepts in the live systems; no agent re-checks)
+  - id: handover-pack
+    phase: 9
+    role: handover-writer
+    title: Write runbook, component catalog and known-gaps register

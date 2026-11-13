@@ -1920,10 +1920,15 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           if (e) left.push(e.card.title);
           continue;
         }
+        // The Director's own words go with the answer: a URL or a name they typed is what the
+        // retried task needs (Liberty Mutual's image URLs were dropped, leaving only the
+        // option's label, and the agent guessed a file name).
         await settle(
           a.escalationId,
           a.optionId,
-          `Answered through Cypher at the Director's request: ${reading.interpretation}.`,
+          `Answered through Cypher at the Director's request: ${reading.interpretation}.${
+            text.trim() ? ` The Director wrote: "${text.trim().slice(0, 1500)}"` : ''
+          }`,
           'director',
         );
         done.push(`${e.card.title}: ${option.label}`);
