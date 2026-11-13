@@ -193,9 +193,9 @@ project's pages in the Control Center. They act on one project's live run.
   so a customer's project answers 404 (the harvest, test email, a project's diagnostics), and
   `GET /portfolio` lists only Icreon's projects. If the console needs these for customers, the
   platform needs a console-wide read: ask.
-- **Phase 3 is the platform's to do:** remove these pages from the Control Center and stop
-  browser sessions on the super-admin routes. It waits until the console's screens are live, so
-  there's never a moment with no admin.
+- **Phase 3 is done:** these pages are gone from the Control Center, and signed in, the
+  super-admin routes refuse a session or an API key (`403 admin_console_only`). The GitHub App's
+  setup and a demo project's scenarios stay in the Control Center.
 - **Row-level security** in Postgres is deferred. Isolation is enforced in the API (organization
   scope on every route). The design is in `multi-tenancy.md`.
 - **Moving a customer's repository and Vercel project** to their own accounts at the end is still

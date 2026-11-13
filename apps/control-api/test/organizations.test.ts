@@ -315,9 +315,24 @@ describe('roles', () => {
     ] as const) {
       const bob = await as('bob')(method, url, {});
       expect([url, bob.status, bob.body.error?.code]).toEqual([url, 403, 'super_admin_only']);
-      const alice = await as('alice')(method, url, {});
-      expect([url, alice.status === 403]).toEqual([url, false]);
     }
+  });
+
+  it('administers the platform from Icreon’s admin console only, not from the Control Center', async () => {
+    await start();
+    // An Icreon Director signed in to the product: the GitHub App's setup stays here; the rest
+    // is the admin console's.
+    for (const [method, url] of [
+      ['GET', '/rules'],
+      ['GET', '/knowledge'],
+      ['POST', '/proposals/sort'],
+      ['GET', '/portfolio/diagnostics'],
+      ['GET', '/admin/organizations'],
+    ] as const) {
+      const alice = await as('alice')(method, url, {});
+      expect([url, alice.status, alice.body.error?.code]).toEqual([url, 403, 'admin_console_only']);
+    }
+    expect((await as('alice')('GET', '/integrations/github')).status).not.toBe(403);
   });
 
   it('opens only routes that exist to Watchers', async () => {

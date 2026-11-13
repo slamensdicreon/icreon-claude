@@ -130,29 +130,18 @@ export interface NewProjectIntent {
   origin?: { conversationId: string | null; reason: string; notCovered: string[] };
 }
 
-/** Pages above any one project, opened from the header's menu. */
-export type ManagePage =
-  | 'organizations'
-  | 'people'
-  | 'settings'
-  | 'connections'
-  | 'playbooks'
-  | 'in-force'
-  | 'rules'
-  | 'knowledge'
-  | 'diagnostics';
+/**
+ * Pages above any one project, opened from the header's menu. Icreon's own administration
+ * (organizations, licenses, rules, knowledge, diagnostics) is in its admin console, apart from the
+ * product.
+ */
+export type ManagePage = 'people' | 'connections' | 'playbooks';
 
 /** The header menu's pages: each one's title and what it is for. */
 export const MANAGE: [ManagePage, string, string][] = [
   ['people', 'People', 'Who can see and run your projects, and invitations'],
-  ['organizations', 'Organizations', 'Every customer on Launchworks, and starting a new one'],
-  ['settings', 'Global settings', 'The GitHub App every project commits through'],
   ['connections', 'Connections', 'Tenants shared by the sites on them'],
   ['playbooks', 'Playbooks', 'What a new project can run'],
-  ['in-force', 'In force', 'What the next build on each playbook knows'],
-  ['rules', 'Rules', 'How the Leads answer cards you have answered before'],
-  ['knowledge', 'Knowledge', 'What the team has learned across projects'],
-  ['diagnostics', 'Diagnostics', 'The services and each project’s orchestrator'],
 ];
 
 const MANAGE_PAGES = new Set<string>(MANAGE.map(([page]) => page));
@@ -439,9 +428,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const q = new URLSearchParams(location.search);
     const outcome = q.get('github');
     if (!outcome) return;
-    // In a project, its Settings; otherwise Global settings, where the app also lives.
+    // In a project, its Settings, where the app lives (and on the first screen, before any project).
     if (parsePath().projectId) setSurface('settings');
-    else setView('settings');
     toast(
       outcome === 'connected'
         ? 'The GitHub App is set up. Send clients its install link from Settings.'

@@ -59,6 +59,19 @@ const intake = (name: string): ProjectIntakeInput => ({
   },
 });
 
+/** Icreon's admin console: its key, acting as Steve (steve@icreon.com). */
+const CONSOLE = 'console-key-'.padEnd(48, 'k');
+const consoleAuth = {
+  adminConsoleKey: CONSOLE,
+  consoleActor: async (email: string) =>
+    email === 'steve@icreon.com' ? githubSubject('steve') : null,
+};
+const consoleHeaders = {
+  authorization: `Bearer ${CONSOLE}`,
+  'x-lw-actor-email': 'steve@icreon.com',
+  'x-lw-organization': DEFAULT_ORGANIZATION,
+};
+
 const keyOf = (who: string) => `lwk_${createHash('sha256').update(who).digest('hex').slice(0, 40)}`;
 const DAY = 86_400_000;
 const T0 = Date.parse('2026-11-11T12:00:00Z');
@@ -126,6 +139,7 @@ async function start() {
       })),
       sessionSecret: 'x'.repeat(40),
       secureCookies: true,
+      ...consoleAuth,
     },
   });
   return { store, acme, clock, controls, asked };
@@ -137,7 +151,11 @@ const as =
       method,
       url,
       payload: payload as object,
-      headers: { authorization: `Bearer ${keyOf(who)}` },
+      // Icreon's administration goes through its admin console; the product, through a key.
+      headers:
+        who === 'steve' && /^\/(admin|portfolio\/licenses)/.test(url)
+          ? consoleHeaders
+          : { authorization: `Bearer ${keyOf(who)}` },
     });
     return { status: r.statusCode, body: r.body ? (r.json() as any) : null };
   };

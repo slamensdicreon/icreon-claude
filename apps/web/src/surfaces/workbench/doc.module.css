@@ -586,53 +586,6 @@ button.tag:hover {
 .host {
   min-width: 0;
 }
-/* Lessons: its own title bar gives way to the Workbench's, its table takes the Workbench's look. */
-.lessons :global(.viewer-head) {
-  display: none;
-}
-.lessons > :global(p.muted) {
-  margin: 0 0 var(--space-4);
-  max-width: calc(var(--measure) * 0.6);
-  font-size: var(--type-body-small-size);
-  color: var(--text-2);
-}
-.lessons :global(table) {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: var(--space-5);
-  font-size: var(--type-table-size);
-}
-.lessons :global(th) {
-  font-size: var(--type-table-size);
-  font-weight: 600;
-  color: var(--text-3);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--mist);
-}
-.lessons :global(td) {
-  padding: var(--space-3);
-  height: calc(var(--row) - var(--space-2));
-  border-bottom: 1px solid var(--mist-2);
-  vertical-align: middle;
-}
-.lessons :global(.rules h3) {
-  font-size: var(--type-section-size);
-  font-weight: 700;
-  margin: var(--space-4) 0 var(--space-3);
-}
-.lessons :global(.rules h3 small) {
-  font-size: var(--type-meta-size);
-  font-weight: 400;
-  color: var(--text-3);
-}
-.lessons :global(.rule) {
-  border-color: var(--mist);
-  border-radius: var(--radius-md);
-}
-.lessons :global(.rule-text),
-.lessons :global(.rule-facts) {
-  font-size: var(--type-table-size);
-}
 
 /* Narrow: the filters above the rows, completeness and what changed after them. */
 @container (max-width: 820px) {

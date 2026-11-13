@@ -4,10 +4,9 @@
  */
 import type { ArtifactView, BlueprintRow, BlueprintSnapshot } from '@lw/contracts';
 
-/** The three pages that are not artifacts. */
+/** The two pages that are not artifacts. */
 export const DECISIONS = 'decisions';
 export const FACTS = 'facts';
-export const LESSONS = 'lessons';
 
 /** Screenshots and videos aren't documents: the Workbench lists documents only. */
 export const isDocument = (a: ArtifactView) => !['screenshot', 'video'].includes(a.kind);
@@ -27,11 +26,6 @@ const SECTIONS: { label: string; kinds: string[] | null; page?: Page }[] = [
     label: 'Project facts',
     kinds: [],
     page: { id: FACTS, title: 'Project facts', meta: 'IDs and paths' },
-  },
-  {
-    label: 'Lessons learned',
-    kinds: [],
-    page: { id: LESSONS, title: 'Lessons learned', meta: 'Retrospectives' },
   },
   { label: 'Pull requests', kinds: ['pull_request'] },
   { label: 'Other documents', kinds: null },

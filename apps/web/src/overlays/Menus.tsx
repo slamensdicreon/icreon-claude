@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ProjectIcon } from '../ui/project-icon';
 import { showActiveProjects } from '../surfaces/dashboard/ProjectsTable';
-import { get, messageOf, post, postFor } from '../lib/api';
+import { get, messageOf, post, postFor, put } from '../lib/api';
 import { isWatching, role } from '../lib/role';
-import { switchTo } from '../surfaces/manage/Organizations';
 import { live } from '../lib/live';
-import { MANAGE, useApp, useProjectResource, type ManagePage, type Surface } from '../state';
+import { MANAGE, useApp, useProjectResource, type Surface } from '../state';
 import { Icon, type IconName } from '../theme/icons';
 import { Scrim } from './Dialogs';
 import s from './overlays.module.css';
@@ -230,20 +229,14 @@ export function ProjectMenu() {
   );
 }
 
-/** The header's menu, top right: the pages above any one project. */
-/** Icreon's own pages: what every licensee shares, and the system itself. */
-const ICREON_ONLY = new Set<ManagePage>([
-  'organizations',
-  'settings',
-  'in-force',
-  'rules',
-  'knowledge',
-  'diagnostics',
-]);
+/** Into another of the person's organizations: the cookie the API sets, then the app afresh. */
+async function switchTo(id: string) {
+  await put('/me/organization', { id });
+  location.assign('/');
+}
 
-/** The pages someone can use: a Watcher none, a customer's Director their organization's own. */
-export const managePages = () =>
-  isWatching() ? [] : MANAGE.filter(([page]) => role().superAdmin || !ICREON_ONLY.has(page));
+/** The pages someone can use: a Watcher none, a Director their organization's own. */
+export const managePages = () => (isWatching() ? [] : MANAGE);
 
 export function ManageMenu() {
   const { view, projectId, manage, closeOverlay } = useApp();

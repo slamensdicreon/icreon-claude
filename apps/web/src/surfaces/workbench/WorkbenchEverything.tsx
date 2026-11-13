@@ -10,12 +10,11 @@ import { shortDay } from '../../lib/fmt';
 import { useApp, useProjectResource, useTz } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Select } from '../../ui/cypher/forms';
-import { LessonsLearned } from '../manage/LessonsLearned';
 import { ArtifactViewer } from './ArtifactViewer';
 import { Blueprint } from './Blueprint';
 import { DecisionLog } from './DecisionLog';
-import { DECISIONS, FACTS, LESSONS, isDocument, sectionsOf, updatedAt, type Page } from './model';
-import { DocHead, Quiet, Tag, arrowNav } from './parts';
+import { DECISIONS, FACTS, isDocument, sectionsOf, updatedAt, type Page } from './model';
+import { Quiet, Tag, arrowNav } from './parts';
 import { ProjectFacts } from './ProjectFacts';
 import { ViewSwitch, WorkbenchStory } from './Story';
 import { PlainLayer } from './Plain';
@@ -24,7 +23,7 @@ import d from './doc.module.css';
 import s from './workbench.module.css';
 
 export function WorkbenchEverything() {
-  const { ui, setUi, projectId } = useApp();
+  const { ui, setUi } = useApp();
   const tz = useTz();
   const wb = useProjectResource<WorkbenchSnapshot>('/workbench');
   const [query, setQuery] = useState('');
@@ -32,7 +31,7 @@ export function WorkbenchEverything() {
   const [docEl, setDocEl] = useState<HTMLElement | null>(null);
 
   const docs = (wb.data?.artifacts ?? []).filter(isDocument);
-  const ids = [...docs.map((a) => a.artifactId), DECISIONS, FACTS, LESSONS];
+  const ids = [...docs.map((a) => a.artifactId), DECISIONS, FACTS];
   const current = ids.includes(ui.wbArtifact ?? '')
     ? ui.wbArtifact!
     : (docs[0]?.artifactId ?? DECISIONS);
@@ -158,13 +157,6 @@ export function WorkbenchEverything() {
             <DecisionLog />
           ) : current === FACTS ? (
             <ProjectFacts />
-          ) : current === LESSONS && projectId ? (
-            <>
-              <DocHead title="Lessons learned" meta="Retrospectives" />
-              <div className={`${d.body} ${d.host} ${d.lessons}`}>
-                <LessonsLearned projectId={projectId} />
-              </div>
-            </>
           ) : artifact?.kind === 'blueprint' ? (
             <PlainLayer key={artifact.artifactId} a={artifact}>
               <Blueprint />
