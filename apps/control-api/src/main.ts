@@ -48,6 +48,7 @@ import {
   composeStack,
   canDeleteHostingProjects,
   deleteHostingProject,
+  hostingBuildUsage,
   hostingStatus,
   recipients,
   resendNotifier,
@@ -605,6 +606,7 @@ const app = await buildApp({
   }),
   organizations,
   licenses,
+  buildUsage: hosting ? (name) => hostingBuildUsage(hosting, name) : undefined,
   sendInvitation: workos ? workosInvitations({ apiKey: workos.apiKey }) : null,
   github,
   hosting: hosting

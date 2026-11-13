@@ -1,6 +1,7 @@
 import type { ProjectState } from '@lw/domain';
 import { CommandError } from '@lw/domain';
 import { DEFAULT_ORGANIZATION, type LicenseStore, type OrganizationStore } from '@lw/events';
+import type { BuildUsage } from '@lw/stack';
 import { holdsPlace, standingOf } from './licenses';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -16,7 +17,13 @@ export interface AdminDeps {
   projects: () => Promise<ProjectState[]>;
   licenses?: LicenseStore;
   now: () => number;
+  /** A hosting project's Vercel builds; absent where the API has no Vercel token. */
+  buildUsage?: (hostingProject: string) => Promise<BuildUsage | null>;
 }
+
+/** Vercel's answers are kept this long: the page doesn't ask Vercel on every load. */
+const BUILD_USAGE_TTL = 15 * 60_000;
+const minutes = (ms: number) => Math.round(ms / 60_000);
 
 /** How long Icreon's support access lasts, at most. */
 export const SUPPORT_HOURS_MAX = 72;
@@ -76,8 +83,9 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
                 usd: u.usd + p.spent.usd,
                 tokens: u.tokens + p.spent.tokens,
                 hours: u.hours + p.spent.hours,
+                sandboxMinutes: u.sandboxMinutes + minutes(p.toolTime?.sandbox ?? 0),
               }),
-              { usd: 0, tokens: 0, hours: 0 },
+              { usd: 0, tokens: 0, hours: 0, sandboxMinutes: 0 },
             ),
           license: {
             standing: standing.kind,
@@ -126,6 +134,83 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
       invited = { email: invitation.email, emailSent: mail.sent, detail: mail.detail };
     }
     return reply.status(201).send({ organization: org, invited });
+  });
+
+  const builds = new Map<string, { at: number; usage: BuildUsage | null; error: string | null }>();
+  const buildsOf = async (name: string) => {
+    const hit = builds.get(name);
+    if (hit && deps.now() - hit.at < BUILD_USAGE_TTL) return hit;
+    let entry: { at: number; usage: BuildUsage | null; error: string | null };
+    try {
+      entry = { at: deps.now(), usage: await deps.buildUsage!(name), error: null };
+    } catch (err) {
+      entry = { at: deps.now(), usage: null, error: (err as Error).message };
+    }
+    builds.set(name, entry);
+    return entry;
+  };
+
+  /**
+   * What an organization has cost Icreon, project by project: Claude (the agents' spend), the
+   * time its agents' tools ran (the sandbox, the browser, …) and its Vercel builds. Vercel's API
+   * gives no bandwidth or function time per project, so those aren't here.
+   */
+  app.get<{ Params: { id: string } }>('/admin/organizations/:id/usage', async (req) => {
+    const org = await orgs.get(req.params.id);
+    if (!org) throw new CommandError(404, 'unknown_organization', 'No such organization.');
+    const all = await deps.projects();
+    const owners = await orgs.ownersOf(all.map((p) => p.projectId));
+    const own = all.filter((p) => p.mode === 'live' && owners.get(p.projectId) === org.id);
+    const projects = await Promise.all(
+      own.map(async (p) => {
+        const hosting =
+          typeof p.intake?.target.hostingProject === 'string'
+            ? p.intake.target.hostingProject
+            : null;
+        const b = hosting && deps.buildUsage ? await buildsOf(hosting) : null;
+        return {
+          projectId: p.projectId,
+          name: p.name,
+          status: p.status,
+          claude: p.spent,
+          toolMinutes: Object.fromEntries(
+            Object.entries(p.toolTime ?? {}).map(([server, ms]) => [server, minutes(ms)]),
+          ),
+          vercel: b?.usage
+            ? {
+                hostingProject: hosting,
+                deployments: b.usage.deployments,
+                failed: b.usage.failed,
+                buildMinutes: minutes(b.usage.buildMs),
+              }
+            : { hostingProject: hosting, deployments: 0, failed: 0, buildMinutes: 0 },
+          vercelNote: !hosting
+            ? 'No hosting project'
+            : !deps.buildUsage
+              ? 'Vercel not connected here'
+              : b?.error
+                ? b.error
+                : !b?.usage
+                  ? 'Not in our Vercel team yet'
+                  : null,
+        };
+      }),
+    );
+    const sum = (f: (x: (typeof projects)[number]) => number) =>
+      projects.reduce((n, x) => n + f(x), 0);
+    return {
+      organization: { id: org.id, name: org.name },
+      totals: {
+        claudeUsd: sum((x) => x.claude.usd),
+        claudeTokens: sum((x) => x.claude.tokens),
+        sandboxMinutes: sum((x) => x.toolMinutes.sandbox ?? 0),
+        toolMinutes: sum((x) => Object.values(x.toolMinutes).reduce((a, b) => a + b, 0)),
+        vercelDeployments: sum((x) => x.vercel.deployments),
+        vercelBuildMinutes: sum((x) => x.vercel.buildMinutes),
+      },
+      projects,
+      cachedForMinutes: minutes(BUILD_USAGE_TTL),
+    };
   });
 
   /**

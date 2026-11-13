@@ -23,7 +23,7 @@ export interface OrganizationRow {
   invitations: number;
   projects: number;
   running: number;
-  usage: { usd: number; tokens: number; hours: number };
+  usage: { usd: number; tokens: number; hours: number; sandboxMinutes: number };
   license: {
     standing: 'unlimited' | 'none' | 'upcoming' | 'active' | 'ended';
     used: number;
@@ -119,6 +119,9 @@ export function Organizations() {
                 <th scope="col" className={s.num}>
                   Agent spend
                 </th>
+                <th scope="col" className={s.num}>
+                  Sandbox min
+                </th>
                 <th scope="col">License</th>
                 <th scope="col">
                   <span className="sr-only">Open</span>
@@ -140,6 +143,7 @@ export function Organizations() {
                   <td className={s.num}>{o.projects}</td>
                   <td className={s.num}>{o.running}</td>
                   <td className={s.num}>{usd(o.usage.usd)}</td>
+                  <td className={s.num}>{o.usage.sandboxMinutes.toLocaleString('en-US')}</td>
                   <td>
                     {STANDING[o.license.standing]}
                     {o.license.purgedAt ? ', data purged' : ''}
