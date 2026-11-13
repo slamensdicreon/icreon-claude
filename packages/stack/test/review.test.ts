@@ -885,6 +885,21 @@ describe('blueprint.coverage on a sampled site', () => {
     ).toBe('pass');
   });
 
+  it("takes the homepage demo's site audit as its scope", async () => {
+    // Liberty Mutual: one page inventoried of 440, on purpose; the audit counts the rest.
+    const demo = {
+      pages: [{ path: '/' }],
+      crawl: { pagesFound: 440, pagesInventoried: 1, partial: true },
+      siteAudit: { pagesFound: 440, pagesRead: 439, pages: [{ path: '/' }] },
+    };
+    const r = await run(blueprint(), demo);
+    expect(r.status).toBe('pass');
+    expect(r.detail).toContain('Covers 1 of 440 pages found; the site audit counts the rest.');
+    // Without the audit, a sample still needs its scope.
+    const { siteAudit: _, ...sampled } = demo;
+    expect((await run(blueprint(), sampled)).status).toBe('fail');
+  });
+
   it('wants each media entry to name one file, not a folder', async () => {
     const whole = { pages: [{ path: '/' }], crawl: { pagesFound: 1, pagesInventoried: 1 } };
     const withMedia = (media: { key: string; url: string }[]) => ({
