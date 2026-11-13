@@ -302,7 +302,12 @@ before it reaches a playbook.
       (`GET /playbooks`, `GET /portfolio`), nothing else.
     - Phases: (1) the key; (2) the console's screens, built in `cypher-web`; (3) those pages leave
       the Control Center, and the platform stops taking browser sessions on the super-admin
-      routes.
+      routes. **All three done.** Signed in, a super-admin route answers a session or an API key
+      with `403 admin_console_only`. Two stay in the Control Center for Icreon's Directors: the
+      GitHub App's setup (GitHub sends the browser back to the platform) and a demo project's
+      scenarios. Gone from the Control Center: Organizations, Global settings, In force, Rules,
+      Knowledge, Diagnostics, a project's Lessons learned, and "Make this a rule" on a decided
+      card.
 
 ### Row-level security: deferred
 

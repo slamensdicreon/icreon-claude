@@ -216,6 +216,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   const done = new Set<number>();
   const gates = new Map<string, GateState>();
   const escalations = new Map<string, Escalation>();
+  /** Cards settled in earlier runs (continue-as-new): a late answer to one is a conflict. */
+  const settledBefore = new Set<string>();
   const children = new Map<string, ChildWorkflowHandle<typeof taskWorkflow>>();
   const running = new Map<string, Set<string>>(); // role → task ids
   const agentStates = new Map<string, AgentState>();
@@ -2234,6 +2236,14 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     ];
   }
 
+  const rosterEntries = roster(playbook);
+  for (const r of rosterEntries)
+    agentStates.set(r.agentId, r.tier === 'specialist' ? 'inactive' : 'idle');
+  // The previous run's state comes back before the commands open: a command that reached the
+  // handover is held for this run and checked the moment its handler is set, so its card, task
+  // or directive must already be here. (Restoring records nothing: the run's history is the same.)
+  if (resume) restore(resume);
+
   // -------------------------------------------------------------------------------------------
   // Director commands (Temporal updates). Validators reject before anything is recorded.
   // -------------------------------------------------------------------------------------------
@@ -2247,6 +2257,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     {
       validator: ({ escalationId, optionId, notes, confirmation }) => {
         const e = escalations.get(escalationId);
+        if (!e && settledBefore.has(escalationId))
+          return reject('conflict', 'This escalation is already resolved.');
         if (!e) return reject('not_found', `No escalation "${escalationId}".`);
         if (!unresolved(e)) return reject('conflict', 'This escalation is already resolved.');
         if (!e.card.options.some((o) => o.id === optionId))
@@ -2282,6 +2294,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     {
       validator: ({ escalationId, until }) => {
         const e = escalations.get(escalationId);
+        if (!e && settledBefore.has(escalationId))
+          return reject('conflict', 'This escalation is already resolved.');
         if (!e) return reject('not_found', `No escalation "${escalationId}".`);
         if (!unresolved(e)) return reject('conflict', 'This escalation is already resolved.');
         if (e.card.type === 'gate')
@@ -2669,6 +2683,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     {
       validator: ({ escalationId }) => {
         const e = escalations.get(escalationId);
+        if (!e && settledBefore.has(escalationId))
+          return reject('conflict', 'This escalation is already resolved.');
         if (!e) return reject('not_found', `No escalation "${escalationId}".`);
         if (!e.pending || e.pending.undone)
           return reject('conflict', 'This choice can no longer be undone.');
@@ -2680,11 +2696,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
   // Main loop
   // -------------------------------------------------------------------------------------------
 
-  const rosterEntries = roster(playbook);
-  for (const r of rosterEntries)
-    agentStates.set(r.agentId, r.tier === 'specialist' ? 'inactive' : 'idle');
-  if (resume) restore(resume);
-  else await announce();
+  if (!resume) await announce();
 
   /** Takes over from the previous run: its state, and the deadlines of its open cards. */
   function restore(r: ProjectSnapshot) {
@@ -2727,6 +2739,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       escalations.set(e.card.escalationId, { ...e, pending: null });
       void watch(e.card.escalationId);
     }
+    for (const id of r.settledEscalations ?? []) settledBefore.add(id);
   }
 
   /** Everything the next run needs, taken when nothing is in flight. */
@@ -2760,6 +2773,10 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       started: [...started],
       done: [...done],
       gates: [...gates].map(([key, g]) => [key, { ...g }]),
+      settledEscalations: [
+        ...settledBefore,
+        ...[...escalations.values()].filter((e) => !unresolved(e)).map((e) => e.card.escalationId),
+      ],
       escalations: [...escalations.values()].filter(unresolved).map((e) => ({
         card: e.card,
         status: e.status,

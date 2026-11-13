@@ -119,6 +119,17 @@ const SUPER_ADMIN_ROUTES = [
 ];
 export const isSuperAdminRoute = (url: string) => SUPER_ADMIN_ROUTES.some((r) => r.test(url));
 
+/**
+ * Icreon-only routes that stay in the Control Center: the GitHub App's setup, where GitHub sends
+ * the browser back to the platform, and a demo project's scenarios, which play on its own pages.
+ * Every other Icreon-only route is the admin console's.
+ */
+const IN_APP_ICREON_ROUTES = [
+  /^\/integrations\/github(\/manifest|\/callback)?$/,
+  /^\/projects\/:id\/scenarios(\/|$)/,
+];
+export const isInAppIcreonRoute = (url: string) => IN_APP_ICREON_ROUTES.some((r) => r.test(url));
+
 const deny = (reply: FastifyReply, status: number, code: string, message: string) =>
   reply.status(status).send({ error: { code, message } });
 
@@ -181,6 +192,20 @@ export function registerOrganizationScope(
     if (!url) return;
     if (isSuperAdminRoute(url) && !superAdmin)
       return deny(reply, 403, 'super_admin_only', "Only Icreon's administrators can do this.");
+    // Icreon administers the platform from its own admin console, apart from the product: signed
+    // in, these routes take the console's key alone, not a session (or an API key).
+    if (
+      opts.signedIn &&
+      isSuperAdminRoute(url) &&
+      !isInAppIcreonRoute(url) &&
+      !req.operator?.viaConsole
+    )
+      return deny(
+        reply,
+        403,
+        'admin_console_only',
+        "This is done in Icreon's admin console now, not in the Control Center.",
+      );
     const method = req.method === 'HEAD' ? 'GET' : req.method;
     if (m.role === 'watcher' && !WATCHER_ROUTES.has(`${method} ${url}`))
       return deny(

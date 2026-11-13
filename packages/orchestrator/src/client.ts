@@ -77,6 +77,9 @@ export async function stopProject(client: Client, projectId: string, reason: str
   }
 }
 
+/** Tries for a command that lands on a run handing over to the next (see `acrossRuns`). */
+const HANDOVER_TRIES = 4;
+
 const STATUS: Record<string, 404 | 409 | 422> = {
   not_found: 404,
   conflict: 409,
@@ -100,7 +103,7 @@ export class ProjectCommandsClient {
 
   private async run<T>(fn: () => Promise<T>): Promise<T> {
     try {
-      return await fn();
+      return await this.acrossRuns(fn);
     } catch (err) {
       const cause = err instanceof WorkflowUpdateFailedError ? err.cause : null;
       if (cause instanceof ApplicationFailure && cause.type && STATUS[cause.type]) {
@@ -119,6 +122,28 @@ export class ProjectCommandsClient {
           `This project's orchestrator is stuck on a failed step, so it can't take commands. Details: /projects/${this.projectId}/diagnostics`,
         );
       throw err;
+    }
+  }
+
+  /**
+   * A command that reaches a run just as it hands over to the next (continue-as-new) is admitted
+   * by the closing run and never accepted: Temporal answers "update not found". Nothing was
+   * applied, so it goes again, to the run that is open now; a workflow that has really ended
+   * answers the same way every time, and that error stands.
+   */
+  private async acrossRuns<T>(fn: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (!(err instanceof WorkflowNotFoundError) || attempt >= HANDOVER_TRIES) throw err;
+        const status = await this.handle
+          .describe()
+          .then((d) => d.status.name)
+          .catch(() => null);
+        if (status !== 'RUNNING' && status !== 'CONTINUED_AS_NEW') throw err;
+        await new Promise((r) => setTimeout(r, 250 * attempt));
+      }
     }
   }
 

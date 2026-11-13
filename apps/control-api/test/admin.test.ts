@@ -12,6 +12,19 @@ import { buildApp } from '../src/app';
 
 const keyOf = (who: string) => `lwk_${createHash('sha256').update(who).digest('hex').slice(0, 40)}`;
 
+/** Icreon's admin console: its key, acting as Steve (steve@icreon.com). */
+const CONSOLE = 'console-key-'.padEnd(48, 'k');
+const consoleAuth = {
+  adminConsoleKey: CONSOLE,
+  consoleActor: async (email: string) =>
+    email === 'steve@icreon.com' ? githubSubject('steve') : null,
+};
+const consoleHeaders = {
+  authorization: `Bearer ${CONSOLE}`,
+  'x-lw-actor-email': 'steve@icreon.com',
+  'x-lw-organization': DEFAULT_ORGANIZATION,
+};
+
 let app: FastifyInstance | null = null;
 afterEach(async () => {
   await app?.close();
@@ -51,6 +64,7 @@ async function start() {
       })),
       sessionSecret: 'x'.repeat(40),
       secureCookies: true,
+      ...consoleAuth,
     },
   });
   return { orgs, acme, invited, clock };
@@ -72,10 +86,16 @@ const call = async (
   return { status: r.statusCode, body: r.body ? (r.json() as any) : null, headers: r.headers };
 };
 
+/** Steve, through Icreon's admin console: the only way to the admin routes once signed in. */
+const admin = async (method: 'GET' | 'POST' | 'PUT', url: string, payload?: unknown) => {
+  const r = await app!.inject({ method, url, payload: payload as object, headers: consoleHeaders });
+  return { status: r.statusCode, body: r.body ? (r.json() as any) : null, headers: r.headers };
+};
+
 describe('/admin', () => {
   it('lets Icreon create an organization: its creator is the kickoff Director, its first Director invited', async () => {
     const { orgs, invited } = await start();
-    const made = await call('steve', 'POST', '/admin/organizations', {
+    const made = await admin('POST', '/admin/organizations', {
       name: 'Globex Industries',
       directorEmail: 'Dir@Globex.example',
     });
@@ -94,7 +114,7 @@ describe('/admin', () => {
     expect((await orgs.members(id)).map((m) => [m.subject, m.role])).toEqual([
       [githubSubject('steve'), 'director'],
     ]);
-    const list = (await call('steve', 'GET', '/admin/organizations')).body;
+    const list = (await admin('GET', '/admin/organizations')).body;
     expect(list.map((o: { slug: string }) => o.slug)).toEqual([
       'icreon',
       'acme',
@@ -107,7 +127,7 @@ describe('/admin', () => {
       projects: 0,
     });
     // The same slug twice is refused.
-    const again = await call('steve', 'POST', '/admin/organizations', {
+    const again = await admin('POST', '/admin/organizations', {
       name: 'Globex Industries',
     });
     expect(again.status).toBe(422);
@@ -128,7 +148,7 @@ describe('/admin', () => {
 describe('support access', () => {
   it('lets Icreon into a customer for a few hours, in plain sight, and then not', async () => {
     const { acme } = await start();
-    const r = await call('steve', 'POST', `/admin/organizations/${acme.id}/support`, { hours: 2 });
+    const r = await admin('POST', `/admin/organizations/${acme.id}/support`, { hours: 2 });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ role: 'watcher' });
     const until = Date.parse(r.body.expiresAt as string);
@@ -149,8 +169,7 @@ describe('support access', () => {
       403,
     );
     expect(
-      (await call('steve', 'POST', `/admin/organizations/${acme.id}/support`, { hours: 999 }))
-        .status,
+      (await admin('POST', `/admin/organizations/${acme.id}/support`, { hours: 999 })).status,
     ).toBe(400);
   });
 });
