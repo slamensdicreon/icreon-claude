@@ -280,7 +280,8 @@ before it reaches a playbook.
 8. Export. **Done**: `GET /projects/:id/export` and "Take it with you" in project Settings:
    documents, activity, and a fresh GitHub link to the code; open during the license and 90 days
    after. Moving the repository and the Vercel project to the customer's accounts is still done by
-   Icreon by hand, and the purge 90 days after a license ends is not automatic.
+   Icreon by hand. When export closes, the hourly license check purges the organization's projects
+   (as a deletion would) and records it in the license history.
 9. `/admin`. **Done**: Organizations (create, standing, use, spend), Manage (license editor with
    its history), support access (1 to 72 hours, Watcher or Director, shown in the customer's
    People; migration 013), switching. Diagnostics stays the Diagnostics page.

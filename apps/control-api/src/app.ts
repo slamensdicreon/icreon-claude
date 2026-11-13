@@ -328,6 +328,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       signedIn: Boolean(deps.auth),
       sendInvitation: deps.sendInvitation ?? null,
       secureCookies: deps.auth?.secureCookies,
+      now: () => (deps.now ?? Date.now)(),
     });
     registerAdmin(app, {
       orgs,
@@ -351,6 +352,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         project: (id) => projections.get(id),
         platformOf: (playbookId) =>
           deps.intake?.playbooks().find((p) => p.id === playbookId)?.platform.id ?? null,
+        purge: deps.purge
+          ? async (project, by) => {
+              await purgeProject(deps.purge!, project, by, { now: true });
+            }
+          : undefined,
         control: async (projectId, cmd) => {
           const o = deps.commands(projectId);
           if (!o) throw new Error(`No orchestrator for ${projectId}`);

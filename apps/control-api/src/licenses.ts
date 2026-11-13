@@ -60,6 +60,11 @@ export interface LicenseDeps {
   project?: (projectId: string) => ProjectState | undefined;
   /** A project's orchestrator, to pause and resume it; undefined where none runs it. */
   control?: (projectId: string, cmd: Control) => Promise<unknown>;
+  /**
+   * Deletes a project for good (the purge: workflow, repository, hosting, documents, sealed
+   * credentials, log), leaving its tombstone. Absent where the purge can't run.
+   */
+  purge?: (project: ProjectState, by: string) => Promise<void>;
   signedIn: boolean;
   now: () => number;
 }
@@ -276,10 +281,38 @@ export function registerLicenses(app: FastifyInstance, deps: LicenseDeps) {
   }));
 
   // The scheduled call (Vercel Cron, hourly) and Icreon's administrators by hand.
+  /**
+   * When export closes (90 days after a term that wasn't renewed), the organization's data goes:
+   * every project is purged as a deletion would purge it. A project that fails is tried again on
+   * the next run; once none is left, the license records the purge and the runs stop.
+   */
+  const purgeClosed = async (organizationId: string, by: string) => {
+    const s = await standing(organizationId);
+    if (s.kind !== 'ended' || s.license.purgedAt || !deps.purge) return null;
+    if (deps.now() <= Date.parse(s.exportUntil)) return null;
+    const projects = await owned(organizationId);
+    const purged: string[] = [];
+    const failed: { projectId: string; error: string }[] = [];
+    for (const p of projects) {
+      try {
+        await deps.purge(p, by);
+        purged.push(p.projectId);
+      } catch (err) {
+        failed.push({ projectId: p.projectId, error: (err as Error).message });
+      }
+    }
+    if (!failed.length) await licenses.setPurged(organizationId, by);
+    return { organizationId, action: 'purged', projects: purged, failed };
+  };
+
   app.get('/portfolio/licenses', async (req) => {
     const by = req.operator?.login ?? 'vercel-cron';
     const results = [];
-    for (const l of await licenses.list()) results.push(await reconcile(l.organizationId, by));
+    for (const l of await licenses.list()) {
+      results.push(await reconcile(l.organizationId, by));
+      const gone = await purgeClosed(l.organizationId, by);
+      if (gone) results.push(gone);
+    }
     return { results: results.filter((r) => r.action !== 'none') };
   });
 
