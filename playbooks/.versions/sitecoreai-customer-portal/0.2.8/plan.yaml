@@ -1,0 +1,249 @@
+# Task templates for a SitecoreAI customer portal. The plan compiler expands them over the approved
+# Blueprint's collections: components, pages, media and personas. Before Gate 1 each forEach
+# template shows as one placeholder task, so the whole plan is visible from day one.
+#
+# What an earlier member portal taught, in the plan's shape: the shell (sign-in, sessions, role
+# navigation, demo data) is code, built once before the components; every word on a screen is a
+# field; personalization variants are made in Page builder by hand, from content the agents
+# prepare; and the presentation path is walked by a person, persona by persona, before release.
+
+pilot:
+  phase: 4
+  collection: components
+  optionalGate: pilot-slice-review
+  # The rest of the build waits until the slice is proven in Page builder on the portal's own
+  # editing host.
+  verify: [switch-editing-host, prove-pilot-slice]
+
+templates:
+  # 0 — Intake and access verification
+  - id: verify-access
+    phase: 0
+    role: deployment-engineer
+    title: Verify credentials and record tenant facts
+    acceptance: [validator:credentials.verified]
+
+  # 1 — Prototype discovery
+  - id: inventory-prototype
+    phase: 1
+    role: repo-analyst
+    title: Inventory the prototype's screens, personas, interactions and data
+    when: source-repo
+    uses: [github, artifacts]
+  # No repository: the running prototype is the source, read as rendered.
+  - id: inventory-prototype-live
+    phase: 1
+    role: repo-analyst
+    title: Inventory the running prototype's screens and design system
+    unless: source-repo
+    uses: [browser, artifacts]
+  - id: platform-notes
+    phase: 1
+    role: research-agent
+    title: Verify platform facts and write Platform Notes
+
+  # 2 — Blueprint
+  - id: draft-blueprint
+    phase: 2
+    role: solution-architect
+    title: Draft the portal Blueprint
+    dependsOn: [inventory-prototype, inventory-prototype-live, platform-notes]
+    acceptance: [validator:blueprint.coverage, validator:blueprint.personas]
+
+  # 3 — Foundation
+  - id: create-site
+    phase: 3
+    role: deployment-engineer
+    title: Confirm the site, languages and the project's folders
+  - id: design-system
+    phase: 3
+    role: component-engineer
+    title: Extract the design system (tokens, type, spacing, primitives)
+  - id: portal-shell
+    phase: 3
+    role: component-engineer
+    title: Build the portal shell (sign-in, sessions, role navigation, demo data)
+    dependsOn: [design-system]
+    acceptance: [validator:build.green]
+  - id: prepare-hosting
+    phase: 3
+    role: deployment-engineer
+    title: Deploy the head to Vercel and register it as the editing host
+    release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
+      rollback: >-
+        Delete the editing host registration in the Deploy app and the Vercel project; nothing
+        is published and no content changes.
+    acceptance: [validator:editing-host.responds]
+  - id: validate-foundation
+    phase: 3
+    role: structural-validator
+    title: Validate the site skeleton
+    dependsOn: [create-site]
+    acceptance: [validator:structural.site]
+
+  # 4 — Component build and registration
+  - id: port-{key}
+    phase: 4
+    role: component-engineer
+    forEach: components
+    title: Build {name}
+    dependsOn: [design-system, portal-shell]
+    acceptance: [validator:build.green, validator:component-map.registered]
+  - id: register-{key}
+    phase: 4
+    role: rendering-registrar
+    forEach: components
+    title: Register {name}
+    dependsOn: ['port-{key}']
+    acceptance:
+      [
+        validator:structural.renderings,
+        validator:editor.component-enabled,
+        validator:structural.component-queries,
+      ]
+    metric: components_registered
+  - id: integrate-head
+    phase: 4
+    role: head-integrator
+    title: Configure the head as the editing host
+    dependsOn: [prepare-hosting, portal-shell]
+    acceptance: [validator:head.editing-scripts]
+  # Each component is built on its own branch. Page builder only offers components the editing
+  # host's code has, so each accepted component joins one integration branch, deployed at the
+  # project's fixed editing address.
+  - id: integrate-{key}
+    phase: 4
+    role: head-integrator
+    forEach: components
+    title: Integrate {name} into the editing host
+    dependsOn: ['register-{key}', integrate-head]
+    # A port redone after a page sent it back reaches the editing host only through this task.
+    redoWith: ['port-{key}']
+    acceptance: [validator:editing-host.deployed, validator:head.editing-scripts]
+  - id: switch-editing-host
+    phase: 4
+    role: deployment-engineer
+    title: Point the site at its own editing host
+    dependsOn: [integrate-head]
+    release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
+      rollback: >-
+        Set the site's Site Grouping rendering host back to the value the result names; the new
+        rendering host item can stay, nothing else uses it.
+    acceptance: [validator:rendering-host.set]
+  - id: prove-pilot-slice
+    phase: 4
+    role: structural-validator
+    title: Prove the pilot slice is ready for Page builder
+    dependsOn: [switch-editing-host]
+    # Proven by automated checks of the pilot components, not by hand (decided 2026-11-03): what
+    # Page builder needs to offer each one and create its content. The Director checks Page builder
+    # itself once, in the UAT.
+    acceptance:
+      [
+        validator:structural.renderings,
+        validator:editor.component-enabled,
+        validator:editor.new-datasource,
+      ]
+  - id: validate-components
+    phase: 4
+    role: structural-validator
+    title: Validate renderings and Available Renderings
+    dependsOn: [register-*]
+    acceptance: [validator:structural.renderings]
+
+  # 5 — Pages and media
+  - id: compose-{key}
+    phase: 5
+    role: content-migrator
+    forEach: pages
+    batchSize: 6
+    title: Compose {name}
+    dependsOn: [validate-components]
+    metric: pages_migrated
+    acceptance: [validator:structural.layouts]
+  - id: upload-media-{key}
+    phase: 5
+    role: media-migrator
+    forEach: media
+    batchSize: 20
+    title: Upload {name}
+    metric: media_uploaded
+  - id: validate-pages
+    phase: 5
+    role: structural-validator
+    title: Validate pages and layouts
+    dependsOn: [compose-*]
+    acceptance: [validator:structural.layouts]
+
+  # Variant content per role belongs with the pages: the agents make it; the variants themselves
+  # are made in Page builder by the Director, in the UAT.
+  - id: variant-content
+    phase: 5
+    role: experience-enabler
+    when: personalization
+    title: Create each role's variant content and the personalization plan
+    dependsOn: [validate-pages]
+    uses: [sitecore-authoring, blackboard, artifacts]
+
+  # 6 — Release
+  - id: finalize-head
+    phase: 6
+    role: head-integrator
+    title: Finalize production configuration
+    dependsOn: [validate-pages]
+  - id: deploy-code
+    phase: 6
+    role: deployment-engineer
+    title: Deploy the reviewed commit to production and the editing host
+    dependsOn: [finalize-head]
+    release:
+      rollback: Promote the previous production deployment again in Vercel (instant rollback).
+    acceptance: [validator:deploy.commit-matches, validator:editing-host.responds]
+
+  # 7 — UAT and presentation readiness. The project closes on the Director's UAT of the portal
+  # as built, on production: Page builder is a person's tool (agents have no Pages sign-in,
+  # decided 2026-11-03), and the presentation path is walked by a person, persona by persona.
+  - id: handover-pack
+    phase: 7
+    role: handover-writer
+    title: Write the presenter script, UAT checklist, reset procedure and handover pack
+  - id: personalize-by-role
+    phase: 7
+    role: editor-experience-qa
+    when: personalization
+    title: Set up audiences and page variants in Page builder
+    dependsOn: [handover-pack, variant-content]
+    manual: >-
+      Follow the personalization plan (the Workbench document `personalization-plan`): in Page
+      builder on production, create one audience per persona (Visitor, UTM campaign equals the
+      persona's audience), then on each page it lists, add a page variant for that audience and
+      switch each listed component to its variant datasource. Save. Mark it done listing the
+      variants.
+  - id: walk-{key}
+    phase: 7
+    role: editor-experience-qa
+    forEach: personas
+    title: Walk {name}'s presentation path on production
+    dependsOn: [handover-pack, personalize-by-role]
+    manual: >-
+      On production: sign out, sign in as this persona from the demo accounts, and walk the path
+      the presenter script gives for them, step by step: navigation shows only their pages, the
+      dashboard greets them with their own content (their page variant, when the portal has
+      them), every journey completes (forms submit, lists update, drawers open), nothing shows
+      another persona's data; then sign out. Mark it done naming any step that failed, and send
+      each failure back to its task.
+  - id: director-uat
+    phase: 7
+    role: editor-experience-qa
+    title: Director UAT in Page builder, then reset the demo
+    dependsOn: [walk-*]
+    manual: >-
+      Work through the UAT checklist in the handover pack. In Page builder on production: open the
+      dashboard and one other page, edit a field inline on each and undo it, add a component from
+      the toolbox with a new datasource and remove it, and preview each audience's variant. Then
+      Reset demo so the presenter starts clean. Mark it done naming anything that failed; send
+      each failure back to its task before you accept at Gate 2.

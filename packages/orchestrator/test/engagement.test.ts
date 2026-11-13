@@ -231,6 +231,10 @@ describe('project workflow', () => {
     expect(settled.status).not.toBe('open');
     expect(settled.resolution).toMatchObject({ optionId: 'retry', by: 'director' });
     expect(settled.resolution!.notes).toMatch(/^Answered through Cypher at the Director's request/);
+    // The Director's own words go with it, for the retried task.
+    expect(settled.resolution!.notes).toContain(
+      'The Director wrote: "Clear all the cards with your recommendation"',
+    );
     // No gate is open to answer here, and none was touched.
     expect(
       Object.values(p.state()!.escalations).filter(

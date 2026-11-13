@@ -334,6 +334,18 @@ const CATALOG: OperationCatalog = {
     mutates: false,
     untrusted: true,
   },
+  'page.svg': {
+    description:
+      "An inline SVG (a logo drawn in the page's markup rather than an image file) as a standalone .svg file, stored for media.upload. The colours the page draws it with come from its stylesheet: they are written into the file, so it looks the same on its own (copying the markup alone gives a black logo). Without `selector`, every SVG whose label, title or class says logo; with `selector`, the SVG at it or the SVGs inside it. Reads the Director's saved copy of the page when there is one. Returns each with its label, size on the page, whether it shows, and its ref.",
+    inputSchema: {
+      type: 'object',
+      properties: { url: { type: 'string' }, selector: { type: 'string' } },
+      required: ['url'],
+      additionalProperties: false,
+    },
+    mutates: false,
+    untrusted: true,
+  },
   'page.data': {
     description:
       "A page's content as its CMS delivered it, when the page embeds its layout data (Next.js sites on Sitecore, SitecoreAI or XM Cloud do): each component in order, with its datasource and fields (text, rich text, images with src and alt, links with href, child items with their fields). It includes what the page renders only in the browser (carousels, tabs, team and award lists) and link targets a snapshot shows only as button text. Without `component`, every component up to `maxChars` (default 40000); give `component` (a name from the list) for that one in full. Returns no components when the page embeds no layout data: use snapshot and page.markup then. A component with `contentResolved: false` got no content at all: its rendering's Component Query failed (a field or template it names doesn't exist) or its datasource didn't resolve; adding content won't fix it.",
@@ -564,6 +576,9 @@ export class BrowserToolServer implements ToolServer {
           // An image the Director's saved copy holds is taken from it, not the live site.
           const saved = await this.capturedPart(ctx.projectId, String(args.url));
           if (saved) return await this.storePart(ctx.projectId, String(args.url), saved);
+          // A stored file (the Director's saved page, an attachment) isn't downloaded: its images
+          // come out by their own URLs (Liberty Mutual's migrator tried the .mhtml six times).
+          if (/^\s*blob:/i.test(String(args.url))) return await this.notAnAsset(ctx.projectId);
           return await this.fetchAsset(ctx.projectId, policy, String(args.url));
         }
         case 'page.markup':
@@ -571,6 +586,8 @@ export class BrowserToolServer implements ToolServer {
           return await this.structure(policy, op, args);
         case 'page.data':
           return await this.pageData(policy, args);
+        case 'page.svg':
+          return await this.svgs(ctx.projectId, policy, args);
         default:
           return { code: 400, body: { error: `Unknown operation ${op}` } };
       }
@@ -641,6 +658,7 @@ export class BrowserToolServer implements ToolServer {
     }
     if (op === 'page.markup' || op === 'page.styles')
       return note(await this.structure(policy, op, args, c));
+    if (op === 'page.svg') return note(await this.svgs(projectId, policy, args, c));
     // snapshot
     return note(
       await this.withPage(policy, async (context) => {
@@ -661,6 +679,104 @@ export class BrowserToolServer implements ToolServer {
         }
       }),
     );
+  }
+
+  /** What fetch.asset says to a stored file's ref: the images it can give, by their URLs. */
+  private async notAnAsset(projectId: string): Promise<ToolResult> {
+    const images: string[] = [];
+    for (const f of (await this.opts.captures?.(projectId).catch(() => [])) ?? []) {
+      const c = await this.capture(f.ref);
+      for (const p of c?.parts ?? [])
+        if (p.contentType.startsWith('image/') && /^https?:/.test(p.location) && p.body.length)
+          images.push(p.location);
+    }
+    const list = [...new Set(images)];
+    return {
+      code: 422,
+      body: {
+        error: 'A stored file is not downloaded as an asset',
+        savedCopyImages: list.slice(0, 60),
+      },
+      summary: `A blob: ref is a file already stored with the project, not an image to download. ${
+        list.length
+          ? `The Director's saved copy holds ${list.length} images: fetch.asset one by its https URL (savedCopyImages lists them) and it comes out of the copy. An image the page shows but the list lacks loaded only on scrolling and isn't in the copy: ask the Director for its URL or a copy saved after scrolling to the bottom`
+          : 'No saved copy of a page is attached. A file the Director gave the team (an image, a logo) is uploaded with media.upload by its ref directly'
+      }`,
+    };
+  }
+
+  /**
+   * Inline SVGs as standalone files: each element's computed fill and stroke written in, classes
+   * dropped, scripts and handlers removed, stored as assets. Liberty Mutual's logos were drawn
+   * in the markup and coloured by the site's stylesheet: the media migrator had no way to them.
+   */
+  private async svgs(
+    projectId: string,
+    policy: UrlPolicy,
+    args: Record<string, unknown>,
+    capture?: Capture,
+  ): Promise<ToolResult> {
+    const url = capture ? new URL(capture.url) : await assertNavigable(String(args.url), policy);
+    const selector = typeof args.selector === 'string' && args.selector ? args.selector : null;
+    const found = await this.withPage(policy, async (context) => {
+      let page: Page;
+      if (capture) page = await openCapture(context, capture);
+      else {
+        page = await context.newPage();
+        await gotoPolitely(page, url.toString(), {
+          waitUntil: 'load',
+          timeout: this.opts.navigationTimeoutMs ?? 30_000,
+        });
+      }
+      try {
+        return (await page
+          .evaluate(`(${bakeSvgs.toString()})(${JSON.stringify(selector)})`)
+          .catch((err: Error) => {
+            throw /is not a valid selector/.test(err.message) ? new BadSelector(selector!) : err;
+          })) as ReturnType<typeof bakeSvgs>;
+      } finally {
+        await page.close();
+      }
+    });
+    const shown = capture ? capture.url : url.toString();
+    if (!found.length)
+      return {
+        code: 404,
+        body: { error: `No ${selector ? `SVG at ${selector}` : 'logo SVG'} on ${shown}` },
+        summary: `No ${selector ? `SVG at ${selector}` : 'SVG labelled as a logo'} on ${shown}: give a selector (page.markup without one shows the sections)`,
+      };
+    const svgs = [];
+    for (const f of found) {
+      const clean = cleanSvg(f.svg);
+      const bytes = new TextEncoder().encode(clean);
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      const ref = await this.opts.blobs.put(
+        projectId,
+        `assets/${sha256}.svg`,
+        bytes,
+        'image/svg+xml',
+      );
+      svgs.push({
+        label: f.label,
+        region: f.region,
+        width: f.width,
+        height: f.height,
+        visible: f.visible,
+        bytes: bytes.length,
+        sha256,
+        ref,
+      });
+    }
+    return {
+      code: 200,
+      body: { url: shown, svgs },
+      summary: `${svgs.length} SVG${svgs.length === 1 ? '' : 's'} on ${shown} stored as files with their colours: ${svgs
+        .map(
+          (x) =>
+            `${x.label || 'unlabelled'} (${x.region}, ${x.width}x${x.height}${x.visible ? '' : ', hidden on the page'})`,
+        )
+        .join('; ')}. Upload one with media.upload by its ref`,
+    };
   }
 
   /** A resource from a capture, kept like a downloaded asset. */
@@ -1468,6 +1584,14 @@ export class BrowserToolServer implements ToolServer {
         contentType = got.type ?? contentType;
       }
     }
+    // A server that answers a URL it doesn't have with an empty 200 (Liberty Mutual's CDN, for a
+    // guessed file name) sent no file.
+    if (bytes && bytes.length === 0)
+      return {
+        code: 422,
+        body: { error: `${url.host} sent an empty file`, url: url.toString() },
+        summary: `${url.pathname} came back empty (0 bytes) from ${url.host}: no file is at that URL, so it was not stored. Don't guess file names: take the URL from the page (or the Director's saved copy), or ask the Director for it`,
+      };
     if (!bytes)
       return {
         // Not found, or refused even to a browser: the agent's to handle (another URL, or report
@@ -1676,6 +1800,7 @@ export async function gotoPolitely(
 const SOURCE_READS = new Set(['snapshot', 'page.markup', 'page.styles', 'page.data']);
 /** Page reads the Director's saved copy of a page can answer. */
 const CAPTURE_READS = new Set([
+  'page.svg',
   'snapshot',
   'page.markup',
   'page.styles',
@@ -1731,4 +1856,67 @@ function ago(iso: string | null): string {
   return m < 60
     ? `${m} minute${m === 1 ? '' : 's'} ago`
     : `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * Runs in the page: the SVGs asked for (at `selector`, or those labelled as a logo), each cloned
+ * with the fill and stroke the page draws every part with, parts the page hides left out.
+ */
+function bakeSvgs(selector: string | null) {
+  const isLogo = (s: Element) =>
+    /logo/i.test(
+      `${s.getAttribute('aria-label') ?? ''} ${s.querySelector('title')?.textContent ?? ''} ${s.getAttribute('class') ?? ''} ${s.parentElement?.getAttribute('class') ?? ''}`,
+    );
+  let list: Element[];
+  if (selector) {
+    const el = document.querySelector(selector);
+    list = !el
+      ? []
+      : el.tagName.toLowerCase() === 'svg'
+        ? [el]
+        : Array.from(el.querySelectorAll('svg'));
+  } else list = Array.from(document.querySelectorAll('svg')).filter(isLogo);
+  return list.slice(0, 8).map((svg) => {
+    const clone = svg.cloneNode(true) as Element;
+    const src = [svg, ...Array.from(svg.querySelectorAll('*'))];
+    const dst = [clone, ...Array.from(clone.querySelectorAll('*'))];
+    src.forEach((el, i) => {
+      const cs = getComputedStyle(el);
+      const d = dst[i]!;
+      if (i > 0 && cs.display === 'none') {
+        d.setAttribute('data-drop', '1');
+        return;
+      }
+      for (const prop of ['fill', 'stroke', 'stroke-width', 'fill-rule', 'opacity'])
+        d.setAttribute(prop, cs.getPropertyValue(prop));
+      d.removeAttribute('class');
+      d.removeAttribute('style');
+    });
+    clone.querySelectorAll('[data-drop]').forEach((n) => n.remove());
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    const r = svg.getBoundingClientRect();
+    const region = svg.closest('header') ? 'header' : svg.closest('footer') ? 'footer' : 'page';
+    return {
+      svg: clone.outerHTML,
+      label: svg.getAttribute('aria-label') ?? svg.querySelector('title')?.textContent ?? '',
+      region,
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+      visible: getComputedStyle(svg).display !== 'none' && r.width > 0,
+    };
+  });
+}
+
+/** An SVG from someone else's page, made safe to store and serve: no script, handlers or links out. */
+export function cleanSvg(svg: string): string {
+  return svg
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*')/gi, '')
+    .replace(
+      /\s(?:xlink:)?href\s*=\s*("(?:javascript|https?):[^"]*"|'(?:javascript|https?):[^']*')/gi,
+      '',
+    );
 }

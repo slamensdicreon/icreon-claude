@@ -15,3 +15,4 @@ export { OfflineParser, type SelectQuery } from './page-load';
 export { fetchPage, type Fetched } from './crawl/http';
 export { CrawlReports } from './crawl/report';
 export { designFrom, readBrand, thumbnailHtml, safeSvg, type ThumbnailDesign } from './thumbnail';
+export { parseMhtml, missingImages, type Capture } from './capture';

@@ -96,3 +96,60 @@ it('refuses empty and oversized files, and says so where nothing can keep them',
   const none = await app!.inject({ method: 'POST', url: '/projects/p1/files', payload: body() });
   expect(none.statusCode).toBe(501);
 });
+
+/**
+ * Liberty Mutual's homepage was saved before scrolling: its lazy images were blank in the copy,
+ * and the team asked for each one by hand. A saved page is checked when it's attached, and Cypher
+ * names the blank images and how to save the page again.
+ */
+it('checks a saved page for images that never loaded, and tells the Director which', async () => {
+  const { projections } = await start(async (p, key) => `blob://${p}/${key}`);
+  const html =
+    '<html><body><img src="https://cdn.example/hero.jpg" alt="Hero"><img src="" loading="lazy" alt="Man with a laptop"><img data-src="https://cdn.example/couple.png" src="data:image/gif;base64,R0lGOD" alt="Couple at a table"></body></html>';
+  const mhtml = [
+    'From: <Saved by Blink>',
+    'Snapshot-Content-Location: https://www.example.com/',
+    'Subject: Example',
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/related; type="text/html"; boundary="B"',
+    '',
+    '--B',
+    'Content-Type: text/html',
+    'Content-Location: https://www.example.com/',
+    '',
+    html,
+    '--B',
+    'Content-Type: image/jpeg',
+    'Content-Transfer-Encoding: base64',
+    'Content-Location: https://cdn.example/hero.jpg',
+    '',
+    Buffer.from('jpegbytes').toString('base64'),
+    '--B--',
+  ].join('\r\n');
+  const r = await app!.inject({
+    method: 'POST',
+    url: '/projects/p1/files',
+    payload: body({
+      name: 'Example homepage.mhtml',
+      contentType: 'multipart/related',
+      dataBase64: Buffer.from(mhtml).toString('base64'),
+      about: undefined,
+    }),
+  });
+  expect(r.statusCode).toBe(201);
+  expect((r.json() as { missingImages: unknown[] }).missingImages).toEqual([
+    { alt: 'Man with a laptop', hint: null },
+    { alt: 'Couple at a table', hint: 'https://cdn.example/couple.png' },
+  ]);
+  await projections.catchUp('p1');
+  const said = projections.get('p1')!.conversation.at(-1)!;
+  expect(said).toMatchObject({
+    from: 'chief_of_staff',
+    title: 'Your saved copy is missing 2 images',
+  });
+  expect(said.body).toContain('scroll slowly to the bottom');
+  expect(said.bullets).toEqual([
+    'Man with a laptop',
+    'Couple at a table (https://cdn.example/couple.png)',
+  ]);
+});
