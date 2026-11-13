@@ -1174,7 +1174,16 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const landed = (id: string) => (redoneAt[id] ?? -1) > (dispatchedAt[t.taskId] ?? Infinity);
       const reworking =
         !!w.review && backNow.some((x) => redoing.has(x.taskId) || landed(x.taskId));
-      for (const x of backNow) {
+      // Sent back in plan order (the port before its integration), whatever order the review
+      // named them in: each rerun is an await, and while the integration is queued again the port
+      // must already have left `done`, or a dispatch in between starts the integration on the old
+      // port, and it runs once more after the port's redo.
+      const at = (id: string) => plan.tasks.findIndex((p) => p.taskId === id);
+      const sendOrder =
+        backNow.length > 1 && patched('send-back-plan-order')
+          ? [...backNow].sort((a, b) => at(a.taskId) - at(b.taskId))
+          : backNow;
+      for (const x of sendOrder) {
         if (reworking && stateOf(x.taskId) === 'done') continue;
         // Several pages failing on one component send it back once: a send-back counts toward
         // the limit only when the work is redone, not when it is already queued for it.
