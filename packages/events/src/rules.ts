@@ -6,6 +6,7 @@ import type {
   RuleSource,
   RuleView,
 } from '@lw/contracts';
+import { DEFAULT_ORGANIZATION } from './organizations';
 import type { SqlClient } from './postgres';
 
 export type RuleStatus = RuleView['status'];
@@ -20,7 +21,19 @@ export interface RuleInput {
   sources?: RuleSource[];
   author: RuleView['author'];
   status: RuleStatus;
+  /** An organization's own rule (its variant of a playbook); absent or null: Icreon's. */
+  organizationId?: string | null;
 }
+
+/** Which rules to list: by status, and one organization's own. */
+export interface RuleFilter {
+  status?: RuleStatus;
+  /** Only this organization's own rules. */
+  organizationId?: string;
+}
+
+/** Whose project it is, for an organization's own rules; unassigned projects are Icreon's. */
+export type ProjectOwner = (projectId: string) => Promise<string | null>;
 
 /** What an edit may change; each edit is a new version. */
 export type RulePatch = Partial<Pick<RuleInput, 'when' | 'then' | 'category' | 'scope' | 'roles'>>;
@@ -45,12 +58,15 @@ export interface RuleUse {
  * until activated; edits are new versions; every change and use is kept in the rule's history.
  */
 export interface RuleStore {
-  list(filter?: { status?: RuleStatus }): Promise<RuleView[]>;
+  list(filter?: RuleFilter): Promise<RuleView[]>;
   get(id: string): Promise<RuleView | null>;
   create(input: RuleInput): Promise<RuleView>;
   edit(id: string, patch: RulePatch): Promise<RuleView>;
   setStatus(id: string, status: RuleStatus): Promise<RuleView>;
-  /** Active rules for a question: its category, a scope that covers the project, its role. */
+  /**
+   * Active rules for a question: its category, a scope that covers the project, its role; Icreon's
+   * rules, and the project's organization's own.
+   */
   matching(ctx: RuleContext): Promise<RuleView[]>;
   applied(id: string, use: RuleUse): Promise<void>;
   overridden(id: string, use: RuleUse): Promise<void>;
@@ -61,6 +77,10 @@ export interface RuleStore {
    * the card's words, and their history keeps the counts without the project.
    */
   forgetProject(projectId: string): Promise<{ deleted: number; deidentified: number }>;
+  /**
+   * An organization's data is purged (its export closed): its own rules go, with their history.
+   */
+  forgetOrganization(organizationId: string): Promise<number>;
 }
 
 /** What a source from a deleted project keeps: the id of its deletion record, and no words. */
@@ -96,6 +116,7 @@ interface Row {
   version: number;
   applied: number;
   overridden: number;
+  organization_id: string | null;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -118,6 +139,7 @@ function view(r: Row): RuleView {
     applied: r.applied,
     overridden: r.overridden,
     flagged: r.overridden >= 2,
+    organizationId: r.organization_id ?? null,
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
   };
@@ -150,13 +172,16 @@ function check(input: Pick<RuleInput, 'when' | 'then'>) {
 export class PostgresRuleStore implements RuleStore {
   constructor(private readonly sql: SqlClient) {}
 
-  async list(filter: { status?: RuleStatus } = {}): Promise<RuleView[]> {
-    const { rows } = filter.status
-      ? await this.sql.query<Row>(
-          'SELECT * FROM lw_rules WHERE status = $1 ORDER BY created_at DESC',
-          [filter.status],
-        )
-      : await this.sql.query<Row>('SELECT * FROM lw_rules ORDER BY created_at DESC');
+  async list(filter: RuleFilter = {}): Promise<RuleView[]> {
+    const where: string[] = [];
+    const args: unknown[] = [];
+    if (filter.status) where.push(`status = $${args.push(filter.status)}`);
+    if (filter.organizationId) where.push(`organization_id = $${args.push(filter.organizationId)}`);
+    const { rows } = await this.sql.query<Row>(
+      `SELECT * FROM lw_rules ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+       ORDER BY created_at DESC`,
+      args,
+    );
     return rows.map(view);
   }
 
@@ -176,11 +201,23 @@ export class PostgresRuleStore implements RuleStore {
       author: input.author,
     };
     const { rows } = await this.sql.query<Row>(
-      `INSERT INTO lw_rules (id, ref, status, category, scope_kind, scope_id, body)
-       VALUES ($1, 'R-' || nextval('lw_rule_ref'), $2, $3, $4, $5, $6::jsonb) RETURNING *`,
-      [id, input.status, input.category, input.scope.kind, input.scope.id, JSON.stringify(body)],
+      `INSERT INTO lw_rules (id, ref, status, category, scope_kind, scope_id, body, organization_id)
+       VALUES ($1, 'R-' || nextval('lw_rule_ref'), $2, $3, $4, $5, $6::jsonb, $7) RETURNING *`,
+      [
+        id,
+        input.status,
+        input.category,
+        input.scope.kind,
+        input.scope.id,
+        JSON.stringify(body),
+        input.organizationId ?? null,
+      ],
     );
-    await this.log(id, 'created', { status: input.status, author: input.author });
+    await this.log(id, 'created', {
+      status: input.status,
+      author: input.author,
+      ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+    });
     return view(rows[0]!);
   }
 
@@ -227,9 +264,11 @@ export class PostgresRuleStore implements RuleStore {
       `SELECT * FROM lw_rules WHERE status = 'active' AND (
          (scope_kind = 'project' AND scope_id = $2) OR
          (scope_kind = 'playbook' AND scope_id = $3) OR
-         (scope_kind = 'platform' AND scope_id = $4))
+         (scope_kind = 'platform' AND scope_id = $4)) AND (
+         organization_id IS NULL OR organization_id = COALESCE(
+           (SELECT organization_id FROM lw_project_organizations WHERE project_id = $2), $5))
        ORDER BY (category = $1) DESC, created_at`,
-      [ctx.category, ctx.projectId, ctx.playbookId ?? '', ctx.platform ?? ''],
+      [ctx.category, ctx.projectId, ctx.playbookId ?? '', ctx.platform ?? '', DEFAULT_ORGANIZATION],
     );
     return rows.map(view).filter((r) => ruleCovers(r, ctx));
   }
@@ -278,6 +317,18 @@ export class PostgresRuleStore implements RuleStore {
     return { deleted: own.rows.length, deidentified: taught.rows.length };
   }
 
+  async forgetOrganization(organizationId: string): Promise<number> {
+    const { rows } = await this.sql.query<{ id: string }>(
+      'SELECT id FROM lw_rules WHERE organization_id = $1',
+      [organizationId],
+    );
+    for (const { id } of rows) {
+      await this.sql.query('DELETE FROM lw_rule_history WHERE rule_id = $1', [id]);
+      await this.sql.query('DELETE FROM lw_rules WHERE id = $1', [id]);
+    }
+    return rows.length;
+  }
+
   async history(id: string): Promise<RuleHistoryItem[]> {
     const { rows } = await this.sql.query<{
       at: string | Date;
@@ -300,12 +351,19 @@ export class MemoryRuleStore implements RuleStore {
   private readonly rules = new Map<string, RuleView>();
   private readonly log: Map<string, RuleHistoryItem[]> = new Map();
   private seq = 0;
+  private ownerOf: ProjectOwner = async () => null;
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  async list(filter: { status?: RuleStatus } = {}): Promise<RuleView[]> {
+  /** Whose projects are whose, for organizations' own rules (the organization store's answer). */
+  setProjectOwner(ownerOf: ProjectOwner) {
+    this.ownerOf = ownerOf;
+  }
+
+  async list(filter: RuleFilter = {}): Promise<RuleView[]> {
     return [...this.rules.values()]
       .filter((r) => !filter.status || r.status === filter.status)
+      .filter((r) => !filter.organizationId || r.organizationId === filter.organizationId)
       .reverse();
   }
 
@@ -331,11 +389,16 @@ export class MemoryRuleStore implements RuleStore {
       applied: 0,
       overridden: 0,
       flagged: false,
+      organizationId: input.organizationId ?? null,
       createdAt: at,
       updatedAt: at,
     };
     this.rules.set(rule.id, rule);
-    this.push(rule.id, 'created', { status: input.status, author: input.author });
+    this.push(rule.id, 'created', {
+      status: input.status,
+      author: input.author,
+      ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+    });
     return rule;
   }
 
@@ -368,7 +431,10 @@ export class MemoryRuleStore implements RuleStore {
   }
 
   async matching(ctx: RuleContext): Promise<RuleView[]> {
-    const covering = [...this.rules.values()].filter((r) => ruleCovers(r, ctx));
+    const owner = (await this.ownerOf(ctx.projectId)) ?? DEFAULT_ORGANIZATION;
+    const covering = [...this.rules.values()].filter(
+      (r) => ruleCovers(r, ctx) && (!r.organizationId || r.organizationId === owner),
+    );
     return [
       ...covering.filter((r) => r.category === ctx.category),
       ...covering.filter((r) => r.category !== ctx.category),
@@ -407,6 +473,17 @@ export class MemoryRuleStore implements RuleStore {
         ),
       );
     return { deleted, deidentified };
+  }
+
+  async forgetOrganization(organizationId: string): Promise<number> {
+    let n = 0;
+    for (const [id, r] of [...this.rules])
+      if (r.organizationId === organizationId) {
+        this.rules.delete(id);
+        this.log.delete(id);
+        n++;
+      }
+    return n;
   }
 
   async history(id: string): Promise<RuleHistoryItem[]> {

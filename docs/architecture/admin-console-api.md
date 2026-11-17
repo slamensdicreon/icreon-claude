@@ -142,7 +142,16 @@ The Control Center sources are in `apps/web/src/surfaces/manage/`. Bodies are in
 **In force** (`InForce.tsx`)
 
 - `GET /playbooks/:id/in-force` returns what a new project on that playbook starts with: rules,
-  lessons, procedures and known gaps. Read only.
+  lessons, procedures and known gaps. Read only. It shows Icreon's playbook alone;
+  `?organization=<id>` shows that organization's variant (Icreon's plus its own).
+
+**Customers' variants.** A customer's Directors add their own rules, lessons and procedures to the
+playbooks they license (`/organization/variants` and `/organization/rules|knowledge` in the
+Control Center). They go live at once, for that organization's projects only. Each rule and entry
+carries `organizationId`: `null` is Icreon's, for everyone; an id is that organization's own. The
+console's `GET /rules` and `GET /knowledge` list both, so show the owner, and "Retire" there
+switches a customer's rule or entry off. Don't edit a customer's text from the console: retire it
+and tell them.
 
 **Rules** (`Rules.tsx`). These are how the Leads answer cards on their own.
 

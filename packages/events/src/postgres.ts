@@ -30,6 +30,7 @@ const MIGRATIONS = [
   '012_licenses.sql',
   '013_support_access.sql',
   '014_license_purge.sql',
+  '015_owned_rules.sql',
 ];
 
 /**

@@ -1,6 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MemoryRuleStore, migrate, PostgresRuleStore, type RuleStore } from '../src';
+import {
+  MemoryOrganizationStore,
+  MemoryRuleStore,
+  migrate,
+  PostgresOrganizationStore,
+  PostgresRuleStore,
+  type OrganizationStore,
+  type RuleStore,
+} from '../src';
 
 const media = {
   when: 'the source refuses a media download (403)',
@@ -16,12 +24,33 @@ const ctx = (projectId: string, role = 'media-migrator') => ({
   role,
 });
 
-function behaves(name: string, make: () => Promise<RuleStore>) {
+function behaves(name: string, make: () => Promise<{ store: RuleStore; orgs: OrganizationStore }>) {
   describe(name, () => {
     let store: RuleStore;
+    let orgs: OrganizationStore;
     beforeAll(async () => {
-      store = await make();
+      ({ store, orgs } = await make());
     }, 60_000);
+
+    it('applies an organization’s own rule to its projects only', async () => {
+      const acme = await orgs.create({ name: 'Acme', slug: 'acme' });
+      await orgs.assignProject('acme-1', acme.id);
+      const own = await store.create({
+        ...media,
+        when: 'an image is missing its alt text',
+        scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+        status: 'active',
+        organizationId: acme.id,
+      });
+      expect(own.organizationId).toBe(acme.id);
+      const ids = async (projectId: string) =>
+        (await store.matching(ctx(projectId))).map((r) => r.id);
+      expect(await ids('acme-1')).toContain(own.id);
+      // Another organization's project, and one assigned to nobody (Icreon's): not there.
+      expect(await ids('icreon-1')).not.toContain(own.id);
+      expect((await store.list({ organizationId: acme.id })).map((r) => r.id)).toEqual([own.id]);
+      await store.setStatus(own.id, 'retired');
+    });
 
     it('applies only active rules, in their scope and for their roles', async () => {
       const proposed = await store.create({
@@ -113,7 +142,12 @@ afterAll(async () => {
 behaves('PostgresRuleStore', async () => {
   db = new PGlite();
   await migrate(db);
-  return new PostgresRuleStore(db);
+  return { store: new PostgresRuleStore(db), orgs: new PostgresOrganizationStore(db) };
 });
 let t = Date.parse('2026-10-29T12:00:00Z');
-behaves('MemoryRuleStore', async () => new MemoryRuleStore(() => (t += 1000)));
+behaves('MemoryRuleStore', async () => {
+  const store = new MemoryRuleStore(() => (t += 1000));
+  const orgs = new MemoryOrganizationStore();
+  store.setProjectOwner(async (id) => (await orgs.ownersOf([id])).get(id) ?? null);
+  return { store, orgs };
+});

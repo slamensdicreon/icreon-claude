@@ -308,6 +308,26 @@ before it reaches a playbook.
       scenarios. Gone from the Control Center: Organizations, Global settings, In force, Rules,
       Knowledge, Diagnostics, a project's Lessons learned, and "Make this a rule" on a decided
       card.
+11. Playbook variants. **Done.** A customer's Directors add their own rules, lessons and
+    procedures on top of each playbook they license (Settings → Your playbooks). Icreon's
+    playbook never changes.
+    - Each rule and knowledge entry has an owner (`organization_id`, migration 015): none is
+      Icreon's, for every project in scope; an organization's own reaches its projects only. The
+      stores match it themselves (in Postgres, against the project's organization), so Lead
+      triage, the visual judge and briefs need no change.
+    - Customers' rules and entries are live at once. Icreon sees them all in its admin console
+      and can retire any. A variant uses no playbook place in the license.
+    - When an organization's data is purged (90 days after its license ended), its own rules and
+      entries go with its projects, history included.
+    - Kept apart everywhere they're read: Cypher reads Icreon's and its own organization's,
+      retrospectives compare proposals with Icreon's only, and In force shows Icreon's playbook
+      unless asked for an organization's variant.
+    - Routes (`apps/control-api/src/variants.ts`): `GET /organization/variants` (licensed
+      playbooks, own rules, own entries); `POST /organization/rules`, `PUT
+      /organization/rules/:id`, `POST /organization/rules/:id/activate|retire`, `GET
+      /organization/rules/:id/history`; the same under `/organization/knowledge` (lessons and
+      procedures). Scope: a licensed playbook, or one of the organization's projects. Watchers
+      read; Directors change.
 
 ### Row-level security: deferred
 

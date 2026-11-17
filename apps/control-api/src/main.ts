@@ -525,6 +525,11 @@ if (auth)
     if (!mine.some((m) => m.organizationId === DEFAULT_ORGANIZATION))
       await organizations.setMember(DEFAULT_ORGANIZATION, subject, 'director', 'OPERATORS');
   }
+// In memory, the rules and knowledge stores ask the organizations whose a project is (an
+// organization's own rules reach its projects only); in the database they join it themselves.
+const ownerOf = async (projectId: string) =>
+  (await organizations.ownersOf([projectId])).get(projectId) ?? null;
+if (rules instanceof MemoryRuleStore) rules.setProjectOwner(ownerOf);
 // Each organization's license, beside the organizations; memory for local runs.
 const licenses = opened.sql ? new PostgresLicenseStore(opened.sql) : new MemoryLicenseStore();
 // The team's knowledge across projects; the worker seeds it too, and seeding adds only what's new.
@@ -533,6 +538,7 @@ const knowledge = opened.sql
   : env.STORE === 'memory'
     ? new MemoryKnowledgeStore()
     : undefined;
+if (knowledge instanceof MemoryKnowledgeStore) knowledge.setProjectOwner(ownerOf);
 if (knowledge)
   await seedPlatformKnowledge(
     knowledge,

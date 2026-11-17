@@ -121,6 +121,7 @@ import { registerPeople, type SendInvitation } from './people';
 import { registerAdmin } from './admin';
 import { registerLicenses } from './licenses';
 import { registerHandoff } from './handoff';
+import { registerVariants } from './variants';
 import {
   LOCAL_SUBJECT,
   organizationOf,
@@ -379,6 +380,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
               await purgeProject(deps.purge!, project, by, { now: true });
             }
           : undefined,
+        forgetOrganization: async (organizationId) => {
+          await deps.rules?.forgetOrganization(organizationId);
+          await deps.knowledge?.forgetOrganization(organizationId);
+        },
         control: async (projectId, cmd) => {
           const o = deps.commands(projectId);
           if (!o) throw new Error(`No orchestrator for ${projectId}`);
@@ -388,6 +393,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         now: () => (deps.now ?? Date.now)(),
       });
   }
+  // An organization's own rules and lessons on the playbooks it licenses.
+  registerVariants(app, {
+    rules: deps.rules,
+    knowledge: deps.knowledge,
+    orgs,
+    playbooks: () => deps.intake?.playbooks() ?? [],
+    licensed: license ? (req) => license!.licensedPlaybooks(req) : undefined,
+  });
   /** The request's organization's projects (every project for system calls and without orgs). */
   const mine = (req: FastifyRequest) => scoped(orgs, req, projections.all(), (s) => s.projectId);
 
@@ -1037,16 +1050,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---- What the next build knows, and the proposals waiting to join it ----------------------
 
-  /** What a new project on a playbook starts with: its rules, lessons, procedures and known gaps. */
-  app.get<{ Params: { id: string } }>('/playbooks/:id/in-force', async (req, reply) => {
-    const pb = deps.intake?.playbooks().find((p) => p.id === req.params.id);
-    if (!pb) return fail(reply, 404, 'unknown_playbook', `No playbook "${req.params.id}".`);
-    const [entries, ruleList] = await Promise.all([
-      deps.knowledge?.list() ?? [],
-      deps.rules?.list() ?? [],
-    ]);
-    return inForce(pb, entries, ruleList);
-  });
+  /**
+   * What a new project on a playbook starts with: its rules, lessons, procedures and known gaps.
+   * Icreon's own; with `?organization=`, that organization's variant (Icreon's and its own).
+   */
+  app.get<{ Params: { id: string }; Querystring: { organization?: string } }>(
+    '/playbooks/:id/in-force',
+    async (req, reply) => {
+      const pb = deps.intake?.playbooks().find((p) => p.id === req.params.id);
+      if (!pb) return fail(reply, 404, 'unknown_playbook', `No playbook "${req.params.id}".`);
+      const org = req.query.organization || null;
+      const reaches = (x: { organizationId: string | null }) =>
+        !x.organizationId || x.organizationId === org;
+      const [entries, ruleList] = await Promise.all([
+        deps.knowledge?.list() ?? [],
+        deps.rules?.list() ?? [],
+      ]);
+      return inForce(pb, entries.filter(reaches), ruleList.filter(reaches));
+    },
+  );
 
   /**
    * Every waiting proposal (lessons, procedures, gaps and rules, from every project), with Cypher's
@@ -1285,6 +1307,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       !orgs || !orgId || (await orgs.ownersOf([id])).get(id) === orgId;
     const c = new PortfolioCypher({
       ...deps.cypher,
+      organizationId: orgId,
       store:
         orgId && orgId !== DEFAULT_ORGANIZATION
           ? prefixedStore(deps.cypher.store, `org:${orgId}:`)

@@ -1290,7 +1290,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
             `${outcome.reason} Every agent call fails until then, so the project is paused. The tasks that tried are back in the queue with their attempts unspent.`,
           ),
         );
-        signalAll(pauseTask);
+        void signalAll(pauseTask);
       }
       await send(...events);
       poke();
@@ -1532,7 +1532,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           'The project reached its hard budget limit and is paused. Raise the budget in Settings or resume to continue.',
         ),
       );
-      signalAll(pauseTask);
+      void signalAll(pauseTask);
     } else if (ratio >= BUDGET_SOFT && !softWarned) {
       softWarned = true;
       budgetHold = true;
@@ -1558,19 +1558,35 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
     }
   }
 
+  /** Resolves once every signal is delivered (or its task had already finished). */
   function signalAll(
     signal: typeof pauseTask | typeof resumeTask,
     predicate: (t: PlannedTask) => boolean = () => true,
-  ) {
+  ): Promise<void> {
     const sent = new Set<unknown>();
+    const delivered: Promise<void>[] = [];
     for (const [taskId, handle] of children) {
       const t = task(taskId);
       if (!t || !predicate(t) || sent.has(handle)) continue;
       sent.add(handle);
       // A task can finish while the signal is on its way: Temporal then answers that the workflow
       // wasn't found. Left unhandled, that rejection fails every workflow task from then on.
-      handle.signal(signal).catch(ignoreGone);
+      delivered.push(handle.signal(signal).catch(ignoreGone));
     }
+    return Promise.all(delivered).then(() => undefined);
+  }
+
+  /**
+   * A Director's pause or resume answers once the running tasks have it: otherwise a step that
+   * ends in between finds no pause, and the task carries on although the Director was told it
+   * holds. Patch-gated: runs from before answered at once, and replay as they ran.
+   */
+  async function signalForDirector(
+    signal: typeof pauseTask | typeof resumeTask,
+    predicate?: (t: PlannedTask) => boolean,
+  ) {
+    const delivered = signalAll(signal, predicate);
+    if (patched('pause-delivered')) await delivered;
   }
 
   /** A signal to a task workflow that has already finished changes nothing: ignore it. */
@@ -1592,8 +1608,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       severity: 'notable',
       data: { status: paused ? 'paused' : 'running' },
     });
-    if (paused) signalAll(pauseTask);
-    else signalAll(resumeTask, (t) => !held(t));
+    if (paused) await signalForDirector(pauseTask);
+    else await signalForDirector(resumeTask, (t) => !held(t));
     poke();
   }
 
@@ -2477,8 +2493,8 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
           : scope.kind === 'task'
             ? t.taskId === scope.id
             : scopeRoles(scope.kind, scope.id).includes(t.role);
-      if (pause) signalAll(pauseTask, covered);
-      else signalAll(resumeTask, (t) => covered(t) && !held(t));
+      if (pause) await signalForDirector(pauseTask, covered);
+      else await signalForDirector(resumeTask, (t) => covered(t) && !held(t));
       poke();
       return { accepted: true };
     },

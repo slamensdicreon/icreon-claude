@@ -536,6 +536,11 @@ export const RuleView = z.object({
   overridden: z.number().int(),
   /** Overridden twice or more: the Director keeps disagreeing with it. */
   flagged: z.boolean(),
+  /**
+   * The organization whose rule it is: it applies to that organization's projects only (its own
+   * variant of a playbook). Null: Icreon's, for every project in its scope.
+   */
+  organizationId: z.string().nullable().default(null),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -591,6 +596,11 @@ export const KnowledgeEntry = z.object({
   version: z.number().int(),
   /** Briefs it was put in. */
   used: z.number().int(),
+  /**
+   * The organization whose entry it is: it reaches that organization's projects only. Null:
+   * Icreon's, for every project in its scope.
+   */
+  organizationId: z.string().nullable().default(null),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
