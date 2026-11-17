@@ -49,7 +49,10 @@ export async function runRetrospective(
     };
   const playbook = deps.playbookOf(s.playbook?.id, s.playbook?.version);
   const platform = s.intake?.platform ?? null;
-  const known = (await deps.knowledge.list()).filter((e) => e.status !== 'retired');
+  // What Icreon's playbooks already know (an organization's own entries stay its own).
+  const known = (await deps.knowledge.list()).filter(
+    (e) => e.status !== 'retired' && !e.organizationId,
+  );
   const cos = playbook.roles.find((r) => r.role === 'chief-of-staff');
   const retro = await deps.retrospect({
     project: s.name,

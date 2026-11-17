@@ -6,8 +6,10 @@ import {
   githubSubject,
   InMemoryEventStore,
   MemoryIntegrationStore,
+  MemoryKnowledgeStore,
   MemoryLicenseStore,
   MemoryOrganizationStore,
+  MemoryRuleStore,
   MemoryTombstoneStore,
   MemoryVault,
   Projections,
@@ -93,6 +95,11 @@ async function start() {
   const playbooks = await loadCatalog(PLAYBOOKS);
   for (const e of playbooks.values()) e.playbook.manifest.intake.source.repo = 'optional';
   const clock = { now: T0 };
+  const rules = new MemoryRuleStore();
+  const knowledge = new MemoryKnowledgeStore();
+  const ownerOf = async (id: string) => (await orgs.ownersOf([id])).get(id) ?? null;
+  rules.setProjectOwner(ownerOf);
+  knowledge.setProjectOwner(ownerOf);
   const controls: [string, string][] = [];
   const asked: string[] = [];
   app = await buildApp({
@@ -105,6 +112,8 @@ async function start() {
         control: async (cmd: { verb: string }) => void controls.push([id, cmd.verb]),
       }) as never,
     organizations: orgs,
+    rules,
+    knowledge,
     licenses: new MemoryLicenseStore(),
     // Vercel, for metering: one hosting project has builds, any other isn't in the team.
     buildUsage: async (name: string) => {
@@ -133,7 +142,7 @@ async function start() {
       publicUrl: 'https://api.example.com',
       appUrl: 'https://app.example.com',
       operators: ['steve'],
-      apiKeys: ['steve', 'bob'].map((login) => ({
+      apiKeys: ['steve', 'bob', 'wes'].map((login) => ({
         login,
         sha256: createHash('sha256').update(keyOf(login)).digest('hex'),
       })),
@@ -142,7 +151,7 @@ async function start() {
       ...consoleAuth,
     },
   });
-  return { store, acme, clock, controls, asked };
+  return { store, acme, clock, controls, asked, orgs, rules, knowledge };
 }
 
 const as =
@@ -328,13 +337,22 @@ describe('licenses', () => {
   });
 
   it('purges the organization’s data once export has closed, and only then', async () => {
-    const { store, acme, clock } = await start();
+    const { store, acme, clock, rules, knowledge } = await start();
     await grant(acme.id, { projectsIncluded: 3, endsAt: new Date(T0 + 10 * DAY).toISOString() });
     const id = (await bob('POST', '/projects', migration('Acme site'))).body.projectId as string;
+    // Its own rule and lesson on the playbook go with it.
+    const playbook = { kind: 'playbook', id: 'sitecoreai-migration' };
+    await bob('POST', '/organization/rules', { when: 'x happens', then: 'do y', scope: playbook });
+    await bob('POST', '/organization/knowledge', {
+      title: 'Know this',
+      text: 'Something worth knowing.',
+      scope: playbook,
+    });
     // The term has ended, but export is still open: nothing goes.
     clock.now = T0 + 50 * DAY;
     await steve('GET', '/portfolio/licenses');
     expect(await store.head(id)).toBeGreaterThan(0);
+    expect(await rules.list({ organizationId: acme.id })).toHaveLength(1);
     // 90 days after the end, it does: the project and its log, with a tombstone left.
     clock.now = T0 + 101 * DAY;
     const run = await steve('GET', '/portfolio/licenses');
@@ -345,6 +363,8 @@ describe('licenses', () => {
       failed: [],
     });
     expect(await store.head(id)).toBe(0);
+    expect(await rules.list({ organizationId: acme.id })).toEqual([]);
+    expect(await knowledge.list({ organizationId: acme.id })).toEqual([]);
     const history = (await steve('GET', `/admin/organizations/${acme.id}/license`)).body;
     expect(history.license.purgedAt).not.toBeNull();
     expect(history.history.at(-1).kind).toBe('purged');
@@ -405,5 +425,170 @@ describe('licenses', () => {
     expect((await grant(acme.id, { endsAt: new Date(T0 - 2 * DAY).toISOString() })).status).toBe(
       422,
     );
+  });
+});
+
+describe('playbook variants', () => {
+  /** A rule's question on one project, as Lead triage asks it. */
+  const ruleCtx = (projectId: string) => ({
+    projectId,
+    playbookId: 'sitecoreai-migration',
+    platform: 'sitecoreai',
+    category: 'naming' as const,
+    role: 'any',
+  });
+  const lessonCtx = (projectId: string) => ({
+    projectId,
+    playbookId: 'sitecoreai-migration',
+    platform: 'sitecoreai',
+    role: 'migrator',
+    operations: [],
+    templateId: null,
+    text: 'page names',
+    docs: [],
+  });
+  const viaConsole = async (method: 'GET' | 'POST', url: string) => {
+    const r = await app!.inject({ method, url, headers: consoleHeaders });
+    return { status: r.statusCode, body: r.body ? (r.json() as any) : null };
+  };
+
+  it('lets a customer’s Director add rules and lessons to a playbook it licenses, for its projects only', async () => {
+    const { acme, rules, knowledge } = await start();
+    await grant(acme.id, { projectsIncluded: 2 });
+    const theirs = (await bob('POST', '/projects', migration('Acme site'))).body.projectId;
+    const ours = (await steve('POST', '/projects', migration('Icreon site'))).body.projectId;
+
+    const variants = (await bob('GET', '/organization/variants')).body;
+    expect(variants.playbooks.map((p: { id: string }) => p.id)).toEqual(['sitecoreai-migration']);
+
+    const rule = await bob('POST', '/organization/rules', {
+      when: 'a page title has the brand name twice',
+      then: 'keep it once, at the end',
+      category: 'naming',
+      scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+    });
+    expect(rule.status).toBe(201);
+    expect(rule.body).toMatchObject({
+      status: 'active',
+      organizationId: acme.id,
+      author: 'director',
+    });
+    const lesson = await bob('POST', '/organization/knowledge', {
+      title: 'Page names follow the sitemap',
+      text: 'Name migrated pages as the sitemap does, not as the menu does.',
+      scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+      roles: ['migrator'],
+    });
+    expect(lesson.status).toBe(201);
+    expect(lesson.body).toMatchObject({
+      kind: 'lesson',
+      status: 'active',
+      organizationId: acme.id,
+    });
+
+    // It reaches Acme's project, and not Icreon's: Icreon's playbook is unchanged.
+    expect((await rules.matching(ruleCtx(theirs))).map((r) => r.id)).toEqual([rule.body.id]);
+    expect(await rules.matching(ruleCtx(ours))).toEqual([]);
+    expect((await knowledge.retrieve(lessonCtx(theirs))).map((e) => e.id)).toEqual([
+      lesson.body.id,
+    ]);
+    expect(await knowledge.retrieve(lessonCtx(ours))).toEqual([]);
+
+    // Only playbooks it licenses, and only its own projects.
+    const other = await bob('POST', '/organization/rules', {
+      when: 'x happens there',
+      then: 'do y there',
+      scope: { kind: 'playbook', id: 'sitecoreai-homepage-demo' },
+    });
+    expect([other.status, other.body.error.code]).toEqual([422, 'not_licensed']);
+    const notTheirs = await bob('POST', '/organization/rules', {
+      when: 'x happens there',
+      then: 'do y there',
+      scope: { kind: 'project', id: ours },
+    });
+    expect(notTheirs.status).toBe(404);
+
+    // Edited and retired by its own Director; retired, it reaches nothing.
+    const edited = await bob('PUT', `/organization/rules/${rule.body.id}`, {
+      then: 'keep it once, at the start',
+    });
+    expect(edited.body).toMatchObject({ then: 'keep it once, at the start', version: 2 });
+    expect((await bob('POST', `/organization/rules/${rule.body.id}/retire`)).body.status).toBe(
+      'retired',
+    );
+    expect(await rules.matching(ruleCtx(theirs))).toEqual([]);
+    expect((await bob('GET', `/organization/rules/${rule.body.id}/history`)).body.length).toBe(3);
+  });
+
+  it('keeps an organization’s variant from every other organization, and from Watchers’ changes', async () => {
+    const { acme, orgs } = await start();
+    await grant(acme.id);
+    const globex = await orgs.create({ name: 'Globex', slug: 'globex' });
+    await orgs.setMember(acme.id, githubSubject('wes'), 'watcher', 'test');
+    const rule = (
+      await bob('POST', '/organization/rules', {
+        when: 'a page has no title',
+        then: 'use its heading',
+        scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+      })
+    ).body;
+    // Someone outside Acme: no sign of it, and no way to change it.
+    const r1 = await app!.inject({
+      method: 'POST',
+      url: `/organization/rules/${rule.id}/retire`,
+      headers: { authorization: `Bearer ${keyOf('steve')}`, 'x-lw-organization': globex.id },
+    });
+    expect(r1.statusCode).toBe(403);
+    await orgs.setMember(globex.id, githubSubject('steve'), 'director', 'test');
+    const asGlobex = async (method: 'GET' | 'POST', url: string) => {
+      const r = await app!.inject({
+        method,
+        url,
+        headers: { authorization: `Bearer ${keyOf('steve')}`, 'x-lw-organization': globex.id },
+      });
+      return { status: r.statusCode, body: r.body ? (r.json() as any) : null };
+    };
+    expect((await asGlobex('GET', '/organization/variants')).body.rules).toEqual([]);
+    expect((await asGlobex('POST', `/organization/rules/${rule.id}/retire`)).status).toBe(404);
+    expect((await asGlobex('GET', `/organization/rules/${rule.id}/history`)).status).toBe(404);
+    // Acme's Watcher reads it, and changes nothing.
+    const wes = async (method: 'GET' | 'POST', url: string) => {
+      const r = await app!.inject({
+        method,
+        url,
+        headers: { authorization: `Bearer ${keyOf('wes')}` },
+      });
+      return { status: r.statusCode, body: r.body ? (r.json() as any) : null };
+    };
+    expect((await wes('GET', '/organization/variants')).body.rules.map((x: any) => x.id)).toEqual([
+      rule.id,
+    ]);
+    expect((await wes('POST', `/organization/rules/${rule.id}/retire`)).status).toBe(403);
+  });
+
+  it('shows Icreon every variant in its admin console, where it can switch any rule off', async () => {
+    const { acme, rules } = await start();
+    await grant(acme.id);
+    const theirs = (await bob('POST', '/projects', migration('Acme site'))).body.projectId;
+    const rule = (
+      await bob('POST', '/organization/rules', {
+        when: 'a page has no title',
+        then: 'use its heading',
+        category: 'naming',
+        scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+      })
+    ).body;
+    const all = (await viaConsole('GET', '/rules')).body as {
+      id: string;
+      organizationId: string;
+    }[];
+    expect(all.find((r) => r.id === rule.id)?.organizationId).toBe(acme.id);
+    // Icreon's In force is its own playbook; the organization's variant on asking for it.
+    const inForce = async (q = '') =>
+      (await viaConsole('GET', `/playbooks/sitecoreai-migration/in-force${q}`)).body;
+    expect(JSON.stringify(await inForce())).not.toContain(rule.id);
+    expect(JSON.stringify(await inForce(`?organization=${acme.id}`))).toContain(rule.id);
+    expect((await viaConsole('POST', `/rules/${rule.id}/retire`)).body.status).toBe('retired');
+    expect(await rules.matching(ruleCtx(theirs))).toEqual([]);
   });
 });

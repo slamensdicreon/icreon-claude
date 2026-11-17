@@ -86,6 +86,11 @@ export interface CypherDeps {
   rules?: RuleStore;
   /** Where Cypher reads the team's knowledge and files lessons it proposes. */
   knowledge?: KnowledgeStore;
+  /**
+   * Whose Cypher it is: of the rules and knowledge, it reads Icreon's and this organization's own,
+   * never another organization's. Absent (no organizations), it reads Icreon's only.
+   */
+  organizationId?: string | null;
   now?: () => number;
 }
 
@@ -570,13 +575,15 @@ export class PortfolioCypher {
       }
       case 'search_knowledge': {
         const q = str(input.search);
+        const ours = (x: { organizationId: string | null }) =>
+          !x.organizationId || x.organizationId === this.deps.organizationId;
         const entries = this.deps.knowledge
-          ? await this.deps.knowledge.list({ q: q ?? undefined })
+          ? (await this.deps.knowledge.list({ q: q ?? undefined })).filter(ours)
           : [];
         const words = (q ?? '').toLowerCase().split(/\s+/).filter(Boolean);
         const rules = this.deps.rules
-          ? (await this.deps.rules.list()).filter((r) =>
-              words.every((w) => `${r.when} ${r.then}`.toLowerCase().includes(w)),
+          ? (await this.deps.rules.list()).filter(
+              (r) => ours(r) && words.every((w) => `${r.when} ${r.then}`.toLowerCase().includes(w)),
             )
           : [];
         return {

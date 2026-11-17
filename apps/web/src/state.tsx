@@ -135,13 +135,14 @@ export interface NewProjectIntent {
  * (organizations, licenses, rules, knowledge, diagnostics) is in its admin console, apart from the
  * product.
  */
-export type ManagePage = 'people' | 'connections' | 'playbooks';
+export type ManagePage = 'people' | 'connections' | 'playbooks' | 'variants';
 
 /** The header menu's pages: each one's title and what it is for. */
 export const MANAGE: [ManagePage, string, string][] = [
   ['people', 'People', 'Who can see and run your projects, and invitations'],
   ['connections', 'Connections', 'Tenants shared by the sites on them'],
   ['playbooks', 'Playbooks', 'What a new project can run'],
+  ['variants', 'Your playbooks', 'Your own rules and lessons on the playbooks you license'],
 ];
 
 const MANAGE_PAGES = new Set<string>(MANAGE.map(([page]) => page));

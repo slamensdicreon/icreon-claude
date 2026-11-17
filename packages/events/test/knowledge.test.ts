@@ -3,11 +3,14 @@ import { PGlite } from '@electric-sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   MemoryKnowledgeStore,
+  MemoryOrganizationStore,
   migrate,
   pitfallSeeds,
   PostgresKnowledgeStore,
+  PostgresOrganizationStore,
   type KnowledgeContext,
   type KnowledgeStore,
+  type OrganizationStore,
 } from '../src';
 
 const ctx = (over: Partial<KnowledgeContext> = {}): KnowledgeContext => ({
@@ -22,12 +25,38 @@ const ctx = (over: Partial<KnowledgeContext> = {}): KnowledgeContext => ({
   ...over,
 });
 
-function behaves(name: string, make: () => Promise<KnowledgeStore>) {
+function behaves(
+  name: string,
+  make: () => Promise<{ store: KnowledgeStore; orgs: OrganizationStore }>,
+) {
   describe(name, () => {
     let store: KnowledgeStore;
+    let orgs: OrganizationStore;
     beforeAll(async () => {
-      store = await make();
+      ({ store, orgs } = await make());
     }, 60_000);
+
+    it('puts an organization’s own lesson in its projects’ briefs only', async () => {
+      const acme = await orgs.create({ name: 'Acme', slug: 'acme' });
+      await orgs.assignProject('acme-1', acme.id);
+      const own = await store.create({
+        kind: 'lesson',
+        status: 'active',
+        scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+        title: 'Acme hero banners keep their overlay',
+        text: 'On Acme pages the hero banner keeps its dark overlay.',
+        roles: ['content-migrator'],
+        author: 'director',
+        organizationId: acme.id,
+      });
+      expect(own!.organizationId).toBe(acme.id);
+      const ids = async (projectId: string) =>
+        (await store.retrieve(ctx({ projectId }))).map((e) => e.id);
+      expect(await ids('acme-1')).toContain(own!.id);
+      expect(await ids('icreon-1')).not.toContain(own!.id);
+      expect((await store.list({ organizationId: acme.id })).map((e) => e.id)).toEqual([own!.id]);
+      await store.setStatus(own!.id, 'retired');
+    });
 
     it('gives a task the active entries that apply to it, best first', async () => {
       const base = { kind: 'lesson' as const, author: 'director' as const };
@@ -161,7 +190,12 @@ afterAll(async () => {
 behaves('PostgresKnowledgeStore', async () => {
   db = new PGlite();
   await migrate(db);
-  return new PostgresKnowledgeStore(db);
+  return { store: new PostgresKnowledgeStore(db), orgs: new PostgresOrganizationStore(db) };
 });
 let t = Date.parse('2026-10-31T12:00:00Z');
-behaves('MemoryKnowledgeStore', async () => new MemoryKnowledgeStore(() => (t += 1000)));
+behaves('MemoryKnowledgeStore', async () => {
+  const store = new MemoryKnowledgeStore(() => (t += 1000));
+  const orgs = new MemoryOrganizationStore();
+  store.setProjectOwner(async (id) => (await orgs.ownersOf([id])).get(id) ?? null);
+  return { store, orgs };
+});

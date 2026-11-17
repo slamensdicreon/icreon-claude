@@ -92,6 +92,10 @@ export const WATCHER_ROUTES = new Set([
   'GET /projects/:id/blobs/*',
   'GET /projects/:id/activity',
   'GET /projects/:id/stream',
+  // The organization's own rules and lessons (its variants of playbooks): to read, not change.
+  'GET /organization/variants',
+  'GET /organization/rules/:id/history',
+  'GET /organization/knowledge/:id/history',
 ]);
 
 /**

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { KnowledgeEntry, KnowledgeEvidence, KnowledgeScope } from '@lw/contracts';
+import { DEFAULT_ORGANIZATION } from './organizations';
 import type { SqlClient } from './postgres';
+import type { ProjectOwner } from './rules';
 
 export type KnowledgeStatus = KnowledgeEntry['status'];
 export type KnowledgeKind = KnowledgeEntry['kind'];
@@ -20,6 +22,8 @@ export interface KnowledgeInput {
   author: KnowledgeEntry['author'];
   source?: KnowledgeEntry['source'];
   sourceKey?: string;
+  /** An organization's own entry (its variant of a playbook); absent or null: Icreon's. */
+  organizationId?: string | null;
 }
 
 /** What an edit may change; each edit is a new version. */
@@ -51,6 +55,8 @@ export interface KnowledgeFilter {
   /** Entries a project's retrospectives proposed. */
   projectId?: string;
   q?: string;
+  /** Only this organization's own entries. */
+  organizationId?: string;
 }
 
 /**
@@ -66,7 +72,7 @@ export interface KnowledgeStore {
   seed(inputs: KnowledgeInput[]): Promise<number>;
   edit(id: string, patch: KnowledgePatch): Promise<KnowledgeEntry>;
   setStatus(id: string, status: KnowledgeStatus): Promise<KnowledgeEntry>;
-  /** Active entries that apply to a task, best first. */
+  /** Active entries that apply to a task, best first: Icreon's, and the project's organization's own. */
   retrieve(ctx: KnowledgeContext, limit?: number): Promise<KnowledgeEntry[]>;
   used(ids: string[], use: { projectId: string; taskId: string }): Promise<void>;
   history(id: string): Promise<{ at: string; kind: string; detail: Record<string, unknown> }[]>;
@@ -76,6 +82,10 @@ export interface KnowledgeStore {
    * the project's evidence, and their history keeps the counts without the project.
    */
   forgetProject(projectId: string): Promise<{ deleted: number; deidentified: number }>;
+  /**
+   * An organization's data is purged (its export closed): its own entries go, with their history.
+   */
+  forgetOrganization(organizationId: string): Promise<number>;
 }
 
 interface Body {
@@ -100,6 +110,7 @@ interface Row {
   body: Body;
   version: number;
   used: number;
+  organization_id: string | null;
   created_at: string | Date;
   updated_at: string | Date;
   rank?: number;
@@ -136,6 +147,7 @@ function view(r: Row): KnowledgeEntry {
     source: r.body.source,
     version: r.version,
     used: r.used,
+    organizationId: r.organization_id ?? null,
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
   };
@@ -229,6 +241,7 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
     if (filter.status) add('status = ?', filter.status);
     if (filter.kind) add('kind = ?', filter.kind);
     if (filter.projectId) add("body->'source'->>'projectId' = ?", filter.projectId);
+    if (filter.organizationId) add('organization_id = ?', filter.organizationId);
     if (filter.q?.trim()) add("search @@ websearch_to_tsquery('english', ?)", filter.q.trim());
     const { rows } = await this.sql.query<Row>(
       `SELECT * FROM lw_knowledge ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -247,8 +260,9 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
     const body = bodyOf(input);
     const id = randomUUID();
     const { rows } = await this.sql.query<Row>(
-      `INSERT INTO lw_knowledge (id, ref, kind, status, scope_kind, scope_id, title, body, source_key)
-       VALUES ($1, 'K-' || nextval('lw_knowledge_ref'), $2, $3, $4, $5, $6, $7::jsonb, $8)
+      `INSERT INTO lw_knowledge
+         (id, ref, kind, status, scope_kind, scope_id, title, body, source_key, organization_id)
+       VALUES ($1, 'K-' || nextval('lw_knowledge_ref'), $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
        ON CONFLICT (source_key) DO NOTHING RETURNING *`,
       [
         id,
@@ -259,6 +273,7 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
         clean(input.title, 200),
         JSON.stringify(body),
         input.sourceKey ?? null,
+        input.organizationId ?? null,
       ],
     );
     if (!rows[0]) return null;
@@ -324,18 +339,21 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
     // Any word may match: the text search ranks, the filters decide.
     const query = words.join(' OR ');
     const { rows } = await this.sql.query<Row>(
-      `SELECT *, ${query ? "ts_rank(search, websearch_to_tsquery('english', $5))" : '0'} AS rank
+      `SELECT *, ${query ? "ts_rank(search, websearch_to_tsquery('english', $6))" : '0'} AS rank
        FROM lw_knowledge WHERE status = 'active' AND kind <> 'gap' AND (
          scope_kind = 'global' OR
          (scope_kind = 'platform' AND scope_id = $1) OR
          (scope_kind = 'playbook' AND scope_id = $2) OR
          (scope_kind = 'role' AND scope_id = $3) OR
-         (scope_kind = 'project' AND scope_id = $4))`,
+         (scope_kind = 'project' AND scope_id = $4)) AND (
+         organization_id IS NULL OR organization_id = COALESCE(
+           (SELECT organization_id FROM lw_project_organizations WHERE project_id = $4), $5))`,
       [
         ctx.platform ?? '',
         ctx.playbookId ?? '',
         ctx.role,
         ctx.projectId,
+        DEFAULT_ORGANIZATION,
         ...(query ? [query] : []),
       ],
     );
@@ -390,6 +408,18 @@ export class PostgresKnowledgeStore implements KnowledgeStore {
     return { deleted: own.rows.length, deidentified: taught.rows.length };
   }
 
+  async forgetOrganization(organizationId: string): Promise<number> {
+    const { rows } = await this.sql.query<{ id: string }>(
+      'SELECT id FROM lw_knowledge WHERE organization_id = $1',
+      [organizationId],
+    );
+    for (const { id } of rows) {
+      await this.sql.query('DELETE FROM lw_knowledge_history WHERE entry_id = $1', [id]);
+      await this.sql.query('DELETE FROM lw_knowledge WHERE id = $1', [id]);
+    }
+    return rows.length;
+  }
+
   async history(id: string) {
     const { rows } = await this.sql.query<{
       at: string | Date;
@@ -416,13 +446,20 @@ export class MemoryKnowledgeStore implements KnowledgeStore {
     { at: string; kind: string; detail: Record<string, unknown> }[]
   >();
   private seq = 0;
+  private ownerOf: ProjectOwner = async () => null;
 
   constructor(private readonly now: () => number = Date.now) {}
+
+  /** Whose projects are whose, for organizations' own entries (the organization store's answer). */
+  setProjectOwner(ownerOf: ProjectOwner) {
+    this.ownerOf = ownerOf;
+  }
 
   async list(filter: KnowledgeFilter = {}): Promise<KnowledgeEntry[]> {
     const words = filter.q ? knowledgeWords(filter.q) : [];
     return [...this.entries.values()]
       .filter((e) => !filter.status || e.status === filter.status)
+      .filter((e) => !filter.organizationId || e.organizationId === filter.organizationId)
       .filter((e) => !filter.kind || e.kind === filter.kind)
       .filter((e) => !filter.projectId || e.source?.projectId === filter.projectId)
       .filter((e) => {
@@ -450,6 +487,7 @@ export class MemoryKnowledgeStore implements KnowledgeStore {
       ...body,
       version: 1,
       used: 0,
+      organizationId: input.organizationId ?? null,
       createdAt: at,
       updatedAt: at,
     };
@@ -498,8 +536,9 @@ export class MemoryKnowledgeStore implements KnowledgeStore {
 
   async retrieve(ctx: KnowledgeContext, limit = 8): Promise<KnowledgeEntry[]> {
     const words = knowledgeWords(ctx.text);
+    const owner = (await this.ownerOf(ctx.projectId)) ?? DEFAULT_ORGANIZATION;
     return [...this.entries.values()]
-      .filter((e) => knowledgeCovers(e, ctx))
+      .filter((e) => knowledgeCovers(e, ctx) && (!e.organizationId || e.organizationId === owner))
       .map((e) => ({ e, score: fit(e, ctx, words) }))
       .filter(({ e, score }) => score >= RELEVANT || e.roles.length || e.templates.length)
       .sort((a, b) => b.score - a.score)
@@ -543,6 +582,17 @@ export class MemoryKnowledgeStore implements KnowledgeStore {
         ),
       );
     return { deleted, deidentified };
+  }
+
+  async forgetOrganization(organizationId: string): Promise<number> {
+    let n = 0;
+    for (const [id, e] of [...this.entries])
+      if (e.organizationId === organizationId) {
+        this.entries.delete(id);
+        this.log.delete(id);
+        n++;
+      }
+    return n;
   }
 
   async history(id: string) {

@@ -65,6 +65,8 @@ export interface LicenseDeps {
    * credentials, log), leaving its tombstone. Absent where the purge can't run.
    */
   purge?: (project: ProjectState, by: string) => Promise<void>;
+  /** Once its projects are purged, the organization's own rules and lessons go too. */
+  forgetOrganization?: (organizationId: string) => Promise<void>;
   signedIn: boolean;
   now: () => number;
 }
@@ -301,7 +303,10 @@ export function registerLicenses(app: FastifyInstance, deps: LicenseDeps) {
         failed.push({ projectId: p.projectId, error: (err as Error).message });
       }
     }
-    if (!failed.length) await licenses.setPurged(organizationId, by);
+    if (!failed.length) {
+      await deps.forgetOrganization?.(organizationId);
+      await licenses.setPurged(organizationId, by);
+    }
     return { organizationId, action: 'purged', projects: purged, failed };
   };
 
