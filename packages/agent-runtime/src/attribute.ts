@@ -38,6 +38,15 @@ export interface AttributeInput {
   failures: { id: string; detail: string }[];
   /** The components the site's Blueprint keeps, by key and name; `shared` when every page shows one datasource. */
   components: { key: string; name: string; shared?: boolean }[];
+  /**
+   * What the task's pages render, in order: each component's rendering name, its Blueprint key
+   * when known, its placeholder and the start of its text. Which component draws a section is
+   * the one whose text the section shows, not the one whose name sounds like it.
+   */
+  pages?: {
+    path: string;
+    components: { component: string; key: string | null; placeholder: string; text: string }[];
+  }[];
 }
 
 export interface Attribution {
@@ -55,7 +64,9 @@ const SYSTEM = `You are a Lead sorting a specialist's failed checks by who can f
 
 Components marked (shared) have one datasource every page shows: the header, footer and navigation. Their content (the logo, menu entries, footer columns and links, an announcement bar's text) is not a page's to change, even though it is content: it is filled once, by its own task. A failure in a shared component's content is owner "shared", with that component's key; a failure in its code is owner "component", as for any other.
 
-For each failure, give one entry per part: if a check names several problems, split them, each with its owner. Name a component only from the list given, by its key; if you can't tell which component a code problem belongs to, or the problem could be the content's, it is the specialist's. Write each fix as an instruction to whoever owns it: the page and section where it shows, what the source has, what to change.`;
+For each failure, give one entry per part: if a check names several problems, split them, each with its owner. Name a component only from the list given, by its key; if you can't tell which component a code problem belongs to, or the problem could be the content's, it is the specialist's. Write each fix as an instruction to whoever owns it: the page and section where it shows, what the source has, what to change.
+
+When the components each page renders are listed, name the component behind a section from that list: the one whose text the section shows (its heading, copy or button), in page order. Not the component whose name sounds like the section: Cabot's "Safety Data Sheet banner" is drawn by Callout (its text: "Looking for a Safety Data Sheet?"), and sending it to SDS Search for three rounds changed nothing.`;
 
 /** Sorts a task's failed checks into its own and its components', with Claude. */
 export async function attributeFailures(
@@ -69,6 +80,19 @@ export async function attributeFailures(
       ? `The specialist's permissions:\n${input.permissions.map((p) => `- ${p}`).join('\n')}`
       : '',
     `Components (key: name):\n${input.components.map((c) => `- ${c.key}: ${c.name}${c.shared ? ' (shared)' : ''}`).join('\n') || '- none'}`,
+    input.pages?.length
+      ? `What each page renders, in order (placeholder: rendering name [Blueprint key]: start of its text):\n${input.pages
+          .map(
+            (p) =>
+              `${p.path}\n${p.components
+                .map(
+                  (c) =>
+                    `- ${c.placeholder}: ${c.component}${c.key ? ` [${c.key}]` : ''}${c.text ? `: "${c.text}"` : ''}`,
+                )
+                .join('\n')}`,
+          )
+          .join('\n')}`
+      : '',
     `Failed checks:\n${input.failures.map((f) => `- ${f.id}: ${f.detail}`).join('\n')}`,
   ]
     .filter(Boolean)

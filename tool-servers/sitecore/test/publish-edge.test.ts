@@ -80,4 +80,79 @@ describe('publishing follow-up', () => {
       code: 409,
     });
   });
+
+  it('lists the components a route renders, in order, with the start of their text', async () => {
+    const rendered = {
+      sitecore: {
+        route: {
+          placeholders: {
+            'headless-header': [
+              { componentName: 'SiteHeader', fields: { Logo: { value: { src: '/l.svg' } } } },
+            ],
+            'headless-main': [
+              {
+                componentName: 'HeroCarousel',
+                fields: { Title: { value: '2030 Sustainability Goals' } },
+              },
+              {
+                componentName: 'Callout',
+                fields: {
+                  Title: { value: 'Looking for a Safety Data Sheet?' },
+                  Body: { value: '<p>Search our product index</p>' },
+                  Link: { value: { href: '/sds', text: 'Data Sheets' } },
+                },
+                placeholders: {
+                  'callout-extra': [
+                    { componentName: 'RichText', fields: { Text: { value: 'x' } } },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      expect(new URL(String(input)).searchParams.get('sitecoreContextId')).toBe('ctx-preview');
+      const { query, variables } = JSON.parse(String(init!.body)) as {
+        query: string;
+        variables: { path: string };
+      };
+      expect(query).toContain('rendered');
+      return ok({ layout: { item: variables.path === '/' ? { rendered } : null } });
+    }) as typeof globalThis.fetch;
+    const server = new SitecoreAuthoringToolServer({
+      facts: async () => facts,
+      fetch,
+      edgeContextId: async (_, live) => (live ? null : 'ctx-preview'),
+    });
+    expect(server.catalog['page.components']).toMatchObject({ mutates: false });
+    const r = await server.call('page.components', { paths: ['/', '/gone'] }, ctx);
+    expect(r).toMatchObject({
+      code: 200,
+      body: {
+        pages: [
+          {
+            path: '/',
+            components: [
+              { placeholder: 'headless-header', component: 'SiteHeader' },
+              {
+                placeholder: 'headless-main',
+                component: 'HeroCarousel',
+                text: '2030 Sustainability Goals',
+              },
+              {
+                placeholder: 'headless-main',
+                component: 'Callout',
+                text: 'Looking for a Safety Data Sheet? Search our product index Data Sheets',
+              },
+              { placeholder: 'callout-extra', component: 'RichText', text: 'x' },
+            ],
+          },
+          { path: '/gone', components: null },
+        ],
+      },
+    });
+    expect(r.summary).toBe('Components on 1 of 2 routes: / (4); no layout for /gone');
+  });
 });

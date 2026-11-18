@@ -230,6 +230,9 @@ const EdgeRoutesArgs = z.object({
   paths: z.array(z.string().regex(/^\//, 'route paths start with /')).min(1).max(60),
   live: z.boolean().optional(),
 });
+const PageComponentsArgs = z.object({
+  paths: z.array(z.string().regex(/^\//, 'route paths start with /')).min(1).max(10),
+});
 const PublishArgs = z.object({
   paths: z.array(Path).min(1).max(50),
   subItems: z.boolean().optional(),
@@ -552,6 +555,17 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       },
       mutates: false,
     },
+    'page.components': {
+      description:
+        'What each route renders, in order, as the editing host reads it (Experience Edge preview): every component with its placeholder, rendering name and the start of its text. Tells which component draws a section of a page: the one whose text the section shows. `paths` like "/", "/about", up to 10. Changes nothing.',
+      inputSchema: {
+        type: 'object',
+        properties: { paths: { type: 'array', items: { type: 'string' } } },
+        required: ['paths'],
+        additionalProperties: false,
+      },
+      mutates: false,
+    },
     'rendering-host.read': {
       description:
         "Which rendering host the project's site renders through in Page builder: the site's setting (its Site Grouping item) and the rendering host items, with their URLs. Changes nothing.",
@@ -662,6 +676,12 @@ export class SitecoreAuthoringToolServer implements ToolServer {
           return await this.publishStatus(q, PublishStatusArgs.safeParse(args));
         case 'edge.routes':
           return await this.edgeRoutes(ctx.projectId, EdgeRoutesArgs.safeParse(args), facts);
+        case 'page.components':
+          return await this.pageComponents(
+            ctx.projectId,
+            PageComponentsArgs.safeParse(args),
+            facts,
+          );
         case 'site.verify':
         case 'site.create':
           return await this.site(q, SiteArgs.safeParse(args), facts);
@@ -1407,6 +1427,65 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     };
   }
 
+  /**
+   * The components each route renders, in order, from its layout on Experience Edge preview (the
+   * draft the editing host shows). The visual review describes sections by what they show ("the
+   * Safety Data Sheet banner") and guessed the component from its name: Cabot's banner went to SDS
+   * Search for three rounds, though Callout draws it, and nothing changed. Each component's text
+   * says which one draws a section.
+   */
+  private async pageComponents(
+    projectId: string,
+    a: Parsed<typeof PageComponentsArgs>,
+    facts: TenantFacts,
+  ): Promise<ToolResult> {
+    if (!a.success) return rejected(a.error.issues[0]!.message);
+    const contextId = await this.opts.edgeContextId?.(projectId, false);
+    if (!contextId) {
+      const error = 'No Experience Edge preview Context ID is stored for this project.';
+      return { code: 409, body: { error }, summary: error };
+    }
+    const url = new URL('/v1/content/api/graphql/v1', this.opts.edgeUrl ?? EDGE_URL);
+    url.searchParams.set('sitecoreContextId', contextId);
+    const paths = [...new Set(a.data.paths)];
+    const pages = await mapLimit(paths, 4, async (path) => {
+      try {
+        const res = await this.fetch(url.href, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            query:
+              'query($site: String!, $path: String!, $lang: String!) { layout(site: $site, routePath: $path, language: $lang) { item { rendered } } }',
+            variables: { site: facts.site, path, lang: facts.languages[0] ?? 'en' },
+          }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        const d = (await res.json().catch(() => ({}))) as {
+          data?: { layout?: { item?: { rendered?: unknown } | null } | null };
+        };
+        const rendered = d.data?.layout?.item?.rendered as
+          { sitecore?: { route?: LayoutNode | null } } | undefined;
+        const route = rendered?.sitecore?.route;
+        return route ? { path, components: componentsOf(route) } : { path, components: null };
+      } catch {
+        return { path, components: null };
+      }
+    });
+    const read = pages.filter((p) => p.components);
+    return {
+      code: 200,
+      body: { pages },
+      summary: `Components on ${read.length} of ${pages.length} route${pages.length === 1 ? '' : 's'}${read.length ? `: ${read.map((p) => `${p.path} (${p.components!.length})`).join(', ')}` : ''}${
+        read.length < pages.length
+          ? `; no layout for ${pages
+              .filter((p) => !p.components)
+              .map((p) => p.path)
+              .join(', ')}`
+          : ''
+      }`,
+    };
+  }
+
   private async edgeRoutes(
     projectId: string,
     a: Parsed<typeof EdgeRoutesArgs>,
@@ -1712,6 +1791,58 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 }
 
 type Lang = (l?: string) => string;
+
+/** A route or component in Layout Service JSON: its placeholders hold components. */
+type LayoutNode = {
+  componentName?: string;
+  fields?: Record<string, unknown> | null;
+  placeholders?: Record<string, LayoutNode[]> | null;
+};
+
+/** The text a field shows, from a Layout Service field value (plain, rich text or a link). */
+function fieldText(v: unknown, depth = 0): string[] {
+  if (depth > 3 || v == null) return [];
+  if (typeof v === 'string') return [v];
+  if (Array.isArray(v)) return v.flatMap((x) => fieldText(x, depth + 1));
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    if ('value' in o) {
+      const val = o.value;
+      if (typeof val === 'string') return [val];
+      if (val && typeof val === 'object' && 'text' in val)
+        return [String((val as { text: unknown }).text ?? '')];
+      return [];
+    }
+    // A reference field's items, or a list's: their own fields.
+    if ('fields' in o) return fieldText(o.fields, depth + 1);
+    return Object.values(o).flatMap((x) => fieldText(x, depth + 1));
+  }
+  return [];
+}
+
+/** Every component under a route, in page order, with its placeholder and the start of its text. */
+function componentsOf(
+  route: LayoutNode,
+): { placeholder: string; component: string; text: string }[] {
+  const out: { placeholder: string; component: string; text: string }[] = [];
+  const walk = (node: LayoutNode) => {
+    for (const [ph, list] of Object.entries(node.placeholders ?? {}))
+      for (const c of list ?? []) {
+        if (c.componentName) {
+          const text = fieldText(c.fields)
+            .map((t) => t.replace(/<[^>]+>/g, ' '))
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 140);
+          out.push({ placeholder: ph, component: c.componentName, text });
+        }
+        walk(c);
+      }
+  };
+  walk(route);
+  return out;
+}
 type TemplateRef = { name?: string; templateId?: string; path?: string };
 
 /**
