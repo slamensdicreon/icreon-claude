@@ -18,7 +18,7 @@ const INHERITED = new Set(['Datasource Template', 'Renderings']);
 
 function fakeCm(
   items: Record<string, string>,
-  opts: { drop?: boolean; ignoreUpdate?: boolean } = {},
+  opts: { drop?: boolean; ignoreUpdate?: boolean; templates?: Record<string, string> } = {},
 ) {
   const queries: string[] = [];
   const values = new Map<string, Map<string, string>>();
@@ -139,6 +139,9 @@ function fakeCm(
             itemId: items[path],
             name: 'n',
             path,
+            ...(opts.templates?.[path]
+              ? { template: { name: 't', templateId: opts.templates[path] } }
+              : {}),
             children: {
               nodes: Object.keys(items)
                 .filter((k) => k.startsWith(`${path}/`) && !k.slice(path.length + 1).includes('/'))
@@ -575,6 +578,58 @@ describe('SitecoreAuthoringToolServer', () => {
         ],
       }),
     ).toBe(false);
+    // A template known only by the ID its page reads back (the site's scaffolded Home template):
+    // item.read gives its path too, and page-designs.map takes the ID itself.
+    const home = '/sitecore/content/Brands/ansco/Home';
+    const scaffold = '/sitecore/templates/Project/Brands/ansco/Home';
+    const byId = fakeCm(
+      {
+        ...items,
+        [home]: '11111111222233334444555555555555',
+        [scaffold]: '206b40439c5f47ffa08bce791e3610ed',
+      },
+      { templates: { [home]: '206b40439c5f47ffa08bce791e3610ed' } },
+    );
+    const s4 = new SitecoreAuthoringToolServer({ facts: async () => facts, fetch: byId.fetch });
+    expect(await s4.call('item.read', { path: home }, ctx)).toMatchObject({
+      code: 200,
+      body: { template: { templateId: '206b40439c5f47ffa08bce791e3610ed', path: scaffold } },
+    });
+    const mappedById = await s4.call(
+      'page-designs.map',
+      {
+        pageDesignsPath: designs,
+        mappings: [
+          {
+            templatePath: '{206B4043-9C5F-47FF-A08B-CE791E3610ED}',
+            pageDesignPath: `${designs}/Default`,
+          },
+        ],
+        add: true,
+      },
+      ctx,
+    );
+    expect(mappedById).toMatchObject({ code: 200, body: { mapped: 1 } });
+    expect(byId.queries.find((q) => q.includes('configurePageDesigns'))).toContain(
+      '{206B4043-9C5F-47FF-A08B-CE791E3610ED}',
+    );
+    expect(
+      (
+        await s4.call(
+          'page-designs.map',
+          {
+            pageDesignsPath: designs,
+            mappings: [
+              {
+                templatePath: '{99999999-9C5F-47FF-A08B-CE791E3610ED}',
+                pageDesignPath: `${designs}/Default`,
+              },
+            ],
+          },
+          ctx,
+        )
+      ).code,
+    ).toBe(404);
     // Page designs come from the site's own Page Designs item.
     const elsewhere = [{ templatePath: tpl, pageDesignPath: '/sitecore/content/Other/Default' }];
     expect(
