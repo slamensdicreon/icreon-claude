@@ -82,6 +82,10 @@ function sniffImage(b: Uint8Array): string | null {
 }
 
 const Path = z.string().startsWith('/sitecore/').max(500);
+/** An item ID, with or without braces and dashes. */
+const ItemId = z
+  .string()
+  .regex(/^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i, 'an item ID');
 const Field = z.object({ name: z.string().min(1), value: z.string() });
 const ReadArgs = z.object({
   path: Path,
@@ -241,7 +245,13 @@ const PageDesignsArgs = z.object({
   pageDesignsPath: Path,
   /** Every page template and its page design: the mapping replaces the site's whole mapping. */
   mappings: z
-    .array(z.object({ templatePath: Path, pageDesignPath: Path }))
+    .array(
+      z.object({
+        /** The template's path, or its ID: an item reads back its template's ID. */
+        templatePath: z.union([Path, ItemId]),
+        pageDesignPath: Path,
+      }),
+    )
     .min(1)
     .max(50),
   /** Keep every other template's page design as stored now, and map only these. */
@@ -379,7 +389,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
             type: 'array',
             items: {
               type: 'object',
-              properties: { templatePath: { type: 'string' }, pageDesignPath: { type: 'string' } },
+              properties: {
+                templatePath: {
+                  type: 'string',
+                  description:
+                    "The page template's path, or its ID (item.read gives an item's template ID and path).",
+                },
+                pageDesignPath: { type: 'string' },
+              },
               required: ['templatePath', 'pageDesignPath'],
             },
           },
@@ -694,6 +711,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       d = await query('');
     }
     if (!d.item) return { code: 404, body: { error: `No item at ${a.data.path}` } };
+    await this.templatePath(q, d.item as unknown as { template?: TemplateRef });
     if (!named) return { code: 200, body: d.item, summary: `Read ${a.data.path}` };
     // Named fields only, asked for by name, and say which the item doesn't have.
     const back = await readBack(q, a.data.path, lang(a.data.language), a.data.fields!);
@@ -975,7 +993,13 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     const pairs: { templateId: string; pageDesignId: string }[] = [];
     for (const m of a.data.mappings) {
       pairs.push({
-        templateId: sitecoreId(await this.idOf(q, m.templatePath)),
+        // An ID is taken as it is once an item has it: a page's own template (the site's
+        // scaffolded Home) may be known only by the ID its item reads back.
+        templateId: sitecoreId(
+          m.templatePath.startsWith('/')
+            ? await this.idOf(q, m.templatePath)
+            : await this.idExists(q, m.templatePath),
+        ),
         pageDesignId: sitecoreId(await this.idOf(q, m.pageDesignPath)),
       });
     }
@@ -1650,6 +1674,24 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     return ids.filter((_, i) => !d[`i${i}`]);
   }
 
+  /**
+   * Adds the path of the item's template to what a read returns. The ID alone left the agent
+   * nothing to act on: Cabot's Home was built on the site's scaffolded template, known only by its
+   * ID, and nothing would map it to a page design or read it by ID.
+   */
+  private async templatePath(q: Gql, item: { template?: TemplateRef }): Promise<void> {
+    const t = item.template;
+    if (!t?.templateId) return;
+    try {
+      const d = await q.run<{ item: { path: string } | null }>(
+        `query { item(where: { database: "master", itemId: ${gql(sitecoreId(t.templateId))} }) { path } }`,
+      );
+      if (d.item?.path) t.path = d.item.path;
+    } catch {
+      // The read stands without it.
+    }
+  }
+
   /** The item's ID when an item has it, else 404. */
   private async idExists(q: Gql, id: string): Promise<string> {
     const d = await q.run<{ item: { itemId: string } | null }>(
@@ -1670,6 +1712,7 @@ export class SitecoreAuthoringToolServer implements ToolServer {
 }
 
 type Lang = (l?: string) => string;
+type TemplateRef = { name?: string; templateId?: string; path?: string };
 
 /**
  * Fields that hold item references by name: a value there must name an item. Others may hold an
