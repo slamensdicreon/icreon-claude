@@ -1,0 +1,22 @@
+## Reference: Definition of Done
+
+The Director accepts the portal against every row at Gate 2, on production and in Page builder; the handover pack's acceptance checklist lists each row with the evidence the engagement already has. Each row needs its evidence, recorded as a document or Activity step. A row without evidence is **pending**, never "passed by code review".
+
+| Area                  | Required                                                                                                                               | Evidence                                                   |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Presentation path     | Each persona signs in, walks every step of their path (forms submit, lists update, drawers open) and signs out, with no error          | The Director's walkthrough per persona, on production      |
+| Reset                 | Reset demo returns every persona's data to the documented starting state                                                               | Before and after the reset                                 |
+| Sign-in               | The sign-in screen looks like the prototype's; only the demo accounts sign in; signed-out visitors reach only the sign-in page         | Sign-in checks with a demo and a non-demo email            |
+| Role navigation       | Each persona's navigation shows only their pages, in the Blueprint's order; their journeys only                                        | Screenshot per persona                                     |
+| Personalization       | Content that differs by role comes from page variants per audience; each persona sees their own variant                                | Page builder variants and each persona's dashboard         |
+| SitecoreAI owns words | Every heading, label, help text, link and image a component shows comes from a field; none hard-coded                                  | Field-to-component matrix and an inline edit per component |
+| Inline editing        | Text, link and image edits persist in Page builder; Page builder previews as the default persona without errors                        | Page builder session                                       |
+| New component         | Every portal component is in the toolbox, and a new datasource gives useful starter content                                            | A fresh datasource created on a page                       |
+| Data integrity        | No screen shows another persona's or a placeholder persona's data, even while loading                                                  | Loading-state checks per persona                           |
+| Empty states          | Missing datasource, empty fields, empty lists and finished task lists stay usable                                                      | Visitor and editor checks                                  |
+| Prototype fidelity    | Each screen's layout, tokens, imagery and interactions match the prototype at desktop and mobile widths                                | Side-by-side screenshots                                   |
+| Accessibility         | Keyboard operation of navigation, forms, drawers and menus; visible focus; Escape closes; labels, alt text and contrast meet the brief | Automated report plus a manual journey record              |
+| Editing host          | The editing address runs the integration build; Page builder renders the site through it                                               | Deployment record and Page builder session                 |
+| Release               | Production runs the reviewed commit; the demo data store is private and connected                                                      | Deployment record and hosting report                       |
+| Security              | No credentials or session secrets shipped or logged; the demo data store is private; the brief's code-extraction policy followed       | Configuration review                                       |
+| Handover              | Presenter script per persona, reset procedure, Page builder moments, component catalog and known gaps                                  | Approved handover pack                                     |

@@ -175,6 +175,63 @@ describe('blackboard', () => {
     expect((await library.latest('p1', 'blueprint'))?.kind).toBe('blueprint');
   });
 
+  it("writes a large site's Blueprint in parts, merging by key", async () => {
+    // Cabot's Blueprint didn't fit in one reply: it is written in parts instead.
+    const s = new BlackboardToolServer(library);
+    const page = (k: number) => ({ key: `page-${k}`, name: `Page ${k}` });
+    const first = await s.call(
+      'write.blueprint',
+      {
+        merge: true,
+        blueprint: {
+          version: 1,
+          collections: {
+            components: [{ key: 'hero', name: 'Hero' }],
+            templates: [{ key: 'content', name: 'Content Page' }],
+            media: [],
+          },
+        },
+      },
+      ctx('solution-architect'),
+    );
+    expect(first).toMatchObject({ code: 200, body: { version: 1 } });
+    await s.call(
+      'write.blueprint',
+      { merge: true, blueprint: { collections: { pages: [1, 2, 3].map(page) } } },
+      ctx('solution-architect'),
+    );
+    const last = await s.call(
+      'write.blueprint',
+      {
+        merge: true,
+        blueprint: {
+          collections: { pages: [{ ...page(3), status: 'drop' }, page(4)] },
+          scope: { pagesFound: 320, approach: 'Every page placed.' },
+        },
+      },
+      ctx('solution-architect'),
+    );
+    expect(last).toMatchObject({ code: 200, body: { version: 3, merged: { items: 2 } } });
+    expect(last.summary).toContain(
+      '2 items merged into pages; now 1 components, 1 templates, 0 media, 4 pages',
+    );
+    const r = (await s.call('read', {}, ctx())).body as {
+      blueprint: {
+        collections: Record<string, { key: string; status?: string }[]>;
+        scope: { pagesFound: number };
+      };
+    };
+    expect(r.blueprint.collections.pages!.map((p) => p.key)).toEqual([
+      'page-1',
+      'page-2',
+      'page-3',
+      'page-4',
+    ]);
+    expect(r.blueprint.collections.pages![2]).toMatchObject({ status: 'drop' });
+    expect(r.blueprint.collections.components).toEqual([expect.objectContaining({ key: 'hero' })]);
+    expect(r.blueprint.scope.pagesFound).toBe(320);
+  });
+
   it('refuses a Blueprint the plan compiler could not use', async () => {
     const s = new BlackboardToolServer(library);
     const bad = {

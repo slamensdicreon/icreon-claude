@@ -1,0 +1,57 @@
+role: experience-enabler
+name: Experience Enabler
+persona: 'Sarah Thompson'
+description: 'Makes the site ready for personalization and A/B tests, and sets up redirects, SEO fields and error pages.'
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+# Playbook 0.7.0: items only. The proof variant and A/B/n test need Page builder, which the
+# Editor Experience QA owns (by hand, until an agent can drive it).
+mandate: >-
+  Make components variant- and personalization-ready; create redirects, SEO fields, sitemap, robots, 404
+  and 500 pages, and dictionary entries.
+produces:
+  - personalization-ready site
+tools:
+  sitecore-authoring:
+    ops:
+      - item.read
+      - item.create
+      - item.update
+    scope:
+      paths:
+        - '{sitePath}/**'
+      # Option lists its settings point at (sitemap change frequency, robots): read only.
+      readPaths:
+        - '{sitePath}/**'
+        - /sitecore/system/Settings/**
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:experience.variant-resolves
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 7
