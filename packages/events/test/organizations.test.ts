@@ -27,6 +27,34 @@ function behaves(name: string, make: () => Promise<OrganizationStore>) {
       expect((await orgs.get(DEFAULT_ORGANIZATION))?.name).toBe('Icreon');
     });
 
+    it('deletes an organization with its people, invitations and project records, leaving a record', async () => {
+      const orgs = await make();
+      const gone = await orgs.create({ name: 'Gone Co', slug: 'gone-co' });
+      await orgs.setMember(gone.id, githubSubject('gina'), 'director', 'test');
+      await orgs.invite({
+        organizationId: gone.id,
+        email: 'pat@gone.example',
+        role: 'watcher',
+        invitedBy: 'test',
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      await orgs.assignProject('gone-1', gone.id);
+      await expect(orgs.remove(DEFAULT_ORGANIZATION, { by: 'x', detail: {} })).rejects.toThrow(
+        /can’t be deleted/,
+      );
+      const d = await orgs.remove(gone.id, { by: 'github:steve', detail: { projects: 1 } });
+      expect(d).toMatchObject({
+        organizationId: gone.id,
+        name: 'Gone Co',
+        deletedBy: 'github:steve',
+      });
+      expect(await orgs.get(gone.id)).toBeNull();
+      expect(await orgs.membershipsOf(githubSubject('gina'))).toEqual([]);
+      expect(await orgs.acceptInvitations('pat@gone.example', 'workos:user_pat')).toEqual([]);
+      expect((await orgs.ownersOf(['gone-1'])).get('gone-1')).toBe(DEFAULT_ORGANIZATION);
+      expect((await orgs.deletions()).map((x) => x.organizationId)).toContain(gone.id);
+    });
+
     it('creates organizations with unique slugs', async () => {
       const orgs = await make();
       const a = await orgs.create({ name: 'Acme Corp', slug: 'acme' });

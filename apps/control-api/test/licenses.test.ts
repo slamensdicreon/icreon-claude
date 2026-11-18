@@ -95,6 +95,7 @@ async function start() {
   const playbooks = await loadCatalog(PLAYBOOKS);
   for (const e of playbooks.values()) e.playbook.manifest.intake.source.repo = 'optional';
   const clock = { now: T0 };
+  const tombstones = new MemoryTombstoneStore();
   const rules = new MemoryRuleStore();
   const knowledge = new MemoryKnowledgeStore();
   const ownerOf = async (id: string) => (await orgs.ownersOf([id])).get(id) ?? null;
@@ -124,7 +125,7 @@ async function start() {
     },
     purge: {
       store,
-      tombstones: new MemoryTombstoneStore(),
+      tombstones,
       projects: () => projections.all(),
       now: () => clock.now,
     },
@@ -151,7 +152,7 @@ async function start() {
       ...consoleAuth,
     },
   });
-  return { store, acme, clock, controls, asked, orgs, rules, knowledge };
+  return { store, acme, clock, controls, asked, orgs, rules, knowledge, tombstones };
 }
 
 const as =
@@ -590,5 +591,79 @@ describe('playbook variants', () => {
     expect(JSON.stringify(await inForce(`?organization=${acme.id}`))).toContain(rule.id);
     expect((await viaConsole('POST', `/rules/${rule.id}/retire`)).body.status).toBe('retired');
     expect(await rules.matching(ruleCtx(theirs))).toEqual([]);
+  });
+});
+
+describe('deleting an organization', () => {
+  const console_ = async (method: 'GET' | 'POST', url: string, payload?: unknown) => {
+    const r = await app!.inject({
+      method,
+      url,
+      payload: payload as object,
+      headers: consoleHeaders,
+    });
+    return { status: r.statusCode, body: r.body ? (r.json() as any) : null };
+  };
+
+  it('deletes a customer for good once its name is typed, keeping its code unless asked', async () => {
+    const { store, acme, orgs, rules, tombstones } = await start();
+    await grant(acme.id);
+    const id = (await bob('POST', '/projects', migration('Acme site'))).body.projectId as string;
+    await bob('POST', '/organization/rules', {
+      when: 'x happens',
+      then: 'do y',
+      scope: { kind: 'playbook', id: 'sitecoreai-migration' },
+    });
+
+    // Never Icreon; and only with the organization's name typed.
+    expect(
+      (await console_('POST', '/admin/organizations/org-icreon/delete', { confirm: 'Icreon' })).body
+        .error.code,
+    ).toBe('icreon');
+    const wrong = await console_('POST', `/admin/organizations/${acme.id}/delete`, {
+      confirm: 'acme',
+    });
+    expect([wrong.status, wrong.body.error.code]).toEqual([422, 'confirm']);
+    expect(await orgs.get(acme.id)).not.toBeNull();
+
+    const done = await console_('POST', `/admin/organizations/${acme.id}/delete`, {
+      confirm: 'Acme Corp',
+    });
+    expect(done.status).toBe(200);
+    expect(done.body.deleted).toMatchObject({
+      organizationId: acme.id,
+      name: 'Acme Corp',
+      detail: { keptCode: true, projects: [{ projectId: id, name: 'Acme site' }], rules: 1 },
+    });
+    // Its project is purged, its repository and Vercel project kept (the customer's site).
+    expect(await store.head(id)).toBe(0);
+    const t = await tombstones.get(id);
+    expect(t?.finishedAt).not.toBeNull();
+    expect(t?.steps.repository?.result).toMatchObject({ outcome: 'kept' });
+    expect(t?.steps.hosting?.result).toMatchObject({ outcome: 'kept' });
+    // Nothing else of it is left: the organization, its people, license and rules.
+    expect(await orgs.get(acme.id)).toBeNull();
+    expect((await bob('GET', '/me/organizations')).status).toBe(403);
+    expect(await rules.list({ organizationId: acme.id })).toEqual([]);
+    const list = (await console_('GET', '/admin/organizations')).body as { id: string }[];
+    expect(list.map((o) => o.id)).not.toContain(acme.id);
+    // The record of the deletion stays, naming who did it.
+    const deleted = (await console_('GET', '/admin/organizations/deleted')).body;
+    expect(deleted).toMatchObject([{ organizationId: acme.id, name: 'Acme Corp' }]);
+    expect(deleted[0].deletedBy).toBe(githubSubject('steve'));
+  });
+
+  it('deletes the code too, when asked', async () => {
+    const { acme, tombstones } = await start();
+    await grant(acme.id);
+    const id = (await bob('POST', '/projects', migration('Acme site'))).body.projectId as string;
+    const done = await console_('POST', `/admin/organizations/${acme.id}/delete`, {
+      confirm: 'Acme Corp',
+      keepCode: false,
+    });
+    expect(done.body.deleted.detail.keptCode).toBe(false);
+    expect((await tombstones.get(id))?.steps.repository?.result).not.toMatchObject({
+      outcome: 'kept',
+    });
   });
 });

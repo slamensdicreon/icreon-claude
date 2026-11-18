@@ -363,6 +363,31 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         await projections.catchUpAll();
         return projections.all();
       },
+      removal: deps.purge
+        ? {
+            purge: async (project, by, keepCode) => {
+              // A purge finished earlier (a deletion run again) is skipped.
+              if ((await deps.purge!.tombstones.get(project.projectId))?.finishedAt) return;
+              await purgeProject(deps.purge!, project, by, {
+                now: true,
+                force: true,
+                keep: keepCode ? ['repository', 'hosting'] : [],
+              });
+            },
+            forget: async (organizationId) => {
+              const conversations = deps.cypher
+                ? await deps.cypher.store.list(`org:${organizationId}:`)
+                : [];
+              for (const c of conversations) await deps.cypher!.store.delete(c.name);
+              return {
+                connections: (await deps.intake?.forgetConnections(organizationId)) ?? 0,
+                rules: (await deps.rules?.forgetOrganization(organizationId)) ?? 0,
+                lessons: (await deps.knowledge?.forgetOrganization(organizationId)) ?? 0,
+                conversations: conversations.length,
+              };
+            },
+          }
+        : undefined,
     });
     if (deps.licenses)
       license = registerLicenses(app, {

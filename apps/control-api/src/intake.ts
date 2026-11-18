@@ -807,7 +807,22 @@ export class IntakeService {
     return c;
   }
 
-  /** Every saved connection, with the projects that use it. */
+  /**
+   * An organization is deleted: its saved connections go, with their sealed secrets. Returns how
+   * many. Icreon's (and older ones without an owner) are never touched.
+   */
+  async forgetConnections(organizationId: string): Promise<number> {
+    if (!this.deps.connections || organizationId === DEFAULT_ORGANIZATION) return 0;
+    const theirs = (await this.deps.connections.list<ConnectionRecord>(CONNECTION)).filter(
+      ({ config }) => config.organizationId === organizationId,
+    );
+    for (const { name, config } of theirs) {
+      await this.deps.connections.delete(name);
+      await this.deps.vault.deleteProject(CONNECTION + config.id);
+    }
+    return theirs.length;
+  }
+
   /** Every saved connection (an organization's, given one), with the projects that use it. */
   async connections(projects: ProjectState[], organizationId?: string): Promise<ConnectionView[]> {
     if (!this.deps.connections) return [];

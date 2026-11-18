@@ -111,6 +111,40 @@ Each project is
 - Tool minutes count from 2026-11-13 only: earlier steps weren't timed. Vercel gives no bandwidth
   or function time per project, so neither is reported.
 
+## Deleting an organization
+
+`POST /admin/organizations/:id/delete` takes `{ confirm: string, keepCode?: boolean }` and returns
+`{ deleted: { organizationId, name, slug, deletedBy, deletedAt, detail } }`. **It cannot be
+undone.**
+
+- `confirm` must be the organization's name exactly, as `GET /admin/organizations` gives it.
+  Anything else returns `422 confirm`.
+- Icreon (`org-icreon`) can't be deleted: `409 icreon`.
+- **What goes:**
+  - every project of the organization, purged as a project deletion would be (a tombstone each),
+    even a running one;
+  - its people and open invitations;
+  - its license and license history;
+  - its saved connections and their secrets;
+  - its own rules and lessons;
+  - its Cypher conversations.
+  People who were only in that organization can no longer sign in to anything.
+- **`keepCode`** (default `true`) keeps each project's GitHub repository and Vercel project: the
+  customer's site keeps running, and their code can still be handed over. `false` deletes those
+  too, which takes the site down.
+- If a project can't be purged, the answer is `502 purge_failed` with `purged` and
+  `failed: [{ projectId, name, error }]`, and the organization is **not** deleted. Running the
+  same call again skips the projects already purged.
+- `detail` records the projects (id and name), `keptCode`, and how many connections, rules,
+  lessons and conversations went.
+- `GET /admin/organizations/deleted` lists every deletion, newest first, with who did it.
+
+Suggested screen: on an organization's page, a "Delete organization" section. It should:
+- say plainly what goes and what `keepCode` means;
+- default to keeping the code;
+- require the name to be typed;
+- require a fresh sign-in, like the other live actions.
+
 ## Support access
 
 `POST /admin/organizations/:id/support` takes

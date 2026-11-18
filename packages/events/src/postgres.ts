@@ -31,6 +31,7 @@ const MIGRATIONS = [
   '013_support_access.sql',
   '014_license_purge.sql',
   '015_owned_rules.sql',
+  '016_organization_deletions.sql',
 ];
 
 /**
