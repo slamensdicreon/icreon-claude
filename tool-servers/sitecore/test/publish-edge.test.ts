@@ -155,4 +155,77 @@ describe('publishing follow-up', () => {
     });
     expect(r.summary).toBe('Components on 1 of 2 routes: / (4); no layout for /gone');
   });
+
+  it("runs a rendering's Component Query on Edge when it is read or written, and says what Edge rejects", async () => {
+    const rendering = '/sitecore/layout/Renderings/Project/brands/ansco/News List';
+    let stored = 'query { item { name } }';
+    const edgeQueries: { query: string; variables: Record<string, string> }[] = [];
+    const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init!.body)) as {
+        query: string;
+        variables?: Record<string, string>;
+      };
+      if (String(input).includes('edge-platform')) {
+        edgeQueries.push({ query: body.query, variables: body.variables ?? {} });
+        return body.query.includes('first: 100')
+          ? new Response(
+              JSON.stringify({
+                errors: [{ message: 'Query complexity of 1250 exceeds the limit of 250' }],
+              }),
+              { status: 200 },
+            )
+          : ok({ item: null });
+      }
+      const q = body.query;
+      if (q.includes('updateItem')) {
+        stored = /value: "((?:[^"\\]|\\.)*)"/.exec(q)![1]!.replace(/\\"/g, '"');
+        return ok({
+          updateItem: { item: { itemId: 'aaaaaaaa000040008000000000000001', name: 'News List' } },
+        });
+      }
+      return ok({
+        item: {
+          itemId: 'aaaaaaaa000040008000000000000001',
+          name: 'News List',
+          path: rendering,
+          template: { name: 'Json Rendering', templateId: 'x' },
+          fields: { nodes: [{ name: 'ComponentQuery', value: stored }] },
+          f0: { value: stored },
+        },
+      });
+    }) as typeof globalThis.fetch;
+    const server = new SitecoreAuthoringToolServer({
+      facts: async () => facts,
+      fetch,
+      edgeContextId: async (_, live) => (live ? null : 'ctx-preview'),
+    });
+    const read = await server.call('item.read', { path: rendering }, ctx);
+    expect(read.summary).toContain('its Component Query runs on Experience Edge without errors');
+    expect(edgeQueries[0]!.variables).toMatchObject({
+      datasource: '{AAAAAAAA-0000-4000-8000-000000000001}',
+      language: 'en',
+    });
+    const bad = 'query { item { children(first: 100) { results { name } } } }';
+    const wrote = await server.call(
+      'item.update',
+      { path: rendering, fields: [{ name: 'ComponentQuery', value: bad }] },
+      ctx,
+    );
+    expect(wrote.code).toBe(200);
+    expect(wrote.body).toMatchObject({
+      componentQueryOnEdge: {
+        ok: false,
+        errors: ['Query complexity of 1250 exceeds the limit of 250'],
+      },
+    });
+    expect(wrote.summary).toContain('Experience Edge rejects its Component Query');
+    // Other fields, other items: no Edge call.
+    const before = edgeQueries.length;
+    await server.call(
+      'item.update',
+      { path: rendering, fields: [{ name: 'Title', value: 'x' }] },
+      ctx,
+    );
+    expect(edgeQueries.length).toBe(before);
+  });
 });
