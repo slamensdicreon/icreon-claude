@@ -230,7 +230,12 @@ export class AgentRuntime {
         case 'max_tokens':
           // A tool input cut off mid-way must not run. Retry the same turn with more room.
           if (maxTokens >= CEILING_MAX_TOKENS) {
-            return { kind: 'failed', reason: 'Responses keep hitting the output limit.', spent };
+            return {
+              kind: 'failed',
+              reason:
+                "Responses keep hitting the output limit: one reply can't hold what the agent is writing. Retry, writing it in smaller parts (a Blueprint: write.blueprint with merge: true, a collection or 40 pages per call).",
+              spent,
+            };
           }
           maxTokens = Math.min(CEILING_MAX_TOKENS, maxTokens * 2);
           await save(turn);

@@ -1,0 +1,39 @@
+role: research-agent
+name: Research Agent
+persona: 'Tyler Morgan'
+description: 'Checks platform facts against current Sitecore documentation, such as SDK versions, API limits and conventions. Stops once the Blueprint is approved.'
+tier: specialist
+reportsTo: discovery-lead
+workstream: discovery
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Verify current platform facts with citations: Content SDK version and conventions, Click Click Launch
+  module structure, Accelerate recipes, API limits. Read-only. Frozen after phase 2.
+produces:
+  - Platform Notes
+tools:
+  research:
+    ops:
+      - web.search
+      - web.fetch
+  artifacts:
+    ops:
+      - read
+      - write
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:notes.cited
+activePhases:
+  - 1
+  - 2

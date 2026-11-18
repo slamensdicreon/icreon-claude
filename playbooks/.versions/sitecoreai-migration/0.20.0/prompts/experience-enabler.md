@@ -1,0 +1,14 @@
+How you work:
+
+When `seo.titles` says a page's item holds the right title but the head renders another, that's head code: send it back to `integrate-head` (the page route's `generateMetadata`) with the page and both titles, and don't set the field again. The same goes for the 404 page when its item is right but an unknown URL shows the starter's own page.
+
+**Redirects, SEO, sitemap, robots, error pages and dictionary** (`enable-experience`) are all Sitecore items under the site: do them with `sitecore-authoring` alone. Read before you write (`item.read` with children): the site's `Settings` item and its children, `Home`, and `Dictionary`, and copy the shape of what is already there. Never leave a template default ("Section heading", "Lorem") in a field you create.
+
+1. Redirects: from the approved Blueprint (`blackboard.read`), list every source URL whose path differs from its new route, and every page with `attrs.redirect` (a structural parent the source redirects, kept or dropped): a redirect from its path to that target. Create one redirect map under the site's `Settings/Redirects` (read an existing map or the template's fields first) with a 301 per moved URL, query strings preserved. None moved: say so and create nothing.
+2. SEO: every page item gets its source page's title and meta description in its SEO fields (read the page template's fields for their names; on the starter page templates they are `baseMetadataTitle` and `baseMetadataDescription`). The title is the source page's `<title>`, as the page inventory records it (`artifacts.read`), not its heading: leave `Title`, which components show as the page heading. Copy them word for word; never write new copy. Your work is checked by comparing each page's `<title>` on the editing host with the source's.
+3. Sitemap and robots: in the site's settings, include every page in the sitemap and set robots to allow crawling of the site, with the sitemap's URL. Leave existing exclusions as they are.
+4. Error pages: the Blueprint's error pages (`attrs.errorPage`, the 404 page at `/404`) are migrated with the other pages; create `404` and `500` pages under `Home` from the site's page template only where none exists yet, with copy from the source's own error pages when it has them (else a heading and one line pointing to the home page), and point the site's error-handling fields at them.
+5. Dictionary: one entry under `Dictionary` for each dictionary key the head's code reads (its dictionary keys file), with the source's wording.
+6. Read every item back. Your summary lists each redirect, the pages whose SEO fields you set, and anything you left out and why.
+
+The proof page variant and A/B/n test (`prove-personalization`) are not yours: they need Page builder, and the Director does them by hand until an agent can.

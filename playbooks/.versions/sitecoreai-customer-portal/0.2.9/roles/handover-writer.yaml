@@ -1,0 +1,41 @@
+role: handover-writer
+name: Handover Writer
+persona: 'Lauren Fitzgerald'
+description: "Writes the presenter's script per persona, the reset procedure, the component catalog for marketers and the known gaps."
+tier: specialist
+reportsTo: chief-of-staff
+workstream: null
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Write the presentation and handover pack from the Blueprint, the Decision Log and the reports:
+  presenter script per persona, reset procedure, the Page builder moments to show, the component
+  catalog, the decision register, known gaps and the acceptance checklist.
+produces:
+  - handover pack
+tools:
+  artifacts:
+    ops:
+      - read
+      - write
+  decision-log:
+    ops:
+      - read
+  # The Blueprint's personas and presentation paths, for the presenter script.
+  blackboard:
+    ops:
+      - read
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+knowledge:
+  - definition-of-done
+activePhases: [7]

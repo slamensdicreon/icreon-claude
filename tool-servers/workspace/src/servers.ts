@@ -213,10 +213,10 @@ export class BlackboardToolServer implements ToolServer {
     },
     'write.blueprint': {
       description:
-        'Save a new Blueprint version: { version, collections: { components, templates, pages, media } }, each item { key (stable kebab-case), name, status: keep|merge|split|drop, pilot?, attrs? }.',
+        "Save a new Blueprint version: { version, collections: { components, templates, pages, media } }, each item { key (stable kebab-case), name, status: keep|merge|split|drop, pilot?, attrs? }. A large site's Blueprint is too long for one reply: write it in parts with `merge: true`, each call giving some collections or some of a collection's items (say 40 pages at a time). Items are added to the current Blueprint, or replace the item with the same key; collections and items you leave out stay as they are; `scope` replaces the current one when given. Each part is a new version.",
       inputSchema: {
         type: 'object',
-        properties: { blueprint: { type: 'object' } },
+        properties: { blueprint: { type: 'object' }, merge: { type: 'boolean' } },
         required: ['blueprint'],
         additionalProperties: false,
       },
@@ -241,7 +241,39 @@ export class BlackboardToolServer implements ToolServer {
       };
     }
     if (op === 'write.blueprint') {
-      const parsed = Blueprint.safeParse(args.blueprint);
+      // In parts: Cabot's Blueprint (320 pages, 60 templates) didn't fit in one reply, even at
+      // the runtime's 64,000-token ceiling, and the Solution Architect could never save it.
+      let input = args.blueprint as Record<string, unknown> | undefined;
+      let merged: { items: number; collections: string[] } | null = null;
+      if (args.merge === true && input && typeof input === 'object') {
+        const current = await this.library.read(ctx.projectId, 'blueprint');
+        const base = current
+          ? (JSON.parse(current.content) as {
+              version: number;
+              collections: Record<string, { key: string }[]>;
+              scope?: unknown;
+            })
+          : { version: 1, collections: {} as Record<string, { key: string }[]> };
+        const incoming = (input.collections ?? {}) as Record<string, { key: string }[]>;
+        const collections = { ...base.collections };
+        let items = 0;
+        for (const [name, list] of Object.entries(incoming)) {
+          if (!Array.isArray(list)) continue;
+          const byKey = new Map((collections[name] ?? []).map((i) => [i.key, i]));
+          for (const item of list) {
+            byKey.set(item?.key, item);
+            items++;
+          }
+          collections[name] = [...byKey.values()];
+        }
+        input = {
+          version: typeof input.version === 'number' ? input.version : base.version,
+          collections,
+          ...('scope' in input ? { scope: input.scope } : base.scope ? { scope: base.scope } : {}),
+        };
+        merged = { items, collections: Object.keys(incoming) };
+      }
+      const parsed = Blueprint.safeParse(input);
       if (!parsed.success) {
         return rejected(
           `Blueprint is invalid: ${parsed.error.issues
@@ -258,7 +290,16 @@ export class BlackboardToolServer implements ToolServer {
         content: JSON.stringify(parsed.data, null, 2),
         producer: ctx.role,
       });
-      return { code: 200, body: { version: v.version }, summary: `Blueprint v${v.version}` };
+      const counts = Object.entries(parsed.data.collections)
+        .map(([name, list]) => `${list.length} ${name}`)
+        .join(', ');
+      return {
+        code: 200,
+        body: { version: v.version, ...(merged ? { merged } : {}), counts },
+        summary: merged
+          ? `Blueprint v${v.version}: ${merged.items} item${merged.items === 1 ? '' : 's'} merged into ${merged.collections.join(', ')}; now ${counts}`
+          : `Blueprint v${v.version}`,
+      };
     }
     return rejected(`Unknown operation ${op}`);
   }

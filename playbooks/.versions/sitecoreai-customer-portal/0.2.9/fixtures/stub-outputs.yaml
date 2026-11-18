@@ -1,0 +1,37 @@
+# What stub agents report per task template (metrics, artifacts) until real agents exist.
+inventory-prototype:
+  artifacts:
+    - artifactId: repo-inventory
+      kind: inventory
+      title: Prototype inventory
+    - artifactId: page-inventory
+      kind: inventory
+      title: Screen inventory
+inventory-prototype-live:
+  artifacts:
+    - artifactId: repo-inventory
+      kind: inventory
+      title: Prototype inventory
+    - artifactId: page-inventory
+      kind: inventory
+      title: Screen inventory
+platform-notes:
+  artifacts:
+    - artifactId: platform-notes
+      kind: platform_notes
+      title: Platform Notes
+draft-blueprint:
+  artifacts:
+    - artifactId: blueprint
+      kind: blueprint
+      title: Portal Blueprint
+variant-content:
+  artifacts:
+    - artifactId: personalization-plan
+      kind: report
+      title: Personalization plan
+handover-pack:
+  artifacts:
+    - artifactId: handover-pack
+      kind: handover_pack
+      title: Presentation and handover pack
