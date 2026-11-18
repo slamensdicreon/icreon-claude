@@ -237,6 +237,7 @@ export class AgentRuntime {
               spent,
             };
           }
+          noteCutOff(messages, maxTokens);
           maxTokens = Math.min(CEILING_MAX_TOKENS, maxTokens * 2);
           await save(turn);
           continue;
@@ -463,4 +464,27 @@ function finalText(content: BetaContentBlock[]): string {
     .map((b) => (b as { text: string }).text)
     .join('\n')
     .trim();
+}
+
+const CUT_OFF = 'Your last reply was cut off';
+
+/**
+ * Tells the agent its reply was cut off at the output limit and thrown away, so the retry writes
+ * less instead of the same reply again (Cabot: the Solution Architect's first Blueprint part came
+ * back cut off at 16,000 tokens and the retry, told nothing, wrote it all again). The note goes on
+ * the last user message, replacing any earlier one, so the conversation keeps its shape. Nothing
+ * is added after a paused turn, which must end on the agent's own reply.
+ */
+export function noteCutOff(messages: BetaMessageParam[], limit: number): void {
+  const last = messages.at(-1);
+  if (!last || last.role !== 'user') return;
+  const text = `${CUT_OFF} at the output limit (${limit.toLocaleString('en-US')} tokens) and thrown away: nothing in it ran. Write less in one reply: split a large write into parts (a Blueprint: write.blueprint with merge: true, a collection or about 40 pages per call; other writes: fewer items per call).`;
+  const blocks =
+    typeof last.content === 'string'
+      ? [{ type: 'text' as const, text: last.content }]
+      : last.content.filter((b) => !(b.type === 'text' && b.text.startsWith(CUT_OFF)));
+  messages[messages.length - 1] = {
+    ...last,
+    content: [...blocks, { type: 'text', text } satisfies BetaTextBlockParam],
+  };
 }

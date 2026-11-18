@@ -348,6 +348,24 @@ describe('AgentRuntime', () => {
     expect((await runtime.run(request('migrate-pages-about'))).kind).toBe('done');
     expect(model.requests.map((r) => r.max_tokens)).toEqual([16_000, 32_000]);
     expect((await steps(store)).some((s) => s.data.operation === 'item.create')).toBe(false);
+    // The retry is told its reply was cut off, so it writes less rather than the same again.
+    const told = JSON.stringify(model.requests[1]!.messages.at(-1));
+    expect(told).toContain('cut off at the output limit (16,000 tokens)');
+    expect(told).toContain('merge: true');
+  });
+
+  it('keeps one cut-off note, the latest, however many times the limit is hit', async () => {
+    const model = scripted([
+      reply([], 'max_tokens'),
+      reply([], 'max_tokens'),
+      reply([use('submit_result', { status: 'done', summary: 'ok' })], 'tool_use'),
+    ]);
+    const { runtime } = setup(model);
+    expect((await runtime.run(request('migrate-pages-about'))).kind).toBe('done');
+    const last = JSON.stringify(model.requests[2]!.messages);
+    expect(last.match(/was cut off/g)).toHaveLength(1);
+    expect(last).toContain('(32,000 tokens)');
+    expect(model.requests[2]!.messages).toHaveLength(1);
   });
 
   it('fails cleanly on refusal and when the role’s token budget runs out', async () => {
