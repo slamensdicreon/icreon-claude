@@ -32,6 +32,39 @@ const input = {
 };
 
 describe('attributeFailures', () => {
+  it("shows the page's components in order, so a section goes to the one whose text it shows", async () => {
+    const seen: { system: string; body: string }[] = [];
+    await attributeFailures(
+      {
+        ...input,
+        pages: [
+          {
+            path: '/',
+            components: [
+              {
+                component: 'HeroBanner',
+                key: 'hero',
+                placeholder: 'headless-main',
+                text: 'Welcome',
+              },
+              {
+                component: 'Callout',
+                key: null,
+                placeholder: 'headless-main',
+                text: 'Looking for a Safety Data Sheet?',
+              },
+            ],
+          },
+        ],
+      },
+      answering({ failures: [] }, seen),
+    );
+    expect(seen[0]!.body).toContain(
+      '/\n- headless-main: HeroBanner [hero]: "Welcome"\n- headless-main: Callout: "Looking for a Safety Data Sheet?"',
+    );
+    expect(seen[0]!.system).toMatch(/the one whose text the section shows/);
+  });
+
   it('keeps components to the list, and a failure it left out or misnamed with the task', async () => {
     const seen: { system: string; body: string }[] = [];
     const a = await attributeFailures(

@@ -574,7 +574,7 @@ describe('routing failed checks to the components that own them', () => {
       component: string;
       fix: string;
     }[],
-    opts: { sharedTask?: boolean; registrar?: boolean } = { sharedTask: true },
+    opts: { sharedTask?: boolean; registrar?: boolean; platform?: never } = { sharedTask: true },
   ) {
     const store = new InMemoryEventStore();
     const library = new ArtifactLibrary(store, new MemoryBlobStore());
@@ -590,6 +590,10 @@ describe('routing failed checks to the components that own them', () => {
             { key: 'cards', name: 'Service Cards' },
             { key: 'footer', name: 'Site Footer', attrs: { datasource: 'shared' } },
             { key: 'old', name: 'Old', status: 'drop' },
+          ],
+          pages: [
+            { key: 'home', attrs: { path: '/' } },
+            { key: 'about', attrs: { path: '/about/' } },
           ],
         },
       }),
@@ -611,10 +615,13 @@ describe('routing failed checks to the components that own them', () => {
       } as never;
     const seen: string[][] = [];
     const shared: string[][] = [];
+    const pages: unknown[] = [];
     const routed = await routeFailures({
       deps: {
         library,
+        ...(opts.platform ? { platform: opts.platform } : {}),
         attribute: async (input) => {
+          pages.push(input.pages ?? null);
           seen.push(input.components.map((c) => c.key));
           shared.push(input.components.filter((c) => c.shared).map((c) => c.key));
           return {
@@ -642,8 +649,68 @@ describe('routing failed checks to the components that own them', () => {
         ...(opts.registrar ? ['rendering-registrar'] : []),
       ]),
     });
-    return { routed, seen, shared };
+    return { routed, seen, shared, pages };
   }
+
+  it("tells the attribution what the task's pages render, matched to Blueprint components", async () => {
+    const asked: unknown[] = [];
+    const platform = {
+      read: async (_p: string, server: string, op: string, args: Record<string, unknown>) => {
+        asked.push([server, op, args]);
+        return {
+          code: 200,
+          body: {
+            pages: [
+              {
+                path: '/',
+                components: [
+                  { placeholder: 'headless-main', component: 'HeroBanner', text: 'Welcome' },
+                  {
+                    placeholder: 'headless-main',
+                    component: 'Callout',
+                    text: 'Looking for a Safety Data Sheet?',
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      },
+      credential: async () => null,
+    } as never;
+    const { pages } = await route(
+      [{ check: 'parity.visual', owner: 'component', component: 'hero', fix: 'Grey band.' }],
+      { sharedTask: true, platform },
+    );
+    // Only the task's own page (home), not every page in the Blueprint.
+    expect(asked).toEqual([['sitecore-authoring', 'page.components', { paths: ['/'] }]]);
+    expect(pages[0]).toEqual([
+      {
+        path: '/',
+        components: [
+          { component: 'HeroBanner', key: 'hero', placeholder: 'headless-main', text: 'Welcome' },
+          {
+            component: 'Callout',
+            key: null,
+            placeholder: 'headless-main',
+            text: 'Looking for a Safety Data Sheet?',
+          },
+        ],
+      },
+    ]);
+    // A platform that can't say leaves the attribution as it was.
+    const none = await route(
+      [{ check: 'parity.visual', owner: 'component', component: 'hero', fix: 'Grey band.' }],
+      {
+        sharedTask: true,
+        platform: {
+          read: async () => ({ code: 404, body: {} }),
+          credential: async () => null,
+        } as never,
+      },
+    );
+    expect(none.pages[0]).toBeNull();
+  });
 
   it('sends a component failure to every code task of that component, and the page re-checks', async () => {
     const { routed, seen } = await route([

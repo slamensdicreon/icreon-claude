@@ -734,6 +734,41 @@ export function uncheckedValidators(
 }
 
 type RoleDef = Playbook['roles'][number];
+
+/**
+ * What the task's pages render, from the platform (SitecoreAI: Experience Edge preview), each
+ * rendering matched to its Blueprint component by name. Empty when the platform can't say.
+ */
+async function renderedComponents(
+  platform: ReviewDeps['platform'],
+  projectId: string,
+  paths: string[],
+  components: { key: string; name: string }[],
+): Promise<NonNullable<AttributeInput['pages']>> {
+  if (!platform || !paths.length) return [];
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const byName = new Map(components.map((c) => [norm(c.name), c.key]));
+  try {
+    const r = await platform.read(projectId, 'sitecore-authoring', 'page.components', { paths });
+    if (r.code !== 200) return [];
+    const pages = (r.body as { pages?: { path: string; components: RenderedComponent[] | null }[] })
+      .pages;
+    return (pages ?? [])
+      .filter((p) => p.components?.length)
+      .map((p) => ({
+        path: p.path,
+        components: p.components!.map((c) => ({
+          component: c.component,
+          key: byName.get(norm(c.component)) ?? null,
+          placeholder: c.placeholder,
+          text: c.text,
+        })),
+      }));
+  } catch {
+    return [];
+  }
+}
+type RenderedComponent = { component: string; placeholder: string; text: string };
 type FailedCheck = { id: string; status: CheckResult['status']; detail: string };
 
 /**
@@ -743,7 +778,7 @@ type FailedCheck = { id: string; status: CheckResult['status']; detail: string }
  * it names (its port, then its integration), with the fixes in their briefs.
  */
 export async function routeFailures(a: {
-  deps: Pick<ReviewDeps, 'attribute' | 'library'>;
+  deps: Pick<ReviewDeps, 'attribute' | 'library' | 'platform'>;
   projectId: string;
   state: ProjectState;
   task: { taskId: string; title: string; role: string };
@@ -754,6 +789,7 @@ export async function routeFailures(a: {
 }): Promise<{ waitOn: AgentWaiting; reason: string; tokens: number } | null> {
   if (!a.deps.attribute) return null;
   let components: { key: string; name: string; shared?: boolean }[] = [];
+  let pagePaths: string[] = [];
   try {
     const doc = await a.deps.library.read(a.projectId, 'blueprint');
     const bp = doc
@@ -765,6 +801,7 @@ export async function routeFailures(a: {
               status?: string;
               attrs?: Record<string, unknown>;
             }[];
+            pages?: { key: string; attrs?: Record<string, unknown> }[];
           };
         })
       : null;
@@ -775,10 +812,16 @@ export async function routeFailures(a: {
         name: c.name,
         ...(c.attrs?.datasource === 'shared' ? { shared: true } : {}),
       }));
+    const keys = new Set(a.state.tasks[a.task.taskId]?.itemKeys ?? []);
+    pagePaths = (bp?.collections?.pages ?? [])
+      .filter((p) => keys.has(p.key) && typeof p.attrs?.path === 'string')
+      .map((p) => String(p.attrs!.path).replace(/\/$/, '') || '/')
+      .slice(0, 5);
   } catch {
     return null;
   }
   if (!components.length) return null;
+  const pages = await renderedComponents(a.deps.platform, a.projectId, pagePaths, components);
   let read: Attribution;
   try {
     read = await a.deps.attribute({
@@ -789,6 +832,7 @@ export async function routeFailures(a: {
       ),
       failures: a.fails.map((f) => ({ id: f.id, detail: f.detail })),
       components,
+      ...(pages.length ? { pages } : {}),
     });
   } catch {
     // An attribution that can't run leaves the failure with the task, as before.
