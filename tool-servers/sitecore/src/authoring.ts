@@ -651,11 +651,20 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         case 'site.list':
           return await this.sites(q);
         case 'item.read':
-          return await this.read(q, ReadArgs.safeParse(args), lang);
+          return await this.withQueryCheck(
+            ctx.projectId,
+            facts,
+            await this.read(q, ReadArgs.safeParse(args), lang),
+          );
         case 'item.create':
           return await this.create(q, CreateArgs.safeParse(args), lang);
         case 'item.update':
-          return await this.update(q, UpdateArgs.safeParse(args), lang);
+          return await this.withQueryCheck(
+            ctx.projectId,
+            facts,
+            await this.update(q, UpdateArgs.safeParse(args), lang),
+            args,
+          );
         case 'item.rename':
           return await this.rename(q, RenameArgs.safeParse(args));
         case 'item.delete':
@@ -1769,6 +1778,74 @@ export class SitecoreAuthoringToolServer implements ToolServer {
     } catch {
       // The read stands without it.
     }
+  }
+
+  /**
+   * A rendering's Component Query, run on Experience Edge preview whenever it is read or written,
+   * with Edge's errors in the result. A query Edge rejects (a field it doesn't know, a complexity
+   * limit) leaves the component with `fields: null` and `contentResolved: false` on every page, and
+   * nothing said why: Cabot's News List had its query rewritten seven times, blind.
+   */
+  private async withQueryCheck(
+    projectId: string,
+    facts: TenantFacts,
+    r: ToolResult,
+    args?: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    if (r.code !== 200) return r;
+    const body = r.body as {
+      itemId?: string;
+      path?: string;
+      fields?: { nodes?: { name: string; value: string }[] } | string[];
+    } | null;
+    let query: string | null = null;
+    let itemId = body?.itemId ?? null;
+    if (args) {
+      // item.update: the query as written (read back equal, or the result says otherwise).
+      const fields = (args.fields ?? []) as { name?: string; value?: string }[];
+      query = fields.find((f) => /^componentquery$/i.test(f.name ?? ''))?.value ?? null;
+    } else if (body?.fields && !Array.isArray(body.fields)) {
+      query = body.fields.nodes?.find((f) => /^componentquery$/i.test(f.name))?.value ?? null;
+    }
+    if (!query?.trim() || !itemId) return r;
+    const contextId = await this.opts.edgeContextId?.(projectId, false);
+    if (!contextId) return r;
+    itemId = sitecoreId(itemId);
+    let errors: string[] = [];
+    try {
+      const url = new URL('/v1/content/api/graphql/v1', this.opts.edgeUrl ?? EDGE_URL);
+      url.searchParams.set('sitecoreContextId', contextId);
+      const res = await this.fetch(url.href, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        // Validation and complexity are checked whatever the item: the rendering stands in for
+        // the datasource and the page.
+        body: JSON.stringify({
+          query,
+          variables: {
+            datasource: itemId,
+            contextItem: itemId,
+            language: facts.languages[0] ?? 'en',
+          },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const d = (await res.json().catch(() => ({}))) as { errors?: { message?: string }[] };
+      errors = (d.errors ?? []).map((e) => String(e.message ?? e)).slice(0, 5);
+      if (!res.ok && !errors.length) errors = [`HTTP ${res.status}`];
+    } catch {
+      return r;
+    }
+    const check = errors.length ? { ok: false, errors } : { ok: true, errors: [] as string[] };
+    return {
+      ...r,
+      body: { ...(body as object), componentQueryOnEdge: check },
+      summary: `${r.summary ?? ''}${
+        errors.length
+          ? `; Experience Edge rejects its Component Query (so the component gets no content on any page): ${errors.join(' | ').slice(0, 600)}`
+          : '; its Component Query runs on Experience Edge without errors'
+      }`,
+    };
   }
 
   /** The item's ID when an item has it, else 404. */
