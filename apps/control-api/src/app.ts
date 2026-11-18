@@ -400,9 +400,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         project: (id) => projections.get(id),
         platformOf: (playbookId) =>
           deps.intake?.playbooks().find((p) => p.id === playbookId)?.platform.id ?? null,
+        // The customer's repository and Vercel project are kept: their site keeps running, and
+        // the code is theirs to take over (the license's terms).
         purge: deps.purge
           ? async (project, by) => {
-              await purgeProject(deps.purge!, project, by, { now: true });
+              await purgeProject(deps.purge!, project, by, {
+                now: true,
+                keep: ['repository', 'hosting'],
+              });
             }
           : undefined,
         forgetOrganization: async (organizationId) => {

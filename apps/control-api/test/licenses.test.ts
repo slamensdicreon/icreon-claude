@@ -338,7 +338,7 @@ describe('licenses', () => {
   });
 
   it('purges the organization’s data once export has closed, and only then', async () => {
-    const { store, acme, clock, rules, knowledge } = await start();
+    const { store, acme, clock, rules, knowledge, tombstones } = await start();
     await grant(acme.id, { projectsIncluded: 3, endsAt: new Date(T0 + 10 * DAY).toISOString() });
     const id = (await bob('POST', '/projects', migration('Acme site'))).body.projectId as string;
     // Its own rule and lesson on the playbook go with it.
@@ -364,6 +364,9 @@ describe('licenses', () => {
       failed: [],
     });
     expect(await store.head(id)).toBe(0);
+    // The customer's code and site are kept: their repository and Vercel project are theirs.
+    expect((await tombstones.get(id))?.steps.repository?.result).toMatchObject({ outcome: 'kept' });
+    expect((await tombstones.get(id))?.steps.hosting?.result).toMatchObject({ outcome: 'kept' });
     expect(await rules.list({ organizationId: acme.id })).toEqual([]);
     expect(await knowledge.list({ organizationId: acme.id })).toEqual([]);
     const history = (await steve('GET', `/admin/organizations/${acme.id}/license`)).body;

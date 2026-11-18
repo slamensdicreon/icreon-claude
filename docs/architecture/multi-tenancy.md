@@ -283,7 +283,8 @@ before it reaches a playbook.
    documents, activity, and a fresh GitHub link to the code; open during the license and 90 days
    after. Moving the repository and the Vercel project to the customer's accounts is still done by
    Icreon by hand. When export closes, the hourly license check purges the organization's projects
-   (as a deletion would) and records it in the license history.
+   (as a deletion would, but keeping each project's repository and Vercel project: the customer's
+   site and code) and records it in the license history.
 9. `/admin`. **Done**: Organizations (create, standing, use, spend), Manage (license editor with
    its history), support access (1 to 72 hours, Watcher or Director, shown in the customer's
    People; migration 013), switching. Diagnostics stays the Diagnostics page.
