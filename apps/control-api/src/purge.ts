@@ -185,6 +185,11 @@ export interface PurgeOptions {
   now?: boolean;
   /** Outside resources the operator chose to keep. Recorded before anything runs, so a resumed purge keeps them too. */
   keep?: ('repository' | 'hosting')[];
+  /**
+   * With `now`, a running project too: its workflow is stopped as the purge's first step. Only an
+   * organization's deletion by Icreon sets this.
+   */
+  force?: boolean;
 }
 
 const KEPT: Record<'repository' | 'hosting', string> = {
@@ -207,7 +212,8 @@ export async function purgeProject(
   const existing = await deps.tombstones.get(id);
   if (!existing) {
     if (opts.now) {
-      if (s.status === 'running') throw new Error(`${id} is running: pause it before deleting it.`);
+      if (s.status === 'running' && !opts.force)
+        throw new Error(`${id} is running: pause it before deleting it.`);
     } else if (s.status !== 'archived' || !s.deletion)
       throw new Error(`${id} is not an archived project scheduled for deletion.`);
   }

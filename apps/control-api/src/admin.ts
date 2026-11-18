@@ -19,6 +19,17 @@ export interface AdminDeps {
   now: () => number;
   /** A hosting project's Vercel builds; absent where the API has no Vercel token. */
   buildUsage?: (hostingProject: string) => Promise<BuildUsage | null>;
+  /**
+   * Deleting an organization: each of its projects purged as a deletion would purge it (keeping
+   * its repository and Vercel project when asked), then whatever else is the organization's
+   * (saved connections, its own rules and lessons, Cypher's conversations). Absent, nothing can be
+   * deleted here.
+   */
+  removal?: {
+    purge(project: ProjectState, by: string, keepCode: boolean): Promise<void>;
+    /** Its saved connections and their secrets, its own rules and lessons, its conversations. */
+    forget(organizationId: string): Promise<Record<string, number>>;
+  };
 }
 
 /** Vercel's answers are kept this long: the page doesn't ask Vercel on every load. */
@@ -223,6 +234,68 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps): void {
       cachedForMinutes: minutes(BUILD_USAGE_TTL),
     };
   });
+
+  /**
+   * Deletes a customer organization for good: its projects (purged, with a tombstone each), its
+   * people, invitations, license and history, saved connections, own rules and lessons. Its code
+   * is kept unless asked otherwise: the GitHub repository and the Vercel project are the customer's
+   * site. Typing the organization's name confirms it. A purge that fails stops the deletion with
+   * the organization still there, so it can be run again.
+   */
+  app.post<{ Params: { id: string } }>('/admin/organizations/:id/delete', async (req, reply) => {
+    const { confirm, keepCode } = z
+      .object({ confirm: z.string().max(200), keepCode: z.boolean().default(true) })
+      .parse(req.body ?? {});
+    if (req.params.id === DEFAULT_ORGANIZATION)
+      throw new CommandError(409, 'icreon', 'Icreon can’t be deleted.');
+    const org = await orgs.get(req.params.id);
+    if (!org) throw new CommandError(404, 'unknown_organization', 'No such organization.');
+    if (confirm.trim() !== org.name)
+      throw new CommandError(
+        422,
+        'confirm',
+        `Type the organization's name, "${org.name}", to delete it.`,
+      );
+    if (!deps.removal)
+      throw new CommandError(503, 'unavailable', 'Deleting organizations isn’t set up here.');
+    const by = who(req);
+    const all = await deps.projects();
+    const owners = await orgs.ownersOf(all.map((p) => p.projectId));
+    const own = all.filter((p) => owners.get(p.projectId) === org.id);
+    const purged: string[] = [];
+    const failed: { projectId: string; name: string; error: string }[] = [];
+    for (const p of own) {
+      try {
+        await deps.removal.purge(p, by, keepCode);
+        purged.push(p.projectId);
+      } catch (err) {
+        failed.push({ projectId: p.projectId, name: p.name, error: (err as Error).message });
+      }
+    }
+    if (failed.length)
+      return reply.status(502).send({
+        error: {
+          code: 'purge_failed',
+          message: `${failed.length} project(s) could not be deleted, so ${org.name} is still here. Run the deletion again; finished projects are skipped.`,
+        },
+        purged,
+        failed,
+      });
+    const forgotten = await deps.removal.forget(org.id);
+    await deps.licenses?.remove(org.id);
+    const deleted = await orgs.remove(org.id, {
+      by,
+      detail: {
+        projects: own.map((p) => ({ projectId: p.projectId, name: p.name })),
+        keptCode: keepCode,
+        ...forgotten,
+      },
+    });
+    return { deleted };
+  });
+
+  /** Organizations deleted so far: who deleted which, and when. */
+  app.get('/admin/organizations/deleted', async () => orgs.deletions());
 
   /**
    * Support access: an Icreon administrator joins a customer organization for a few hours, to

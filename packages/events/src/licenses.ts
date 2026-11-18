@@ -46,6 +46,8 @@ export interface LicenseStore {
   setPurged(organizationId: string, by: string): Promise<License | null>;
   /** Every change, oldest first. */
   history(organizationId: string): Promise<LicenseChange[]>;
+  /** The organization is deleted: its license and every change go. */
+  remove(organizationId: string): Promise<void>;
 }
 
 export class LicenseError extends Error {}
@@ -108,6 +110,13 @@ const COLUMNS =
 
 export class PostgresLicenseStore implements LicenseStore {
   constructor(private readonly sql: SqlClient) {}
+
+  async remove(organizationId: string): Promise<void> {
+    await this.sql.query('DELETE FROM lw_license_changes WHERE organization_id = $1', [
+      organizationId,
+    ]);
+    await this.sql.query('DELETE FROM lw_licenses WHERE organization_id = $1', [organizationId]);
+  }
 
   async get(organizationId: string): Promise<License | null> {
     const { rows } = await this.sql.query<Row>(
@@ -205,6 +214,11 @@ export class PostgresLicenseStore implements LicenseStore {
 export class MemoryLicenseStore implements LicenseStore {
   private readonly licenses = new Map<string, License>();
   private readonly changes = new Map<string, LicenseChange[]>();
+
+  async remove(organizationId: string): Promise<void> {
+    this.licenses.delete(organizationId);
+    this.changes.delete(organizationId);
+  }
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 

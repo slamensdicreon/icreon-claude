@@ -88,6 +88,26 @@ export interface OrganizationStore {
    * Icreon's, as the migration made every earlier project.
    */
   ownersOf(projectIds: string[]): Promise<Map<string, string>>;
+  /**
+   * Deletes an organization: its people, invitations and project records, then the organization,
+   * leaving a deletion record. Its projects must already be purged. Icreon can't be deleted.
+   */
+  remove(
+    organizationId: string,
+    record: { by: string; detail: Record<string, unknown> },
+  ): Promise<OrganizationDeletion>;
+  /** Every deleted organization, newest first. */
+  deletions(): Promise<OrganizationDeletion[]>;
+}
+
+/** What is left of a deleted organization. */
+export interface OrganizationDeletion {
+  organizationId: string;
+  name: string;
+  slug: string;
+  deletedBy: string;
+  deletedAt: string;
+  detail: Record<string, unknown>;
 }
 
 /** `github:<login>`, lower case: GitHub logins are case-insensitive. */
@@ -96,6 +116,23 @@ export const githubSubject = (login: string) => `github:${login.toLowerCase()}`;
 export const workosSubject = (userId: string) => `workos:${userId}`;
 
 export class OrganizationError extends Error {}
+
+interface DeletionRow {
+  organization_id: string;
+  name: string;
+  slug: string;
+  deleted_by: string;
+  deleted_at: string | Date;
+  detail: Record<string, unknown>;
+}
+const deletion = (r: DeletionRow): OrganizationDeletion => ({
+  organizationId: r.organization_id,
+  name: r.name,
+  slug: r.slug,
+  deletedBy: r.deleted_by,
+  deletedAt: new Date(r.deleted_at).toISOString(),
+  detail: r.detail,
+});
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const checkSlug = (slug: string) => {
@@ -172,6 +209,37 @@ export class PostgresOrganizationStore implements OrganizationStore {
   private readonly owners = new Map<string, string>();
 
   constructor(private readonly sql: SqlClient) {}
+
+  async remove(
+    organizationId: string,
+    record: { by: string; detail: Record<string, unknown> },
+  ): Promise<OrganizationDeletion> {
+    if (organizationId === DEFAULT_ORGANIZATION)
+      throw new OrganizationError('Icreon can’t be deleted.');
+    const org = await this.get(organizationId);
+    if (!org) throw new OrganizationError(`No organization "${organizationId}".`);
+    const { rows } = await this.sql.query<DeletionRow>(
+      `INSERT INTO lw_organization_deletions (organization_id, name, slug, deleted_by, detail)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (organization_id) DO UPDATE SET deleted_at = now()
+       RETURNING *`,
+      [org.id, org.name, org.slug, record.by, JSON.stringify(record.detail)],
+    );
+    await this.sql.query('DELETE FROM lw_project_organizations WHERE organization_id = $1', [
+      org.id,
+    ]);
+    for (const [p, o] of this.owners) if (o === org.id) this.owners.delete(p);
+    // Memberships and invitations go with it (ON DELETE CASCADE).
+    await this.sql.query('DELETE FROM lw_organizations WHERE id = $1', [org.id]);
+    return deletion(rows[0]!);
+  }
+
+  async deletions(): Promise<OrganizationDeletion[]> {
+    const { rows } = await this.sql.query<DeletionRow>(
+      'SELECT * FROM lw_organization_deletions ORDER BY deleted_at DESC',
+    );
+    return rows.map(deletion);
+  }
 
   async list(): Promise<Organization[]> {
     const { rows } = await this.sql.query<OrgRow>(
@@ -376,6 +444,36 @@ export class MemoryOrganizationStore implements OrganizationStore {
   private readonly memberships = new Map<string, Membership>();
   private readonly owners = new Map<string, string>();
   private readonly invites = new Map<string, Invitation & { closed: boolean }>();
+  private readonly deleted = new Map<string, OrganizationDeletion>();
+
+  async remove(
+    organizationId: string,
+    record: { by: string; detail: Record<string, unknown> },
+  ): Promise<OrganizationDeletion> {
+    if (organizationId === DEFAULT_ORGANIZATION)
+      throw new OrganizationError('Icreon can’t be deleted.');
+    const org = this.orgs.get(organizationId);
+    if (!org) throw new OrganizationError(`No organization "${organizationId}".`);
+    const d: OrganizationDeletion = {
+      organizationId: org.id,
+      name: org.name,
+      slug: org.slug,
+      deletedBy: record.by,
+      deletedAt: this.now().toISOString(),
+      detail: record.detail,
+    };
+    this.deleted.set(org.id, d);
+    for (const [p, o] of this.owners) if (o === org.id) this.owners.delete(p);
+    for (const [k, m] of this.memberships)
+      if (m.organizationId === org.id) this.memberships.delete(k);
+    for (const [k, i] of this.invites) if (i.organizationId === org.id) this.invites.delete(k);
+    this.orgs.delete(org.id);
+    return d;
+  }
+
+  async deletions(): Promise<OrganizationDeletion[]> {
+    return [...this.deleted.values()].sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+  }
 
   constructor(private readonly now: () => Date = () => new Date()) {
     this.orgs.set(DEFAULT_ORGANIZATION, {
