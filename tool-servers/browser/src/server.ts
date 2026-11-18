@@ -1679,9 +1679,13 @@ function safeCanonical(raw: string): string | null {
 /**
  * Readies a page for a full-page comparison: scrolls through it so lazy images and reveal-on-scroll
  * sections load, then hides overlays fixed mid-screen (cookie and chat banners), which otherwise
- * cover whatever content sits under them in the capture. A header pinned to the top stays.
+ * cover whatever content sits under them in the capture. A header pinned to the top stays. A
+ * footer pinned to the bottom (a "reveal" footer the page scrolls off, as on cabotcorp.com) is
+ * the page's own footer, not an overlay: it is laid out at the end of the page instead of hidden.
+ * Hiding it showed the reviewer an empty footer on the source, and the new site's footer was sent
+ * back again and again for having links the source has.
  */
-async function settleForScreenshot(page: {
+export async function settleForScreenshot(page: {
   evaluate<T>(fn: () => Promise<T> | T): Promise<T>;
   waitForTimeout(ms: number): Promise<void>;
 }) {
@@ -1698,8 +1702,16 @@ async function settleForScreenshot(page: {
   await page.evaluate(() => {
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
       const position = getComputedStyle(el).position;
-      if ((position === 'fixed' || position === 'sticky') && el.getBoundingClientRect().top > 40)
-        el.style.setProperty('visibility', 'hidden', 'important');
+      if ((position === 'fixed' || position === 'sticky') && el.getBoundingClientRect().top > 40) {
+        const footer =
+          el.matches('footer, [role="contentinfo"]') ||
+          !!el.querySelector(':scope > footer, :scope > [role="contentinfo"]');
+        if (footer) {
+          el.style.setProperty('position', 'relative', 'important');
+          for (const k of ['top', 'bottom', 'left', 'right', 'z-index'])
+            el.style.setProperty(k, 'auto', 'important');
+        } else el.style.setProperty('visibility', 'hidden', 'important');
+      }
     }
   });
 }
