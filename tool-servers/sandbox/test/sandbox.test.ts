@@ -421,6 +421,52 @@ describe('working copies', () => {
     );
   });
 
+  it("edits part of a file in place, and never deletes a component's main file", async () => {
+    const main = 'examples/basic-nextjs/src/components/hero-carousel/HeroCarousel.tsx';
+    const css = 'examples/basic-nextjs/src/components/hero-carousel/HeroCarousel.module.css';
+    const helper = 'examples/basic-nextjs/src/components/hero-carousel/old-helper.ts';
+    const fake = fakeBox({
+      [main]: 'export const Default = 1;\nexport const Awards = 2;\nexport const Compact = 3;\n',
+      [css]: '.awards { color: red; }',
+      [helper]: 'x',
+    });
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    // Only the part asked for changes; the other variants stay as they were.
+    const edited = await s.call(
+      'fs.write',
+      { files: [{ path: main, edits: [{ old: 'Awards = 2', new: 'Awards = 20' }] }] },
+      ctx,
+    );
+    expect(edited).toMatchObject({ code: 200, summary: 'Wrote 1 (1 by edits) and deleted 0 file' });
+    expect(fake.files[main]).toBe(
+      'export const Default = 1;\nexport const Awards = 20;\nexport const Compact = 3;\n',
+    );
+    // An edit that doesn't match, or matches twice, writes nothing.
+    for (const old of ['Missing = 9', 'export const'])
+      expect(
+        (await s.call('fs.write', { files: [{ path: main, edits: [{ old, new: 'x' }] }] }, ctx))
+          .code,
+      ).toBe(422);
+    expect(fake.files[main]).toContain('Awards = 20');
+    // The main file and its module CSS are never deleted; another file in the folder can be.
+    for (const path of [main, css])
+      expect((await s.call('fs.write', { files: [{ path, content: null }] }, ctx)).code).toBe(422);
+    expect((await s.call('fs.write', { files: [{ path: helper, content: null }] }, ctx)).code).toBe(
+      200,
+    );
+    // content and edits together, or neither, is refused.
+    expect(
+      (
+        await s.call(
+          'fs.write',
+          { files: [{ path: main, content: 'x', edits: [{ old: 'a', new: 'b' }] }] },
+          ctx,
+        )
+      ).code,
+    ).toBe(422);
+    expect((await s.call('fs.write', { files: [{ path: main }] }, ctx)).code).toBe(422);
+  });
+
   it('build with the project variables, and commit only to agent branches with a one-off token header', async () => {
     const fake = fakeBox({}, (cmd, args) =>
       cmd === 'git' && args[0] === 'diff'
