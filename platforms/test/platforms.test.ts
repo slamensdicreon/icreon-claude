@@ -14,7 +14,9 @@ const platforms = createPlatforms({
 describe('showsHeading', () => {
   it('ignores spacing that inline markup adds inside a heading', async () => {
     const { showsHeading, visibleText, headingsOf } = await import('../sitecoreai/checks');
-    const page = visibleText('<h3>LEARN MORE ABOUT OUR SPHERON<sup>®</sup> SERIES CARBON BLACKS</h3>');
+    const page = visibleText(
+      '<h3>LEARN MORE ABOUT OUR SPHERON<sup>®</sup> SERIES CARBON BLACKS</h3>',
+    );
     const [source] = headingsOf('<h3>LEARN MORE ABOUT OUR SPHERON® SERIES CARBON BLACKS</h3>');
     expect(showsHeading(page, source!)).toBe(true);
     expect(showsHeading(page, 'Learn more about our Vulcan series')).toBe(false);
