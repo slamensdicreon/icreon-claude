@@ -3,6 +3,7 @@ import type { BlobStore, OperationCatalog, ToolResult, ToolServer } from '@lw/to
 import type { BrowserContext, Page } from 'playwright-core';
 import { BREAKPOINTS, GuardedBrowser, type Breakpoint } from './guarded';
 import { extractContent, extractPage, type PageExtract } from './extract';
+import { extractEmbeds, type Embed } from './page-load';
 import { cleanMarkup, outlineSections, readStyles, STYLE_PROPS } from './structure';
 import { layoutData } from './layout-data';
 import { captureHtml, openCapture, pageKey, parseMhtml, partFor, type Capture } from './capture';
@@ -562,7 +563,7 @@ export class BrowserToolServer implements ToolServer {
             return {
               code: pageCode(r.status),
               body: r.page,
-              summary: `Snapshot of ${r.page.url}: ${r.page.blocks.length} blocks, ${r.page.content?.length ?? 0} text items in full${refusedNote(r.status)}`,
+              summary: `Snapshot of ${r.page.url}: ${r.page.blocks.length} blocks, ${r.page.content?.length ?? 0} text items in full${embedNote((r.page as { embeds?: unknown[] }).embeds?.length ?? 0)}${refusedNote(r.status)}`,
             };
           });
         case 'screenshot':
@@ -924,11 +925,21 @@ export class BrowserToolServer implements ToolServer {
         }
       }
     }
+    // Embedded videos and frames with their addresses, which the text leaves out.
+    const embeds = full
+      ? ((await page.evaluate(`(${extractEmbeds.toString()})()`).catch(() => [])) as Embed[])
+      : [];
     await page.close();
     return {
       status,
       contentType,
-      page: { url: canonical(page.url()), status, ...extract, ...(text ?? {}) },
+      page: {
+        url: canonical(page.url()),
+        status,
+        ...extract,
+        ...(text ?? {}),
+        ...(embeds.length ? { embeds } : {}),
+      },
     };
   }
 
@@ -1932,3 +1943,9 @@ export function cleanSvg(svg: string): string {
       '',
     );
 }
+
+/** The snapshot summary's note on embedded videos and frames, when the page has any. */
+const embedNote = (n: number) =>
+  n
+    ? `, ${n} embedded video${n === 1 ? '' : 's'} or frame${n === 1 ? '' : 's'} with their addresses (embeds)`
+    : '';
