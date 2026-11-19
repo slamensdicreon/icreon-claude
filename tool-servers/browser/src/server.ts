@@ -1713,7 +1713,15 @@ export async function settleForScreenshot(page: {
   await page.evaluate(() => {
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
       const position = getComputedStyle(el).position;
-      if ((position === 'fixed' || position === 'sticky') && el.getBoundingClientRect().top > 40) {
+      // Sticky elements are content in the page's flow (Cabot's feature cards stick while the
+      // page scrolls past them): hidden, a whole card came out blank and the review compared the
+      // new page with an empty box. Only fixed overlays (cookie and chat banners) are hidden.
+      if (position === 'sticky') {
+        el.style.setProperty('position', 'relative', 'important');
+        el.style.setProperty('top', 'auto', 'important');
+        continue;
+      }
+      if (position === 'fixed' && el.getBoundingClientRect().top > 40) {
         const footer =
           el.matches('footer, [role="contentinfo"]') ||
           !!el.querySelector(':scope > footer, :scope > [role="contentinfo"]');
