@@ -94,12 +94,79 @@ export async function loadPage(
       }
     }
   }
+  // Embedded videos and frames, with their addresses: the text and blocks leave them out, and a
+  // migrator with no way to read the address dropped the video column (Cabot's Lead-Acid and
+  // Automotive Coatings pages). A snapshot lists them.
+  const embeds = opts.full
+    ? ((await page.evaluate(`(${extractEmbeds.toString()})()`).catch(() => [])) as Embed[])
+    : [];
   await page.close();
   return {
     status,
     contentType,
-    page: { url: canonical(page.url()), status, ...extract, ...(text ?? {}) },
+    page: {
+      url: canonical(page.url()),
+      status,
+      ...extract,
+      ...(text ?? {}),
+      ...(embeds.length ? { embeds } : {}),
+    },
   };
+}
+
+export interface Embed {
+  kind: 'iframe' | 'video';
+  src: string;
+  title: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+/** Runs inside the page (serialized), so it must be self-contained. */
+export function extractEmbeds(): Embed[] {
+  const out: Embed[] = [];
+  const seen = new Set<string>();
+  const abs = (v: string | null) => {
+    if (!v || /^(about:|javascript:|data:)/i.test(v)) return null;
+    try {
+      return new URL(v, location.href).href;
+    } catch {
+      return null;
+    }
+  };
+  // Consent, tag-manager and other non-content frames.
+  const noise =
+    /onetrust|cookielaw|googletagmanager|doubleclick|recaptcha|facebook\.com\/tr|hotjar/i;
+  const num = (v: string | null) => (v && /^\d+$/.test(v) ? Number(v) : null);
+  for (const f of Array.from(document.querySelectorAll('iframe'))) {
+    const src = abs(f.getAttribute('src') || f.getAttribute('data-src'));
+    if (!src || noise.test(src) || seen.has(src)) continue;
+    seen.add(src);
+    const r = f.getBoundingClientRect();
+    out.push({
+      kind: 'iframe',
+      src,
+      title: f.getAttribute('title'),
+      width: num(f.getAttribute('width')) ?? (Math.round(r.width) || null),
+      height: num(f.getAttribute('height')) ?? (Math.round(r.height) || null),
+    });
+  }
+  for (const v of Array.from(document.querySelectorAll('video'))) {
+    const src = abs(
+      v.getAttribute('src') || v.querySelector('source')?.getAttribute('src') || null,
+    );
+    if (!src || seen.has(src)) continue;
+    seen.add(src);
+    const r = v.getBoundingClientRect();
+    out.push({
+      kind: 'video',
+      src,
+      title: v.getAttribute('title') || v.getAttribute('aria-label'),
+      width: Math.round(r.width) || null,
+      height: Math.round(r.height) || null,
+    });
+  }
+  return out.slice(0, 20);
 }
 
 const EXTRACT_OFFLINE = `(() => { globalThis.__name = globalThis.__name || ((f) => f); return (${extractPage.toString()})(); })()`;

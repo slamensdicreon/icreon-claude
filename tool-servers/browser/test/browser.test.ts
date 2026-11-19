@@ -52,6 +52,15 @@ beforeAll(async () => {
         return res.writeHead(403).end('Forbidden');
       path = '/media/hero.png';
     }
+    // A page with an embedded video, whose address only the frame holds (Cabot's Lead-Acid page).
+    if (path === '/with-video')
+      return res
+        .writeHead(200, { 'content-type': 'text/html' })
+        .end(
+          '<html><body><h1>Lead batteries</h1><p>Our role in lead batteries.</p>' +
+            '<iframe width="560" height="315" title="Cabot Carbon Role in Lead Batteries" src="https://www.youtube-nocookie.com/embed/gWCGm20Dj7E"></iframe>' +
+            '<iframe title="onetrust-text-resize"></iframe></body></html>',
+        );
     // A site that answers a URL it doesn't have with 403 and a page (a CDN's bot rules).
     if (path === '/launchworks-missing-page')
       return res
@@ -415,6 +424,23 @@ describe('snapshot, screenshot, fetch.asset', () => {
       }),
       expect.objectContaining({ tag: 'section', className: 'promo', heading: 'New this season' }),
     ]);
+  }, 30_000);
+
+  it('lists embedded videos with their addresses, leaving out consent frames', async () => {
+    const r = await browser.call('snapshot', { url: `${origin}/with-video` }, ctx);
+    expect(r.body).toMatchObject({
+      embeds: [
+        {
+          kind: 'iframe',
+          src: 'https://www.youtube-nocookie.com/embed/gWCGm20Dj7E',
+          title: 'Cabot Carbon Role in Lead Batteries',
+          width: 560,
+          height: 315,
+        },
+      ],
+    });
+    expect((r.body as { embeds: unknown[] }).embeds).toHaveLength(1);
+    expect(r.summary).toContain('1 embedded video or frame with their addresses (embeds)');
   }, 30_000);
 
   it('hands the agent a not-found page’s content, not just an error line', async () => {
