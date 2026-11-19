@@ -206,26 +206,39 @@ describe('publishing follow-up', () => {
       language: 'en',
     });
     const bad = 'query { item { children(first: 100) { results { name } } } }';
+    const before = stored;
     const wrote = await server.call(
       'item.update',
       { path: rendering, fields: [{ name: 'ComponentQuery', value: bad }] },
       ctx,
     );
-    expect(wrote.code).toBe(200);
+    // Edge rejects it: refused, and the query in place stays.
+    expect(wrote.code).toBe(422);
     expect(wrote.body).toMatchObject({
       componentQueryOnEdge: {
         ok: false,
         errors: ['Query complexity of 1250 exceeds the limit of 250'],
       },
     });
-    expect(wrote.summary).toContain('Experience Edge rejects its Component Query');
+    expect(wrote.summary).toContain('Nothing was written');
+    expect(stored).toBe(before);
+    // One Edge accepts is written, and the result says it runs.
+    const good = 'query { item { children(first: 10) { results { name } } } }';
+    const accepted = await server.call(
+      'item.update',
+      { path: rendering, fields: [{ name: 'ComponentQuery', value: good }] },
+      ctx,
+    );
+    expect(accepted.code).toBe(200);
+    expect(accepted.summary).toContain('runs on Experience Edge without errors');
+    expect(stored).toBe(good);
     // Other fields, other items: no Edge call.
-    const before = edgeQueries.length;
+    const asked = edgeQueries.length;
     await server.call(
       'item.update',
       { path: rendering, fields: [{ name: 'Title', value: 'x' }] },
       ctx,
     );
-    expect(edgeQueries.length).toBe(before);
+    expect(edgeQueries.length).toBe(asked);
   });
 });
