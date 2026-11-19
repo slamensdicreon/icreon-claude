@@ -11,6 +11,18 @@ const platforms = createPlatforms({
   optimizely: OPTIMIZELY_DEFAULTS,
 });
 
+describe('showsHeading', () => {
+  it('ignores spacing that inline markup adds inside a heading', async () => {
+    const { showsHeading, visibleText, headingsOf } = await import('../sitecoreai/checks');
+    const page = visibleText(
+      '<h3>LEARN MORE ABOUT OUR SPHERON<sup>®</sup> SERIES CARBON BLACKS</h3>',
+    );
+    const [source] = headingsOf('<h3>LEARN MORE ABOUT OUR SPHERON® SERIES CARBON BLACKS</h3>');
+    expect(showsHeading(page, source!)).toBe(true);
+    expect(showsHeading(page, 'Learn more about our Vulcan series')).toBe(false);
+  });
+});
+
 describe('platform packs', () => {
   it('give every playbook in the catalog its intake fields and credentials', async () => {
     const catalog = await loadCatalog(PLAYBOOKS);
