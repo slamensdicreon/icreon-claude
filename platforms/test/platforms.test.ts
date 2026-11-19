@@ -1050,6 +1050,36 @@ describe('SitecoreAI checks', () => {
     expect((await checks['head.pages-render']!(input)).status).toBe('pass');
   });
 
+  it('reads /500 at its language path: Next.js answers /500 with its own error screen', async () => {
+    const asked: string[] = [];
+    const page = (main: string) =>
+      `<header><div id="header"><nav>Home</nav></div></header>${main}<footer><div id="footer"><p>Acme</p></div></footer>`;
+    const fetcher = (async (u: string | URL | Request) => {
+      const url = String(u);
+      asked.push(url);
+      if (url === 'https://acme-editing.vercel.app/en/500')
+        return new Response(page('<h1>Server error</h1><p>Something went wrong on our side</p>'));
+      if (url === 'https://acme-editing.vercel.app/500')
+        return new Response('This page couldn’t load', { status: 500 });
+      return new Response('', { status: 404 });
+    }) as typeof fetch;
+    const checks = createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fetcher } }).get(
+      'sitecoreai',
+    )!.checks!;
+    const bp = {
+      collections: {
+        pages: [{ key: 'server-error', name: 'Server error', attrs: { path: '/500' } }],
+      },
+    };
+    const input = {
+      ...ctx(tenant({ '/sitecore/content/Brands/acme/Home/500': { id: 'id-500' } }).read, bp),
+      target: { ...target, hostingProject: 'acme' },
+    };
+    expect(await checks['head.pages-render']!(input)).toMatchObject({ status: 'pass' });
+    expect(asked).toContain('https://acme-editing.vercel.app/en/500');
+    expect(asked).not.toContain('https://acme-editing.vercel.app/500');
+  });
+
   it("compares each page's <title> on the editing host with the source page's", async () => {
     const html = (title: string) =>
       `<html><head><title>${title}</title></head><body><h1>Heading</h1></body></html>`;

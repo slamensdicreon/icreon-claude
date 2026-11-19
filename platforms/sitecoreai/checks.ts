@@ -523,7 +523,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const problems: string[] = [];
       const cached: string[] = [];
       for (const path of paths.slice(0, 40)) {
-        const want = onEditingHost(path);
+        const want = onEditingHost(path, sitecoreTarget(ctx).languages?.[0]);
         let status = 0;
         try {
           const res = await cfg.fetch(`${host}${want.path}`, {
@@ -577,7 +577,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
           continue;
         }
         let html = '';
-        const want = onEditingHost(path);
+        const want = onEditingHost(path, sitecoreTarget(ctx).languages?.[0]);
         try {
           const res = await cfg.fetch(`${host}${want.path}`, {
             signal: AbortSignal.timeout(cfg.timeoutMs),
@@ -633,7 +633,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       let unread = 0;
       const moved: string[] = [];
       for (const path of pagePaths(ctx).slice(0, 20)) {
-        const at = onEditingHost(path);
+        const at = onEditingHost(path, sitecoreTarget(ctx).languages?.[0]);
         const page = await getText(cfg, `${host}${at.path}`);
         if (page.status !== at.status) {
           problems.push(
@@ -802,7 +802,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         const r = await ctx.compareScreens({
           path,
           source,
-          candidate: `${host}${onEditingHost(path).path}`,
+          candidate: `${host}${onEditingHost(path, sitecoreTarget(ctx).languages?.[0]).path}`,
         });
         if ('error' in r) {
           unread.push(`${path} (${r.error})`);
@@ -926,7 +926,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
       const forms = formsLeftToDirector(ctx);
       const asRendered = async (path: string) => {
         if (!project || !origin) return null;
-        const at = onEditingHost(path);
+        const at = onEditingHost(path, sitecoreTarget(ctx).languages?.[0]);
         const sourceUrl = `${origin}${path === '/' ? '/' : `${path}/`}`;
         const [have, want] = await Promise.all([
           getText(cfg, `https://${project}-editing.vercel.app${at.path}`),
@@ -1086,8 +1086,14 @@ export async function getText(
  * path: the head shows it (through the site's error-handling setting) for any URL that doesn't
  * exist, with status 404. Checks read it there.
  */
-export const onEditingHost = (path: string) =>
-  path === '/404' ? { path: '/launchworks-missing-page', status: 404 } : { path, status: 200 };
+export const onEditingHost = (path: string, language = 'en') =>
+  path === '/404'
+    ? { path: '/launchworks-missing-page', status: 404 }
+    : // Next.js reserves /500 too: the head's own error screen answers there (Cabot's 'This page
+      // couldn't load', status 500). The site's server-error page renders under its language.
+      path === '/500'
+      ? { path: `/${language}/500`, status: 200 }
+      : { path, status: 200 };
 
 /** Whether a source page answered from another path: it redirects there (`/services` to `/`). */
 export function redirectedAway(requested: string, final: string | undefined): boolean {
