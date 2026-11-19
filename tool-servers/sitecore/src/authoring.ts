@@ -659,11 +659,14 @@ export class SitecoreAuthoringToolServer implements ToolServer {
         case 'item.create':
           return await this.create(q, CreateArgs.safeParse(args), lang);
         case 'item.update':
-          return await this.withQueryCheck(
-            ctx.projectId,
-            facts,
-            await this.update(q, UpdateArgs.safeParse(args), lang),
-            args,
+          return (
+            (await this.refuseRejectedQuery(q, ctx.projectId, facts, args)) ??
+            (await this.withQueryCheck(
+              ctx.projectId,
+              facts,
+              await this.update(q, UpdateArgs.safeParse(args), lang),
+              args,
+            ))
           );
         case 'item.rename':
           return await this.rename(q, RenameArgs.safeParse(args));
@@ -1808,9 +1811,30 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       query = body.fields.nodes?.find((f) => /^componentquery$/i.test(f.name))?.value ?? null;
     }
     if (!query?.trim() || !itemId) return r;
+    const errors = await this.edgeErrors(projectId, facts, query, itemId);
+    if (!errors) return r;
+    const check = errors.length ? { ok: false, errors } : { ok: true, errors: [] as string[] };
+    return {
+      ...r,
+      body: { ...(body as object), componentQueryOnEdge: check },
+      summary: `${r.summary ?? ''}${
+        errors.length
+          ? `; Experience Edge rejects its Component Query (so the component gets no content on any page): ${errors.join(' | ').slice(0, 600)}`
+          : '; its Component Query runs on Experience Edge without errors'
+      }`,
+    };
+  }
+
+  /** Edge's errors for a query (empty when it runs), or null when it can't be asked. */
+  private async edgeErrors(
+    projectId: string,
+    facts: TenantFacts,
+    query: string,
+    id: string,
+  ): Promise<string[] | null> {
     const contextId = await this.opts.edgeContextId?.(projectId, false);
-    if (!contextId) return r;
-    itemId = sitecoreId(itemId);
+    if (!contextId) return null;
+    const itemId = sitecoreId(id);
     let errors: string[] = [];
     try {
       const url = new URL('/v1/content/api/graphql/v1', this.opts.edgeUrl ?? EDGE_URL);
@@ -1834,17 +1858,41 @@ export class SitecoreAuthoringToolServer implements ToolServer {
       errors = (d.errors ?? []).map((e) => String(e.message ?? e)).slice(0, 5);
       if (!res.ok && !errors.length) errors = [`HTTP ${res.status}`];
     } catch {
-      return r;
+      return null;
     }
-    const check = errors.length ? { ok: false, errors } : { ok: true, errors: [] as string[] };
+    return errors;
+  }
+
+  /**
+   * A Component Query Edge rejects is not written: written, it took the component's content off
+   * every page until the next write (Cabot's Secondary Navigation emptied every sidebar while
+   * four too-complex queries went in one after another). The query in place keeps working.
+   */
+  private async refuseRejectedQuery(
+    q: Gql,
+    projectId: string,
+    facts: TenantFacts,
+    args: Record<string, unknown>,
+  ): Promise<ToolResult | null> {
+    const fields = (Array.isArray(args.fields) ? args.fields : []) as {
+      name?: string;
+      value?: string;
+    }[];
+    const query = fields.find((f) => /^componentquery$/i.test(f.name ?? ''))?.value;
+    if (!query?.trim() || typeof args.path !== 'string') return null;
+    let id: string;
+    try {
+      id = await this.idOf(q, args.path);
+    } catch {
+      return null;
+    }
+    const errors = await this.edgeErrors(projectId, facts, query, id);
+    if (!errors?.length) return null;
+    const error = `Experience Edge rejects this Component Query: ${errors.join(' | ').slice(0, 600)}. Nothing was written: the query in place keeps working. Make it cheaper (fewer fields, named fields instead of fields lists, smaller first:) and write again`;
     return {
-      ...r,
-      body: { ...(body as object), componentQueryOnEdge: check },
-      summary: `${r.summary ?? ''}${
-        errors.length
-          ? `; Experience Edge rejects its Component Query (so the component gets no content on any page): ${errors.join(' | ').slice(0, 600)}`
-          : '; its Component Query runs on Experience Edge without errors'
-      }`,
+      code: 422,
+      body: { error, componentQueryOnEdge: { ok: false, errors } },
+      summary: error,
     };
   }
 
