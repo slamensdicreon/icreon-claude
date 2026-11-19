@@ -1503,7 +1503,7 @@ export class BrowserToolServer implements ToolServer {
           : {}),
       },
       summary: all.length
-        ? `${url.pathname}: ${picked.length} of ${all.length} components from its layout data`
+        ? layoutSummary(url.pathname, want ? String(args.component) : null, picked, all.length)
         : `${url.pathname} embeds no layout data`,
     };
   }
@@ -1713,7 +1713,15 @@ export async function settleForScreenshot(page: {
   await page.evaluate(() => {
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
       const position = getComputedStyle(el).position;
-      if ((position === 'fixed' || position === 'sticky') && el.getBoundingClientRect().top > 40) {
+      // Sticky elements are content in the page's flow (Cabot's feature cards stick while the
+      // page scrolls past them): hidden, a whole card came out blank and the review compared the
+      // new page with an empty box. Only fixed overlays (cookie and chat banners) are hidden.
+      if (position === 'sticky') {
+        el.style.setProperty('position', 'relative', 'important');
+        el.style.setProperty('top', 'auto', 'important');
+        continue;
+      }
+      if (position === 'fixed' && el.getBoundingClientRect().top > 40) {
         const footer =
           el.matches('footer, [role="contentinfo"]') ||
           !!el.querySelector(':scope > footer, :scope > [role="contentinfo"]');
@@ -1949,3 +1957,25 @@ const embedNote = (n: number) =>
   n
     ? `, ${n} embedded video${n === 1 ? '' : 's'} or frame${n === 1 ? '' : 's'} with their addresses (embeds)`
     : '';
+
+/**
+ * What page.data found, in words that can't be misread. "1 of 11 components" (one component asked
+ * for by name, of the 11 on the page) was read as "only 1 of 11 resolved", by the Lead and the
+ * agents alike, and a working News List was rejected over it again and again.
+ */
+export function layoutSummary(
+  path: string,
+  asked: string | null,
+  picked: { name: string; contentResolved?: false }[],
+  total: number,
+): string {
+  const failed = picked.filter((c) => c.contentResolved === false);
+  const state = failed.length
+    ? `${failed.length} NOT resolved (isContentResolved: false: ${[...new Set(failed.map((c) => c.name))].join(', ')}), ${picked.length - failed.length} resolved`
+    : `all ${picked.length} resolved`;
+  return asked
+    ? picked.length
+      ? `${path}: ${picked.length} ${asked} component${picked.length === 1 ? '' : 's'} found (the page has ${total} in all); ${state}`
+      : `${path}: no ${asked} component on this page (it has ${total} others)`
+    : `${path}: ${total} component${total === 1 ? '' : 's'} in its layout data; ${state}`;
+}

@@ -20,12 +20,13 @@ it('hides a cookie banner but keeps a footer pinned to the bottom, laid out at t
     <main style="height:2000px">Content</main>
     <footer class="footer" style="position:fixed;bottom:0;height:300px;width:100%;z-index:-1">
       <a href="/company">Company</a> <a href="/legal">Legal</a></footer>
+    <section id="card" style="position:sticky;top:153px;height:600px">Monarch feature card</section>
     <div id="onetrust-banner-sdk" style="position:fixed;bottom:0;height:200px;width:100%">Privacy Settings</div>
   </body>`);
   await settleForScreenshot(page);
   const seen = await page.evaluate(() =>
     Object.fromEntries(
-      ['header', 'footer', '#onetrust-banner-sdk'].map((sel) => {
+      ['header', 'footer', '#onetrust-banner-sdk', '#card'].map((sel) => {
         const el = document.querySelector<HTMLElement>(sel)!;
         const cs = getComputedStyle(el);
         return [sel, { visibility: cs.visibility, position: cs.position }];
@@ -35,5 +36,7 @@ it('hides a cookie banner but keeps a footer pinned to the bottom, laid out at t
   expect(seen['#onetrust-banner-sdk']!.visibility).toBe('hidden');
   expect(seen.footer).toEqual({ visibility: 'visible', position: 'relative' });
   expect(seen.header).toEqual({ visibility: 'visible', position: 'fixed' });
+  // A sticky card is content: kept, in its place in the page.
+  expect(seen['#card']).toEqual({ visibility: 'visible', position: 'relative' });
   await page.close();
 }, 60_000);

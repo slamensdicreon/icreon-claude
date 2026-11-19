@@ -14,6 +14,7 @@ import {
   ToolGateway,
 } from '@lw/tool-gateway';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { layoutSummary } from '../src/server';
 import {
   BrowserToolServer,
   compactCrawl,
@@ -610,12 +611,27 @@ describe('network safety', () => {
       ctx,
     );
     expect((one.body as { components: unknown[] }).components).toHaveLength(1);
+    // Said so it can't be read as "only 1 of 2 resolved".
+    expect(one.summary).toBe(
+      '/layout-data: 1 goodbanner component found (the page has 2 in all); all 1 resolved',
+    );
+    expect(res.summary).toBe('/layout-data: 2 components in its layout data; all 2 resolved');
     const pages = await browser.call('page.data', { url: `${origin}/next-data` }, ctx);
     expect(
       (pages.body as { components: { name: string }[] }).components.map((c) => c.name),
     ).toEqual(['Hero', 'Promo']);
     const none = await browser.call('page.data', { url: `${origin}/about` }, ctx);
     expect(none.body).toMatchObject({ embedsLayoutData: false, components: [] });
+  });
+
+  it("says plainly which components didn't resolve", () => {
+    const comps = [{ name: 'NewsList', contentResolved: false as const }, { name: 'RichText' }];
+    expect(layoutSummary('/news', null, comps, 2)).toBe(
+      '/news: 2 components in its layout data; 1 NOT resolved (isContentResolved: false: NewsList), 1 resolved',
+    );
+    expect(layoutSummary('/news', 'Hero', [], 2)).toBe(
+      '/news: no Hero component on this page (it has 2 others)',
+    );
   });
 
   it('only goes to the project’s source hosts', async () => {
