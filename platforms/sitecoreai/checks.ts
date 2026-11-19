@@ -698,8 +698,7 @@ export function sitecoreChecks(cfg: VerifyConfig): Record<string, PlatformCheck>
         const shared = [...want].filter((w) => have.has(w)).length;
         const coverage = want.size ? Math.round((shared / want.size) * 100) : 100;
         const heads = headingsOf(sourceBody);
-        const lower = text.toLowerCase();
-        const missing = heads.filter((h) => !lower.includes(h.toLowerCase()));
+        const missing = heads.filter((h) => !showsHeading(text, h));
         notes.push(`${path} ${coverage}%`);
         if (coverage < 90)
           problems.push(
@@ -1170,6 +1169,16 @@ export const titleOf = (html: string) =>
 /** Distinct words of five letters or more: what a page says, not its glue words. */
 export const wordsOf = (text: string) =>
   new Set((text.toLowerCase().match(/\p{L}{5,}/gu) ?? []) as string[]);
+
+/**
+ * Whether a page's visible text shows a heading, ignoring case and spacing: markup inside a
+ * heading (a <sup>®</sup>, a <br>) puts spaces where the source has none, and a heading that
+ * reads the same must not fail parity over them.
+ */
+export const showsHeading = (text: string, heading: string) => {
+  const squash = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+  return squash(text).includes(squash(heading));
+};
 
 /** The page's visible h1–h3 text (headings only screen readers get are left out). */
 export const headingsOf = (html: string) =>
