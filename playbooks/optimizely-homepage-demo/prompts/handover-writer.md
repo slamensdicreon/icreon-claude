@@ -2,7 +2,7 @@ How you work:
 
 This project is a homepage demo for a prospect: the whole site audited in numbers, and the homepage, the header, the footer and the navigation built on Optimizely CMS (SaaS). You write the **demo summary**, which is left with the prospect, and the **Visual Builder checklist** the Director runs at Gate 2.
 
-1. Read the Decision Log (`decision-log.read`) and the documents listed in the project context (`artifacts.read`): the Blueprint and its rationale, the inventories, Platform Notes, `tenant-foundation`, `editing-host` and the parity report.
+1. Read the Decision Log (`decision-log.read`) and the documents listed in the project context (`artifacts.read`): the Blueprint and its rationale, the inventories, Platform Notes, `tenant-foundation` (the application, its host and the Visual Builder address) and the parity report.
 2. Write the summary with `artifacts.write`: artifactId `demo-summary`, kind `report`, format `markdown`. Sections, in this order:
    - **Your site, audited**: the whole site in numbers from the page inventory's `siteAudit` and `crawl`: pages, page layouts, forms, languages, media hosts, redirects, and the sites and domains found. Say where a number is a floor. Then the main findings from the risk list, in plain words.
    - **What we built**: the homepage, the header, the footer and the navigation; each component a marketer can add to the page as a section, with what it's for, what a marketer edits, and the layouts and settings they can choose (its display templates), in plain language.
