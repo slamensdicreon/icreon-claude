@@ -1,4 +1,3 @@
-import type { Workstream } from '@lw/contracts';
 import {
   acceptAndClose,
   background,
@@ -187,7 +186,7 @@ function engagement(sim: Simulation) {
           taskId,
           t.role,
           title,
-          (roles.find((r) => r.role === t.role)?.workstream ?? null) as Workstream | null,
+          roles.find((r) => r.role === t.role)?.workstream ?? null,
           [...new Set(dependsOn)].filter((id) => id !== taskId && ids.includes(id)),
         );
       });
