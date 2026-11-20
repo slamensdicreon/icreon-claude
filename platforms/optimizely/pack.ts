@@ -12,6 +12,7 @@ import {
 import type { PlatformPack } from '../src/index';
 import { hostOf, list, text, type TargetValues } from '../src/values';
 import { optimizelyChecks } from './checks';
+import { optimizelyFacts } from './facts';
 
 export const OPTIMIZELY = 'optimizely';
 
@@ -273,6 +274,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     // build repository is refused at intake rather than given Sitecore's.
     buildRecipe: { generate: [], build: 'build', readOnly: [] },
     checks: optimizelyChecks(cfg),
+    facts: (call, body, target) => optimizelyFacts(call, body, optimizelyBindings(target)),
     headEnv: async (t, _which, deps) => headVars(t, deps.credential),
     // The sandbox also runs `optimizely-cms-cli config push`, which signs in with the REST API
     // key. The head never needs that key, so it stays off the hosting project.
