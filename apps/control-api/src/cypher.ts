@@ -776,7 +776,9 @@ export class PortfolioCypher {
           platform: b.platform.name,
           charter: b.charter,
           phases: b.phases.map(
-            (ph) => `${ph.number} ${ph.name}${ph.gate ? ` (${ph.gate} gate)` : ''}`,
+            (ph) =>
+              // A gate's label names itself ("Gate 1: …"); a bare kind ("director") gets the word.
+              `${ph.number} ${ph.name}${ph.gate ? ` (${/gate/i.test(ph.gate) ? ph.gate : `${ph.gate} gate`})` : ''}`,
           ),
           team: b.roles.map((r) => `${r.name}: ${r.description}`),
           source: b.intake.source,

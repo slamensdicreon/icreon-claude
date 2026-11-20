@@ -406,6 +406,8 @@ export class IntakeService {
           timezone: intake.timezone,
           source: { repo, url, framework: null, label: null },
           target: described.target,
+          // The playbook's own words for its numbers and tools (content types, not renderings).
+          stats: playbook.manifest.defaults.stats,
           toolLabels: playbook.manifest.defaults.toolLabels,
           mode: 'live',
           intake: {
@@ -614,6 +616,7 @@ export class IntakeService {
             playbook: { id: current.manifest.id, version: current.manifest.version },
             phases: phaseDefs(current),
             roster: roster(current),
+            stats: current.manifest.defaults.stats,
             toolLabels: current.manifest.defaults.toolLabels,
           }
         : e.data;

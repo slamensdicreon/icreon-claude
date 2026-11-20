@@ -590,8 +590,10 @@ it('lists the playbooks of both platforms, and drafts an Optimizely site remixed
   // Ten phases, with the two that wait on the Director marked.
   expect(website.phases).toHaveLength(10);
   expect(
-    website.phases.filter((ph) => ph.endsWith(' gate)')).map((ph) => ph.split(' (')[0]),
+    website.phases.filter((ph) => /\(Gate \d[^)]*\)$/.test(ph)).map((ph) => ph.split(' (')[0]),
   ).toEqual(['2 Blueprint', '9 Handover and acceptance']);
+  // A gate's label reads once: "(Gate 1: …)", not "(Gate 1: … gate)".
+  expect(website.phases.some((ph) => ph.endsWith(' gate)'))).toBe(false);
   expect(website.team.some((line) => line.startsWith('Experience Builder: '))).toBe(true);
   expect(website.brief.map((q) => q.key)).toContain('experimentation');
   // The saved instance, with what it shares and no secret.
