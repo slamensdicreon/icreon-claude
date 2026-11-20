@@ -160,7 +160,7 @@ describe('content', () => {
     expect(header.versions[0]).not.toHaveProperty('routeSegment');
   });
 
-  it('writes a new draft instead of a second item when the path exists', async () => {
+  it('changes the draft in place when the path exists, and starts a new one only once published', async () => {
     const { cms, call } = await withApp();
     const args = {
       path: '/shared/acme_site/Site Header',
@@ -169,10 +169,19 @@ describe('content', () => {
     };
     await call('content.create', args);
     const again = await call('content.create', { ...args, properties: { b: '2' } });
-    expect(again).toMatchObject({ code: 200, body: { created: false, version: '2' } });
+    expect(again).toMatchObject({ code: 200, body: { created: false, version: '1' } });
     const item = cms.content.get(key('/shared/acme_site/Site Header'))!;
-    expect(item.versions).toHaveLength(2);
-    expect(item.versions[1]!.properties).toEqual({ a: { value: '1' }, b: { value: '2' } });
+    // One draft, never two: an editor opens the draft, and a stale one hides the real page.
+    expect(item.versions).toHaveLength(1);
+    expect(item.versions[0]!.properties).toEqual({ a: { value: '1' }, b: { value: '2' } });
+    await call('content.publish', args);
+    await call('content.update', { path: args.path, properties: { c: '3' } });
+    expect(item.versions.map((v) => v.status)).toEqual(['published', 'draft']);
+    expect(item.versions[1]!.properties).toEqual({
+      a: { value: '1' },
+      b: { value: '2' },
+      c: { value: '3' },
+    });
     expect((await call('content.create', { ...args, contentType: 'AcmeHero' })).code).toBe(409);
   });
 
@@ -249,6 +258,8 @@ describe('content', () => {
       component: { contentType: 'AcmeHero', properties: { heading: { value: 'Hi' } } },
     });
     expect(latest.composition.nodes[1]).not.toHaveProperty('displaySettings');
+    // The empty start page application.create made is the one draft, filled in place.
+    expect(start.versions).toHaveLength(1);
     const firstIds = latest.composition.nodes.map((n) => n.id);
     await call('composition.write', { path: '/content/acme_site', nodes });
     const after = start.versions[start.versions.length - 1] as typeof latest;

@@ -352,7 +352,7 @@ export class OptimizelyCmsToolServer implements ToolServer {
       pathArgs: ['path'],
     },
     'content.create': {
-      description: `Create an item at a path as a draft: a page under /content/<application>/…, or a shared block under /shared/<application>/… (folders on the way are made). The content type must carry the project's prefix. Creating a path that exists writes a new draft of that item instead of a second item. ${VALUES}`,
+      description: `Create an item at a path as a draft: a page under /content/<application>/…, or a shared block under /shared/<application>/… (folders on the way are made). The content type must carry the project's prefix. Creating a path that exists changes that item's draft (or starts one, if it is published) instead of making a second item. ${VALUES}`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -370,7 +370,7 @@ export class OptimizelyCmsToolServer implements ToolServer {
       pathArgs: ['path'],
     },
     'content.update': {
-      description: `Set properties on an item (by path) as a new draft: the properties you give replace those values, every other property and the composition stay. ${VALUES}`,
+      description: `Set properties on an item (by path), in its draft (a published item gets a new draft): the properties you give replace those values, every other property and the composition stay. ${VALUES}`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -386,7 +386,7 @@ export class OptimizelyCmsToolServer implements ToolServer {
       pathArgs: ['path'],
     },
     'composition.write': {
-      description: `Compose an experience (by path) in Visual Builder's outline: one section per node, in order, each a section-enabled content type of this project with its display template, settings and properties. Replaces the page's sections as a new draft; its own properties stay. ${VALUES}`,
+      description: `Compose an experience (by path) in Visual Builder's outline: one section per node, in order, each a section-enabled content type of this project with its display template, settings and properties. Replaces the page's sections in its draft (a published page gets a new draft); its own properties stay. ${VALUES}`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -1210,6 +1210,16 @@ class Work {
     };
     const composition = change.composition ?? before?.composition;
     if (composition) body.composition = composition;
+    // A draft is changed in place. A second draft beside it would leave the first one behind,
+    // and the editor opens a page's draft: an empty first draft showed editors a blank page
+    // while the published version held everything.
+    if (before?.status === 'draft' && before.version) {
+      await this.rest.send('PATCH', `/content/${key}/versions/${before.version}`, {
+        json: body,
+        patch: true,
+      });
+      return { ...before, ...body, status: 'draft' } as Version;
+    }
     const res = await this.rest.send('POST', `/content/${key}/versions`, { json: body });
     return (res.body as Version | undefined) ?? (await this.latest(key, locale)) ?? {};
   }
@@ -1253,7 +1263,7 @@ class Work {
           status: version.status ?? 'draft',
           created: false,
         },
-        summary: `${at.path} existed: wrote a new draft of it`,
+        summary: `${at.path} existed: its draft now holds these values`,
       };
     }
     const container = await this.containerOf(at);

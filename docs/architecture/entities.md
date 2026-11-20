@@ -194,7 +194,7 @@ they would run with their own teams). The team goes from 24 roles to 21.
   `hostname.registered`, `graph.published`, `routes.resolve`, `head.preview-route`,
   `head.pages-render`, `head.header-footer`, `parity.render`, `parity.visual`); the step-based
   `types.defined` and `manifest.replays` are in `packages/stack/src/review.ts`.
-- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): eighteen rows proven on
+- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): nineteen rows proven on
   a live instance, then the rows from the documentation that no build has met yet.
 - **Playbooks**, both in the order the platform sets (content types first; then the application,
   whose start page is of a pushed experience type, with its host and live preview; then shared

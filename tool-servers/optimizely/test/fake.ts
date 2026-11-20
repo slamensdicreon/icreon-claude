@@ -118,6 +118,13 @@ export function fakeCms(
         }
         return json(200, { items: c.versions });
       }
+      if ((m = /^\/content\/(\w+)\/versions\/(\d+)$/.exec(path)) && method === 'PATCH') {
+        const v = state.content.get(m[1]!)?.versions.find((x) => x.version === m![2]);
+        if (!v) return problem(404, 'Not found');
+        if (v.status !== 'draft') return problem(409, 'Only a draft can be changed');
+        Object.assign(v, body);
+        return json(204);
+      }
       if ((m = /^\/content\/(\w+)\/versions\/(\d+)\/previews$/.exec(path))) {
         const hosts = [...state.applications.values()].flatMap((a) =>
           ((a.hosts as { authority: string }[] | undefined) ?? []).map((h) => ({
