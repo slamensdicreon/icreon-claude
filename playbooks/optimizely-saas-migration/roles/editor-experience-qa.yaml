@@ -32,9 +32,12 @@ tools:
     scope:
       paths:
         - '{contentRoot}/**'
+        - '{sharedRoot}/**'
       readPaths:
         - /applications/**
         - /content/**
+        - /shared/**
+        - /media/**
   optimizely-graph:
     ops:
       - graph.query

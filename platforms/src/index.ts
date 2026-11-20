@@ -321,6 +321,12 @@ export function validateTarget(spec: IntakeSpec, raw: TargetValues): TargetValue
 export { list, text } from './values';
 export { ownedPaths, SITECOREAI, sitecoreBindings, sitecoreTarget } from '../sitecoreai/pack';
 export {
+  OPTIMIZELY,
+  optimizelyBindings,
+  optimizelyOwnedPaths,
+  optimizelyTarget,
+} from '../optimizely/pack';
+export {
   mappingProblems,
   parseSource,
   type MappingEntry,

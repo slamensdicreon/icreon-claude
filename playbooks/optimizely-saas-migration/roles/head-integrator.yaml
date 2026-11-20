@@ -38,8 +38,6 @@ tools:
       - displaytemplate.list
       - displaytemplate.read
       - manifest.export
-      - webhook.list
-      - webhook.create
     scope:
       paths:
         - /contenttypes/{typePrefix}*

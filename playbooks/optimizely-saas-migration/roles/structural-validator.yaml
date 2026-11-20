@@ -27,11 +27,14 @@ tools:
     scope:
       paths:
         - '{contentRoot}/**'
+        - '{sharedRoot}/**'
       readPaths:
         - /applications/**
         - /contenttypes/**
         - /displaytemplates/**
         - /content/**
+        - /shared/**
+        - /media/**
   validators:
     ops:
       - structural.run

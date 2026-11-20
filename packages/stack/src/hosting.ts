@@ -1,9 +1,17 @@
 import type { NewEvent } from '@lw/contracts';
 import { DeployClient, type CleanupResult, type GithubApp } from '@lw/connectors';
 import type { ProjectState } from '@lw/domain';
-import { SITECOREAI, sitecoreTarget, text, type PlatformPack } from '@lw/platforms';
+import {
+  OPTIMIZELY,
+  optimizelyTarget,
+  SITECOREAI,
+  sitecoreTarget,
+  text,
+  type PlatformPack,
+} from '@lw/platforms';
 import { INTEGRATION_BRANCH, type ToolCallContext, type ToolResult } from '@lw/tool-gateway';
 import { editingHost, HostingToolServer, type HostingFacts } from '@lw/tool-hosting';
+import type { GraphFacts, OptimizelyFacts } from '@lw/tool-optimizely';
 import { SitecoreAuthoringToolServer, type TenantFacts } from '@lw/tool-sitecore';
 
 /**
@@ -52,6 +60,35 @@ export function sitecoreFacts(s: ProjectState | undefined): TenantFacts | null {
     languages: t.languages,
     sourceHosts: host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : [],
   };
+}
+
+/** The hosts a project's head is deployed on: production first, then the preview deployment. */
+export function headHosts(s: ProjectState): string[] {
+  return [s.hosting?.url, s.preview.target?.url]
+    .filter((u): u is string => Boolean(u))
+    .map((u) => new URL(u).host);
+}
+
+/** The Optimizely instance, application and source hosts a project's CMS tools work in. */
+export function optimizelyFacts(s: ProjectState | undefined): OptimizelyFacts | null {
+  if (s?.intake?.platform !== OPTIMIZELY) return null;
+  const host = s.sourceUrl ? new URL(s.sourceUrl).hostname : null;
+  const t = optimizelyTarget(s.intake);
+  return {
+    cmsUrl: t.cmsUrl,
+    application: t.applicationKey,
+    applicationName: t.application,
+    typePrefix: t.typePrefix,
+    languages: t.languages,
+    sourceHosts: host ? [host, host.startsWith('www.') ? host.slice(4) : `www.${host}`] : [],
+    headHosts: headHosts(s),
+  };
+}
+
+/** What narrows Optimizely Graph to a project: one index holds every application on the instance. */
+export function optimizelyGraphFacts(s: ProjectState | undefined): GraphFacts | null {
+  if (s?.intake?.platform !== OPTIMIZELY) return null;
+  return { hosts: headHosts(s), languages: optimizelyTarget(s.intake).languages };
 }
 
 export function hostingToolServer(w: HostingWiring): HostingToolServer {

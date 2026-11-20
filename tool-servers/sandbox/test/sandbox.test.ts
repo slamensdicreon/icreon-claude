@@ -817,3 +817,77 @@ describe('the Sitecore CLI', () => {
     expect(JSON.stringify(r)).not.toContain('env-secret-value');
   });
 });
+
+describe('exec.optimizely-cli', () => {
+  const optimizely = async () => ({ ...(await facts()), typePrefix: 'Acme' });
+  const manifestPath = 'examples/basic-nextjs/.optimizely-manifest.json';
+  const model = (
+    contentTypes: string[],
+    displayTemplates: string[] = [],
+    propertyGroups: string[] = [],
+  ) =>
+    JSON.stringify({
+      contentTypes: contentTypes.map((key) => ({ key })),
+      displayTemplates: displayTemplates.map((key) => ({ key })),
+      propertyGroups: propertyGroups.map((key) => ({ key })),
+    });
+  const server = (manifest: string | null) => {
+    const fake = fakeBox(manifest === null ? {} : { [manifestPath]: manifest });
+    const s = new SandboxToolServer({
+      provider: fake.provider,
+      facts: optimizely,
+      buildEnv: async () => ({}),
+    });
+    const pushes = () =>
+      fake.runs
+        .filter((r) => r.args.includes('optimizely-cms-cli'))
+        .map((r) => r.args.slice(2).join(' '));
+    return { s, fake, pushes };
+  };
+
+  it('dry-runs the content model and sends nothing', async () => {
+    const { s, pushes } = server(model(['AcmeHero', 'AcmeExperience'], ['AcmeHeroDefault']));
+    const r = await s.call('exec.optimizely-cli', { command: 'push-dry-run' }, ctx);
+    expect(r).toMatchObject({
+      code: 200,
+      body: {
+        contentTypes: ['AcmeHero', 'AcmeExperience'],
+        displayTemplates: ['AcmeHeroDefault'],
+        sent: false,
+      },
+    });
+    expect(r.summary).toContain('2 content types, 1 display templates');
+    expect(pushes()).toEqual([
+      'config push optimizely.config.mjs --dryRun --output .optimizely-manifest.json',
+    ]);
+  });
+
+  it('pushes only the keys it checked, never with --force', async () => {
+    const { s, pushes } = server(model(['AcmeHero'], ['AcmeHeroDefault']));
+    const r = await s.call('exec.optimizely-cli', { command: 'push' }, ctx);
+    expect(r).toMatchObject({ code: 200, body: { sent: true } });
+    expect(pushes()[1]).toBe('config push optimizely.config.mjs --only AcmeHero,AcmeHeroDefault');
+    expect(pushes().join(' ')).not.toContain('--force');
+  });
+
+  it("refuses keys outside the project's prefix, property groups and an empty model", async () => {
+    const foreign = server(model(['AcmeHero', 'Hero'], ['SquareDisplayTemplate']));
+    const r = await foreign.s.call('exec.optimizely-cli', { command: 'push' }, ctx);
+    expect(r.code).toBe(422);
+    expect(JSON.stringify(r.body)).toContain('Hero, SquareDisplayTemplate');
+    expect(foreign.pushes()).toHaveLength(1);
+    const groups = server(model(['AcmeHero'], [], ['seo']));
+    expect((await groups.s.call('exec.optimizely-cli', { command: 'push' }, ctx)).code).toBe(422);
+    const empty = server(model([]));
+    expect((await empty.s.call('exec.optimizely-cli', { command: 'push-dry-run' }, ctx)).code).toBe(
+      422,
+    );
+  });
+
+  it('needs the project to be an Optimizely one', async () => {
+    const fake = fakeBox();
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    expect((await s.call('exec.optimizely-cli', { command: 'push' }, ctx)).code).toBe(422);
+    expect(fake.runs.some((r) => r.args.includes('optimizely-cms-cli'))).toBe(false);
+  });
+});

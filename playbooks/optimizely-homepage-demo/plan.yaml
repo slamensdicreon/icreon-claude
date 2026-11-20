@@ -1,0 +1,324 @@
+# Task templates for the homepage demo on Optimizely CMS (SaaS): the homepage demo's tasks over a
+# one-page Blueprint, done the way the Optimizely team works. The Architect writes the Blueprint
+# for the homepage, its experience type, the components on it, the header, footer and navigation,
+# and their media; blueprint.demo-slice checks it. The rest of the site is audited in numbers in
+# the page inventory, not blueprinted.
+#
+# No pilot block: the whole Blueprint is the pilot. Its components are proven ready for Visual
+# Builder (types in the CMS, code on the editing address, the shell in place) before the page is
+# composed from them.
+#
+# The order the platform sets, proven on a live instance: content types first (pushes are
+# additive, this project's prefixed keys only), then the application with the homepage as its
+# empty start page (an application can't exist without one, and the start page is of the
+# experience type the Blueprint names), then its host, then shared blocks and media in the
+# application's own assets, then the page's composition.
+#
+# The head shows published content only (a draft shows inside Visual Builder alone), so the
+# content tasks publish what they write: the demo's application is ours, on the demo's own host,
+# and nothing a visitor of the prospect's site sees. Those tasks are standing releases.
+
+templates:
+  # 0 — Intake and access verification
+  - id: verify-access
+    phase: 0
+    role: deployment-engineer
+    title: Verify credentials and record instance facts
+    acceptance: [validator:credentials.verified]
+  # A REST API key can read the instance and push content types and still be refused every
+  # content write (403, "Required access is 'create'") until an admin gives it content rights on
+  # the Root. No call can test that without writing, and the first write is after Gate 1 (the
+  # application, in phase 5), so the Director confirms it here. If it is missed, that first write
+  # stops as an access card saying the same.
+  - id: confirm-content-rights
+    phase: 0
+    role: deployment-engineer
+    title: Give the API key content rights in the CMS
+    manual: >-
+      In the CMS, open Settings > Set Access Rights and select the Root. Add the API key (search
+      for its client ID) and give it Read, Create, Change, Delete and Publish. Without these the
+      key pushes content types but every content write is refused, and the build stops after
+      Gate 1. If the key already has them (a saved connection an earlier demo used), check it is
+      listed there and mark this done saying so.
+
+  # 1 — Discovery and analysis
+  - id: inventory-repo
+    phase: 1
+    role: repo-analyst
+    title: Inventory components, routes and assets
+    when: source-repo
+    uses: [github, artifacts]
+  # No source repository: the live site is the source, read as rendered.
+  - id: inventory-live-ui
+    phase: 1
+    role: repo-analyst
+    title: Inventory components and design system from the live site
+    unless: source-repo
+    uses: [browser, artifacts]
+  - id: crawl-site
+    phase: 1
+    role: content-analyst
+    title: Crawl the source site and build the page inventory
+    acceptance: [validator:inventory.complete]
+  - id: platform-notes
+    phase: 1
+    role: research-agent
+    title: Verify platform facts and write Platform Notes
+
+  # 2 — Blueprint
+  - id: draft-blueprint
+    phase: 2
+    role: solution-architect
+    title: Draft the Implementation Blueprint
+    dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
+    # blueprint.demo-slice: the homepage and what it uses, the navigation its own component, the
+    # 404 page recorded as dropped, nothing else kept.
+    acceptance: [validator:blueprint.demo-slice]
+
+  # 3 — Foundation
+  - id: design-system
+    phase: 3
+    role: component-engineer
+    title: Extract the design system (tokens, type, spacing, primitives)
+  - id: prepare-hosting
+    phase: 3
+    role: deployment-engineer
+    title: Deploy the head to Vercel
+    release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
+      rollback: >-
+        Delete the Vercel project; nothing is published, no host is registered and no content
+        changes.
+
+  # 4 — Component build and content types
+  # Each component is one branch: its content type and display templates in a model file, its
+  # React component beside it, built green, dry-run push clean.
+  - id: port-{key}
+    phase: 4
+    role: component-engineer
+    forEach: components
+    canary: 0
+    title: Build {name} on the Optimizely SDK
+    dependsOn: [design-system]
+    acceptance: [validator:build.green, validator:types.defined, validator:head.sections]
+  - id: integrate-head
+    phase: 4
+    role: head-integrator
+    title: Configure the head as the editing host
+    dependsOn: [prepare-hosting]
+    # Ends with its change live on the editing address: a task waiting on it is checked again the
+    # moment it finishes, and that check must not run against a build without the change.
+    acceptance: [validator:editing-host.deployed]
+  # Visual Builder offers a component only when its type is in the CMS and its code is on the
+  # editing host: one task lands both. The accepted branch joins the integration branch, the
+  # content model is pushed from it (this project's keys only, never --force), and the editing
+  # address is redeployed.
+  - id: integrate-{key}
+    phase: 4
+    role: head-integrator
+    forEach: components
+    canary: 0
+    title: Integrate {name} and push its content type
+    dependsOn: ['port-{key}', integrate-head]
+    # A build redone after the page sent it back reaches the editing host only through this task.
+    redoWith: ['port-{key}']
+    acceptance: [validator:structural.content-types, validator:editing-host.deployed]
+    metric: components_registered
+  - id: validate-components
+    phase: 4
+    role: structural-validator
+    title: Validate content types and display templates
+    dependsOn: [integrate-*]
+    acceptance: [validator:structural.content-types]
+
+  # 5 — Experience type, application and site shell
+  # The homepage's type is code (the Component Engineer) and reaches the CMS through an
+  # integration (the Head Integrator). It references the header's and footer's types, so it is
+  # pushed once those are in the CMS (`{shared}`: the shared items' integrations), not after
+  # every component.
+  - id: define-type-{key}
+    phase: 5
+    role: component-engineer
+    forEach: templates
+    canary: 0
+    title: Define {name} experience type
+    dependsOn: [design-system]
+    acceptance: [validator:build.green, validator:types.defined]
+  - id: push-type-{key}
+    phase: 5
+    role: head-integrator
+    forEach: templates
+    canary: 0
+    title: Integrate {name} experience type and push it
+    dependsOn: ['define-type-{key}', integrate-head, 'integrate-{shared}']
+    redoWith: ['define-type-{key}']
+    acceptance: [validator:structural.templates, validator:editing-host.deployed]
+  # Agents create applications on this platform. The application gets the homepage as its start
+  # page (an empty draft of the experience type just pushed), assets of its own, and the editing
+  # address as its host with live preview, so Visual Builder has somewhere to open the page.
+  # This is the first content write: an API key without content rights stops here.
+  - id: provision-application
+    phase: 5
+    role: deployment-engineer
+    title: Create the demo's application on the editing host, with live preview
+    dependsOn: [push-type-*]
+    release:
+      # Makes and changes only this demo's own application, with a rollback: approved once, here.
+      standing: true
+      rollback: >-
+        Remove the host from the application; the application and its empty start page can then
+        be deleted in Settings > Applications. Nothing else on the instance refers to them.
+    acceptance:
+      [
+        validator:structural.application,
+        validator:hostname.registered,
+        validator:head.preview-route,
+      ]
+  # The shared header, footer and navigation are filled once, before the page: the demo's outcome
+  # includes them, and the homepage shows them. (The id is the one the method sends a page's
+  # header and footer failures to.)
+  - id: migrate-shared-chrome
+    phase: 5
+    role: content-migrator
+    title: Fill the shared header, footer and navigation
+    dependsOn: [provision-application]
+    release:
+      # Publishes only the demo's own blocks and start page, on the demo's own host.
+      standing: true
+      rollback: >-
+        Publish the blocks' and the start page's earlier versions again (create a version from
+        each and publish it), or leave them: the application is the demo's own.
+    acceptance: [validator:head.header-footer]
+  - id: prove-slice
+    phase: 5
+    role: structural-validator
+    title: Prove the homepage components are ready for Visual Builder
+    # With the header and footer on the editing host: their faults surface here, not on the page.
+    dependsOn: [integrate-*, migrate-shared-chrome]
+    # What Visual Builder needs to offer each slice component as a section, with a default
+    # display template of its own, and render it in live preview. The Director adds and edits
+    # one in Visual Builder at Gate 2.
+    acceptance:
+      [
+        validator:types.pushed,
+        validator:editor.element-enabled,
+        validator:head.preview-route,
+        validator:head.header-footer,
+      ]
+  - id: validate-templates
+    phase: 5
+    role: structural-validator
+    title: Validate the experience type and the application
+    dependsOn: [provision-application]
+    acceptance: [validator:structural.templates, validator:structural.application]
+
+  # 6 — Homepage migration and parity
+  - id: migrate-pages-{key}
+    phase: 6
+    role: content-migrator
+    forEach: pages
+    canary: 0
+    batchSize: 8
+    title: Migrate {name}
+    metric: pages_migrated
+    dependsOn: [migrate-shared-chrome]
+    release:
+      # Publishes only the demo's own homepage, on the demo's own host, so it can be compared.
+      standing: true
+      rollback: >-
+        Publish the page's earlier version again (create a version from it and publish that);
+        the application is the demo's own.
+    acceptance:
+      [
+        validator:structural.experiences,
+        validator:head.pages-render,
+        validator:parity.render,
+        validator:parity.visual,
+      ]
+  - id: upload-media-{key}
+    phase: 6
+    role: media-migrator
+    forEach: media
+    canary: 0
+    batchSize: 20
+    title: Upload {name}
+    metric: media_uploaded
+    acceptance: [validator:media.alt-text]
+  - id: recrawl-source
+    phase: 6
+    role: content-analyst
+    title: Re-crawl the homepage for parity
+  - id: audit-parity
+    phase: 6
+    role: parity-auditor
+    title: Audit homepage parity
+    dependsOn: [migrate-pages-*, upload-media-*, recrawl-source]
+    acceptance: [validator:parity.render, validator:parity.visual, validator:parity.page]
+
+  # 7 — Experience enablement
+  # Redirects, sitemap, robots and error pages aren't part of the demo: one page is built.
+  - id: seo-properties
+    phase: 7
+    role: content-migrator
+    title: Fill the homepage's SEO properties from the source
+    uses: [optimizely-cms, browser, blackboard, artifacts]
+
+  # 8 — Deployment and publishing
+  - id: finalize-head
+    phase: 8
+    role: head-integrator
+    title: Finalize production configuration
+    acceptance: [validator:editing-host.deployed]
+  # The content model is code: the repository alone must rebuild it. A dry-run push from the
+  # reviewed integration branch builds the model and sends nothing; the CMS's own export of the
+  # project's types and templates must be the same.
+  - id: replay-model
+    phase: 8
+    role: head-integrator
+    title: Prove the content model replays from the repository
+    dependsOn: [finalize-head]
+    acceptance: [validator:manifest.replays]
+  # Two separate releases: success in one proves nothing about the other.
+  - id: deploy-code
+    phase: 8
+    role: deployment-engineer
+    title: Deploy the reviewed commit to the editing and delivery hosts
+    dependsOn: [finalize-head]
+    release:
+      # Always our demo instance and the demo's own Vercel project: approved once, here.
+      standing: true
+      rollback: Promote the previous production deployment again in Vercel (instant rollback).
+    acceptance: [validator:deploy.commit-matches]
+  - id: publish-site
+    phase: 8
+    role: deployment-engineer
+    title: Publish the final versions and verify the homepage in Graph
+    dependsOn: [deploy-code]
+    release:
+      # Always our demo instance, and only the demo's own application: approved once, here.
+      standing: true
+      rollback: >-
+        Publish the previous versions again (the ones now previouslyPublished can't be; create a
+        version from each and publish it); reverting the repository doesn't change what Graph
+        serves.
+    acceptance: [validator:graph.published, validator:routes.resolve]
+
+  # 9 — Demo review. The demo closes on the Director's check in Visual Builder: agents have no
+  # Visual Builder sign-in, so it's a person's check, and it's the script for the meeting.
+  - id: demo-summary
+    phase: 9
+    role: handover-writer
+    title: Write the demo summary and the Visual Builder checklist
+  - id: visual-builder-check
+    phase: 9
+    role: editor-experience-qa
+    title: Director's check in Visual Builder
+    dependsOn: [demo-summary]
+    manual: >-
+      Follow the checklist in the demo summary. In Visual Builder, on the homepage: add a section
+      from one of the components, pick its display template, give it content and edit a property
+      inline in live preview; open the shared navigation block and change a menu link. Publish
+      both, then open the site and see both changes (a published page refreshes within a minute).
+      Mark it done naming anything that failed, send each failure back to its task, and remove
+      your test section before you accept at Gate 2.

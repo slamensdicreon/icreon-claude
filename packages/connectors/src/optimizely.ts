@@ -26,6 +26,18 @@ export const OPTIMIZELY_DEFAULTS: OptimizelyVerifyConfig = {
   timeoutMs: 15_000,
 };
 
+/**
+ * An application's key from the name a Director gives it: the API takes letters, digits and
+ * underscores, not starting with a digit ("microsoft-demo" is refused; "microsoft_demo" is not).
+ */
+export function applicationKey(name: string): string {
+  const key = name
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return /^[0-9]/.test(key) ? `_${key}` : key;
+}
+
 /** The instance URL as an origin this server may call, or the reason it can't. */
 export function optimizelyCmsUrl(cfg: OptimizelyVerifyConfig, value: string): URL | string {
   let url: URL;

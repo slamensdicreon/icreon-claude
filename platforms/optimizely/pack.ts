@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import type { IntakeFacts } from '@lw/contracts';
 import {
+  applicationKey,
   optimizelyCmsUrl,
   optimizelyToken,
   verifyCmsApiClient,
@@ -10,6 +11,9 @@ import {
 } from '@lw/connectors';
 import type { PlatformPack } from '../src/index';
 import { hostOf, list, text, type TargetValues } from '../src/values';
+import { optimizelyChecks } from './checks';
+
+export const OPTIMIZELY = 'optimizely';
 
 /**
  * Optimizely CMS (SaaS): one instance reached through the CMS REST API v1 (content types,
@@ -21,8 +25,10 @@ import { hostOf, list, text, type TargetValues } from '../src/values';
 export interface OptimizelyTarget {
   /** The instance's origin, `https://app-<id>.cms.optimizely.com`. */
   cmsUrl: string;
-  /** The application (website) in Settings → Applications this project builds. */
+  /** The application (website) in Settings → Applications this project builds, as the Director named it. */
   application: string;
+  /** Its key in the CMS: letters, digits and underscores ("Acme Website" is Acme_Website). */
+  applicationKey: string;
   /** Content type and display template keys start with it: types are instance-wide. */
   typePrefix: string;
   languages: string[];
@@ -34,6 +40,7 @@ export function optimizelyTarget(intake: Pick<IntakeFacts, 'target'>): Optimizel
   return {
     cmsUrl: text(t, 'cmsUrl'),
     application: text(t, 'application'),
+    applicationKey: applicationKey(text(t, 'application')),
     typePrefix: text(t, 'typePrefix'),
     languages: list(t, 'languages'),
     hostingProject: text(t, 'hostingProject') || null,
@@ -41,18 +48,22 @@ export function optimizelyTarget(intake: Pick<IntakeFacts, 'target'>): Optimizel
 }
 
 /**
- * Scope placeholders. Content types, display templates and media are instance-wide on
- * Optimizely, so a project owns the ones carrying its prefix; content is owned through the
- * application's own tree, which the CMS tool server addresses as `/content/<application>/…`
- * (a key's container chain, as a path).
+ * Scope placeholders. Content types, display templates and Graph are instance-wide on Optimizely,
+ * so a project owns the types and templates carrying its prefix; content is owned through the
+ * application, which the CMS tool server addresses by path: `/content/<application>/…` for the
+ * start page and the pages under it, `/shared/<application>/…` for shared blocks (header,
+ * footer, navigation) and `/media/<application>/…` for media, both in the application's own
+ * assets. `<application>` is the application's key.
  */
 export function optimizelyBindings(t: TargetValues): Record<string, string> {
-  const { application, typePrefix } = optimizelyTarget({ target: t });
+  const { applicationKey: application, typePrefix } = optimizelyTarget({ target: t });
   return {
     application,
     typePrefix,
     project: application,
     contentRoot: `/content/${application}`,
+    sharedRoot: `/shared/${application}`,
+    mediaRoot: `/media/${application}`,
   };
 }
 
@@ -61,9 +72,10 @@ export function optimizelyOwnedPaths(t: TargetValues): string[] {
   const b = optimizelyBindings(t);
   return [
     `${b.contentRoot}`,
+    `${b.sharedRoot}`,
+    `${b.mediaRoot}`,
     `/contenttypes/${b.typePrefix}*`,
     `/displaytemplates/${b.typePrefix}*`,
-    `/media/${b.application}`,
     `/applications/${b.application}`,
   ];
 }
@@ -107,7 +119,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     return { vars, missing };
   };
   return {
-    id: 'optimizely',
+    id: OPTIMIZELY,
     name: 'Optimizely CMS (SaaS)',
     about: {
       vendor: 'Optimizely',
@@ -131,7 +143,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
         kind: 'text',
         required: true,
         placeholder: 'cablecom-website',
-        hint: 'The website in Settings → Applications this project builds. Created in Foundation if it does not exist.',
+        hint: 'The website in Settings → Applications this project builds. Created in Foundation if it does not exist; its key there uses underscores for spaces and dashes (Cablecom_Website).',
         pattern: '^[A-Za-z][A-Za-z0-9 _-]{1,99}$',
         defaultValue: null,
         defaultFrom: null,
@@ -177,7 +189,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
       'cms-api-client': {
         system: 'Optimizely CMS REST API key',
         description:
-          'In the CMS, Settings → API Keys → Create API Key. Copy the Client ID and Secret before closing the window; they are not shown again.',
+          'In the CMS, Settings → API Keys → Create API Key. Copy the Client ID and Secret before closing the window; they are not shown again. Then give the key content rights: Settings → Set Access Rights, select the Root, add the key (its Client ID) with Read, Create, Change, Delete and Publish, and apply to sub-items. Without them the key can define content types but every page, block and image it tries to create is refused, and the check here cannot tell: it only reads.',
         fields: [
           { key: 'clientId', label: 'Client ID', secret: false },
           { key: 'clientSecret', label: 'Secret', secret: true },
@@ -238,9 +250,10 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     context: (t) => {
       const s = optimizelyTarget({ target: t });
       return [
-        `Optimizely CMS (SaaS) target: application "${s.application}" on ${hostOf(s.cmsUrl)} (${s.cmsUrl}); locales ${s.languages.join(', ')}. Content types and display templates this project creates start with "${s.typePrefix}".`,
-        `Content types, display templates and Graph are shared by every application on the instance. This project owns only its application's content tree, the types and templates carrying its prefix, and its own media folder: ${optimizelyOwnedPaths(t).join('; ')}. Never change a type without the prefix, and never push with --force.`,
-        `The CMS REST API is v1 on https://api.cms.optimizely.com (preview3 was retired on 1 August 2026). Delivery and preview read Optimizely Graph; the editing host is a hostname of the application with live preview on /preview.`,
+        `Optimizely CMS (SaaS) target: application "${s.application}" (key ${s.applicationKey}) on ${hostOf(s.cmsUrl)} (${s.cmsUrl}); locales ${s.languages.join(', ')}. Content types and display templates this project creates start with "${s.typePrefix}".`,
+        `Content types, display templates and Optimizely Graph are shared by every application on the instance, and other teams work on it. This project owns only: ${optimizelyOwnedPaths(t).join('; ')}. Never change a type or template without the prefix, never push with --force, and give every component its own default display template (contentType: its key): an instance can already hold another team's default for every component.`,
+        `The team's items are addressed by path on the optimizely-cms server: /content/${s.applicationKey} is the start page and pages go under it; shared blocks go under /shared/${s.applicationKey}; media under /media/${s.applicationKey}. A path can be given wherever a property points at another item. Items are drafts until content.publish.`,
+        `The CMS REST API is v1 on https://api.cms.optimizely.com. Delivery and preview read Optimizely Graph, where one index holds every application: routes start with the locale (the start page is /${s.languages[0] ?? 'en'}/) and are told apart by the application's host. The editing host is a host of the application, with live preview on /preview.`,
       ];
     },
     toolCredential: (server) =>
@@ -259,8 +272,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     // No starter until the template repository exists (entities.md, O3): a project that needs a
     // build repository is refused at intake rather than given Sitecore's.
     buildRecipe: { generate: [], build: 'build', readOnly: [] },
-    // Platform checks (structural.*, graph.published, …) land with the optimizely-cms and
-    // optimizely-graph tool servers; until then review records them as pending, never as passed.
+    checks: optimizelyChecks(cfg),
     headEnv: async (t, _which, deps) => headVars(t, deps.credential),
     // The sandbox also runs `optimizely-cms-cli config push`, which signs in with the REST API
     // key. The head never needs that key, so it stays off the hosting project.

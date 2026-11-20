@@ -23,6 +23,7 @@
     "@lw/tool-browser": "workspace:*",
     "@lw/tool-gateway": "workspace:*",
     "@lw/tool-hosting": "workspace:*",
+    "@lw/tool-optimizely": "workspace:*",
     "@lw/tool-sitecore": "workspace:*",
     "@lw/tool-validators": "workspace:*",
     "@lw/tool-workspace": "workspace:*",

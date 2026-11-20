@@ -187,6 +187,45 @@ export const CHECKS: Record<string, Check> = {
       : failed(['The component map was never generated']);
   },
 
+  // Optimizely: the content model is code. The repository defines it (a dry run of the CLI's
+  // push built the manifest, every key carrying the project's prefix) and nothing changed after.
+  'types.defined': async ({ steps }) => {
+    const run = last(steps, 'sandbox', 'exec.optimizely-cli');
+    if (!run) return failed(["The task never ran Optimizely's CLI on the content model"]);
+    if (!ok(run) || !/^(Content model valid|Pushed)/.test(run.data.summary))
+      return failed([run.data.summary]);
+    if (after(steps, run).some((s) => s.data.operation === 'fs.write' && ok(s)))
+      return failed(['Files changed after the content model was last checked']);
+    return pass(run.data.summary);
+  },
+
+  // Optimizely's equivalent of serialization: the content model the CMS holds is the one the
+  // repository builds. The CMS's manifest was exported and a dry run of the CLI's push built the
+  // same number of content types and display templates from code.
+  'manifest.replays': async ({ steps }) => {
+    const exported = last(steps, 'optimizely-cms', 'manifest.export');
+    const dry = [...steps]
+      .reverse()
+      .find(
+        (s) =>
+          s.data.toolServer === 'sandbox' &&
+          s.data.operation === 'exec.optimizely-cli' &&
+          ok(s) &&
+          s.data.summary.startsWith('Content model valid'),
+      );
+    if (!exported || !ok(exported)) return failed(["The CMS's content model was never exported"]);
+    if (!dry) return failed(['No clean dry run shows what the repository builds']);
+    const counts = (summary: string) =>
+      /(\d+) content types(?: and|,) (\d+) display templates/.exec(summary)?.slice(1, 3).join('/');
+    const inCms = counts(exported.data.summary);
+    const inCode = counts(dry.data.summary);
+    return inCms && inCms === inCode
+      ? pass(`The repository builds the content model the CMS holds: ${dry.data.summary}.`)
+      : failed([
+          `The CMS holds ${inCms ?? 'an unreadable number of'} content types/display templates and the repository builds ${inCode ?? 'an unreadable number'}: they have drifted`,
+        ]);
+  },
+
   // Pulled into the repository and validated by the Sitecore CLI.
   'serialization.replays': async ({ steps }) => {
     const pull = last(steps, 'sitecore-cli', 'ser.pull');

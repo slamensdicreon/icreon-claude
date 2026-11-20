@@ -1549,7 +1549,11 @@ describe('Optimizely pack', () => {
     });
     expect(pack.bindings(target)).toMatchObject({
       typePrefix: 'Globex',
-      contentRoot: '/content/Globex Website',
+      // The application's key in the CMS: letters, digits and underscores.
+      application: 'Globex_Website',
+      contentRoot: '/content/Globex_Website',
+      sharedRoot: '/shared/Globex_Website',
+      mediaRoot: '/media/Globex_Website',
     });
     expect(pack.toolCredential('optimizely-cms')?.credentialId).toBe('cms-api-client');
     expect(pack.toolCredential('optimizely-graph')?.credentialId).toBe('graph-single-key');

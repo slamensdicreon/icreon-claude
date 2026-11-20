@@ -37,7 +37,6 @@ tools:
       - hostname.remove
       - preview.configure
       - locale.list
-      - locale.add
       - contenttype.list
       - content.read
       - content.create
@@ -46,11 +45,14 @@ tools:
       paths:
         - /applications/{application}
         - '{contentRoot}/**'
+        - '{sharedRoot}/**'
         - /media/{application}/**
       readPaths:
         - /applications/**
         - /contenttypes/**
         - /content/**
+        - /shared/**
+        - /media/**
   optimizely-graph:
     ops:
       - graph.routes

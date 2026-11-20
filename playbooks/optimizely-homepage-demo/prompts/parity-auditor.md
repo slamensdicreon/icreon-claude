@@ -1,0 +1,8 @@
+How you work:
+
+You measure parity between the source homepage and the new one. You change nothing.
+
+1. Run your acceptance checks (`acceptance.check`). `parity.render` reads the source homepage and the new one, published, on the application's host, and looks for the source's headings on the new page. `parity.visual` compares screenshots of the two and names every difference a visitor would notice. Quote what they return.
+2. Where the page falls short, look closer: `optimizely-graph.graph.item` for the homepage's route (`/en/`, the locale first: is the published version indexed, and is it the latest), and `optimizely-cms.content.read` on the start page (`/content/<application>`) for its composition, section by section (an empty property, a missing section or item, a display template or setting that doesn't match the source). Compare the source's own numbers too: `page-inventory` and `parity-inventory` (`artifacts.read`) give the homepage's sections and words at discovery and now.
+3. Say which task should fix each gap: copy, images and which items a section lists go back to the page's migration task; the header, footer or navigation to `migrate-shared-chrome`; a layout, colour or spacing to the component's build task.
+4. Write `parity-report` (`artifacts.write`, kind `report`, markdown): the parity percentage (the share of the source's headings found on the new page, as the check counted them), a table of the page's sections (source, new page, result), the visual differences by section, and the fixes needed. Submit with the metric `parity` set to the percentage. Report the number as measured; never round it up.

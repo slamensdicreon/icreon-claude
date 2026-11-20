@@ -170,6 +170,40 @@ Built (M1). `sitecoreai-migration` doesn't change.
 
 Still to do: the 30-day cleanup (M4).
 
+## On Optimizely CMS (SaaS)
+
+`playbooks/optimizely-homepage-demo/` (0.1.0, 2026-11-20) is the same demo on the Optimizely
+entity: this playbook's scope and method (the whole-site audit, the one-page Blueprint checked by
+`blueprint.demo-slice`, no pilot block, standing releases, the two gates) with
+`optimizely-saas-migration`'s team, intake and tools. Gate 2 is the Director's check in Visual
+Builder: add a section to the homepage, edit it inline in live preview, change a navigation link
+in the shared block, publish, and see both on the site.
+
+| Here (SitecoreAI) | There (Optimizely) |
+| --- | --- |
+| Renderings and datasource templates | Content types in code, every key carrying the project's prefix, each with a default display template of its own; a variant is a display template, a rendering parameter a template setting |
+| Page design and partial designs | An experience type that references shared header and footer blocks; the navigation is its own shared block, which the header references |
+| The site is created by hand first | The team creates the application (`application.create`), in phase 5: an application needs its start page, and the start page is the homepage, of the experience type the Blueprint names, so the types are pushed first |
+| Experience Edge preview shows drafts | The head shows published content only, so the Experience Builder publishes what it writes, on the demo's own application and host; those tasks are standing releases |
+| Serialization (not in the demo) | `replay-model`: a dry-run push from the reviewed repository builds what the CMS's manifest export holds (`manifest.replays`) |
+| The drag-and-drop check | The Visual Builder check |
+
+Two steps are the Director's by hand: `confirm-content-rights` in phase 0 (an API key can push
+content types and still be refused every content write until it has rights on the Root in
+Settings > Set Access Rights; no read shows them, and the first content write is after Gate 1)
+and `visual-builder-check` in phase 9.
+
+What it took from the first build (the same homepage this playbook built, on a live instance):
+the order above, model files apart from React (`*.model.ts`), one registry file, routes in Graph
+starting with the locale and told apart by the application's host, no AVIF, and Vercel
+Authentication off so Visual Builder can frame `/preview`. Its example Blueprint is that build's
+component model, without the client's name.
+
+Tests: `packages/stack/test/optimizely-homepage-demo.test.ts` (it loads, the example Blueprint's
+plan is exactly the slice in the platform's order, the slice check passes, prompts name only
+granted tools) and `packages/orchestrator/test/optimizely-homepage-demo.test.ts` (a whole project
+with stub agents, from intake to Gate 2).
+
 ## Milestones
 
 | | Work | Done when |
