@@ -86,8 +86,15 @@ const after = (steps: StepEvent[], a: StepEvent) => steps.slice(steps.indexOf(a)
  * rejected for following the prompt, which exempts every hero.
  */
 const SECTION_EXEMPT =
-  /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(Hero|SiteHeader|SiteFooter|Header|Footer|Nav)[^/]*\.tsx$/i;
+  /^(ui|content-sdk|partial-design-dynamic-placeholder)\/|(^|\/)(Hero|SiteHeader|SiteFooter|Header|Footer|Nav|MainNav)[^/]*\.tsx$/i;
 const CHANGES = new Set(['fs.write', 'exec.content-sdk-cli']);
+
+/**
+ * A component every page shares (header, footer, navigation), as a Blueprint marks it: a shared
+ * datasource on SitecoreAI, a shared block on a platform without datasources.
+ */
+const isShared = (c: { attrs?: Record<string, unknown> }) =>
+  c.attrs?.datasource === 'shared' || c.attrs?.shared === true;
 
 /**
  * Whether a component file is a rendering rather than a helper beside one. A folder's rendering is
@@ -461,7 +468,7 @@ export const CHECKS: Record<string, Check> = {
     else if (!kept(nav) || merged(nav))
       problems.push(`the navigation (${nav.key}) must be its own kept component, not merged`);
     for (const c of components) {
-      const needed = c.attrs?.datasource === 'shared' || onSlice(c);
+      const needed = isShared(c) || onSlice(c);
       if (needed && !kept(c))
         problems.push(`${c.key} is on a page the demo builds (or shared) but dropped`);
       else if (!needed && kept(c) && !merged(c))
@@ -849,7 +856,7 @@ export async function routeFailures(a: {
       .map((c) => ({
         key: c.key,
         name: c.name,
-        ...(c.attrs?.datasource === 'shared' ? { shared: true } : {}),
+        ...(isShared(c) ? { shared: true } : {}),
       }));
     const keys = new Set(a.state.tasks[a.task.taskId]?.itemKeys ?? []);
     pagePaths = (bp?.collections?.pages ?? [])
