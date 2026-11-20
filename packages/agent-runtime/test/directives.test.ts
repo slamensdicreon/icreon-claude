@@ -166,6 +166,36 @@ describe('readDirective', () => {
     });
   });
 
+  it('names the platform the project is on, and none when it is not given', async () => {
+    const systems: string[] = [];
+    const client = {
+      messages: {
+        parse: async (req: { system: string }) => {
+          systems.push(req.system);
+          return {
+            parsed_output: {
+              kind: 'status',
+              interpretation: 'where things stand',
+              drop: [],
+              rerun: [],
+              notes: '',
+              answers: [],
+              task: NO_TASK,
+            },
+            stop_reason: 'end_turn',
+          };
+        },
+      },
+    } as unknown as Anthropic;
+    await readDirective({ text: 'Status?', items: [], platform: 'Optimizely CMS (SaaS)' }, client);
+    await readDirective({ text: 'Status?', items: [] }, client);
+    expect(systems[0]).toContain(
+      'You are the Chief of Staff of a website build on Optimizely CMS (SaaS). The Director',
+    );
+    expect(systems[1]).toContain('You are the Chief of Staff of a website build. The Director');
+    expect(systems[1]).not.toMatch(/Sitecore|Optimizely/);
+  });
+
   it('keeps an answer naming no waiting card as a note', async () => {
     const r = await readDirective(
       { text: 'Accept them all', items: [], tasks, cards: [] },

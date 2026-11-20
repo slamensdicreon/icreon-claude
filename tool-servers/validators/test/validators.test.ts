@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BrowserToolServer, GuardedBrowser } from '@lw/tool-browser';
-import { LocalBlobStore } from '@lw/tool-gateway';
+import { LocalBlobStore, MemoryBlobStore } from '@lw/tool-gateway';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ValidatorsToolServer } from '../src';
 
@@ -152,5 +152,49 @@ describe('lighthouse', () => {
   it('only checks the project’s hosts', async () => {
     const r = await validators.call('lighthouse.run', { url: 'https://elsewhere.example/' }, ctx());
     expect(r.code).toBe(403);
+  });
+});
+
+describe("the platform's structure", () => {
+  const ctx = { projectId: 'p1', token: '', role: 'structural-validator', taskId: 't' };
+  const make = (structuralScopes?: string[]) => {
+    const asked: string[] = [];
+    const server = new ValidatorsToolServer({
+      policy: () => ({ allowedHosts: [], allowPrivateNetworks: false }),
+      blobs: new MemoryBlobStore(),
+      browser: guarded,
+      structuralScopes,
+      structural: async (_projectId, scope) => {
+        asked.push(scope);
+        return [{ id: `structural.${scope}`, status: 'pass', detail: 'ok' }];
+      },
+    });
+    return { server, asked };
+  };
+  const scopesOf = (server: ValidatorsToolServer) =>
+    (server.catalog['structural.run']!.inputSchema as { properties: { scope: { enum: string[] } } })
+      .properties.scope.enum;
+
+  it("offers the scopes the platform's pack has checks for", async () => {
+    const { server, asked } = make(['application', 'content-types', 'templates', 'experiences']);
+    expect(scopesOf(server)).toEqual([
+      'application',
+      'content-types',
+      'templates',
+      'experiences',
+      'all',
+    ]);
+    expect(server.catalog['structural.run']!.description).toContain('`content-types`');
+    expect(await server.call('structural.run', { scope: 'application' }, ctx)).toMatchObject({
+      code: 200,
+    });
+    expect(await server.call('structural.run', {}, ctx)).toMatchObject({ code: 200 });
+    expect(asked).toEqual(['application', 'all']);
+    // Another platform's scope is not one of this project's.
+    expect((await server.call('structural.run', { scope: 'renderings' }, ctx)).code).toBe(422);
+  });
+
+  it('keeps site, templates and renderings where none are named', () => {
+    expect(scopesOf(make().server)).toEqual(['site', 'templates', 'renderings', 'all']);
   });
 });

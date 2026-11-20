@@ -194,7 +194,7 @@ const TOOLS: BetaTool[] = [
   {
     name: 'list_connections',
     description:
-      'Saved tenant connections: the platform, the shared facts (CM host, site collection, languages), which credentials they hold and whether those checked out, and the projects using them.',
+      'Saved tenant connections: the platform, the facts every site on the tenant shares (its address and languages, under the keys the platform uses), which credentials they hold and whether those checked out, and the projects using them.',
     input_schema: { type: 'object', properties: {} },
   },
   {
@@ -776,7 +776,9 @@ export class PortfolioCypher {
           platform: b.platform.name,
           charter: b.charter,
           phases: b.phases.map(
-            (ph) => `${ph.number} ${ph.name}${ph.gate ? ` (${ph.gate} gate)` : ''}`,
+            (ph) =>
+              // A gate's label names itself ("Gate 1: …"); a bare kind ("director") gets the word.
+              `${ph.number} ${ph.name}${ph.gate ? ` (${/gate/i.test(ph.gate) ? ph.gate : `${ph.gate} gate`})` : ''}`,
           ),
           team: b.roles.map((r) => `${r.name}: ${r.description}`),
           source: b.intake.source,

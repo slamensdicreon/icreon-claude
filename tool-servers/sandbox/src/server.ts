@@ -46,6 +46,11 @@ export interface WorkspaceFacts {
    * write. Without one, SitecoreAI's starter recipe.
    */
   recipe?: BuildRecipe;
+  /**
+   * Optimizely only: the prefix the project's content types and display templates carry.
+   * exec.optimizely-cli pushes nothing without it: the instance's content model is shared.
+   */
+  typePrefix?: string;
 }
 
 export interface BuildRecipe {
@@ -151,6 +156,12 @@ const WriteArgs = z.object({
       .max(50),
   ),
 });
+const OptimizelyCliArgs = z.object({
+  /** `push-dry-run` validates the content model and sends nothing; `push` sends it to the CMS. */
+  command: z.enum(['push-dry-run', 'push']),
+});
+/** Where the dry run writes the manifest, read back and removed: never committed. */
+const OPTIMIZELY_MANIFEST = '.optimizely-manifest.json';
 const CliArgs = z.object({
   command: z.enum(['generate-map', 'scaffold']),
   /** For scaffold: the component name, PascalCase. */
@@ -284,6 +295,17 @@ export class SandboxToolServer implements ToolServer {
         "Type-check and build the app (the starter's own scripts: component map, Content SDK build, next build). Returns the exit codes and the end of the output.",
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       mutates: false,
+    },
+    'exec.optimizely-cli': {
+      description:
+        "Run Optimizely's CLI on the app's content model (optimizely.config.mjs). `push-dry-run` builds the manifest and sends nothing: it lists the content types and display templates the repository defines. `push` sends them to the CMS, additively and never with --force; it refuses a model with any key outside the project's prefix, because content types are shared by every application on the instance.",
+      inputSchema: {
+        type: 'object',
+        properties: { command: { type: 'string', enum: ['push-dry-run', 'push'] } },
+        required: ['command'],
+        additionalProperties: false,
+      },
+      mutates: true,
     },
     'exec.content-sdk-cli': {
       description:
@@ -800,6 +822,84 @@ export class SandboxToolServer implements ToolServer {
           summary: green
             ? `Build green: type-check and build passed (${dirty ? 'uncommitted changes' : `nothing uncommitted, at ${head}`})`
             : `Build red: ${why}`,
+        };
+      }
+      case 'exec.optimizely-cli': {
+        const a = OptimizelyCliArgs.safeParse(args);
+        if (!a.success) return rejected(a.error.issues[0]!.message);
+        const prefix = facts.typePrefix;
+        if (!prefix) return rejected('This project has no Optimizely content type prefix.');
+        const cli = (extra: string[]) =>
+          run(
+            'npx',
+            [
+              '--no-install',
+              'optimizely-cms-cli',
+              'config',
+              'push',
+              'optimizely.config.mjs',
+              ...extra,
+            ],
+            { cwd: app, env: buildEnv, timeoutMs: 5 * 60_000 },
+          );
+        // Always a dry run first: what the repository defines, before anything is sent.
+        const dry = await cli(['--dryRun', '--output', OPTIMIZELY_MANIFEST]);
+        const written = await box.read(`${facts.appPath}/${OPTIMIZELY_MANIFEST}`);
+        await run('rm', ['-f', OPTIMIZELY_MANIFEST], { cwd: app });
+        if (dry.exitCode !== 0 || !written)
+          return {
+            code: 500,
+            body: { exitCode: dry.exitCode, output: dry.output },
+            summary: `optimizely-cms-cli config push --dryRun: ${dry.exitCode === 0 ? 'wrote no manifest' : `exit ${dry.exitCode}`}`,
+          };
+        let manifest: Record<string, { key?: string }[] | undefined>;
+        try {
+          manifest = JSON.parse(written.toString('utf8')) as typeof manifest;
+        } catch {
+          return {
+            code: 500,
+            body: { output: dry.output },
+            summary: 'The CLI wrote a manifest that is not JSON',
+          };
+        }
+        const keys = (list: string) => (manifest[list] ?? []).map((x) => String(x.key ?? ''));
+        const contentTypes = keys('contentTypes');
+        const displayTemplates = keys('displayTemplates');
+        const propertyGroups = keys('propertyGroups');
+        const foreign = [...contentTypes, ...displayTemplates].filter((k) => !k.startsWith(prefix));
+        if (foreign.length)
+          return rejected(
+            `These keys don't start with the project's prefix ${prefix}: ${foreign.join(', ')}. Content types and display templates are shared by every application on the instance; rename them (${prefix}Hero, ${prefix}HeroDefault).`,
+          );
+        if (propertyGroups.length)
+          return rejected(
+            `optimizely.config.mjs defines property groups (${propertyGroups.join(', ')}). They are instance-wide and have no prefix: leave them out and order properties with sortOrder.`,
+          );
+        if (!contentTypes.length)
+          return rejected(
+            'The content model is empty: optimizely.config.mjs found no content types. Check its components glob matches the *.model.ts files.',
+          );
+        const found = { contentTypes, displayTemplates };
+        if (a.data.command === 'push-dry-run')
+          return {
+            code: 200,
+            body: { ...found, sent: false },
+            summary: `Content model valid: ${contentTypes.length} content types, ${displayTemplates.length} display templates (dry run, nothing sent)`,
+          };
+        // Scoped to the keys just checked: a scoped push leaves locales and applications alone.
+        const pushed = await cli(['--only', [...contentTypes, ...displayTemplates].join(',')]);
+        return {
+          code: pushed.exitCode === 0 ? 200 : 500,
+          body: {
+            ...found,
+            sent: pushed.exitCode === 0,
+            exitCode: pushed.exitCode,
+            output: pushed.output,
+          },
+          summary:
+            pushed.exitCode === 0
+              ? `Pushed ${contentTypes.length} content types and ${displayTemplates.length} display templates to the CMS`
+              : `optimizely-cms-cli config push: exit ${pushed.exitCode}`,
         };
       }
       case 'exec.content-sdk-cli': {

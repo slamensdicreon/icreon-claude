@@ -14,6 +14,12 @@ export interface OptimizelyVerifyConfig {
   graphUrl: string;
   /** Host suffixes an instance URL may have: the server calls it, so not any host. */
   cmsHostSuffixes: string[];
+  /**
+   * The template repository an Optimizely build repository is generated from: Optimizely's own
+   * Next.js starter, unchanged, in a folder of its own. In our build organization, because
+   * Optimizely publishes its starter through a scaffolding tool, not as a template repository.
+   */
+  starter: { owner: string; repo: string; appPath: string };
   fetch: typeof fetch;
   timeoutMs: number;
 }
@@ -22,9 +28,22 @@ export const OPTIMIZELY_DEFAULTS: OptimizelyVerifyConfig = {
   apiUrl: 'https://api.cms.optimizely.com',
   graphUrl: 'https://cg.optimizely.com/content/v2',
   cmsHostSuffixes: ['.cms.optimizely.com'],
+  starter: { owner: 'icreon-launchworks', repo: 'optimizely-starter-nextjs', appPath: 'head' },
   fetch: (...a) => fetch(...a),
   timeoutMs: 15_000,
 };
+
+/**
+ * An application's key from the name a Director gives it: the API takes letters, digits and
+ * underscores, not starting with a digit ("microsoft-demo" is refused; "microsoft_demo" is not).
+ */
+export function applicationKey(name: string): string {
+  const key = name
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return /^[0-9]/.test(key) ? `_${key}` : key;
+}
 
 /** The instance URL as an origin this server may call, or the reason it can't. */
 export function optimizelyCmsUrl(cfg: OptimizelyVerifyConfig, value: string): URL | string {

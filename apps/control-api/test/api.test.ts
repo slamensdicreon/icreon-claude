@@ -12,13 +12,14 @@ import {
 } from '@lw/contracts';
 import { InMemoryEventStore, Projections } from '@lw/events';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import { Simulation, sitecoreScenario } from '@lw/simulator';
+import { scenarioFor, Simulation } from '@lw/simulator';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import { simulationCommands } from '../src/commands';
 
-const PLAYBOOK = fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url));
+const playbookDir = (id: string) =>
+  fileURLToPath(new URL(`../../../playbooks/${id}`, import.meta.url));
 const NAME = 'Acme corporate site';
 
 interface Harness {
@@ -30,11 +31,13 @@ interface Harness {
 
 let current: Harness | null = null;
 
-async function start(speed = 300): Promise<Harness> {
+/** A simulated project on a playbook, playing that playbook's scenario. */
+async function start(speed = 300, playbookId = 'sitecoreai-migration'): Promise<Harness> {
   const store = new InMemoryEventStore();
   const projections = new Projections(store);
   await projections.start();
-  const sim = new Simulation(store, await loadPlaybook(PLAYBOOK), {
+  const playbook = await loadPlaybook(playbookDir(playbookId));
+  const sim = new Simulation(store, playbook, {
     projectId: 'p1',
     name: NAME,
     client: 'Acme Corp',
@@ -51,7 +54,7 @@ async function start(speed = 300): Promise<Harness> {
   await app.listen({ port: 0, host: '127.0.0.1' });
   const addr = app.server.address();
   const base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
-  void sim.run(sitecoreScenario);
+  void sim.run(scenarioFor(playbook)!);
   current = { app, sim, store, base };
   return current;
 }
@@ -122,6 +125,32 @@ async function readEvents(
   }
   ctrl.abort();
   return events.slice(0, count);
+}
+
+/** Answers everything that waits on the Director, as they would, until the project completes. */
+async function driveToEnd(h: Harness) {
+  for (;;) {
+    const mc = MissionControlSnapshot.parse((await get(h, '/projects/p1/mission-control')).body);
+    if (mc.project.status === 'completed') return mc;
+    const x = mc.waitingOnYou.find(
+      (e) => e.status === 'open' && (e.type === 'gate' || !e.defaultOptionId),
+    );
+    if (x?.type === 'gate') {
+      const r = await post(h, `/projects/p1/gates/${x.escalationId}/approve`, {});
+      if (x.gate?.requiresConfirmation) {
+        expect(r.status).toBe(422);
+        expect(
+          (await post(h, `/projects/p1/gates/${x.escalationId}/approve`, { confirmation: NAME }))
+            .status,
+        ).toBe(200);
+      }
+    } else if (x) {
+      await post(h, `/projects/p1/escalations/${x.escalationId}/resolve`, {
+        optionId: x.options.find((o) => o.recommended)!.id,
+      });
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
 }
 
 describe('control-api', () => {
@@ -340,30 +369,95 @@ describe('control-api', () => {
 
   it('drives a whole engagement to completion through the HTTP API', async () => {
     const h = await start(3_000);
-    for (;;) {
-      const mc = MissionControlSnapshot.parse((await get(h, '/projects/p1/mission-control')).body);
-      if (mc.project.status === 'completed') break;
-      const x = mc.waitingOnYou.find(
-        (e) => e.status === 'open' && (e.type === 'gate' || !e.defaultOptionId),
-      );
-      if (x?.type === 'gate') {
-        const r = await post(h, `/projects/p1/gates/${x.escalationId}/approve`, {});
-        if (x.gate?.requiresConfirmation) {
-          expect(r.status).toBe(422);
-          expect(
-            (await post(h, `/projects/p1/gates/${x.escalationId}/approve`, { confirmation: NAME }))
-              .status,
-          ).toBe(200);
-        }
-      } else if (x) {
-        await post(h, `/projects/p1/escalations/${x.escalationId}/resolve`, {
-          optionId: x.options.find((o) => o.recommended)!.id,
-        });
-      }
-      await new Promise((r) => setTimeout(r, 20));
-    }
-    const mc = MissionControlSnapshot.parse((await get(h, '/projects/p1/mission-control')).body);
+    const mc = await driveToEnd(h);
     expect(mc.phases.every((p) => p.status === 'done')).toBe(true);
     expect(mc.metrics.find((m) => m.key === 'parity')?.value).toBe(98.6);
+  }, 60_000);
+});
+
+describe('control-api, a simulated Optimizely project', () => {
+  const OPTIMIZELY = 'optimizely-saas-migration';
+
+  it('serves the playbook’s own plan, team and tool calls in the contract shapes', async () => {
+    const h = await start(300, OPTIMIZELY);
+    await until(async () => (await get(h, '/projects/p1/plan')).body.tasks?.length > 0);
+    const mc = MissionControlSnapshot.parse((await get(h, '/projects/p1/mission-control')).body);
+    expect(mc.project).toMatchObject({ name: NAME, demo: true, playbook: { id: OPTIMIZELY } });
+    expect(TeamSnapshot.parse((await get(h, '/projects/p1/team')).body).agents).toHaveLength(20);
+    ConversationSnapshot.parse((await get(h, '/projects/p1/conversation')).body);
+    AgentDetail.parse((await get(h, '/projects/p1/agents/deployment-engineer')).body);
+    // Phase 0 as the playbook plans it: the probe, and the step only the Director can do.
+    const plan = PlanSnapshot.parse((await get(h, '/projects/p1/plan')).body);
+    expect(plan.tasks.map((t) => [t.taskId, t.role])).toEqual([
+      ['verify-access', 'deployment-engineer'],
+      ['confirm-content-rights', 'deployment-engineer'],
+    ]);
+    const byHand = await openEscalation(h, (x) => x.title.startsWith('By hand: '));
+    expect(byHand).toMatchObject({
+      type: 'decision',
+      title: 'By hand: Give the API key content rights in the CMS',
+      defaultOptionId: null,
+    });
+    // The calls are the platform's: the CMS REST API and Optimizely Graph, not another CMS.
+    const steps = await until(async () => {
+      const page = ActivityPage.parse(
+        (await get(h, '/projects/p1/activity?type=step.recorded&limit=50')).body,
+      );
+      return page.items.some((i) => i.toolServer === 'optimizely-graph') ? page.items : null;
+    });
+    const servers = steps.map((i) => i.toolServer ?? '');
+    expect(servers).toEqual(expect.arrayContaining(['optimizely-cms', 'optimizely-graph']));
+    expect(servers.filter((server) => server.startsWith('sitecore'))).toEqual([]);
+    expect(steps.find((i) => i.toolServer === 'optimizely-cms')?.toolLabel).toBe('CMS REST API');
+    expect(mc.stats.map((s) => s.label)).toEqual([
+      'Content types',
+      'Experiences',
+      'Media',
+      'QA pass',
+    ]);
+    // Marking the step done lets phase 0 close.
+    expect(
+      (
+        await post(h, `/projects/p1/escalations/${byHand.escalationId}/resolve`, {
+          optionId: 'accept',
+          notes: 'The key is listed on the Root with all five rights',
+        })
+      ).status,
+    ).toBe(200);
+    await until(async () => {
+      const now = MissionControlSnapshot.parse((await get(h, '/projects/p1/mission-control')).body);
+      return now.phases.find((p) => p.number === 0)?.status === 'done';
+    });
+    const done = PlanSnapshot.parse((await get(h, '/projects/p1/plan')).body);
+    expect(done.tasks.find((t) => t.taskId === 'confirm-content-rights')?.state).toBe('done');
+  });
+
+  it('holds at Gate 1 and at the blueprint Blocker, then runs to acceptance through the HTTP API', async () => {
+    const h = await start(3_000, OPTIMIZELY);
+    const mc = await driveToEnd(h);
+    expect(mc.phases.every((p) => p.status === 'done')).toBe(true);
+    expect(mc.metrics.find((m) => m.key === 'components_registered')).toMatchObject({
+      value: 16,
+      total: 16,
+    });
+    expect(mc.metrics.find((m) => m.key === 'parity')?.value).toBe(98.6);
+    // What the Director was asked, in the Decision Log: by hand twice, both gates, the Blocker.
+    const log = (await get(h, '/projects/p1/decisions')).body as {
+      question: string;
+      decidedBy: string;
+    }[];
+    expect(log.filter((d) => d.decidedBy === 'director').map((d) => d.question)).toEqual([
+      'By hand: Give the API key content rights in the CMS',
+      'Approve Implementation Blueprint v1',
+      'Blueprint creation 403',
+      'By hand: Smoke test Visual Builder on production',
+      'Accept the implementation',
+    ]);
+    const plan = PlanSnapshot.parse((await get(h, '/projects/p1/plan')).body);
+    expect(plan.tasks.every((t) => t.state === 'done')).toBe(true);
+    expect(plan.tasks.find((t) => t.taskId === 'provision-application')).toMatchObject({
+      phase: 4,
+      role: 'deployment-engineer',
+    });
   }, 60_000);
 });

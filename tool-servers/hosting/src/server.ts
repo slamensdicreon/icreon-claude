@@ -106,7 +106,7 @@ export class HostingToolServer implements ToolServer {
   readonly catalog: OperationCatalog = {
     'project.create': {
       description:
-        "Create the project's Vercel project on our team, linked to the build repository with the app's root directory, and turn off Vercel Authentication so SitecoreAI can reach the head. Safe to repeat: an existing project of that name, linked to the same repository, is reused.",
+        "Create the project's Vercel project on our team, linked to the build repository with the app's root directory, and turn off Vercel Authentication so the CMS and its editor can load the head. Safe to repeat: an existing project of that name, linked to the same repository, is reused.",
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       mutates: true,
     },
@@ -118,7 +118,7 @@ export class HostingToolServer implements ToolServer {
     },
     'env.set': {
       description:
-        "Set the head's environment variables from the project (site, language, Experience Edge Context IDs, editing secret) for preview, production or both. Values are resolved on the server and never shown; the result lists the names set.",
+        "Set the head's environment variables for preview, production or both: the ones the platform's head reads, from the project and its sealed credentials. Values are resolved on the server and never shown; the result lists the names set.",
       inputSchema: {
         type: 'object',
         properties: { target: { type: 'string', enum: ['preview', 'production', 'both'] } },
@@ -271,7 +271,7 @@ export class HostingToolServer implements ToolServer {
         `A Vercel project named ${facts.project} already exists, linked to ${linked}, not ${facts.repo}. Choose another hosting project name.`,
       );
     }
-    // SitecoreAI calls the head from its servers, so the deployments can't sit behind Vercel's
+    // The CMS calls the head from its servers, so the deployments can't sit behind Vercel's
     // login. They hold no secrets: those are server-side environment variables.
     const patch = await this.request('PATCH', `/v9/projects/${encodeURIComponent(project.id)}`, {
       ssoProtection: null,

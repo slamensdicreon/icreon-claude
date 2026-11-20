@@ -28,6 +28,8 @@ export type DirectiveReading = z.infer<typeof DirectiveReading>;
 
 export interface DirectiveInput {
   text: string;
+  /** The platform pack's name ("SitecoreAI"), for the prompt. Without it, no platform is named. */
+  platform?: string;
   /** The project's Blueprint items, for a re-plan to name. Empty before one exists. */
   items: { collection: string; key: string; name: string; status: string }[];
   /** The plan's tasks, for a re-run to name. */
@@ -44,7 +46,13 @@ export interface DirectiveInput {
   }[];
 }
 
-const SYSTEM = `You are the Chief of Staff of a website migration to SitecoreAI. The Director (the human in charge) sent a message. Classify it:
+/** What the project is, in the prompt's first sentence: the platform by name when one is given. */
+const project = (platform?: string) =>
+  platform?.trim() ? `a website build on ${platform.trim()}` : 'a website build';
+
+const system = (
+  platform?: string,
+) => `You are the Chief of Staff of ${project(platform)}. The Director (the human in charge) sent a message. Classify it:
 
 - "status": they want to know where things stand.
 - "replan": they want Blueprint items taken out of scope. Put the exact keys of the items to drop in "drop", choosing only from the item list given. Only use this when the message clearly asks to skip, drop, remove or exclude something that is in the list.
@@ -89,7 +97,7 @@ export async function readDirective(
     model: 'claude-sonnet-5-5',
     max_tokens: 2000,
     output_config: { effort: 'low', format: zodOutputFormat(DirectiveReading) },
-    system: SYSTEM,
+    system: system(input.platform),
     messages: [
       {
         role: 'user',

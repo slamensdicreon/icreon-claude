@@ -42,6 +42,8 @@ import {
   retrospectAtPhaseExit,
   seedPlatformKnowledge,
   sitecoreFacts,
+  optimizelyFacts,
+  optimizelyGraphFacts,
   operatorSweep,
   type Stack,
   uncheckedValidators,
@@ -53,6 +55,7 @@ import {
 import { openBlobStore, type ToolServer } from '@lw/tool-gateway';
 import { GithubToolServer } from '@lw/tool-github';
 import { ResearchToolServer } from '@lw/tool-research';
+import { OptimizelyCmsToolServer, OptimizelyGraphToolServer } from '@lw/tool-optimizely';
 import { SitecoreAuthoringToolServer, SitecoreDeployToolServer } from '@lw/tool-sitecore';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
@@ -204,6 +207,19 @@ if (env.AGENTS === 'claude') {
           (await projectCredential(id, live ? 'edge-live' : 'edge-preview'))?.contextId ?? null,
         facts: async (id) => sitecoreFacts(await project(id)),
       }),
+      // Optimizely CMS (SaaS): content through the REST API, delivery through Graph. The Graph
+      // app key and secret stay here: an agent that asks for drafts gets content, not a key.
+      new OptimizelyCmsToolServer({
+        blobs,
+        facts: async (id) => optimizelyFacts(await project(id)),
+      }),
+      new OptimizelyGraphToolServer({
+        facts: async (id) => optimizelyGraphFacts(await project(id)),
+        hmac: async (id) => {
+          const c = await projectCredential(id, 'graph-hmac');
+          return c?.appKey && c.secret ? { appKey: c.appKey, secret: c.secret } : null;
+        },
+      }),
     );
   }
 }
@@ -280,6 +296,8 @@ if (
           appPath: s.buildRepo.appPath,
           author: await botAuthor(),
           recipe: s.intake ? platforms.get(s.intake.platform)?.buildRecipe : undefined,
+          // Optimizely's CLI pushes only content types carrying the project's prefix.
+          ...(optimizelyFacts(s) ? { typePrefix: optimizelyFacts(s)!.typePrefix } : {}),
         }
       : null;
   };

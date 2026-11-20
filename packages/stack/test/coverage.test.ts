@@ -15,6 +15,7 @@ describe('acceptance check coverage', () => {
       'sitecoreai-migration',
       'sitecoreai-homepage-demo',
       'optimizely-saas-migration',
+      'optimizely-homepage-demo',
     ]) {
       const pb = await loadPlaybook(dir(id));
       found[id] = uncheckedValidators(pb, platforms.get(pb.manifest.platform)?.checks ?? {});
@@ -23,6 +24,7 @@ describe('acceptance check coverage', () => {
     // The demo uses the website playbook's checks and its own slice check, all implemented.
     expect(found['sitecoreai-homepage-demo']).toEqual([]);
     expect(found['optimizely-saas-migration']).toEqual(EXPECTED_OPTIMIZELY);
+    expect(found['optimizely-homepage-demo']).toEqual(EXPECTED_OPTIMIZELY_DEMO);
   });
 });
 
@@ -30,26 +32,6 @@ describe('acceptance check coverage', () => {
 // SitecoreAI: every check is implemented (the two Page builder checks read the renderings'
 // configuration since the pilot proof was automated; Page builder itself is checked at UAT).
 const EXPECTED_SITECORE: string[] = [];
-// Optimizely: the platform's checks (entities.md, O4) and its Visual Builder driver (O5).
-const EXPECTED_OPTIMIZELY = [
-  'editor.element-enabled',
-  'editor.new-experience',
-  'experience.redirects-resolve',
-  'graph.published',
-  'head.header-footer',
-  'head.pages-render',
-  'head.preview-route',
-  'hostname.registered',
-  'manifest.replays',
-  'media.alt-text',
-  'parity.page',
-  'parity.render',
-  'parity.visual',
-  'routes.resolve',
-  'structural.application',
-  'structural.content-types',
-  'structural.experiences',
-  'structural.templates',
-  'types.defined',
-  'types.pushed',
-];
+// Optimizely: every check its two playbooks name is implemented.
+const EXPECTED_OPTIMIZELY: string[] = [];
+const EXPECTED_OPTIMIZELY_DEMO: string[] = [];

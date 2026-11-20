@@ -26,6 +26,7 @@ tools:
       # The application's content, to see where a file is used: read only.
       readPaths:
         - '{contentRoot}/**'
+        - '{sharedRoot}/**'
   browser:
     ops:
       - fetch.asset

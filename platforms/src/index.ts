@@ -79,6 +79,13 @@ export interface PlatformPack {
    * only when the app has them), the build script, and paths agents may not write.
    */
   buildRecipe?: { generate: string[]; build: string; readOnly: string[] };
+  /**
+   * The read operation that says what each route renders, in order: called with `{ paths }`,
+   * it answers `{ pages: [{ path, components: [{ component, placeholder, text }] }] }`. A page's
+   * failed check is sent to the component that draws the failing part with it; without one the
+   * failure stays with the page's task.
+   */
+  pageComponents?: { server: string; op: string };
   /** Acceptance checks only the platform knows how to run, by validator id. */
   checks?: Record<string, PlatformCheck>;
   /**
@@ -186,6 +193,11 @@ export interface HeadEnvVar {
 export interface HeadEnvDeps {
   /** A project credential's fields, or null when it wasn't given. */
   credential(credentialId: string): Promise<Record<string, string> | null>;
+  /**
+   * Where the head is deployed, as addresses, when known: production (null before its first
+   * deployment) and the editing host. For a head that must know its own public address.
+   */
+  hosts?: { production: string | null; editing: string | null };
   /** The platform's editing secret for the project's environment, or why it can't be read. */
   editingSecret(): Promise<{ secret: string } | { problem: string }>;
 }
@@ -320,6 +332,12 @@ export function validateTarget(spec: IntakeSpec, raw: TargetValues): TargetValue
 
 export { list, text } from './values';
 export { ownedPaths, SITECOREAI, sitecoreBindings, sitecoreTarget } from '../sitecoreai/pack';
+export {
+  OPTIMIZELY,
+  optimizelyBindings,
+  optimizelyOwnedPaths,
+  optimizelyTarget,
+} from '../optimizely/pack';
 export {
   mappingProblems,
   parseSource,

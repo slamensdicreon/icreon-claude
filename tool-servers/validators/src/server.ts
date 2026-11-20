@@ -113,13 +113,19 @@ export interface ValidatorsServerOptions {
   policy: (projectId: string) => UrlPolicy;
   navigationTimeoutMs?: number;
   /**
-   * The platform's structural checks (site, templates, renderings), when the stack has them:
-   * read-only looks at the target, judged against the Blueprint.
+   * The platform's structural checks, when the stack has them: read-only looks at the target,
+   * judged against the Blueprint. The scope is one of `structuralScopes`, or `all`.
    */
   structural?: (
     projectId: string,
-    scope: 'site' | 'templates' | 'renderings' | 'all',
+    scope: string,
   ) => Promise<{ id: string; status: 'pass' | 'fail' | 'pending'; detail: string }[]>;
+  /**
+   * What the platform's structure is made of, as the scopes a validator can ask for: SitecoreAI's
+   * site, templates and renderings (the default), Optimizely's application, content types,
+   * templates and experiences. Each is a `structural.<scope>` check of the platform's pack.
+   */
+  structuralScopes?: string[];
   /** The platform's content parity check: the new site against the source re-crawl. */
   parity?: (
     projectId: string,
@@ -128,23 +134,22 @@ export interface ValidatorsServerOptions {
 
 const PARITY: OperationCatalog[string] = {
   description:
-    "Content parity: every page the Blueprint keeps, read on Experience Edge (preview), against the source re-crawl (parity-inventory, else the page inventory): the page exists, its title is there, and at least 90% of its words. Returns the parity percentage and each page's result. Read-only.",
+    "Content parity: every page the Blueprint keeps, read on the new site as its platform serves it, against the source (parity-inventory, else the page inventory): the page exists and carries at least 90% of the source page's words. Returns the parity percentage and each page's result. Read-only.",
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   mutates: false,
 };
 
-const STRUCTURAL: OperationCatalog[string] = {
-  description:
-    "Check the project's structure in the CMS against the approved Blueprint: `site` (site, Home, the project's own folders), `templates` (each template with standard values), `renderings` (each rendering, offered in Available Renderings), or `all`. Read-only.",
+/** SitecoreAI's structure, the scopes a stack offers when it names none. */
+const DEFAULT_SCOPES = ['site', 'templates', 'renderings'];
+
+const structuralOp = (scopes: string[]): OperationCatalog[string] => ({
+  description: `Check the project's structure in the CMS against the approved Blueprint, one part at a time or all of it: ${scopes.map((x) => `\`${x}\``).join(', ')}, or \`all\`. Each part is the platform's own check of that name (\`structural.<scope>\`). Read-only.`,
   inputSchema: {
     type: 'object',
-    properties: { scope: { type: 'string', enum: ['site', 'templates', 'renderings', 'all'] } },
+    properties: { scope: { type: 'string', enum: [...scopes, 'all'] } },
     additionalProperties: false,
   },
   mutates: false,
-};
-const StructuralArgs = z.object({
-  scope: z.enum(['site', 'templates', 'renderings', 'all']).default('all'),
 });
 
 const invalid = (e: z.ZodError): ToolResult => {
@@ -159,10 +164,13 @@ export class ValidatorsToolServer implements ToolServer {
   /** Lighthouse runs a whole browser; one at a time per worker keeps timings comparable. */
   private lighthouseQueue: Promise<unknown> = Promise.resolve();
 
+  private readonly scopes: string[];
+
   constructor(private readonly opts: ValidatorsServerOptions) {
+    this.scopes = opts.structuralScopes?.length ? opts.structuralScopes : DEFAULT_SCOPES;
     this.catalog = {
       ...CATALOG,
-      ...(opts.structural ? { 'structural.run': STRUCTURAL } : {}),
+      ...(opts.structural ? { 'structural.run': structuralOp(this.scopes) } : {}),
       ...(opts.parity ? { 'parity.run': PARITY } : {}),
     };
   }
@@ -195,7 +203,11 @@ export class ValidatorsToolServer implements ToolServer {
           return { code: 200, body: r, summary: r.detail };
         }
         case 'structural.run': {
-          const a = StructuralArgs.safeParse(args);
+          const a = z
+            .object({
+              scope: z.enum(['all', ...this.scopes] as [string, ...string[]]).default('all'),
+            })
+            .safeParse(args);
           if (!a.success) return invalid(a.error);
           if (!this.opts.structural) return { code: 404, body: { error: 'Not connected' } };
           const results = await this.opts.structural(ctx.projectId, a.data.scope);

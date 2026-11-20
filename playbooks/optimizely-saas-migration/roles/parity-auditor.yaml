@@ -13,9 +13,6 @@ mandate: Diff text, links and media between the source inventory and the target 
 produces:
   - content parity report
 tools:
-  validators:
-    ops:
-      - parity.run
   optimizely-graph:
     ops:
       - graph.query
@@ -26,8 +23,11 @@ tools:
     scope:
       paths:
         - '{contentRoot}/**'
+        - '{sharedRoot}/**'
       readPaths:
         - /content/**
+        - /shared/**
+        - /media/**
   blackboard:
     ops:
       - read

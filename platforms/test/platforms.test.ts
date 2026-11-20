@@ -1549,8 +1549,19 @@ describe('Optimizely pack', () => {
     });
     expect(pack.bindings(target)).toMatchObject({
       typePrefix: 'Globex',
-      contentRoot: '/content/Globex Website',
+      // The application's key in the CMS: letters, digits and underscores.
+      application: 'Globex_Website',
+      contentRoot: '/content/Globex_Website',
+      sharedRoot: '/shared/Globex_Website',
+      mediaRoot: '/media/Globex_Website',
     });
+    // A build repository is generated from Optimizely's own starter, kept in a template of ours.
+    expect(pack.starter).toEqual({
+      owner: 'icreon-launchworks',
+      repo: 'optimizely-starter-nextjs',
+      appPath: 'head',
+    });
+    expect(pack.buildRecipe).toEqual({ generate: [], build: 'build', readOnly: [] });
     expect(pack.toolCredential('optimizely-cms')?.credentialId).toBe('cms-api-client');
     expect(pack.toolCredential('optimizely-graph')?.credentialId).toBe('graph-single-key');
     expect(pack.toolCredential('sitecore-authoring')).toBeUndefined();

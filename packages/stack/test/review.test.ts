@@ -655,6 +655,8 @@ describe('routing failed checks to the components that own them', () => {
   it("tells the attribution what the task's pages render, matched to Blueprint components", async () => {
     const asked: unknown[] = [];
     const platform = {
+      // The pack says which read tells what a route renders.
+      pageComponents: { server: 'sitecore-authoring', op: 'page.components' },
       read: async (_p: string, server: string, op: string, args: Record<string, unknown>) => {
         asked.push([server, op, args]);
         return {

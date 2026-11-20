@@ -14,8 +14,8 @@ mandate: >-
   CMS communication script; make the app a working editing host. Integrate each accepted branch
   onto the integration branch, push its content types and display templates to the CMS (this
   project's prefixed keys only, never --force) and deploy to the editing address, so Visual
-  Builder gets the type and the code together. Add redirects, sitemap, robots, error pages and
-  Graph webhooks in phase 7; export the content model for release in phase 8.
+  Builder gets the type and the code together. Add redirects, sitemap, robots and error pages
+  in phase 7; export the content model for release in phase 8.
 produces:
   - deployable head on the team branch
   - content types and display templates on the instance
@@ -38,8 +38,6 @@ tools:
       - displaytemplate.list
       - displaytemplate.read
       - manifest.export
-      - webhook.list
-      - webhook.create
     scope:
       paths:
         - /contenttypes/{typePrefix}*
@@ -86,7 +84,7 @@ tools:
 acceptance:
   - validator:build.green
   - validator:types.pushed
-  - validator:editing-host.responds
+  - validator:editing-host.deployed
 escalateWhen:
   - rejectedTwice
   - accessDenied

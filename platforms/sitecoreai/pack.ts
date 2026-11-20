@@ -243,6 +243,7 @@ export function createSitecoreAI(cfg: VerifyConfig): PlatformPack {
     },
     bindings: sitecoreBindings,
     facts: (call, body, target) => sitecoreFacts(call, body, sitecoreBindings(target)),
+    pageComponents: { server: 'sitecore-authoring', op: 'page.components' },
     context: (t) => {
       const s = sitecoreTarget({ target: t });
       return [

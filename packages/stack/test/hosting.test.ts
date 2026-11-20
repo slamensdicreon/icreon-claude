@@ -3,7 +3,7 @@ import { SITECORE_DEFAULTS } from '@lw/connectors';
 import type { NewEvent } from '@lw/contracts';
 import { createProjectState, type ProjectState } from '@lw/domain';
 import { createPlatforms } from '@lw/platforms';
-import { setUpHosting, type HostingWiring } from '../src/hosting';
+import { releasePlatformHosts, setUpHosting, type HostingWiring } from '../src/hosting';
 
 const project = (platform = 'sitecoreai'): ProjectState =>
   ({
@@ -155,10 +155,184 @@ describe('setUpHosting', () => {
     );
   });
 
-  it('leaves the rendering host alone on a platform without one', async () => {
-    const vercel = fakeVercel();
-    const { w } = wiring(project('optimizely'), vercel.fetch);
-    const r = await setUpHosting(w, 'p1');
-    expect(r.steps.map((s) => s.step)).not.toContain('Page builder rendering host');
+  describe('on Optimizely', () => {
+    const optimizely = (): ProjectState =>
+      ({
+        ...project('optimizely'),
+        hosting: { url: 'https://acme-site.vercel.app' },
+        intake: {
+          platform: 'optimizely',
+          target: {
+            hostingProject: 'acme-site',
+            cmsUrl: 'https://app-acme.cms.optimizely.com',
+            application: 'Acme Site',
+            typePrefix: 'Acme',
+            languages: ['en'],
+          },
+        },
+      }) as never;
+    /** Vercel, and the CMS's one application as the REST API answers for it. */
+    const withCms = (application: Record<string, unknown> | null) => {
+      const vercel = fakeVercel();
+      const patches: unknown[] = [];
+      const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(String(input));
+        if (url.host !== 'api.cms.optimizely.com') return vercel.fetch(input, init);
+        if (!application) return new Response('{}', { status: 404 });
+        if (init?.method === 'PATCH') {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          patches.push(body);
+          Object.assign(application, body);
+        }
+        return new Response(JSON.stringify(application), { status: 200 });
+      }) as typeof globalThis.fetch;
+      const { w } = wiring(optimizely(), fetch);
+      return { w: { ...w, tokenFor: async () => 'cms-token' }, patches };
+    };
+
+    it('makes the editing host the application’s preview host and points live preview at it', async () => {
+      const application = {
+        key: 'Acme_Site',
+        displayName: 'Acme Site',
+        entryPoint: 'cms://content/abc',
+        hosts: [
+          { authority: 'acme-site.vercel.app', type: 'primary', preferredUrlScheme: 'https' },
+        ],
+      };
+      const { w, patches } = withCms(application);
+      const r = await setUpHosting(w, 'p1');
+      expect(r.steps.slice(4).map((s) => [s.step, s.ok])).toEqual([
+        ['Visual Builder preview host', true],
+        ['Live preview route', true],
+      ]);
+      expect(r.steps.map((s) => s.step)).not.toContain('Page builder rendering host');
+      expect(patches).toEqual([
+        {
+          hosts: [
+            { authority: 'acme-site.vercel.app', type: 'primary', preferredUrlScheme: 'https' },
+            {
+              authority: 'acme-site-editing.vercel.app',
+              type: 'preview',
+              preferredUrlScheme: 'https',
+            },
+          ],
+        },
+        {
+          usePreviewTokens: true,
+          previewUrlFormats: {
+            any: '{host}/preview?key={key}&ver={version}&loc={locale}&ctx={context}',
+          },
+        },
+      ]);
+    });
+
+    it('waits for the team when the application does not exist yet, and fails nothing', async () => {
+      const { w, patches } = withCms(null);
+      const r = await setUpHosting(w, 'p1');
+      expect(r.steps[4]).toMatchObject({ step: 'Visual Builder preview host', ok: true });
+      expect(r.steps[4]!.summary).toContain('does not exist yet');
+      expect(patches).toEqual([]);
+    });
+
+    it('leaves the preview host until the application has a primary one', async () => {
+      const { w, patches } = withCms({
+        key: 'Acme_Site',
+        displayName: 'Acme Site',
+        entryPoint: 'cms://content/abc',
+        hosts: [],
+      });
+      const r = await setUpHosting(w, 'p1');
+      expect(r.steps[4]).toMatchObject({ ok: true });
+      expect(r.steps[4]!.summary).toContain('no primary host yet');
+      expect(patches).toEqual([]);
+    });
+
+    it('tells the head its application’s host once production is deployed', async () => {
+      const vercel = fakeVercel();
+      const { w } = wiring(optimizely(), vercel.fetch);
+      await setUpHosting({ ...w, tokenFor: async () => 'cms-token' }, 'p1');
+      const env = vercel.calls.find((c) => c.path.endsWith('/env'))!.body as {
+        key: string;
+        value: string;
+      }[];
+      expect(env.find((v) => v.key === 'OPTIMIZELY_APPLICATION_HOST')?.value).toBe(
+        'https://acme-site.vercel.app',
+      );
+    });
+  });
+});
+
+describe('releasePlatformHosts', () => {
+  const state = (platform: string): ProjectState =>
+    ({
+      ...project(platform),
+      hosting: { url: 'https://acme-site.vercel.app', project: 'acme-site' },
+      intake: {
+        platform,
+        target: {
+          hostingProject: 'acme-site',
+          cmsUrl: 'https://app-acme.cms.optimizely.com',
+          application: 'Acme Site',
+          typePrefix: 'Acme',
+          languages: ['en'],
+        },
+      },
+    }) as never;
+  const cms = (application: Record<string, unknown> | null) => {
+    const patches: { hosts: { authority: string }[] }[] = [];
+    const fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!application) return new Response('{}', { status: 404 });
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as { hosts: { authority: string }[] };
+        patches.push(body);
+        Object.assign(application, body);
+      }
+      return new Response(JSON.stringify(application), { status: 200 });
+    }) as typeof globalThis.fetch;
+    return { fetch, patches, tokenFor: async () => 'cms-token' };
+  };
+
+  it("removes the project's own hosts from its application, and leaves the content", async () => {
+    const w = cms({
+      key: 'Acme_Site',
+      displayName: 'Acme Site',
+      entryPoint: 'cms://content/abc',
+      hosts: [
+        { authority: 'acme-site.vercel.app', type: 'primary', preferredUrlScheme: 'https' },
+        { authority: 'acme-site-editing.vercel.app', type: 'preview', preferredUrlScheme: 'https' },
+        { authority: 'www.acme.com', type: 'media', preferredUrlScheme: 'https' },
+      ],
+    });
+    const r = await releasePlatformHosts(w, state('optimizely'));
+    expect(r.outcome).toBe('deleted');
+    expect(r.detail).toContain('Removed acme-site-editing.vercel.app and acme-site.vercel.app');
+    expect(r.detail).toContain('stay in the CMS');
+    // The preview host goes first; a host that isn't the project's stays.
+    expect(w.patches.map((p) => p.hosts.map((h) => h.authority))).toEqual([
+      ['acme-site.vercel.app', 'www.acme.com'],
+      ['www.acme.com'],
+    ]);
+  });
+
+  it('changes nothing when the application was never created, or on another platform', async () => {
+    const none = cms(null);
+    expect(await releasePlatformHosts(none, state('optimizely'))).toMatchObject({
+      outcome: 'not_found',
+    });
+    const sitecore = cms({ key: 'x', hosts: [] });
+    expect(await releasePlatformHosts(sitecore, state('sitecoreai'))).toMatchObject({
+      outcome: 'skipped',
+    });
+    expect(none.patches.concat(sitecore.patches)).toEqual([]);
+  });
+
+  it('reports a key that no longer works instead of throwing', async () => {
+    const w = {
+      ...cms({ key: 'Acme_Site', hosts: [] }),
+      tokenFor: async () => Promise.reject(new Error('the API key was deleted')),
+    };
+    const r = await releasePlatformHosts(w, state('optimizely'));
+    expect(r.outcome).toBe('refused');
+    expect(r.detail).toContain('the API key was deleted');
   });
 });

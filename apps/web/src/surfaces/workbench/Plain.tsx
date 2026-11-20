@@ -8,9 +8,9 @@
 import type { ArtifactView, PlainVersion } from '@lw/contracts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { get, postFor } from '../../lib/api';
-import { BASE_GLOSSARY, GlossaryContext, type Term } from '../../lib/glossary';
+import { baseGlossary, GlossaryContext, type Term } from '../../lib/glossary';
 import { MarkdownDoc } from '../../parts/Doc';
-import { useApp } from '../../state';
+import { useApp, useMission } from '../../state';
 import { Button, Chips } from '../../ui/cypher/parts';
 import { SmallEye } from '../../ui/eye/SmallEye';
 import { DocHead } from './parts';
@@ -76,11 +76,12 @@ export function PlainLayer({ a, children }: { a: ArtifactView; children: ReactNo
   const hasPlain = !!p?.plain;
   // Documents for the Director open in plain words once there are some; the rest as written.
   const view: View = chosen ?? (hasPlain && a.audience === 'director' ? 'plain' : 'technical');
+  const platformId = useMission().data?.project.platform?.id;
   const terms = useMemo<Term[]>(() => {
     const own = p?.glossary ?? [];
     const ownKeys = new Set(own.map((t) => t.term.toLowerCase()));
-    return [...own, ...BASE_GLOSSARY.filter((t) => !ownKeys.has(t.term.toLowerCase()))];
-  }, [p?.glossary]);
+    return [...own, ...baseGlossary(platformId).filter((t) => !ownKeys.has(t.term.toLowerCase()))];
+  }, [p?.glossary, platformId]);
 
   const writing = p?.status === 'writing';
   const box =

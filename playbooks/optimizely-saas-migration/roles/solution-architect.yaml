@@ -33,8 +33,6 @@ tools:
   acceptance:
     ops:
       - check
-acceptance:
-  - validator:blueprint.coverage
 escalateWhen:
   - decisionNeeded
   - rejectedTwice

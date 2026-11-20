@@ -400,6 +400,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   // How the platform's checks reach the project's systems: for the Lead's review and self-checks.
   const platformAccess = {
     checks: opts.platform.checks,
+    pageComponents: opts.platform.pageComponents,
     read: readOnly,
     credential,
     compareScreens,
@@ -417,7 +418,12 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   });
   // Hosts the project's documents point media at, by the documents' versions.
   const hostsSeen = new Map<string, { key: string; hosts: string[] }>();
-  const STRUCTURE = ['site', 'templates', 'renderings'] as const;
+  // What a validator can ask the structure of: the platform's own `structural.*` checks
+  // (SitecoreAI: site, templates, renderings; Optimizely: application, content types,
+  // templates, experiences).
+  const STRUCTURE = Object.keys(opts.platform.checks ?? {})
+    .filter((id) => id.startsWith('structural.'))
+    .map((id) => id.slice('structural.'.length));
   const browserServer = new BrowserToolServer({
     blobs,
     policy,
@@ -537,7 +543,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       blobs,
       policy,
       browser: chromium,
-      structural: opts.platform.checks
+      structuralScopes: STRUCTURE,
+      structural: STRUCTURE.length
         ? async (projectId, scope) => {
             const ids = scope === 'all' ? STRUCTURE : [scope];
             const out = [];
@@ -701,6 +708,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       try {
         const r = await opts.directives({
           text: req.text,
+          // The platform the project builds on, by name: the Director writes in its words.
+          platform: opts.platform.name,
           items,
           tasks: req.tasks ?? [],
           cards: req.cards ?? [],

@@ -410,7 +410,9 @@ export class GithubApp {
         throw new CommandError(
           503,
           'github_error',
-          `GitHub answered ${gen.status} creating ${full} from ${starter.owner}/${starter.repo}${message ? `: ${message}` : ''}.`,
+          gen.status === 404
+            ? `GitHub can't find the starter ${starter.owner}/${starter.repo} to create ${full} from. It must exist, be marked as a template repository, and be one the Launchworks GitHub App can read (the app is installed on it, or on all repositories of ${starter.owner}).`
+            : `GitHub answered ${gen.status} creating ${full} from ${starter.owner}/${starter.repo}${message ? `: ${message}` : ''}.`,
         );
       }
       repo = gen;

@@ -1,0 +1,92 @@
+role: content-migrator
+name: Experience Builder
+persona: 'Leila Hassan'
+description: 'Builds what marketers will edit: the shared header, footer and site settings, a blueprint per page type, then each page as an experience composed from the source in the source’s order, every property filled, and its SEO properties.'
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create the shared header, footer and site settings content and one blueprint per page type
+  with its default sections. Then create pages from those types and blueprints, compose their
+  sections and elements from the registered content types with the display templates that match
+  the source, fill every property from the source, convert rich text, rewrite internal links,
+  link uploaded media, and fill each page's SEO properties.
+produces:
+  - shared shell content and blueprints
+  - migrated experiences and pages
+tools:
+  optimizely-cms:
+    ops:
+      - contenttype.read
+      - displaytemplate.read
+      - content.read
+      - content.create
+      - content.update
+      - composition.write
+      - blueprint.create
+      # A page's own photos, from the source page, when no media task uploaded them.
+      - media.upload
+    scope:
+      paths:
+        - '{contentRoot}/**'
+        - /media/{application}/**
+      # Types, templates and the shared shell to compose with: read only.
+      readPaths:
+        - /contenttypes/**
+        - /displaytemplates/**
+        - /content/**
+  optimizely-graph:
+    ops:
+      - graph.item
+  browser:
+    ops:
+      # The source page's copy and structure, so content is migrated, never invented.
+      - snapshot
+      # Images set by CSS (a hero's or section's background) aren't in a snapshot: computed styles give their URL.
+      - page.styles
+      # The page's content as its CMS delivered it (fields, images, links, lists the page builds
+      # in the browser), when it embeds its layout data: Next.js sites on Sitecore do.
+      - page.data
+  # The source repository, where a site built from code keeps its copy (content files).
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+  # Reproduce a page on the head and read what the server logged (a 500 names what threw).
+  hosting:
+    ops:
+      - logs.runtime
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:structural.experiences
+  - validator:head.pages-render
+  - validator:parity.page
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 5
+  - 6
+  - 7
