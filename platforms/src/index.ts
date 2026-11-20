@@ -186,6 +186,11 @@ export interface HeadEnvVar {
 export interface HeadEnvDeps {
   /** A project credential's fields, or null when it wasn't given. */
   credential(credentialId: string): Promise<Record<string, string> | null>;
+  /**
+   * Where the head is deployed, as addresses, when known: production (null before its first
+   * deployment) and the editing host. For a head that must know its own public address.
+   */
+  hosts?: { production: string | null; editing: string | null };
   /** The platform's editing secret for the project's environment, or why it can't be read. */
   editingSecret(): Promise<{ secret: string } | { problem: string }>;
 }

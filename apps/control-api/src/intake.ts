@@ -517,7 +517,7 @@ export class IntakeService {
   }
 
   /**
-   * Creates the project's build repository in our organization from Sitecore's starter, or
+   * Creates the project's build repository in our organization from its platform's starter, or
    * checks and reuses one of that name. Named after the source repository, or after the project
    * when it has none (the live site is its source), unless told otherwise.
    */

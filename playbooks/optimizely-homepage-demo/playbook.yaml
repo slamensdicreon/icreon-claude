@@ -49,7 +49,7 @@ charter:
         The reviewed commit runs on the editing and delivery hosts, the content model replays from
         the repository (a clean optimizely-cms-cli config push --dryRun builds what the CMS
         holds), and the homepage is published, indexed in Optimizely Graph and resolves on the
-        application's host (deploy.commit-matches, manifest.replays, graph.published,
+        application's primary host (deploy.commit-matches, manifest.replays, graph.published,
         routes.resolve).
     - id: real-audit
       title: The audit covers the whole site in numbers
@@ -215,7 +215,7 @@ phases:
       - 3
     exitCriteria: >-
       The homepage's experience type pushed; the demo's application exists with the homepage as
-      its start page, assets of its own and the editing address as its host with live preview;
+      its start page, assets of its own and the production address as its primary host and the editing address as its preview host, with live preview;
       the shared header, footer and navigation blocks filled from the source, referenced by the
       homepage and published; every slice component proven ready for Visual Builder.
   - number: 6
@@ -239,7 +239,7 @@ phases:
       The deployed commit is the reviewed commit on the editing and delivery hosts; the content
       model replays from the repository; the final versions of the homepage and its shared blocks
       are published and indexed in Optimizely Graph, and the homepage resolves on the
-      application's host.
+      application's primary host.
   # The demo closes on the Director's check in Visual Builder (agents have no Visual Builder
   # sign-in), which is also the script for the meeting.
   - number: 9

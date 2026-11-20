@@ -1,12 +1,13 @@
 /*
- * Project facts: what the team's tasks made (renderings, templates, pages, media with their IDs
+ * Project facts: what the team's tasks made (components, templates, pages, media with their IDs
  * and paths), as later tasks look it up. A value that changed after other tasks finished on the
  * old one is listed first, with those tasks.
  */
 import type { FactsSnapshot, FactView } from '@lw/contracts';
 import { useState } from 'react';
 import { stamp } from '../../lib/fmt';
-import { useProjectResource, useRoster, useTz } from '../../state';
+import { platformTerms } from '../../lib/platformTerms';
+import { useMission, useProjectResource, useRoster, useTz } from '../../state';
 import { Chips } from '../../ui/cypher/parts';
 import { DocHead, Quiet, Tag } from './parts';
 import s from './doc.module.css';
@@ -20,6 +21,11 @@ const FACT_KINDS: Record<string, string> = {
   layout: 'Page layouts',
   datasource: 'Datasources',
   media: 'Media',
+  'content-model': 'Content model',
+  'shared-block': 'Shared blocks',
+  application: 'Applications',
+  blueprint: 'Blueprints',
+  host: 'Hosts',
 };
 
 const kindLabel = (k: string, one = false) => {
@@ -46,6 +52,7 @@ function FactValue({ v }: { v: FactView['value'] }) {
 export function ProjectFacts() {
   const tz = useTz();
   const roster = useRoster();
+  const { vendor } = platformTerms(useMission().data?.project.platform?.id);
   const res = useProjectResource<FactsSnapshot>('/facts');
   const snap = res.data;
   const [kind, setKind] = useState('all');
@@ -88,7 +95,7 @@ export function ProjectFacts() {
       <div className={`${s.body} ${s.blocks}`}>
         <p className={`${s.intro} type-body-small`}>
           What the team&rsquo;s tasks made, with the IDs and paths later tasks look up instead of
-          asking. Most are recorded from what Sitecore answered; agents publish the rest.
+          asking. Most are recorded from what {vendor} answered; agents publish the rest.
         </p>
 
         {snap.changed.length > 0 && (

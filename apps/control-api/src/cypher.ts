@@ -194,7 +194,7 @@ const TOOLS: BetaTool[] = [
   {
     name: 'list_connections',
     description:
-      'Saved tenant connections: the platform, the shared facts (CM host, site collection, languages), which credentials they hold and whether those checked out, and the projects using them.',
+      'Saved tenant connections: the platform, the facts every site on the tenant shares (its address and languages, under the keys the platform uses), which credentials they hold and whether those checked out, and the projects using them.',
     input_schema: { type: 'object', properties: {} },
   },
   {

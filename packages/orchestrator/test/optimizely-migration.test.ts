@@ -54,7 +54,7 @@ describe('Optimizely website playbook', () => {
     const asked = releases(s);
     expect(asked.slice(0, 4)).toEqual([
       'Deploy the head to Vercel',
-      'Create the application on the editing host, with live preview',
+      'Create the application, with its hosts and live preview',
       'Compose the pilot experience and publish it',
       'Create the shared header, footer and site settings content',
     ]);

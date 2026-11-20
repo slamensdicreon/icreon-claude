@@ -148,12 +148,12 @@ templates:
     redoWith: ['define-type-{key}']
     acceptance: [validator:structural.templates, validator:editing-host.deployed]
   # The application gets the home page as its start page (an empty draft of the page type the
-  # Blueprint gives it), assets of its own, and the editing address as its host with live
-  # preview. This is the first content write: an API key without content rights stops here.
+  # Blueprint gives it), assets of its own, the production address as its primary host (what
+  # Graph's routes are on) and the editing address as its preview host, with live preview. This is the first content write: an API key without content rights stops here.
   - id: provision-application
     phase: 4
     role: deployment-engineer
-    title: Create the application on the editing host, with live preview
+    title: Create the application, with its hosts and live preview
     dependsOn: [push-type-*]
     release:
       rollback: >-
@@ -182,12 +182,12 @@ templates:
     release:
       rollback: >-
         The start page had no published version before: unpublish it in the CMS, or leave it,
-        since the application's host is the project's own preview. Migration replaces its
+        since the application's hosts are the project's own Vercel addresses. Migration replaces its
         sections.
     acceptance:
       [validator:structural.experiences, validator:head.pages-render, validator:graph.published]
   # Then the slice is read back: the types in the CMS, each pilot component ready for Visual
-  # Builder, the preview route on the application's host, the page in Graph. Visual Builder
+  # Builder, the preview route on the editing address, the page in Graph. Visual Builder
   # itself has no driver yet: a person edits in it at the smoke test and at acceptance.
   - id: prove-pilot-slice
     phase: 4
@@ -241,7 +241,7 @@ templates:
     acceptance: [validator:structural.templates, validator:editor.new-experience]
 
   # 6 — Content and media migration
-  # Each page is published on the application's host when it is built, so it can be compared
+  # Each page is published on the editing address when it is built, so it can be compared
   # with the source: a release, once per page unless the Director approves the step in advance.
   - id: migrate-pages-{key}
     phase: 6
@@ -253,8 +253,8 @@ templates:
     release:
       rollback: >-
         Publish the page's earlier version again (create a version from it and publish that), or
-        unpublish it in the CMS; the application's host is the project's own preview until the
-        client's domain points at it.
+        unpublish it in the CMS; the application's hosts are the project's own Vercel addresses until the
+        client's domain replaces them.
     acceptance:
       [
         validator:structural.experiences,
@@ -310,7 +310,7 @@ templates:
     dependsOn: [routing-and-seo]
     manual: >-
       In Visual Builder, on the home page: create one experiment with two variations of one
-      section's copy, start it, and confirm both variations render on the application's host.
+      section's copy, start it, and confirm both variations render on the editing address.
       Mark it done with the experiment's id, or naming what failed.
 
   # 8 — Deployment and publishing

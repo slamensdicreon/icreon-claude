@@ -236,8 +236,9 @@ phases:
       - pilot-slice-review
     exitCriteria: >-
       Every page template is a page or experience type in code, pushed to the CMS; the
-      application exists with the home page as its start page, assets of its own and the editing
-      address as its host with live preview. Pilot slice proven end to end first: its components
+      application exists with the home page as its start page, assets of its own, the production
+      address as its primary host and the editing address as its preview host, with live
+      preview. Pilot slice proven end to end first: its components
       (and the header, footer and navigation) built, their content types and display templates
       pushed, an experience composed from them, published, served by Optimizely Graph and
       rendered by the head, each ready for Visual Builder. Then 100% of Blueprint components
@@ -257,7 +258,7 @@ phases:
       - 4
       - 5
     exitCriteria: >-
-      Every page built and published on the application's host; content parity at or above 98%;
+      Every page built and published on the editing address; content parity at or above 98%;
       all media uploaded with alt text; no broken internal links; visual sample within tolerance.
   - number: 7
     name: Experience enablement
@@ -273,7 +274,7 @@ phases:
       Each verified on its own: the deployed commit is the reviewed commit on the editing and
       delivery hosts; the content model replays from the repository (manifest export committed,
       a dry-run push builds the same model); every migrated page's final version is published,
-      indexed in Graph and resolves on the application's host. Smoke test done in Visual Builder.
+      indexed in Graph and resolves on the application's primary host. Smoke test done in Visual Builder.
   # Acceptance is the Director's, in the live systems (Visual Builder, the editing and delivery
   # hosts), against the Definition of Done in the handover pack: agents don't re-check the site.
   - number: 9

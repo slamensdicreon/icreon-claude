@@ -171,6 +171,11 @@ const HostArgs = z.object({
     .string()
     .max(253)
     .regex(/^[a-z0-9.-]+(:\d+)?$/i, 'a host name, without scheme or path'),
+  /**
+   * What the host is for. `primary`: where visitors get the site, and what Optimizely Graph
+   * routes are on. `preview`: where Visual Builder opens pages for editors (the editing host).
+   */
+  use: z.enum(['primary', 'preview']).optional(),
 });
 const PreviewArgs = z.object({
   /** The preview route on the head; Visual Builder opens it in its frame. */
@@ -249,10 +254,13 @@ export class OptimizelyCmsToolServer implements ToolServer {
     },
     'hostname.add': {
       description:
-        "Make a host the head is deployed on the application's primary host, so routes resolve on it and Visual Builder opens its preview there. Only hosts of this project's own deployments are accepted.",
+        "Give the application a host the head is deployed on. use: primary (the default) is where visitors get the site and what Optimizely Graph's routes are on: the production host. use: preview is where Visual Builder opens pages for editors: the editing host. An application has one of each (a new one replaces the one before); without a preview host Visual Builder uses the primary. Only hosts of this project's own deployments are accepted.",
       inputSchema: {
         type: 'object',
-        properties: { host: { type: 'string' } },
+        properties: {
+          host: { type: 'string' },
+          use: { type: 'string', enum: ['primary', 'preview'] },
+        },
         required: ['host'],
         additionalProperties: false,
       },
@@ -787,46 +795,55 @@ class Work {
     const app = await this.requireApplication();
     if (!('key' in app)) return app;
     const host = a.data.host.toLowerCase();
+    const use = a.data.use ?? 'primary';
     const hosts = app.hosts ?? [];
-    const has = hosts.some((h) => h.authority.toLowerCase() === host);
+    const current = hosts.find((h) => h.authority.toLowerCase() === host);
     if (add) {
       if (!this.facts.headHosts.map((h) => h.toLowerCase()).includes(host))
         return rejected(
           `${host} is not a host this project's head is deployed on (${this.facts.headHosts.join(', ') || 'none yet: deploy first'}).`,
         );
-      if (has && hosts.find((h) => h.authority.toLowerCase() === host)?.type === 'primary')
+      if (current?.type === use)
         return {
           code: 200,
           body: applicationView(app),
-          summary: `${host} is already the primary host`,
+          summary: `${host} is already the ${use} host`,
         };
-    } else if (!has) {
+      // A preview host stands beside a primary one: Graph has no routes without a primary.
+      if (use === 'preview' && !hosts.some((h) => h.type === 'primary' && h !== current))
+        return rejected(
+          `Give the application its primary host first (the production host), then ${host} as the preview host.`,
+          409,
+        );
+    } else if (!current) {
       return {
         code: 200,
         body: applicationView(app),
         summary: `${host} is not a host of the application`,
       };
     }
-    const kept = hosts.filter((h) => h.authority.toLowerCase() !== host);
+    // One host of each kind (the API refuses a second): the new one replaces the one before.
+    const replaced = add ? hosts.filter((h) => h !== current && h.type === use) : [];
     const next = add
       ? [
-          // One primary host: the one before becomes an ordinary one.
-          ...kept.map(({ type, ...h }) => (type === 'primary' ? h : { ...h, type })),
-          { authority: host, type: 'primary', preferredUrlScheme: 'https' },
+          ...hosts.filter((h) => h !== current && h.type !== use),
+          { authority: host, type: use, preferredUrlScheme: 'https' },
         ]
-      : kept;
+      : hosts.filter((h) => h !== current);
     const { body } = await this.rest.send('PATCH', `/applications/${app.key}`, {
       json: { hosts: next },
       patch: true,
     });
+    // The API can be a moment behind its own write: what was sent is what is true.
     const after = (body as Application | undefined)?.key
-      ? (body as Application)
+      ? { ...(body as Application), hosts: next }
       : { ...app, hosts: next };
+    this.app = after;
     return {
       code: 200,
       body: applicationView(after),
       summary: add
-        ? `${host} is now the primary host of ${app.key}`
+        ? `${host} is now the ${use} host of ${app.key}${replaced.length ? ` (it was ${replaced.map((h) => h.authority).join(', ')})` : ''}`
         : `Removed ${host} from ${app.key}`,
     };
   }

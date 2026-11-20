@@ -6,6 +6,7 @@
 import type { PlaybookSummary, ProjectSummary } from '@lw/contracts';
 import { useEffect, useState } from 'react';
 import { get, postFor, post, put } from '../../lib/api';
+import { platformTerms } from '../../lib/platformTerms';
 import { useApp } from '../../state';
 import { Facts, Field, TextInput } from '../../ui/cypher/forms';
 import { Panel } from '../../ui/cypher/parts';
@@ -211,17 +212,19 @@ export function BuildRepoPanel({
   repo: ProjectSummary['buildRepo'];
   source: string;
   projectName: string;
-  platformId: string;
+  /** The platform pack's id; null when unknown, and then no default name is suggested. */
+  platformId: string | null;
 }) {
   const { projectId, run } = useApp();
-  const suggested = suggestedRepoName(source, projectName, platformId);
+  const suggested = platformId ? suggestedRepoName(source, projectName, platformId) : null;
+  const { vendor } = platformTerms(platformId);
   const [name, setName] = useState('');
   const valid = !name.trim() || isRepoName(name);
   return (
     <Panel title="Build repository" padded>
       <div className={s.stack}>
         <p className={s.lead}>
-          The new site is built here, in our GitHub organization, from Sitecore’s starter. Agents
+          The new site is built here, in our GitHub organization, from {vendor}’s starter. Agents
           read {source} but commit only to this repository, on launchworks/* branches. It moves to
           the client at handover.
         </p>
@@ -265,7 +268,7 @@ export function BuildRepoPanel({
               <Field
                 label="Repository name"
                 optional
-                hint={`Leave it empty for ${suggested}. A repository that already has an earlier run’s work in it is never reused: give a new name instead.`}
+                hint={`Leave it empty for ${suggested ?? 'the default name'}. A repository that already has an earlier run’s work in it is never reused: give a new name instead.`}
                 error={valid ? null : 'Letters, digits, dots, dashes and underscores only.'}
               >
                 {({ id, describedBy, invalid }) => (
@@ -273,7 +276,7 @@ export function BuildRepoPanel({
                     id={id}
                     aria-describedby={describedBy}
                     invalid={invalid}
-                    placeholder={suggested}
+                    placeholder={suggested ?? undefined}
                     spellCheck={false}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -339,9 +342,12 @@ function useDeployments(projectId: string | null, steps: HostingStep[] | null) {
 export function HostingPanel({
   hosting,
   name,
+  platformId,
 }: {
   hosting: ProjectSummary['hosting'];
   name: string;
+  /** The platform pack's id, for the name of its page editor; null when unknown. */
+  platformId: string | null;
 }) {
   const { projectId, run } = useApp();
   const [steps, setSteps] = useState<HostingStep[] | null>(null);
@@ -356,6 +362,7 @@ export function HostingPanel({
     }).finally(() => setBusy(false));
   };
   const editing = editingHostOf(name);
+  const { editor } = platformTerms(platformId);
   const rows: [string, React.ReactNode][] = [];
   if (hosting?.url)
     rows.push([
@@ -370,7 +377,7 @@ export function HostingPanel({
       <div className={s.stack}>
         <p className={s.lead}>
           The new site on our Vercel team: production builds the build repository’s default branch,
-          and Page builder renders through the editing host, the launchworks/integration build. Its
+          and {editor} renders through the editing host, the launchworks/integration build. Its
           environment comes from this project’s credentials.
         </p>
         {rows.length > 0 && <Facts rows={rows} />}

@@ -62,6 +62,8 @@ export function SettingsPage() {
   const p = mc.project;
   const live = !p.demo;
   const pb = playbookOf(playbooks, p);
+  // The project's platform, or its playbook's; null when neither is known (nothing is assumed).
+  const platformId = p.platform?.id ?? pb?.platform.id ?? null;
   const declared = declaredCredentials(pb);
   const running = mc.phases.reduce((n, x) => n + x.tasksRunning, 0);
 
@@ -79,7 +81,7 @@ export function SettingsPage() {
             repo={p.buildRepo}
             source={p.intake.repo ?? p.sourceUrl ?? p.name}
             projectName={p.name}
-            platformId={p.platform?.id ?? 'sitecoreai'}
+            platformId={platformId}
           />
         ),
       ],
@@ -93,7 +95,12 @@ export function SettingsPage() {
           />
         ),
         p.intake && p.buildRepo && (
-          <HostingPanel key="hosting" hosting={p.hosting} name={hostingProjectOf(p)} />
+          <HostingPanel
+            key="hosting"
+            hosting={p.hosting}
+            name={hostingProjectOf(p)}
+            platformId={platformId}
+          />
         ),
       ],
       full: [

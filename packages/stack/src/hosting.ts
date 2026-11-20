@@ -11,7 +11,11 @@ import {
 } from '@lw/platforms';
 import { INTEGRATION_BRANCH, type ToolCallContext, type ToolResult } from '@lw/tool-gateway';
 import { editingHost, HostingToolServer, type HostingFacts } from '@lw/tool-hosting';
-import type { GraphFacts, OptimizelyFacts } from '@lw/tool-optimizely';
+import {
+  OptimizelyCmsToolServer,
+  type GraphFacts,
+  type OptimizelyFacts,
+} from '@lw/tool-optimizely';
 import { SitecoreAuthoringToolServer, type TenantFacts } from '@lw/tool-sitecore';
 
 /**
@@ -27,11 +31,11 @@ export interface HostingWiring {
   platforms: Map<string, PlatformPack>;
   /** A project credential opened from the vault, or null. */
   credential(projectId: string, credentialId: string): Promise<Record<string, string> | null>;
-  /** A token for one of the project's tool servers (sitecore-deploy, sitecore-authoring). */
+  /** A token for one of the project's tool servers (sitecore-authoring, optimizely-cms). */
   tokenFor(projectId: string, server: string): Promise<string>;
   github?: GithubApp | null;
   append(projectId: string, events: NewEvent[]): Promise<void>;
-  /** Tests answer Vercel's and SitecoreAI's APIs. */
+  /** Tests answer Vercel's and the platform's APIs. */
   fetch?: typeof fetch;
 }
 
@@ -62,11 +66,19 @@ export function sitecoreFacts(s: ProjectState | undefined): TenantFacts | null {
   };
 }
 
-/** The hosts a project's head is deployed on: production first, then the preview deployment. */
+/**
+ * The hosts a project's head is deployed on: production, the editing host (the integration
+ * branch's fixed address, whatever was deployed last), and the latest preview deployment.
+ */
 export function headHosts(s: ProjectState): string[] {
-  return [s.hosting?.url, s.preview.target?.url]
-    .filter((u): u is string => Boolean(u))
-    .map((u) => new URL(u).host);
+  const project = s.intake ? text(s.intake.target, 'hostingProject') : '';
+  const hosts = [
+    ...[s.hosting?.url, s.preview.target?.url]
+      .filter((u): u is string => Boolean(u))
+      .map((u) => new URL(u).host),
+    ...(s.buildRepo && project ? [editingHost(project)] : []),
+  ];
+  return [...new Set(hosts)];
 }
 
 /** The Optimizely instance, application and source hosts a project's CMS tools work in. */
@@ -103,8 +115,13 @@ export function hostingToolServer(w: HostingWiring): HostingToolServer {
       const s = await w.project(id);
       const pack = s?.intake ? w.platforms.get(s.intake.platform) : undefined;
       if (!s?.intake || !pack?.headEnv) return { vars: [], missing: ['this platform has no head'] };
+      const project = text(s.intake.target, 'hostingProject');
       return pack.headEnv(s.intake.target, which, {
         credential: (credentialId) => w.credential(id, credentialId),
+        hosts: {
+          production: s.hosting?.url ?? null,
+          editing: project ? `https://${editingHost(project)}` : null,
+        },
         // Says why when it can't: "missing" alone left the team guessing.
         editingSecret: async () => {
           try {
@@ -183,7 +200,8 @@ const summaryOf = (r: ToolResult) =>
  * The Director's hosting setup, the steps the Deployment Engineer and Head Integrator take on a
  * playbook run: the Vercel project (protection off), the head's environment from the vault, the
  * build repository's default branch to production, the integration branch deployed as the
- * editing host, and, on SitecoreAI, the site's rendering host pointed at the editing address.
+ * editing host, and the platform told where its editor finds the head: on SitecoreAI the site's
+ * rendering host, on Optimizely the application's preview host and live preview route.
  * Stops at the first step that fails; deployments are followed with hostingStatus.
  */
 export async function setUpHosting(
@@ -233,6 +251,48 @@ export async function setUpHosting(
         { ...ctx, token: await w.tokenFor(projectId, 'sitecore-authoring') },
       ),
     );
+  }
+  if (ok && editing && s?.intake?.platform === OPTIMIZELY) {
+    const cms = new OptimizelyCmsToolServer({
+      facts: async () => optimizelyFacts(s),
+      ...(w.fetch ? { fetch: w.fetch } : {}),
+    });
+    const call = async (op: string, args: Record<string, unknown>) =>
+      cms.call(op, args, { ...ctx, token: await w.tokenFor(projectId, 'optimizely-cms') });
+    const application = await call('application.read', {}).catch((err): ToolResult => ({
+      code: 502,
+      body: { error: err instanceof Error ? err.message : String(err) },
+    }));
+    const hosts = (application.body as { hosts?: { host: string; type: string | null }[] }).hosts;
+    if (application.code === 404) {
+      // The team creates the application once the start page's type is in the CMS, and gives
+      // it its hosts then: there is nothing to point at the head yet, and nothing has failed.
+      steps.push({
+        step: 'Visual Builder preview host',
+        ok: true,
+        summary:
+          'The application does not exist yet: the team registers its hosts when it creates it.',
+      });
+    } else if (application.code !== 200) {
+      steps.push({
+        step: 'Visual Builder preview host',
+        ok: false,
+        summary: summaryOf(application),
+      });
+    } else if (!hosts?.some((h) => h.type === 'primary')) {
+      steps.push({
+        step: 'Visual Builder preview host',
+        ok: true,
+        summary:
+          'The application has no primary host yet: it gets one from the production deployment, then the editing host as its preview host.',
+      });
+    } else if (
+      await run('Visual Builder preview host', () =>
+        call('hostname.add', { host: new URL(editing).host, use: 'preview' }),
+      )
+    ) {
+      await run('Live preview route', () => call('preview.configure', {}));
+    }
   }
   return { steps, editingHost: editing };
 }

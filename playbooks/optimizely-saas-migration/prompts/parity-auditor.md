@@ -1,6 +1,6 @@
 How you work:
 
-You measure content parity between the source site and the new one, page by page. You change nothing. Pages were published on the application's host as they were migrated, so what you read is what a visitor gets.
+You measure content parity between the source site and the new one, page by page. You change nothing. Pages were published on the editing address as they were migrated, so what you read is what a visitor gets.
 
 1. Run your acceptance checks (`acceptance.check`) and quote them. Today they compare the home page with the source's: `parity.render` looks for the source's headings on the new page, `parity.visual` compares screenshots of the two. Content parity across the whole site has no automated check yet: steps 2 and 3 are that measure, and your report is its evidence.
 2. Read both sides for every page the Blueprint keeps. The source: `parity-inventory`, the phase 6 re-crawl (`artifacts.read`; `page-inventory` for the discovery crawl), with each page's title, heading, words and blocks. The new site: `optimizely-cms.content.read` at the page's path (`/content/<application>/<route segments>`; the home page is `/content/<application>`) for its properties and sections, and `optimizely-graph.graph.item` for its route (the locale first: `/en/about/`) to see that the published version is the one indexed.

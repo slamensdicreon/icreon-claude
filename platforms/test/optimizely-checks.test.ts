@@ -476,3 +476,36 @@ describe('Optimizely page checks on the task’s own page', () => {
     expect(r.detail).not.toContain('/404');
   });
 });
+
+describe('Optimizely checks with an editing host', () => {
+  const twoHosts = {
+    'optimizely-cms application.read': {
+      code: 200,
+      body: {
+        ...APP,
+        hosts: [
+          { host: 'acme.vercel.app', type: 'primary', scheme: 'https' },
+          { host: 'acme-editing.vercel.app', type: 'preview', scheme: 'https' },
+        ],
+      },
+    },
+  };
+
+  it('looks at the build on the preview host, where the integration branch runs', async () => {
+    // Production still runs the starter: only the editing host has the team's components.
+    const pages = {
+      'https://acme-editing.vercel.app/en/': { status: 200, html: HOME },
+      'https://acme.vercel.app/en/': { status: 200, html: '<main>Starter</main>' },
+    };
+    expect(await run('head.pages-render', ctx(twoHosts), pages)).toMatchObject({ status: 'pass' });
+    expect(await run('head.header-footer', ctx(twoHosts), pages)).toMatchObject({ status: 'pass' });
+    expect((await run('hostname.registered', ctx(twoHosts))).detail).toContain(
+      'acme-editing.vercel.app its preview host',
+    );
+  });
+
+  it('still opens the routes Graph serves on the primary host', async () => {
+    const pages = { 'https://acme.vercel.app/en/': { status: 200, html: HOME } };
+    expect(await run('routes.resolve', ctx(twoHosts), pages)).toMatchObject({ status: 'pass' });
+  });
+});

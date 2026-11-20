@@ -14,6 +14,12 @@ export interface OptimizelyVerifyConfig {
   graphUrl: string;
   /** Host suffixes an instance URL may have: the server calls it, so not any host. */
   cmsHostSuffixes: string[];
+  /**
+   * The template repository an Optimizely build repository is generated from: Optimizely's own
+   * Next.js starter, unchanged, in a folder of its own. In our build organization, because
+   * Optimizely publishes its starter through a scaffolding tool, not as a template repository.
+   */
+  starter: { owner: string; repo: string; appPath: string };
   fetch: typeof fetch;
   timeoutMs: number;
 }
@@ -22,6 +28,7 @@ export const OPTIMIZELY_DEFAULTS: OptimizelyVerifyConfig = {
   apiUrl: 'https://api.cms.optimizely.com',
   graphUrl: 'https://cg.optimizely.com/content/v2',
   cmsHostSuffixes: ['.cms.optimizely.com'],
+  starter: { owner: 'icreon-launchworks', repo: 'optimizely-starter-nextjs', appPath: 'head' },
   fetch: (...a) => fetch(...a),
   timeoutMs: 15_000,
 };

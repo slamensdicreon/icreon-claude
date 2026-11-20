@@ -93,6 +93,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
   const headVars = async (
     t: TargetValues,
     credential: (id: string) => Promise<Record<string, string> | null>,
+    hosts?: { production: string | null; editing: string | null },
   ) => {
     const s = optimizelyTarget({ target: t });
     const vars = [
@@ -101,6 +102,16 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
       { key: 'OPTIMIZELY_DEFAULT_LOCALE', value: s.languages[0] ?? 'en', sensitive: false },
     ];
     const missing: string[] = [];
+    // One Graph index holds every application on the instance, and several have the same
+    // routes (/en/): the head asks for its own by the application's primary host, on the
+    // production and the editing deployment alike.
+    if (hosts?.production) {
+      vars.push({ key: 'OPTIMIZELY_APPLICATION_HOST', value: hosts.production, sensitive: false });
+    } else if (hosts) {
+      missing.push(
+        "the application's host is not known until the first production deployment: set the variables again after it, so the head reads only its own application's routes",
+      );
+    }
     const single = await credential('graph-single-key');
     if (single?.singleKey) {
       // Reads published content only; Optimizely designs it to be safe in a browser.
@@ -270,12 +281,15 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
             }
           : undefined,
     knowledgeDir: fileURLToPath(new URL('./knowledge', import.meta.url)),
-    // No starter until the template repository exists (entities.md, O3): a project that needs a
-    // build repository is refused at intake rather than given Sitecore's.
+    // Optimizely's official Next.js starter, kept unchanged in a template repository of ours:
+    // the team adds the design system, the model files and the registry in the project's own.
+    starter: cfg.starter,
+    // The starter has one build script and generates nothing first. Agents never write the
+    // lock file by hand or the CLI's local manifest.
     buildRecipe: { generate: [], build: 'build', readOnly: [] },
     checks: optimizelyChecks(cfg),
     facts: (call, body, target) => optimizelyFacts(call, body, optimizelyBindings(target)),
-    headEnv: async (t, _which, deps) => headVars(t, deps.credential),
+    headEnv: async (t, _which, deps) => headVars(t, deps.credential, deps.hosts),
     // The sandbox also runs `optimizely-cms-cli config push`, which signs in with the REST API
     // key. The head never needs that key, so it stays off the hosting project.
     buildEnv: async (t, deps) => {

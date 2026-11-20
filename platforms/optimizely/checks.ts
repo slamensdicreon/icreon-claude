@@ -205,6 +205,14 @@ async function pageContent(
 const primaryHost = (a: ApplicationView) =>
   (a.hosts ?? []).find((h) => h.type === 'primary') ?? (a.hosts ?? [])[0] ?? null;
 
+/**
+ * Where the build is looked at: the application's preview host (the editing host, which runs the
+ * integration branch) when it has one, else its primary host. The same published content either
+ * way; production runs the reviewed code only after the release.
+ */
+const buildHost = (a: ApplicationView) =>
+  (a.hosts ?? []).find((h) => h.type === 'preview') ?? primaryHost(a);
+
 /** A page of the head as a visitor gets it: status, final URL and body. */
 async function page(cfg: OptimizelyVerifyConfig, url: string) {
   try {
@@ -274,7 +282,7 @@ async function sourceAndCandidate(
   if (!origin) return pending('No source inventory gives the source site to compare with.');
   const app = await application(ctx);
   if (isResult(app)) return app;
-  const host = primaryHost(app);
+  const host = buildHost(app);
   if (!host) return fail(['The application has no host to compare on']);
   return {
     source: `${origin}${pg.path === '/' ? '/' : pg.path}`,
@@ -440,9 +448,12 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
         host.type === 'primary' ? null : `${host.host} is not marked primary`,
         host.scheme === 'https' ? null : `${host.host} does not prefer https`,
       ].filter((x): x is string => Boolean(x));
+      const preview = (app.hosts ?? []).find((h) => h.type === 'preview');
       return problems.length
         ? fail(problems)
-        : pass(`${host.host} is the application's primary host.`);
+        : pass(
+            `${host.host} is the application's primary host${preview ? `, and ${preview.host} its preview host, where Visual Builder opens pages` : ' (Visual Builder opens pages there too: it has no preview host)'}.`,
+          );
     },
 
     // The start page is published and Optimizely Graph serves it on the application's host.
@@ -498,7 +509,7 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
     'head.preview-route': async (ctx) => {
       const app = await application(ctx);
       if (isResult(app)) return app;
-      const host = primaryHost(app);
+      const host = buildHost(app);
       if (!host) return fail(['The application has no host to open the preview on']);
       const route = /^\{host\}(\/[^?]*)/.exec(app.previewUrl ?? '')?.[1] ?? '/preview';
       const bare = await page(cfg, `https://${host.host}${route}`);
@@ -552,7 +563,7 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
       const { languages } = optimizelyTarget({ target: ctx.target });
       const app = await application(ctx);
       if (isResult(app)) return app;
-      const host = primaryHost(app);
+      const host = buildHost(app);
       if (!host) return fail(['The application has no host']);
       const start = await pageContent(ctx, pg.cms(app.key), pg.label);
       if (isResult(start)) return start;
@@ -638,7 +649,7 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
       const { languages } = optimizelyTarget({ target: ctx.target });
       const app = await application(ctx);
       if (isResult(app)) return app;
-      const host = primaryHost(app);
+      const host = buildHost(app);
       if (!host) return fail(['The application has no host']);
       const p = await page(cfg, `https://${host.host}/${languages[0] ?? 'en'}/`);
       if (p.status !== 200) return fail([`The start page answered ${p.status || 'nothing'}`]);

@@ -57,8 +57,8 @@ export function Connections({ projects }: { projects: PortfolioItem[] }) {
   return (
     <div className={s.page}>
       <Lead>
-        A connection holds what every site on one tenant shares: the environment, its clients and
-        Context IDs. New projects on it don’t ask for those again, and replacing a secret here
+        A connection holds what every site on one tenant shares: its address, its languages and its
+        credentials. New projects on it don’t ask for those again, and replacing a secret here
         updates every project that uses it.
       </Lead>
       {error && <Notice tone="bad">{error}</Notice>}

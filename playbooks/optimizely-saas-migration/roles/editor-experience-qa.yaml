@@ -13,7 +13,7 @@ mandate: >-
   Prove the pilot slice end to end before the rest is built: the types in the CMS, each pilot
   component offered as a section or element with a default display template of its own, the
   pilot experience published, served by Optimizely Graph and rendered by the head, the preview
-  route answering on the application's host. The Visual Builder session itself (add, edit
+  route answering on the editing address. The Visual Builder session itself (add, edit
   inline, pick a display template, save; a new experience from a blueprint; empty states; an
   experiment when the brief includes Experimentation) is done by hand until an agent can drive
   Visual Builder: the smoke test and the proof experiment are the Director's steps. Judge

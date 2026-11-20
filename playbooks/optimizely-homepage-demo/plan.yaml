@@ -155,13 +155,14 @@ templates:
     redoWith: ['define-type-{key}']
     acceptance: [validator:structural.templates, validator:editing-host.deployed]
   # Agents create applications on this platform. The application gets the homepage as its start
-  # page (an empty draft of the experience type just pushed), assets of its own, and the editing
-  # address as its host with live preview, so Visual Builder has somewhere to open the page.
+  # page (an empty draft of the experience type just pushed), assets of its own, the production address
+  # as its primary host (what Graph's routes are on) and the editing address as its preview host,
+  # with live preview, so Visual Builder has somewhere to open the page.
   # This is the first content write: an API key without content rights stops here.
   - id: provision-application
     phase: 5
     role: deployment-engineer
-    title: Create the demo's application on the editing host, with live preview
+    title: Create the demo's application, with its hosts and live preview
     dependsOn: [push-type-*]
     release:
       # Makes and changes only this demo's own application, with a rollback: approved once, here.

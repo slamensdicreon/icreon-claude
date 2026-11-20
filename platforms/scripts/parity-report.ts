@@ -8,6 +8,9 @@
  *
  * `--host` is the Vercel project (its editing host is <host>-editing.vercel.app); `--lists` names
  * the components whose model has child items.
+ *
+ * SitecoreAI only. Optimizely's `parity.render` finds the page's host by reading the application
+ * from the CMS, which needs a project's credentials: run it through the project's checks.
  */
 import { SITECORE_DEFAULTS } from '@lw/connectors';
 import { createPlatforms } from '../src/index';

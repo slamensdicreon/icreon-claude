@@ -107,7 +107,7 @@ Set them in the project's settings. Variables the images already default are in
 | `OPERATOR_API_KEYS`                        | api               | `login:sha256` pairs (comma-separated): API keys for scripts and agents acting as an operator; only the key hashes are stored|
 | `GITHUB_ORG`                               | api               | Optional: also require active membership of this org                   |
 | `SESSION_SECRET`                           | api               | 32+ random characters (`openssl rand -hex 32`)                         |
-| `CREDENTIALS_KEY`                          | api, worker       | 32 random bytes, base64 (`openssl rand -base64 32`). Seals project credentials (Sitecore clients, Edge Context IDs, the GitHub App's keys) in Postgres. The worker opens them for tool calls; without it no tool that needs a project credential connects |
+| `CREDENTIALS_KEY`                          | api, worker       | 32 random bytes, base64 (`openssl rand -base64 32`). Seals project credentials (each platform's: Sitecore clients and Edge Context IDs, an Optimizely API key and Graph keys; and the GitHub App's keys) in Postgres. The worker opens them for tool calls; without it no tool that needs a project credential connects |
 | `CREDENTIALS_KEY_PREVIOUS`                 | api, worker       | Optional: the old key during a rotation, so secrets it sealed still open |
 | `PUBLIC_URL`, `APP_URL`                    | api               | Optional: default to `https://$VERCEL_PROJECT_PRODUCTION_URL`. Set both to the custom domain if the project has several |
 | `GITHUB_APP_ORG`                           | api               | Optional: create the GitHub App under this organization instead of the operator's own account |
@@ -149,13 +149,34 @@ origins.
 
 ## Project credentials
 
-The New Project wizard collects each project's SitecoreAI environment automation client (required),
-an organization client (optional, for the Deploy API) and Experience Edge Context IDs. Each is
-tested against Sitecore before anything is stored: a token from `auth.sitecorecloud.io`, the
-Authoring API's site list on the CM host, a site query through Edge. The API then seals them with
-AES-256-GCM under `CREDENTIALS_KEY` in the `lw_secrets` table. The event log, Activity and Settings
-only ever see a reference and the last four characters. The API calls only `https://` CM hosts
-under `.sitecorecloud.io`.
+The New Project wizard collects the credentials the project's platform needs, as its platform pack
+declares them. Each is tested against the platform before anything is stored. The API then seals
+them with AES-256-GCM under `CREDENTIALS_KEY` in the `lw_secrets` table. The event log, Activity
+and Settings only ever see a reference and the last four characters.
+
+**SitecoreAI.** An environment automation client (required), an organization client (optional, for
+the Deploy API) and Experience Edge Context IDs. The tests: a token from `auth.sitecorecloud.io`,
+the Authoring API's site list on the CM host, a site query through Edge. The API calls only
+`https://` CM hosts under `.sitecorecloud.io`.
+
+**Optimizely CMS (SaaS).** Three credentials, all from the CMS under Settings → API Keys:
+
+- **CMS REST API key** (required): the Client ID and Secret from Create API Key. The test takes a
+  token from `api.cms.optimizely.com` and reads the instance's content types. It only reads, so it
+  can't tell whether the key may write content. Give the key content rights in the CMS: Settings →
+  Set Access Rights, select the Root, add the key (its Client ID) with Read, Create, Change, Delete
+  and Publish, and apply to sub-items. Without them content types push, but every page, block and
+  image is refused.
+- **Graph single key** (required): from the Render Content section. It reads published content.
+  The test is a one-item query at `cg.optimizely.com`.
+- **Graph app key and secret** (optional until migration): same page. Signed requests read drafts.
+  They are checked for shape only; the first signed request reports any problem.
+
+The API accepts only `https://` instance URLs under `.cms.optimizely.com`. An Optimizely project
+reaches three hosts: `api.cms.optimizely.com` (the token and the REST API, from the API, the
+worker and the CLI in the sandbox), `cg.optimizely.com` (Graph, from the API, the worker and the
+head) and the instance's own host, `app-<id>.cms.optimizely.com` (the address the CMS is opened
+at; its scripts and preview come from it). Where outbound traffic is restricted, allow all three.
 
 Keep `CREDENTIALS_KEY` only in Vercel (Sensitive). Losing it makes the stored secrets unreadable;
 the fix is to re-enter them. To rotate it, set the new key, move the old one to
@@ -195,14 +216,28 @@ operation it is granted is served by a connected tool server; otherwise its task
 | `artifacts`, `blackboard`, `decision-log` | The event log and Blob                     | Everyone who writes documents       |
 | `github`             | The Launchworks GitHub App: an installation token for the project's one repository; commits only to `launchworks/*` branches | Repo Analyst, Tenant Provisioner |
 | `sitecore-authoring` | The project's environment automation client, on its CM host's Authoring and Management GraphQL API | Tenant Provisioner, Content Migrator, Media Migrator, Experience Enabler |
+| `optimizely-cms`     | The project's CMS REST API key, on the REST API v1 at `api.cms.optimizely.com`: applications, content, Visual Builder compositions, blueprints and media, inside the project's application; content types are read only | Experience Builder, Media Migrator, Head Integrator, Deployment Engineer, Model Validator, Parity Auditor, Visual Builder QA |
+| `optimizely-graph`   | The project's Graph keys, on `cg.optimizely.com`, read only: the single key for published content, the app key and secret for drafts. The keys stay in the server | Experience Builder, Deployment Engineer, Parity Auditor, Visual Builder QA |
 | `research`           | Claude's server-side web search and web fetch (`ANTHROPIC_API_KEY`) | Research Agent |
 
-Not connected yet, so the roles that need them block: `sandbox` (building and running the client's
-code), `sitecore-cli` (serialization, needs .NET in the worker), `hosting` (the client's Vercel
-project needs its own token) and `sitecore-deploy` (the Deploy API). The worker logs
-`Connected tool servers: …` and `Live agents: …` at start.
+The platform's servers (and `sitecore-deploy`, the Deploy API) need `CREDENTIALS_KEY`, and each
+serves only projects on its own platform.
+The rest connect when the worker has their settings: `hosting` (the head, on our Vercel team) with
+`VERCEL_PREVIEWS_TOKEN` and `VERCEL_PREVIEWS_TEAM_ID`; `sandbox` (building and running the build
+repository's code) and `sitecore-cli` (serialization) with `VERCEL_SANDBOX_PROJECT_ID` as well.
+A role whose server is missing blocks. The worker logs `Connected tool servers: …` and
+`Live agents: …` at start.
 
-`site.verify` confirms the project's site exists (a read); sites themselves are created in SitecoreAI Sites.
+On Optimizely the content model is code: the `sandbox` server's `exec.optimizely-cli` runs
+Optimizely's CLI on the build repository (Component Engineer, Head Integrator). `push-dry-run`
+lists the content types and display templates the repository defines; `push` sends them to the CMS
+with the project's REST API key, never with `--force`, and refuses a key outside the project's
+type prefix. So beyond the shared servers, an Optimizely project needs `optimizely-cms`,
+`optimizely-graph`, `sandbox` and `hosting`.
+
+`site.verify` confirms a SitecoreAI project's site exists (a read); sites themselves are created
+in SitecoreAI Sites. On Optimizely the team creates the application itself, once the home page's
+type is in the CMS.
 
 ## Resetting a project
 

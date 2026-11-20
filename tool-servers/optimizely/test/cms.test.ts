@@ -17,7 +17,7 @@ const facts: OptimizelyFacts = {
   typePrefix: 'Acme',
   languages: ['en'],
   sourceHosts: ['www.acme.com'],
-  headHosts: ['acme.vercel.app'],
+  headHosts: ['acme.vercel.app', 'acme-editing.vercel.app', 'www.acme.com'],
 };
 const ctx = { projectId: 'p', token: 'jwt', role: 'content-migrator', taskId: 't' };
 const TYPES = { AcmeExperience: '_experience', AcmeHero: '_component', AcmeHeader: '_component' };
@@ -101,18 +101,39 @@ describe('the application', () => {
     expect(JSON.stringify(r.body)).toContain('Set Access Rights');
   });
 
-  it('takes only hosts the head is deployed on, one primary at a time', async () => {
+  it('takes only hosts the head is deployed on: one primary, one preview', async () => {
     const { cms, call } = await withApp();
+    const hosts = () => cms.applications.get('acme_site')!.hosts;
     expect((await call('hostname.add', { host: 'evil.example.com' })).code).toBe(422);
+    // Graph has no routes without a primary host: the preview host comes second.
+    expect(
+      (await call('hostname.add', { host: 'acme-editing.vercel.app', use: 'preview' })).code,
+    ).toBe(409);
     expect(await call('hostname.add', { host: 'acme.vercel.app' })).toMatchObject({ code: 200 });
-    expect(cms.applications.get('acme_site')!.hosts).toEqual([
+    expect(hosts()).toEqual([
       { authority: 'acme.vercel.app', type: 'primary', preferredUrlScheme: 'https' },
     ]);
-    const patches = cms.calls.filter((c) => c.method === 'PATCH').length;
+    const patches = () => cms.calls.filter((c) => c.method === 'PATCH').length;
+    const before = patches();
     await call('hostname.add', { host: 'acme.vercel.app' });
-    expect(cms.calls.filter((c) => c.method === 'PATCH').length).toBe(patches);
-    await call('hostname.remove', { host: 'acme.vercel.app' });
-    expect(cms.applications.get('acme_site')!.hosts).toEqual([]);
+    expect(patches()).toBe(before);
+    const preview = await call('hostname.add', { host: 'acme-editing.vercel.app', use: 'preview' });
+    expect(preview.summary).toBe('acme-editing.vercel.app is now the preview host of acme_site');
+    expect(hosts()).toEqual([
+      { authority: 'acme.vercel.app', type: 'primary', preferredUrlScheme: 'https' },
+      { authority: 'acme-editing.vercel.app', type: 'preview', preferredUrlScheme: 'https' },
+    ]);
+    // A new primary replaces the one before; the preview host stays.
+    const moved = await call('hostname.add', { host: 'www.acme.com' });
+    expect(moved.summary).toContain('it was acme.vercel.app');
+    expect(hosts()).toEqual([
+      { authority: 'acme-editing.vercel.app', type: 'preview', preferredUrlScheme: 'https' },
+      { authority: 'www.acme.com', type: 'primary', preferredUrlScheme: 'https' },
+    ]);
+    await call('hostname.remove', { host: 'acme-editing.vercel.app' });
+    expect(hosts()).toEqual([
+      { authority: 'www.acme.com', type: 'primary', preferredUrlScheme: 'https' },
+    ]);
   });
 
   it("points live preview at the head's preview route", async () => {

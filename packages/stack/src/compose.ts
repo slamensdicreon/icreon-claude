@@ -701,6 +701,8 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       try {
         const r = await opts.directives({
           text: req.text,
+          // The platform the project builds on, by name: the Director writes in its words.
+          platform: opts.platform.name,
           items,
           tasks: req.tasks ?? [],
           cards: req.cards ?? [],
