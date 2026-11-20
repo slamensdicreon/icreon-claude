@@ -158,6 +158,10 @@ const CompositionArgs = z.object({
   nodes: z.array(Node).min(1).max(100),
   locale: z.string().max(20).optional(),
 });
+const PathsArgs = z.object({
+  /** Routes below the start page: "/", "/about". */
+  paths: z.array(z.string().startsWith('/').max(300)).min(1).max(10),
+});
 const PublishArgs = z.object({ path: ItemPath, locale: z.string().max(20).optional() });
 const ApplicationArgs = z.object({
   /** The content type of the application's start page: an experience or page type of this project. */
@@ -408,6 +412,17 @@ export class OptimizelyCmsToolServer implements ToolServer {
       mutates: true,
       pathArgs: ['path'],
     },
+    'page.components': {
+      description:
+        'What each route is composed of, in order, as the CMS holds its latest version: every section with its content type (the project\'s prefix left off), its display template and the start of its text. Tells which component draws a section of a page: the one whose text the section shows. `paths` like "/", "/about", up to 10. Changes nothing.',
+      inputSchema: {
+        type: 'object',
+        properties: { paths: { type: 'array', items: { type: 'string' } } },
+        required: ['paths'],
+        additionalProperties: false,
+      },
+      mutates: false,
+    },
     'content.previews': {
       description:
         "The addresses Visual Builder opens for an item's latest version (by path): the head's preview route with a short-lived preview token, as a visitor preview and as the editing frame. For checking the preview renders a draft; the token is good for a few minutes and reads only that item.",
@@ -529,6 +544,8 @@ export class OptimizelyCmsToolServer implements ToolServer {
           return await w.update(UpdateArgs.safeParse(args));
         case 'composition.write':
           return await w.compose(CompositionArgs.safeParse(args));
+        case 'page.components':
+          return await w.pageComponents(PathsArgs.safeParse(args));
         case 'content.previews':
           return await w.previews(PublishArgs.safeParse(args));
         case 'content.publish':
@@ -1385,6 +1402,42 @@ class Work {
     };
   }
 
+  /** What each route renders: its sections in order, named as the Blueprint names components. */
+  async pageComponents(a: Parsed<typeof PathsArgs>): Promise<ToolResult> {
+    if (!a.success) return invalid(a);
+    const pages: {
+      path: string;
+      components: { component: string; placeholder: string; text: string }[] | null;
+    }[] = [];
+    for (const route of a.data.paths) {
+      const below = route.split('/').filter(Boolean).join('/');
+      const at = this.locate(`/content/${this.facts.application}${below ? `/${below}` : ''}`);
+      if (!('space' in at)) return at;
+      const key = await this.keyOf(at);
+      if (typeof key !== 'string') return key;
+      const version = (await this.node(key)) ? await this.latest(key, this.locale) : null;
+      const nodes = version?.composition ? sectionsOf(version.composition) : null;
+      pages.push({
+        path: below ? `/${below}` : '/',
+        components:
+          nodes?.map((n) => ({
+            // AcmeHero is the Blueprint's Hero: the prefix only keeps projects apart.
+            component: n.contentType.startsWith(this.facts.typePrefix)
+              ? n.contentType.slice(this.facts.typePrefix.length)
+              : n.contentType,
+            placeholder: n.name,
+            text: n.text,
+          })) ?? null,
+      });
+    }
+    const found = pages.filter((p) => p.components).length;
+    return {
+      code: 200,
+      body: { pages },
+      summary: `${found} of ${pages.length} ${pages.length === 1 ? 'page' : 'pages'} read, with ${pages.reduce((n, p) => n + (p.components?.length ?? 0), 0)} sections`,
+    };
+  }
+
   async previews(a: Parsed<typeof PublishArgs>): Promise<ToolResult> {
     if (!a.success) return invalid(a);
     const found = await this.existing(a.data.path);
@@ -1669,6 +1722,32 @@ interface RawNode {
     properties?: Record<string, { value?: unknown }>;
   };
   nodes?: RawNode[] | null;
+}
+
+/** A composition's components in reading order, each with the start of the text it shows. */
+function sectionsOf(composition: unknown): { name: string; contentType: string; text: string }[] {
+  const out: { name: string; contentType: string; text: string }[] = [];
+  const words = (v: unknown, into: string[]) => {
+    if (typeof v === 'string') {
+      // Text an editor wrote: not references, addresses or markup.
+      if (!/^(cms:\/\/|https?:\/\/|\/)/.test(v)) into.push(v.replace(/<[^>]+>/g, ' '));
+    } else if (Array.isArray(v)) v.forEach((x) => words(x, into));
+    else if (v && typeof v === 'object') Object.values(v).forEach((x) => words(x, into));
+  };
+  const walk = (n: RawNode) => {
+    if (n.component?.contentType && n.nodeType === 'component') {
+      const text: string[] = [];
+      words(unwrap(n.component.properties), text);
+      out.push({
+        name: n.displayName ?? n.component.contentType,
+        contentType: n.component.contentType,
+        text: text.join(' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+      });
+    }
+    (n.nodes ?? []).forEach(walk);
+  };
+  walk(composition as RawNode);
+  return out;
 }
 
 /** A composition as a list of what an editor sees: sections, and what is inside grid sections. */

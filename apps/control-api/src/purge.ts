@@ -40,6 +40,11 @@ export interface PurgeDeps {
     deleteProject(name: string): Promise<CleanupResult>;
     canDelete?(): Promise<ReadinessCheck>;
   } | null;
+  /**
+   * Takes back what the platform has pointing at the project's head (an Optimizely
+   * application's hosts), before the hosting project goes.
+   */
+  platform?: ((s: ProjectState) => Promise<CleanupResult>) | null;
   /** Every project: what another project still uses is left alone. */
   projects?: () => ProjectState[];
   now?: () => number;
@@ -72,6 +77,8 @@ export async function deletionReadiness(
 export const PURGE_STEPS = [
   'workflow',
   'repository',
+  // Before hosting and secrets: it needs the project's API key, and names the hosts to let go.
+  'platform',
   'hosting',
   'connection',
   'blobs',
@@ -114,6 +121,19 @@ async function run(
           detail: `No GitHub App or build organization is connected here, so ${repo.repo} was left.`,
         };
       return { ...(await deps.github.deleteBuildRepo(deps.buildOrg, repo)) };
+    }
+    case 'platform': {
+      if (!s.intake) return { outcome: 'skipped', detail: 'No target platform.' };
+      if (!deps.platform)
+        return {
+          outcome: 'skipped',
+          detail: 'No platform connection here: nothing was changed on it.',
+        };
+      const name = s.hosting?.project;
+      const sharer = name ? others(deps, s).find((p) => p.hosting?.project === name) : null;
+      if (sharer)
+        return { outcome: 'skipped', detail: `The head's hosts are also ${sharer.name}'s: left.` };
+      return { ...(await deps.platform(s)) };
     }
     case 'hosting': {
       const name = s.hosting?.project;
@@ -245,9 +265,14 @@ export async function purgeProject(
     };
     await deps.store.append(id, [purging]);
   }
+  // A hosting project that is kept keeps its place on the platform too.
+  const keepsHosting = (opts.keep ?? []).includes('hosting') || 'hosting' in tombstone.steps;
   for (const step of PURGE_STEPS) {
     if (tombstone.steps[step]) continue;
-    const result = await run(deps, s, step);
+    const result =
+      step === 'platform' && keepsHosting
+        ? { outcome: 'kept', detail: 'Kept with the hosting project: its hosts still answer.' }
+        : await run(deps, s, step);
     await deps.tombstones.step(id, step, result);
   }
   await deps.tombstones.finish(id, by);

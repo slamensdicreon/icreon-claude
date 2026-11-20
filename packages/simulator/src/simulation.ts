@@ -125,7 +125,14 @@ export class Simulation {
     await this.projectLatch.wait(this.signal);
   }
 
-  async createProject(budgets?: { tokens: number; usd: number; hours: number }) {
+  /**
+   * `labelled`: with the playbook's stat cards and tool server names, so Mission Control and
+   * Activity read in the platform's words ("Content types", "CMS REST API").
+   */
+  async createProject(
+    budgets?: { tokens: number; usd: number; hours: number },
+    opts: { labelled?: boolean } = {},
+  ) {
     const { manifest } = this.playbook;
     this.startedAt = Date.now();
     await this.emit(
@@ -142,6 +149,9 @@ export class Simulation {
           phases: phaseDefs(this.playbook),
           roster: roster(this.playbook),
           site: { sourceUrl: this.opts.sourceUrl ?? null },
+          ...(opts.labelled
+            ? { stats: manifest.defaults.stats, toolLabels: manifest.defaults.toolLabels }
+            : {}),
           mode: 'demo',
         },
       },

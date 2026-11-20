@@ -32,8 +32,6 @@ describe('acceptance check coverage', () => {
 // SitecoreAI: every check is implemented (the two Page builder checks read the renderings'
 // configuration since the pilot proof was automated; Page builder itself is checked at UAT).
 const EXPECTED_SITECORE: string[] = [];
-// Optimizely: what the pack's checks don't cover yet (entities.md, O4): content parity by words,
-// alt text across the media the team uploaded, and redirects.
-const EXPECTED_OPTIMIZELY = ['experience.redirects-resolve', 'media.alt-text', 'parity.page'];
-// The demo has no redirects to check.
-const EXPECTED_OPTIMIZELY_DEMO = ['media.alt-text', 'parity.page'];
+// Optimizely: every check its two playbooks name is implemented.
+const EXPECTED_OPTIMIZELY: string[] = [];
+const EXPECTED_OPTIMIZELY_DEMO: string[] = [];

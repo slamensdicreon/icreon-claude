@@ -7,6 +7,7 @@ import {
   redirectedAway,
   showsHeading,
   visibleText as readableText,
+  wordsOf,
 } from '../sitecoreai/checks';
 import { optimizelyTarget } from './pack';
 
@@ -137,17 +138,24 @@ const pageRef = (path: string): PageRef => {
   };
 };
 
+/** The Blueprint's pages that have a route of their own: kept, with a path, not an error page. */
+const routedPages = (ctx: PlatformCheckContext) =>
+  built(ctx.blueprint?.collections.pages).filter(
+    (p) => !p.attrs?.errorPage && typeof p.attrs?.path === 'string' && p.attrs.path.startsWith('/'),
+  );
+
 /**
  * The pages a check covers: the task's own (a page's migration is judged on that page), else
- * the start page. Error pages have no route of their own and are left out.
+ * every page the Blueprint keeps, else the start page. Capped: a check opens each one.
  */
-function pagesOf(ctx: PlatformCheckContext): PageRef[] {
-  if (ctx.scope.collection !== 'pages' || !ctx.scope.items.length) return [pageRef('/')];
-  const own = built(ctx.blueprint?.collections.pages)
-    .filter((p) => ctx.scope.items.includes(p.key) && !p.attrs?.errorPage)
-    .map((p) => p.attrs?.path)
-    .filter((path): path is string => typeof path === 'string' && path.startsWith('/'));
-  return own.length ? [...new Set(own)].slice(0, 20).map(pageRef) : [pageRef('/')];
+function pagesOf(ctx: PlatformCheckContext, cap = 20): PageRef[] {
+  const all = routedPages(ctx);
+  const own =
+    ctx.scope.collection === 'pages' && ctx.scope.items.length
+      ? all.filter((p) => ctx.scope.items.includes(p.key))
+      : all;
+  const paths = [...new Set(own.map((p) => String(p.attrs!.path)))];
+  return paths.length ? paths.slice(0, cap).map(pageRef) : [pageRef('/')];
 }
 
 /** One verdict over the task's pages: every failure named by its page, pending only when nothing failed. */
@@ -643,6 +651,155 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
           )
         : fail(r.differences.slice(0, 12), r);
     }),
+
+    // The pages say what the source's say: nine in ten of a source page's own words are on the
+    // new page, for 98% of the pages. Counted the same way on both sides, as a visitor reads them.
+    'parity.page': async (ctx) => {
+      const pages = pagesOf(ctx, 50);
+      const measured: { path: string; have: number; want: number }[] = [];
+      const unread: string[] = [];
+      const problems: string[] = [];
+      for (const pg of pages) {
+        const pair = await sourceAndCandidate(ctx, pg);
+        if ('status' in pair) return pair;
+        const [source, candidate] = await Promise.all([
+          page(cfg, pair.source),
+          page(cfg, pair.candidate),
+        ]);
+        if (source.status !== 200 || isChallengePage(source.html)) {
+          unread.push(pg.path);
+          continue;
+        }
+        if (redirectedAway(pair.source, source.url)) continue;
+        if (candidate.status !== 200) {
+          problems.push(`${pg.path} answered ${candidate.status || 'nothing'} on the new site`);
+          measured.push({ path: pg.path, have: 0, want: 1 });
+          continue;
+        }
+        const want = wordsOf(readableText(source.html));
+        const got = wordsOf(readableText(candidate.html));
+        const have = [...want].filter((w) => got.has(w)).length;
+        measured.push({ path: pg.path, have, want: want.size });
+        if (want.size && have < want.size * 0.9) {
+          const missing = [...want].filter((w) => !got.has(w)).slice(0, 8);
+          problems.push(
+            `${pg.path} has ${Math.round((have / want.size) * 100)}% of the source page's words (missing, for example: ${missing.join(', ')})`,
+          );
+        }
+      }
+      if (!measured.length)
+        return pending(
+          unread.length
+            ? `No source page could be read (${unread.slice(0, 5).join(', ')}): compare them at the review.`
+            : 'No page to compare.',
+        );
+      const enough = measured.filter((m) => !m.want || m.have >= m.want * 0.9).length;
+      const parity = Math.round((enough / measured.length) * 100);
+      const note = unread.length ? `; ${unread.length} source pages could not be read` : '';
+      return parity >= 98
+        ? pass(`Content parity ${parity}% across ${measured.length} pages${note}.`, {
+            parity,
+            measured,
+          })
+        : fail([`Content parity ${parity}% (98% needed)`, ...problems.slice(0, 15)], {
+            parity,
+            measured,
+          });
+    },
+
+    // Every image the team uploaded says what it shows.
+    'media.alt-text': async (ctx) => {
+      const { cmsUrl } = optimizelyTarget({ target: ctx.target });
+      const app = await application(ctx);
+      if (isResult(app)) return app;
+      if (!app.assetsRoot) return pending('The application has no assets of its own to look in.');
+      // An application's own media is served under its assets root.
+      const prefix = `${cmsUrl.replace(/\/$/, '')}/siteassets/${app.assetsRoot}/`;
+      const r = await ctx.read('optimizely-graph', 'graph.query', {
+        query:
+          'query Media($prefix: String) { _Image(limit: 100, where: { _metadata: { url: { default: { startsWith: $prefix } } } }) { total items { _metadata { displayName } ... on ImageMedia { AltText } } } }',
+        variables: { prefix },
+      });
+      if (r.code !== 200) return pending(`The application's media could not be read: ${reason(r)}`);
+      const images = (
+        r.body as {
+          data?: {
+            _Image?: {
+              total?: number;
+              items?: { AltText?: string | null; _metadata?: { displayName?: string } }[];
+            };
+          };
+        }
+      ).data?._Image;
+      const items = images?.items ?? [];
+      if (!items.length) return pending("No published image in the application's media yet.");
+      const without = items
+        .filter((i) => !(i.AltText ?? '').trim())
+        .map((i) => i._metadata?.displayName ?? '?');
+      const total = images?.total ?? items.length;
+      return without.length
+        ? fail(
+            without.slice(0, 20).map((name) => `${name} has no alt text`),
+            { images: total, without: without.length },
+          )
+        : pass(`${total} images, each with alt text.`, { images: total });
+    },
+
+    // A page that moved still answers at its old address, with a permanent redirect to the new one.
+    'experience.redirects-resolve': async (ctx) => {
+      const { languages } = optimizelyTarget({ target: ctx.target });
+      if (!ctx.blueprint) return pending('There is no approved Blueprint to check against.');
+      const moved = routedPages(ctx)
+        .map((p) => ({ from: String(p.attrs!.path), to: p.attrs?.route }))
+        .filter(
+          (m): m is { from: string; to: string } =>
+            typeof m.to === 'string' &&
+            m.to.startsWith('/') &&
+            pageRef(m.to).path !== pageRef(m.from).path,
+        );
+      if (!moved.length)
+        return pass(
+          'No page moved: every page keeps its source path, so there is nothing to redirect.',
+        );
+      const app = await application(ctx);
+      if (isResult(app)) return app;
+      const host = buildHost(app);
+      if (!host) return fail(['The application has no host']);
+      const problems: string[] = [];
+      for (const m of moved.slice(0, 50)) {
+        let status = 0;
+        let location = '';
+        try {
+          const res = await cfg.fetch(`https://${host.host}${m.from}`, {
+            redirect: 'manual',
+            signal: AbortSignal.timeout(cfg.timeoutMs),
+          });
+          status = res.status;
+          location = res.headers.get('location') ?? '';
+        } catch {
+          /* reported as no answer */
+        }
+        const target = pageRef(m.to);
+        const landed = location
+          ? new URL(location, `https://${host.host}`).pathname.replace(/\/$/, '')
+          : '';
+        const wanted = [target.path, target.route(languages[0] ?? 'en').replace(/\/$/, '')].map(
+          (x) => x.replace(/\/$/, ''),
+        );
+        if (status !== 301 && status !== 308)
+          problems.push(
+            `${m.from} answered ${status || 'nothing'}, not a permanent redirect to ${m.to}`,
+          );
+        else if (!wanted.includes(landed))
+          problems.push(`${m.from} redirects to ${location}, not ${m.to}`);
+      }
+      return problems.length
+        ? fail(problems.slice(0, 20), { moved: moved.length })
+        : pass(
+            `${moved.length} moved ${moved.length === 1 ? 'page redirects' : 'pages redirect'} permanently to ${moved.length === 1 ? 'its' : 'their'} new address.`,
+            { moved: moved.length },
+          );
+    },
 
     // The start page carries the shared header and footer, and they render.
     'head.header-footer': async (ctx) => {

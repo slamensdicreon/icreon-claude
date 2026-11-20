@@ -173,8 +173,8 @@ describe('Optimizely website playbook: the order the platform sets', () => {
         if (servers.has(server!) && !role.tools[server!]?.ops.includes(op!))
           missing.push(`${role.role}: ${server}.${op}`);
       }
-      // The validators server has no parity run on this platform, and its structural scopes are
-      // another platform's: these two roles work from their acceptance checks.
+      // These two roles work from their acceptance checks, which run the platform's checks on
+      // the task's own items; the validators server's whole-project runs are for other roles.
       if (['parity-auditor', 'structural-validator'].includes(role.role))
         expect(prompt, role.role).not.toMatch(/validators\.(parity|structural)\.run/);
     }

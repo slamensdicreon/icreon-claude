@@ -289,6 +289,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     buildRecipe: { generate: [], build: 'build', readOnly: [] },
     checks: optimizelyChecks(cfg),
     facts: (call, body, target) => optimizelyFacts(call, body, optimizelyBindings(target)),
+    pageComponents: { server: 'optimizely-cms', op: 'page.components' },
     headEnv: async (t, _which, deps) => headVars(t, deps.credential, deps.hosts),
     // The sandbox also runs `optimizely-cms-cli config push`, which signs in with the REST API
     // key. The head never needs that key, so it stays off the hosting project.

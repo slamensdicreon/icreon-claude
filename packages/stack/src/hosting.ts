@@ -355,6 +355,78 @@ export async function canDeleteHostingProjects(
       };
 }
 
+/**
+ * What a project being deleted leaves pointing at its head, taken back on its platform. On
+ * Optimizely the application's hosts are the Vercel addresses about to go: they are removed, so
+ * the application no longer routes to, or opens Visual Builder on, a host that isn't there. The
+ * application, its content and its content types stay: they are content, and deleting content is
+ * a person's decision in the CMS. Refusals come back as outcomes; the purge records them.
+ */
+export async function releasePlatformHosts(
+  w: Pick<HostingWiring, 'tokenFor' | 'fetch'>,
+  s: ProjectState,
+): Promise<CleanupResult> {
+  if (s.intake?.platform !== OPTIMIZELY)
+    return {
+      outcome: 'skipped',
+      detail: 'Nothing on this platform is changed when a project goes.',
+    };
+  const facts = optimizelyFacts(s)!;
+  const kept = `The application ${facts.application}, its content and the content types starting with ${facts.typePrefix} stay in the CMS: delete the application in Settings > Applications if it is no longer wanted.`;
+  try {
+    const cms = new OptimizelyCmsToolServer({
+      facts: async () => facts,
+      ...(w.fetch ? { fetch: w.fetch } : {}),
+    });
+    const ctx: ToolCallContext = {
+      projectId: s.projectId,
+      token: await w.tokenFor(s.projectId, 'optimizely-cms'),
+      role: 'director',
+      taskId: 'project-delete',
+    };
+    const application = await cms.call('application.read', {}, ctx);
+    if (application.code === 404)
+      return {
+        outcome: 'not_found',
+        detail: `The application ${facts.application} was never created.`,
+      };
+    if (application.code !== 200)
+      return {
+        outcome: 'refused',
+        detail: `The application could not be read (${summaryOf(application)}). ${kept}`,
+      };
+    const ours = new Set(facts.headHosts.map((h) => h.toLowerCase()));
+    const hosts = (
+      (application.body as { hosts?: { host: string; type: string | null }[] }).hosts ?? []
+    )
+      .filter((h) => ours.has(h.host.toLowerCase()))
+      // The preview host first: the API wants a primary for as long as there is a preview.
+      .sort((a, b) => Number(a.type === 'primary') - Number(b.type === 'primary'));
+    if (!hosts.length)
+      return {
+        outcome: 'skipped',
+        detail: `No host of this project is on the application. ${kept}`,
+      };
+    for (const h of hosts) {
+      const r = await cms.call('hostname.remove', { host: h.host }, ctx);
+      if (r.code >= 300)
+        return {
+          outcome: 'refused',
+          detail: `${h.host} could not be removed from the application (${summaryOf(r)}). ${kept}`,
+        };
+    }
+    return {
+      outcome: 'deleted',
+      detail: `Removed ${hosts.map((h) => h.host).join(' and ')} from the application. ${kept}`,
+    };
+  } catch (err) {
+    return {
+      outcome: 'refused',
+      detail: `The CMS could not be reached with the project's API key (${err instanceof Error ? err.message : String(err)}). ${kept}`,
+    };
+  }
+}
+
 export async function deleteHostingProject(
   w: Pick<HostingWiring, 'token' | 'teamId' | 'fetch'>,
   name: string,

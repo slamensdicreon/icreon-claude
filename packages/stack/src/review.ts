@@ -718,6 +718,8 @@ export interface ReviewDeps {
   /** The playbook's platform pack, for its own checks, and how they read the project's systems. */
   platform?: {
     checks?: Record<string, PlatformCheck>;
+    /** The platform's read of what each route renders (the pack's `pageComponents`). */
+    pageComponents?: { server: string; op: string };
     read(
       projectId: string,
       server: string,
@@ -782,8 +784,9 @@ export function uncheckedValidators(
 type RoleDef = Playbook['roles'][number];
 
 /**
- * What the task's pages render, from the platform (SitecoreAI: Experience Edge preview), each
- * rendering matched to its Blueprint component by name. Empty when the platform can't say.
+ * What the task's pages render, from the platform (SitecoreAI: Experience Edge preview;
+ * Optimizely: the page's composition), each one matched to its Blueprint component by name.
+ * Empty when the platform can't say.
  */
 async function renderedComponents(
   platform: ReviewDeps['platform'],
@@ -791,11 +794,12 @@ async function renderedComponents(
   paths: string[],
   components: { key: string; name: string }[],
 ): Promise<NonNullable<AttributeInput['pages']>> {
-  if (!platform || !paths.length) return [];
+  const source = platform?.pageComponents;
+  if (!platform || !source || !paths.length) return [];
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   const byName = new Map(components.map((c) => [norm(c.name), c.key]));
   try {
-    const r = await platform.read(projectId, 'sitecore-authoring', 'page.components', { paths });
+    const r = await platform.read(projectId, source.server, source.op, { paths });
     if (r.code !== 200) return [];
     const pages = (r.body as { pages?: { path: string; components: RenderedComponent[] | null }[] })
       .pages;

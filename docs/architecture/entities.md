@@ -76,7 +76,7 @@ Updated 2026-10-31, after the decoupling pass (finish-partials plan, section 6).
 | `tool-servers/sandbox` `exec.build`, `READ_ONLY` | Staged Sitecore scripts; `sitecore.json` read-only for everyone | The pack's `buildRecipe` (generate scripts, build script, read-only files) through the workspace facts; SitecoreAI's recipe is the default and unchanged |
 | `tool-servers/sandbox` `exec.content-sdk-cli` | The Content SDK CLI | Unchanged: it is SitecoreAI's own server operation, granted only to SitecoreAI roles. Optimizely's CLI comes with O3 |
 | `apps/worker/src/main.ts` | `platform !== 'sitecoreai'` guards | The guards use the pack's id. Server construction stays in the worker: the servers don't depend on the packs and the packs shouldn't on the servers; a role whose platform has no server blocks as not connected |
-| `stack/src/review.ts` `CHECKS` | Platform checks mixed with shared ones | Platform checks live in the pack (`pack.checks`); `uncheckedValidators` lists every check a playbook names that nothing implements, logged at worker start and pinned in a test (SitecoreAI: none; Optimizely: 3 for the website playbook, O4) |
+| `stack/src/review.ts` `CHECKS` | Platform checks mixed with shared ones | Platform checks live in the pack (`pack.checks`); `uncheckedValidators` lists every check a playbook names that nothing implements, logged at worker start and pinned in a test (none on either platform) |
 | `contracts` `ProjectTarget`, `RuleScope` | Documented as Sitecore's | Documented as pack-defined |
 | `apps/web` copy | "SitecoreAI" in nine places, `-sitecoreai` suffix | `ProjectSummary.platform` (named by the pack in the API); the web reads it, with a neutral fallback |
 | `control-api` `playbooks()`, the New Project page | Flat playbook list | Grouped by entity (done earlier) |
@@ -192,9 +192,17 @@ they would run with their own teams). The team goes from 24 roles to 21.
   (`structural.application`, `structural.content-types`, `structural.templates`,
   `structural.experiences`, `types.pushed`, `editor.element-enabled`, `editor.new-experience`,
   `hostname.registered`, `graph.published`, `routes.resolve`, `head.preview-route`,
-  `head.pages-render`, `head.header-footer`, `parity.render`, `parity.visual`); the step-based
-  `types.defined` and `manifest.replays` are in `packages/stack/src/review.ts`.
-- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): nineteen rows proven on
+  `head.pages-render`, `head.header-footer`, `parity.render`, `parity.visual`, `parity.page`,
+  `media.alt-text`, `experience.redirects-resolve`); the step-based `types.defined` and
+  `manifest.replays` are in `packages/stack/src/review.ts`. Every check the two playbooks name
+  is implemented.
+- **Operations**: the pack's `starter` and `buildRecipe` (build repositories), `facts` (what
+  each call made), `pageComponents` (what a route renders, for routing a failed check), the
+  Director's hosting setup (the editing host becomes the application's preview host) and the
+  `platform` step of a project's deletion (the application lets go of the project's hosts).
+  An application has a primary host (production: where visitors get the site and what Graph's
+  routes are on) and a preview host (the editing address: where Visual Builder opens pages).
+- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): twenty-one rows proven on
   a live instance, then the rows from the documentation that no build has met yet.
 - **Playbooks**, both in the order the platform sets (content types first; then the application,
   whose start page is of a pushed experience type, with its host and live preview; then shared
@@ -217,15 +225,22 @@ the content writes (media, shared blocks, pages, compositions, publishing) and e
 
 ## The Optimizely entity: to build
 
-| #  | Work | Size |
-| -- | ---- | ---- |
-| O3 | The starter template repository. The official starter is `npx @optimizely/cms-create-app <name> --template nextjs-starter`; a build repository is generated from a template repository, so it needs a copy in `icreon-launchworks` marked as a template, then `pack.starter` and `pack.buildRecipe`. Until then intake refuses a build repository for this pack | S |
-| O4 | The checks nothing implements yet: `parity.page` (content parity by words needs the source inventory's pages mapped to routes), `media.alt-text` (needs a media listing), `experience.redirects-resolve` | S |
-| O9 | Shared pieces that still read another platform's contract, so the Optimizely plans leave them out: `blueprint.coverage` (`attrs.fields`, `attrs.rendering`, `attrs.queryBudget`), `editing-host.responds` (`/api/editing/config`), and the `validators` server's `structural.run` scopes (`site`, `templates`, `renderings`) and `parity.run` (offered only when the pack has `parity.page`). Until they are portable the Blueprint is judged by the Discovery Lead and Gate 1, and the validator roles work through `acceptance.check` and reads | M |
-| O5 | Browser `visual-builder.drive` and `video.record`: the same capability gap as `page-builder.drive`; M7's driver should cover both editors | L (shared with M7) |
-| O6 | Catalog grouping and UI: `entity.yaml`, `GET /entities`, the wizard's entity step, platform names in copy | S |
-| O7 | Run both playbooks end to end with the Director on a live project (the first build was made by hand through the same REST calls and tool servers, to prove them) | – |
-| O8 | Webhooks from Graph to the head for on-demand revalidation (`webhook.{list,create}`: a Graph API, not the REST API's); the head revalidates on a timer until then. `locale.add`: locales are instance-wide, so enabling one stays a Director step | S |
+What an Optimizely project can do that a SitecoreAI one can, and what is left. Done: the wizard,
+saved connections and remix (a site remixed as a homepage demo and back), build repositories
+from the pack's starter, the Director's hosting setup, facts, every check both playbooks name,
+the validators' structural scopes and parity run, routing a failed check to the component that
+draws it, cleanup on delete, a simulated project, and the product's wording.
+
+| #   | Work | Size |
+| --- | ---- | ---- |
+| O3  | Create the starter's template repository (`icreon-launchworks/optimizely-starter-nextjs`, marked as a template, readable by the GitHub App). Its contents are ready: Optimizely's official starter (`npx @optimizely/cms-create-app head --template nextjs-starter`) in `head/`. The pack names it already; until it exists, creating a build repository answers that GitHub can't find the starter | S |
+| O5  | Browser `visual-builder.drive` and `video.record`: the same capability gap as `page-builder.drive`; M7's driver should cover both editors. Until then the Visual Builder steps are by hand, as the Page builder ones are | L (shared with M7) |
+| O6  | Catalog grouping and UI: `entity.yaml`, `GET /entities`, the wizard's entity step | S |
+| O7  | Run both playbooks end to end with the Director on a live project (the first build was made through the same REST calls and tool servers, to prove them) | – |
+| O8  | Webhooks from Graph to the head for on-demand revalidation; the head revalidates on a timer until then. Enabling a locale stays a Director step: locales are instance-wide | S |
+| O9  | Two shared checks still read SitecoreAI's contract, so the Optimizely plans leave them out: `blueprint.coverage` (`attrs.fields`, `attrs.rendering`, `attrs.queryBudget`) and `editing-host.responds` (`/api/editing/config`). The Blueprint is judged by the Discovery Lead and Gate 1 | S |
+| O10 | The large-site bulk import (`packages/stack/src/import`, the page-template checks) writes through `sitecore-authoring` only. An Optimizely site of several hundred pages is migrated page by page | L |
+| O11 | Blueprints need a right of their own on the instance; where the API key lacks it an editor saves the blueprint in Visual Builder | – |
 
 ## Decisions for the Director
 

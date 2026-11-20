@@ -1,12 +1,13 @@
 import { fileURLToPath } from 'node:url';
 import { CommandError } from '@lw/domain';
 import { CommandBus, openStore, verifiedTls } from '@lw/events';
-import { loadPlaybook } from '@lw/playbook-sdk';
+import { loadCatalog, loadPlaybook } from '@lw/playbook-sdk';
 import { DEMO_SCENARIOS, demoProjectId, RETIRED_DEMO_PROJECTS, startDemo } from '@lw/simulator';
 import { openBlobStore } from '@lw/tool-gateway';
 import pg from 'pg';
 import { z } from 'zod';
 import { demoCommands, dispatch, type ProjectCommands } from './commands';
+import { SIM_SEEDS, simProjectId, startSimProjects } from './sim-projects';
 
 /**
  * The demo runner: plays the demo project into the shared Postgres log and runs the
@@ -14,8 +15,10 @@ import { demoCommands, dispatch, type ProjectCommands } from './commands';
  * ORCHESTRATOR=simulator when the API runs on request-driven instances (DEMO_RUNNER=separate):
  * on Vercel, a Daemon with exactly one instance.
  *
- * Each start reseeds the demo projects, so the demo always opens on the prototype's story. Only
- * they run here; a simulated project left from the old intake answers that it has stopped.
+ * Each start reseeds the demo projects, so the demo always opens on the prototype's story. With
+ * SIM_PROJECTS it also plays that many scripted engagements (sim-projects.ts: two SitecoreAI
+ * builds, then an Optimizely one), each on its own playbook and from the start again. Nothing
+ * else runs here; a simulated project left from the old intake answers that it has stopped.
  *
  * Only one runner may play at a time. It holds a Postgres advisory lock for its whole life; a
  * second copy (a rollout overlapping the old instance) waits for the lock before it touches the
@@ -29,9 +32,16 @@ const env = z
     BLOB_STORE: z.enum(['local', 'vercel']).default('local'),
     DATA_DIR: z.string().default('/tmp/launchworks'),
     SIM_SPEED: z.coerce.number().positive().default(1),
+    /** The demo project's playbook: its story is a SitecoreAI build. */
     PLAYBOOK_DIR: z
       .string()
       .default(fileURLToPath(new URL('../../../playbooks/sitecoreai-migration', import.meta.url))),
+    /** Scripted engagements to play beside it, in the order of SIM_SEEDS. */
+    SIM_PROJECTS: z.coerce.number().int().min(0).max(10).default(0),
+    /** Where a scripted engagement finds the playbook it runs. */
+    PLAYBOOKS_DIR: z
+      .string()
+      .default(fileURLToPath(new URL('../../../playbooks', import.meta.url))),
   })
   .parse(process.env);
 
@@ -63,6 +73,20 @@ const demos = await startDemo(store, playbook, blobs, { speed: env.SIM_SPEED });
 const projects = new Map<string, ProjectCommands>(demos.map((d) => [d.projectId, demoCommands(d)]));
 console.log(`Demo projects running: ${demos.map((d) => d.projectId).join(', ')}`);
 
+// Scripted engagements keep one id each across restarts, and every start clears them all: a
+// restart leaves no stopped copy behind, and a lower SIM_PROJECTS takes the others away.
+for (const seed of SIM_SEEDS) await store.reset(simProjectId(seed));
+const scripted = startSimProjects({
+  store,
+  catalog: env.SIM_PROJECTS ? await loadCatalog(env.PLAYBOOKS_DIR) : new Map(),
+  count: env.SIM_PROJECTS,
+  speed: env.SIM_SPEED,
+  projectId: simProjectId,
+});
+for (const [id, cmds] of scripted.commands) projects.set(id, cmds);
+if (scripted.commands.size)
+  console.log(`Scripted engagements running: ${[...scripted.commands.keys()].join(', ')}`);
+
 const stop = new AbortController();
 const bus = new CommandBus(opened.sql!);
 const serving = bus.serve(
@@ -85,6 +109,7 @@ const shutdown = async () => {
   stop.abort();
   await serving;
   for (const d of demos) d.stop();
+  scripted.stop();
   await opened.close();
   await lock.end();
   process.exit(0);

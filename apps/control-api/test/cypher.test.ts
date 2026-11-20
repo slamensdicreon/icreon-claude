@@ -11,7 +11,7 @@ import {
 } from '@lw/events';
 import { loadCatalog } from '@lw/playbook-sdk';
 import { createPlatforms } from '@lw/platforms';
-import { SITECORE_DEFAULTS } from '@lw/connectors';
+import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
@@ -56,6 +56,49 @@ const first: ProjectIntakeInput = {
   },
 };
 
+const CMS_SECRET = 'cms-secret-value-QRST';
+
+/** A fake Optimizely: one REST API key on the gateway, and a Graph single key that works. */
+const fakeOptimizely = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = String(input);
+  const body = init?.body ? JSON.parse(String(init.body)) : null;
+  const authorization = new Headers(init?.headers).get('authorization') ?? '';
+  const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status });
+  if (url === 'https://api.cms.optimizely.com/oauth/token')
+    return body.client_id === 'cms-id' && body.client_secret === CMS_SECRET
+      ? json(200, { access_token: 'jwt', expires_in: 300 })
+      : json(401, { error: 'invalid_client' });
+  if (url.startsWith('https://api.cms.optimizely.com/v1/contenttypes'))
+    return authorization === 'Bearer jwt'
+      ? json(200, { items: [], totalItemCount: 0 })
+      : json(401, {});
+  if (url === 'https://cg.optimizely.com/content/v2')
+    return authorization === 'epi-single graph-key-1234'
+      ? json(200, { data: { _Content: { total: 3 } } })
+      : json(401, {});
+  return json(404, {});
+}) as typeof fetch;
+
+const firstOptimizely: ProjectIntakeInput = {
+  playbookId: 'optimizely-saas-migration',
+  name: 'Globex website',
+  client: 'Globex',
+  budgets: { usd: 900, tokens: 6_000_000, hours: 200 },
+  source: { repo: null, branch: 'main', url: 'https://www.globex.example' },
+  target: {
+    cmsUrl: 'https://app-globex123.cms.optimizely.com',
+    application: 'Globex Website',
+    typePrefix: 'Globex',
+    languages: ['en'],
+    hostingProject: 'globex-website',
+  },
+  brief: { experimentation: 'no', accessibility: 'WCAG 2.2 AA' },
+  credentials: {
+    'cms-api-client': { clientId: 'cms-id', clientSecret: CMS_SECRET },
+    'graph-single-key': { singleKey: 'graph-key-1234' },
+  },
+};
+
 let app: FastifyInstance | null = null;
 afterEach(async () => {
   await app?.close();
@@ -80,7 +123,10 @@ async function start(
     intake: new IntakeService({
       store,
       catalog: playbooks,
-      platforms: createPlatforms({ sitecore: { ...SITECORE_DEFAULTS, fetch: fakeSitecore } }),
+      platforms: createPlatforms({
+        sitecore: { ...SITECORE_DEFAULTS, fetch: fakeSitecore },
+        optimizely: { ...OPTIMIZELY_DEFAULTS, fetch: fakeOptimizely },
+      }),
       vault: new MemoryVault(),
       connections,
     }),
@@ -481,5 +527,110 @@ it('drafts a site remixed as a homepage demo: the demo playbook on the same conn
   // Only the demo's own questions: nothing about personalization or accessibility.
   expect(proposal.draft.brief).toEqual({});
   expect(proposal.draft.connectionId).toMatch(/^con-/);
+  expect(await store.projectIds()).toEqual([projectId]);
+});
+
+it('lists the playbooks of both platforms, and drafts an Optimizely site remixed as its homepage demo', async () => {
+  let projectId = '';
+  const { model, results } = scripted([
+    { tool: 'list_playbooks', input: {} },
+    { tool: 'list_connections', input: {} },
+    // The SitecoreAI demo can't take an Optimizely project's connection.
+    {
+      tool: 'propose_remix',
+      input: () => ({
+        fromProjectId: projectId,
+        playbookId: 'sitecoreai-homepage-demo',
+        name: 'Initech homepage demo',
+        reason: 'A homepage demo for Initech.',
+      }),
+    },
+    {
+      tool: 'propose_remix',
+      input: () => ({
+        fromProjectId: projectId,
+        playbookId: 'optimizely-homepage-demo',
+        name: 'Initech homepage demo',
+        client: 'Initech',
+        sourceUrl: 'https://www.initech.example',
+        brief: { experimentation: 'yes' },
+        reason: 'A homepage demo for Initech on the Globex instance.',
+      }),
+    },
+    { text: 'Drafted the Initech homepage demo on the Globex instance.' },
+    { text: '```json\n{"title": "Initech demo", "summary": "Drafted a homepage demo."}\n```' },
+  ]);
+  const { store } = await start(model);
+  projectId = (await call('POST', '/projects', firstOptimizely)).body.projectId;
+  await call('POST', '/connections', { name: 'Globex instance', fromProject: projectId });
+
+  const r = await call('POST', '/cypher', {
+    body: 'Remix the Globex website as a homepage demo for initech.example.',
+  });
+  expect(r.status).toBe(200);
+
+  // Every playbook is listed with the platform it runs on, so Cypher can pick one that fits.
+  const playbooks = JSON.parse(results[0]!) as {
+    id: string;
+    name: string;
+    platform: string;
+    phases: string[];
+    team: string[];
+    brief: { key: string }[];
+  }[];
+  expect(playbooks.map((b) => [b.id, b.platform]).sort()).toEqual([
+    ['optimizely-homepage-demo', 'Optimizely CMS (SaaS)'],
+    ['optimizely-saas-migration', 'Optimizely CMS (SaaS)'],
+    ['sitecoreai-customer-portal', 'SitecoreAI'],
+    ['sitecoreai-homepage-demo', 'SitecoreAI'],
+    ['sitecoreai-migration', 'SitecoreAI'],
+  ]);
+  const website = playbooks.find((b) => b.id === 'optimizely-saas-migration')!;
+  expect(website.name).toBe('Build an Optimizely CMS (SaaS) website');
+  // Ten phases, with the two that wait on the Director marked.
+  expect(website.phases).toHaveLength(10);
+  expect(
+    website.phases.filter((ph) => ph.endsWith(' gate)')).map((ph) => ph.split(' (')[0]),
+  ).toEqual(['2 Blueprint', '9 Handover and acceptance']);
+  expect(website.team.some((line) => line.startsWith('Experience Builder: '))).toBe(true);
+  expect(website.brief.map((q) => q.key)).toContain('experimentation');
+  // The saved instance, with what it shares and no secret.
+  expect(JSON.parse(results[1]!)).toMatchObject([
+    {
+      name: 'Globex instance',
+      platform: 'optimizely',
+      target: { cmsUrl: 'https://app-globex123.cms.optimizely.com', languages: ['en'] },
+    },
+  ]);
+  expect(results.join('\n')).not.toContain(CMS_SECRET);
+  expect(results.join('\n')).not.toContain('graph-key-1234');
+  expect(results[2]).toMatch(/^ERROR .*another platform/);
+
+  const reply = CypherConversation.parse(r.body).messages[1]!;
+  expect(reply.proposals).toHaveLength(1);
+  const proposal = reply.proposals[0]!;
+  expect(proposal).toMatchObject({
+    kind: 'remix',
+    reason: 'A homepage demo for Initech on the Globex instance.',
+    draft: {
+      playbookId: 'optimizely-homepage-demo',
+      from: { projectId, name: 'Globex website' },
+      name: 'Initech homepage demo',
+      client: 'Initech',
+      sourceUrl: 'https://www.initech.example',
+      // The demo's own budgets, not the website project's.
+      budgets: { usd: 300, tokens: 20_000_000, hours: 10 },
+    },
+  });
+  // The instance carries over; the demo's application, type prefix and hosting are left to fill.
+  expect(proposal.draft.target).toEqual({
+    cmsUrl: 'https://app-globex123.cms.optimizely.com',
+    languages: ['en'],
+  });
+  // Only the demo's own questions: nothing about Experimentation or accessibility.
+  expect(proposal.draft.brief).toEqual({});
+  expect(proposal.draft.connectionId).toMatch(/^con-/);
+  expect(proposal.draft.providedCredentials.sort()).toEqual(['cms-api-client', 'graph-single-key']);
+  // Drafts only: still just the one project.
   expect(await store.projectIds()).toEqual([projectId]);
 });

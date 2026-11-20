@@ -1,4 +1,15 @@
-import type { Workstream } from '@lw/contracts';
+import {
+  acceptAndClose,
+  blueprintGate,
+  enter,
+  exit,
+  hold,
+  kickOff,
+  slug,
+  sourceOfTruth,
+  task,
+  work,
+} from './method';
 import type { Simulation } from './simulation';
 
 /** Fixture site: a mid-size corporate Next.js app. */
@@ -25,112 +36,8 @@ const PAGE_COUNT = 48;
 const MEDIA_COUNT = 120;
 const PILOT = ['Hero', 'PromoCard', 'RichText'];
 
-type Step = [server: string, op: string, summary: string];
-
-/**
- * Runs one task end to end: agent active → steps → validating → done (or rejected and retried).
- * `rejectTimes` makes the Lead reject the output that many times before it passes.
- */
-async function work(
-  sim: Simulation,
-  agentId: string,
-  taskId: string,
-  label: string,
-  steps: Step[],
-  opts: { rejectTimes?: number; validator?: Step } = {},
-) {
-  await sim.move(taskId, 'ready');
-  await sim.move(taskId, 'running');
-  let rejections = 0;
-  for (;;) {
-    for (let i = 0; i < steps.length; i++) {
-      const [server, op, summary] = steps[i]!;
-      await sim.agent(agentId, 'active', `${label}, step ${i + 1} of ${steps.length}`, taskId);
-      await sim.step(agentId, taskId, server, op, summary);
-    }
-    await sim.move(taskId, 'validating');
-    if (opts.validator) {
-      const [server, op, summary] = opts.validator;
-      const pass = rejections >= (opts.rejectTimes ?? 0);
-      await sim.step(agentId, taskId, server, op, pass ? summary : `${summary}: failed`, {
-        code: pass ? 200 : 422,
-        severity: pass ? 'notable' : 'failure',
-      });
-    }
-    if (rejections < (opts.rejectTimes ?? 0)) {
-      rejections++;
-      await sim.move(taskId, 'rejected', 'Lead review: acceptance criteria not met');
-      if (rejections > 2) return 'escalate' as const;
-      await sim.move(taskId, 'running', `Retry ${rejections} with Lead feedback`);
-      continue;
-    }
-    await sim.move(taskId, 'done');
-    await sim.agent(agentId, 'idle', null, null);
-    return 'done' as const;
-  }
-}
-
-async function activate(sim: Simulation, phase: number) {
-  for (const r of sim.playbook.roles) {
-    if (r.tier !== 'specialist' || !Array.isArray(r.activePhases)) continue;
-    if (r.activePhases.includes(phase)) await sim.agent(r.role, 'idle');
-  }
-}
-
-async function deactivate(sim: Simulation, phase: number, next: number[]) {
-  for (const r of sim.playbook.roles) {
-    if (r.tier !== 'specialist' || !Array.isArray(r.activePhases)) continue;
-    const activeNow = r.activePhases.includes(phase);
-    const activeLater = next.some((n) => (r.activePhases as number[]).includes(n));
-    if (activeNow && !activeLater) await sim.agent(r.role, 'inactive');
-  }
-}
-
-async function enter(sim: Simulation, phase: number, brief: string[]) {
-  const p = sim.playbook.manifest.phases[phase]!;
-  await sim.phase('entered', phase);
-  await activate(sim, phase);
-  await sim.say('phase_brief_entry', `Phase ${phase} brief: ${p.name}`, brief.join('\n'));
-}
-
-async function exit(sim: Simulation, phase: number, results: string[], next: number[]) {
-  const p = sim.playbook.manifest.phases[phase]!;
-  await sim.phase('exited', phase);
-  await deactivate(sim, phase, next);
-  await sim.say('phase_brief_exit', `Phase ${phase} complete: ${p.name}`, results.join('\n'));
-}
-
-const t = (
-  id: string,
-  role: string,
-  title: string,
-  workstream: Workstream | null,
-  dependsOn: string[] = [],
-) => ({
-  taskId: id,
-  role,
-  title,
-  workstream,
-  dependsOn,
-});
-
 export async function sitecoreScenario(sim: Simulation): Promise<void> {
-  // Small budgets so the burn bar moves during a demo; real projects use the playbook defaults.
-  await sim.createProject({ tokens: 2_500_000, usd: 20, hours: 6 });
-  for (const lead of [
-    'chief-of-staff',
-    'discovery-lead',
-    'engineering-lead',
-    'content-lead',
-    'quality-lead',
-  ]) {
-    await sim.agent(lead, 'idle');
-  }
-  await sim.say(
-    'text',
-    'Intake brief',
-    `Project created for ${sim.opts.client}. The team will verify access, analyse the repository and the live site, then bring you the Implementation Blueprint for approval at Gate 1.`,
-  );
+  await kickOff(sim);
 
   // Phase 0 — Intake and access verification
   await enter(sim, 0, [
@@ -139,7 +46,7 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     'Exit: every credential verified against its endpoint.',
   ]);
   await sim.planTasks(0, [
-    t(
+    task(
       'p0-verify',
       'deployment-engineer',
       'Verify credentials and record tenant facts',
@@ -174,14 +81,19 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     'Exit: every sitemap URL crawled or excluded.',
   ]);
   await sim.planTasks(1, [
-    t('p1-repo', 'repo-analyst', 'Inventory components, routes and assets', 'discovery'),
-    t(
+    task('p1-repo', 'repo-analyst', 'Inventory components, routes and assets', 'discovery'),
+    task(
       'p1-crawl',
       'content-analyst',
       'Crawl the live site and build the page inventory',
       'discovery',
     ),
-    t('p1-notes', 'research-agent', 'Verify platform facts and write Platform Notes', 'discovery'),
+    task(
+      'p1-notes',
+      'research-agent',
+      'Verify platform facts and write Platform Notes',
+      'discovery',
+    ),
   ]);
   await Promise.all([
     work(sim, 'repo-analyst', 'p1-repo', 'Analysing the repository', [
@@ -240,25 +152,12 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     'Exit: your approval at Gate 1.',
   ]);
   await sim.planTasks(2, [
-    t('p2-blueprint', 'solution-architect', 'Draft the Implementation Blueprint', 'discovery', [
+    task('p2-blueprint', 'solution-architect', 'Draft the Implementation Blueprint', 'discovery', [
       'p1-repo',
       'p1-crawl',
     ]),
   ]);
-  const sot = sim.escalate({
-    type: 'decision',
-    title: 'Source of truth for page content',
-    context:
-      'The repo holds content for 12 pages that differs from the live site. The Blueprint needs one source per page.',
-    impact: 'The Content Migrator waits on this in phase 6; nothing waits today.',
-    options: [
-      { id: 'live', label: 'Live site for every page', recommended: true },
-      { id: 'repo', label: 'Repository content where it exists' },
-    ],
-    defaultOptionId: 'live',
-    deadlineSimSeconds: 90,
-    sourceTaskId: 'p2-blueprint',
-  });
+  const sot = sourceOfTruth(sim, 'p2-blueprint', 'Content Migrator');
   await work(sim, 'solution-architect', 'p2-blueprint', 'Drafting the Blueprint', [
     ['blackboard', 'read', 'Loaded inventories and Platform Notes'],
     [
@@ -270,52 +169,10 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     ['blackboard', 'write.blueprint', 'Blueprint v1 written'],
   ]);
   await sot;
-  let version = 1;
-  await sim.artifact(
-    'blueprint',
-    'blueprint',
-    'Implementation Blueprint',
-    version,
-    'solution-architect',
-  );
-  for (;;) {
-    const answer = await sim.escalate({
-      type: 'gate',
-      title: `Approve Implementation Blueprint v${version}`,
-      context: `${COMPONENTS.length} components map to 15 renderings and ${PAGE_COUNT} pages to ${TEMPLATES.length} templates. Header and Navigation merge into one rendering.`,
-      impact: 'Foundation, components and templates start when you approve.',
-      options: [
-        { id: 'approve', label: 'Approve', recommended: true },
-        { id: 'send_back', label: 'Send back with notes' },
-      ],
-      defaultOptionId: null,
-      sourceTaskId: 'p2-blueprint',
-      evidence: [{ kind: 'artifact', label: `Blueprint v${version}`, ref: 'artifact:blueprint' }],
-      gate: {
-        phase: 2,
-        artifactId: 'blueprint',
-        artifactVersion: version,
-        requiresConfirmation: false,
-      },
-    });
-    if (answer === 'approve') break;
-    version++;
-    await sim.say('text', null, `Revising the Blueprint per your notes. v${version} follows.`);
-    await sim.step(
-      'solution-architect',
-      'p2-blueprint',
-      'blackboard',
-      'write.blueprint',
-      `Blueprint v${version} written`,
-    );
-    await sim.artifact(
-      'blueprint',
-      'blueprint',
-      'Implementation Blueprint',
-      version,
-      'solution-architect',
-    );
-  }
+  const version = await blueprintGate(sim, 'p2-blueprint', {
+    context: `${COMPONENTS.length} components map to 15 renderings and ${PAGE_COUNT} pages to ${TEMPLATES.length} templates. Header and Navigation merge into one rendering.`,
+    impact: 'Foundation, components and templates start when you approve.',
+  });
   await exit(sim, 2, [`Blueprint v${version} approved.`, 'Conventions are now locked.'], [3]);
 
   // Phase 3 — Foundation
@@ -325,19 +182,21 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     'Exit: an empty page renders on the editing host.',
   ]);
   await sim.planTasks(3, [
-    t(
+    task(
       'p3-site',
       'deployment-engineer',
       'Create site collection, site, languages and module folders',
       'engineering',
     ),
-    t(
+    task(
       'p3-hosting',
       'deployment-engineer',
       'Create hosting project and preview environment',
       'engineering',
     ),
-    t('p3-validate', 'structural-validator', 'Validate the site skeleton', 'quality', ['p3-site']),
+    task('p3-validate', 'structural-validator', 'Validate the site skeleton', 'quality', [
+      'p3-site',
+    ]),
   ]);
   await Promise.all([
     work(sim, 'deployment-engineer', 'p3-site', 'Creating the site', [
@@ -379,10 +238,10 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
   const batches = Array.from({ length: PAGE_COUNT / 8 }, (_, i) => `p6-pages-${i + 1}`);
   await sim.planTasks(6, [
     ...batches.map((id, i) =>
-      t(id, 'content-migrator', `Migrate pages ${i * 8 + 1}–${i * 8 + 8}`, 'content'),
+      task(id, 'content-migrator', `Migrate pages ${i * 8 + 1}–${i * 8 + 8}`, 'content'),
     ),
-    t('p6-media', 'media-migrator', `Upload ${MEDIA_COUNT} media items`, 'content'),
-    t('p6-parity', 'parity-auditor', 'Audit content parity', 'quality', batches),
+    task('p6-media', 'media-migrator', `Upload ${MEDIA_COUNT} media items`, 'content'),
+    task('p6-parity', 'parity-auditor', 'Audit content parity', 'quality', batches),
   ]);
   const media = (async () => {
     await sim.move('p6-media', 'ready');
@@ -404,32 +263,34 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
           'SitecoreAI returned 403 for media upload',
           { code: 403 },
         );
-        await sim.move('p6-media', 'blocked', 'Access: media upload 403');
-        await sim.agent(
+        await hold(
+          sim,
           'media-migrator',
-          'blocked',
-          'Blocked: media upload returns 403',
           'p6-media',
+          {
+            reason: 'Access: media upload 403',
+            now: 'Blocked: media upload returns 403',
+            resumed: 'Credential re-verified',
+          },
+          {
+            type: 'blocker',
+            title: 'Media upload 403',
+            context:
+              'SitecoreAI rejects media uploads with 403. The automation client likely lacks write access to the Media Library.',
+            impact: '80 media items and the pages that use them wait. Text migration continues.',
+            options: [
+              {
+                id: 'reverify',
+                label: 'I fixed the scope; re-verify and continue',
+                recommended: true,
+              },
+              { id: 'skip', label: 'Skip media for now; flag pages for review' },
+            ],
+            defaultOptionId: null,
+            sourceTaskId: 'p6-media',
+            evidence: [{ kind: 'log', label: 'Failed upload', ref: 'task:p6-media' }],
+          },
         );
-        await sim.escalate({
-          type: 'blocker',
-          title: 'Media upload 403',
-          context:
-            'SitecoreAI rejects media uploads with 403. The automation client likely lacks write access to the Media Library.',
-          impact: '80 media items and the pages that use them wait. Text migration continues.',
-          options: [
-            {
-              id: 'reverify',
-              label: 'I fixed the scope; re-verify and continue',
-              recommended: true,
-            },
-            { id: 'skip', label: 'Skip media for now; flag pages for review' },
-          ],
-          defaultOptionId: null,
-          sourceTaskId: 'p6-media',
-          evidence: [{ kind: 'log', label: 'Failed upload', ref: 'task:p6-media' }],
-        });
-        await sim.move('p6-media', 'running', 'Credential re-verified');
       }
       await sim.step(
         'media-migrator',
@@ -479,7 +340,7 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     'Exit: proofs resolve on the preview host.',
   ]);
   await sim.planTasks(7, [
-    t(
+    task(
       'p7-enable',
       'experience-enabler',
       'Redirects, SEO, sitemap, error pages, proof variant and test',
@@ -501,13 +362,13 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     'Exit: smoke test green.',
   ]);
   await sim.planTasks(8, [
-    t(
+    task(
       'p8-deploy',
       'deployment-engineer',
       'Promote to production and publish to Edge',
       'engineering',
     ),
-    t('p8-smoke', 'editor-experience-qa', 'Smoke test Page builder on production', 'quality', [
+    task('p8-smoke', 'editor-experience-qa', 'Smoke test Page builder on production', 'quality', [
       'p8-deploy',
     ]),
   ]);
@@ -528,7 +389,7 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
     'Exit: your acceptance at Gate 2, in the live systems.',
   ]);
   await sim.planTasks(9, [
-    t(
+    task(
       'p9-handover',
       'handover-writer',
       'Write runbook, component catalog and known-gaps register',
@@ -543,33 +404,10 @@ export async function sitecoreScenario(sim: Simulation): Promise<void> {
       'Runbook, component catalog (15 renderings), known gaps (2), acceptance checklist',
     ],
   ]);
-  await sim.artifact('handover-pack', 'handover_pack', 'Handover pack', 1, 'handover-writer');
-  await sim.escalate({
-    type: 'gate',
-    title: 'Accept the implementation',
-    context:
-      'The handover pack lists each Definition of Done row with what to check in Page builder and on the delivery host, and the evidence the build already has.',
-    impact: 'Accepting closes the engagement.',
-    options: [
-      { id: 'approve', label: 'Accept', recommended: true },
-      { id: 'send_back', label: 'Send back with notes' },
-    ],
-    defaultOptionId: null,
-    sourceTaskId: null,
-    evidence: [{ kind: 'artifact', label: 'Handover pack', ref: 'artifact:handover-pack' }],
-    gate: {
-      phase: 9,
-      artifactId: 'handover-pack',
-      artifactVersion: 1,
-      requiresConfirmation: true,
-    },
-  });
-  await exit(sim, 9, ['Accepted. Handover pack delivered.'], []);
-  await sim.emit(sim.projectStatus('completed'));
-  await sim.say(
-    'text',
-    'Project complete',
-    'This project is complete. Open the handover pack in Workbench.',
+  await acceptAndClose(
+    sim,
+    9,
+    'The handover pack lists each Definition of Done row with what to check in Page builder and on the delivery host, and the evidence the build already has.',
   );
 }
 
@@ -583,8 +421,8 @@ async function componentsPhase(sim: Simulation) {
   await sim.planTasks(
     4,
     COMPONENTS.flatMap((c) => [
-      t(`p4-port-${c}`, 'component-engineer', `Port ${c} to Content SDK`, 'engineering'),
-      t(`p4-reg-${c}`, 'rendering-registrar', `Register ${c}`, 'engineering', [`p4-port-${c}`]),
+      task(`p4-port-${c}`, 'component-engineer', `Port ${c} to Content SDK`, 'engineering'),
+      task(`p4-reg-${c}`, 'rendering-registrar', `Register ${c}`, 'engineering', [`p4-port-${c}`]),
     ]),
   );
   let registered = 0;
@@ -606,27 +444,29 @@ async function componentsPhase(sim: Simulation) {
       },
     );
     if (result === 'escalate') {
-      await sim.move(`p4-port-${c}`, 'blocked', 'Rejected twice; escalated');
-      await sim.agent(
+      await hold(
+        sim,
         'component-engineer',
-        'blocked',
-        `Blocked: ${c} granularity decision`,
         `p4-port-${c}`,
+        {
+          reason: 'Rejected twice; escalated',
+          now: `Blocked: ${c} granularity decision`,
+          resumed: 'Decision applied',
+        },
+        {
+          type: 'decision',
+          title: `${c} component granularity`,
+          context: `The source ${c} has five layouts driven by props. One rendering keeps Page builder simple; five give personalization more to swap.`,
+          impact: `${c} registration and 9 pages that use it wait. Other components continue.`,
+          options: [
+            { id: 'one', label: 'One rendering with two variants', recommended: true },
+            { id: 'five', label: 'Five separate renderings' },
+          ],
+          defaultOptionId: 'one',
+          deadlineSimSeconds: 120,
+          sourceTaskId: `p4-port-${c}`,
+        },
       );
-      await sim.escalate({
-        type: 'decision',
-        title: `${c} component granularity`,
-        context: `The source ${c} has five layouts driven by props. One rendering keeps Page builder simple; five give personalization more to swap.`,
-        impact: `${c} registration and 9 pages that use it wait. Other components continue.`,
-        options: [
-          { id: 'one', label: 'One rendering with two variants', recommended: true },
-          { id: 'five', label: 'Five separate renderings' },
-        ],
-        defaultOptionId: 'one',
-        deadlineSimSeconds: 120,
-        sourceTaskId: `p4-port-${c}`,
-      });
-      await sim.move(`p4-port-${c}`, 'running', 'Decision applied');
       await sim.step(
         'component-engineer',
         `p4-port-${c}`,
@@ -689,14 +529,14 @@ async function templatesPhase(sim: Simulation) {
   ]);
   await sim.planTasks(5, [
     ...TEMPLATES.map((name) =>
-      t(
+      task(
         `p5-${slug(name)}`,
         'rendering-registrar',
         `Create ${name} template and page design`,
         'engineering',
       ),
     ),
-    t(
+    task(
       'p5-partials',
       'rendering-registrar',
       'Create header and footer partial designs',
@@ -722,8 +562,4 @@ async function templatesPhase(sim: Simulation) {
     [`${TEMPLATES.length} templates with page designs; header and footer render on all.`],
     [6],
   );
-}
-
-function slug(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }

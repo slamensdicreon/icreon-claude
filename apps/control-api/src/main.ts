@@ -43,11 +43,12 @@ import {
 } from '@lw/orchestrator';
 import { loadCatalog, versionOf } from '@lw/playbook-sdk';
 import { createPlatforms } from '@lw/platforms';
-import { RETIRED_DEMO_PROJECTS, Simulation, sitecoreScenario, startDemo } from '@lw/simulator';
+import { RETIRED_DEMO_PROJECTS, startDemo } from '@lw/simulator';
 import {
   composeStack,
   canDeleteHostingProjects,
   deleteHostingProject,
+  releasePlatformHosts,
   hostingBuildUsage,
   hostingStatus,
   recipients,
@@ -70,7 +71,8 @@ import { IntakeService, type StartInput } from './intake';
 import { workosInvitations } from './people';
 import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
 import { policyRows } from './policy';
-import { demoCommands, remoteCommands, simulationCommands, type ProjectCommands } from './commands';
+import { demoCommands, remoteCommands, type ProjectCommands } from './commands';
+import { startSimProjects } from './sim-projects';
 
 /**
  * Control API entry point.
@@ -160,7 +162,7 @@ const env = z
     VERCEL_URL: z.string().optional(),
     VERCEL_BRANCH_URL: z.string().optional(),
     SIM_SPEED: z.coerce.number().positive().default(1),
-    /** Scripted engagements to run beside the demo project (intake adds more). */
+    /** Scripted engagements to run beside the demo project, in the order of SIM_SEEDS. */
     SIM_PROJECTS: z.coerce.number().int().min(0).max(10).default(0),
     /** Every folder under it holding a playbook.yaml is a playbook new projects can run. */
     PLAYBOOKS_DIR: z
@@ -273,7 +275,8 @@ const projections = new Projections(store);
 await projections.start({ eager: env.PROJECTIONS === 'eager' });
 const catalog = await loadCatalog(env.PLAYBOOKS_DIR);
 const platforms = createPlatforms({ sitecore: SITECORE_DEFAULTS, optimizely: OPTIMIZELY_DEFAULTS });
-// The scripted demo, the simulator and the local sample project run the SitecoreAI build.
+// The demo project and the local sample project run the SitecoreAI build. A scripted engagement
+// runs the playbook its seed names, SitecoreAI or Optimizely (sim-projects.ts).
 const DEFAULT_PLAYBOOK = 'sitecoreai-migration';
 const { playbook, dir: playbookDir } = catalog.get(DEFAULT_PLAYBOOK) ?? [...catalog.values()][0]!;
 /** The playbook a project runs on: its pinned version when kept, else the current one. */
@@ -310,49 +313,21 @@ if (env.ORCHESTRATOR === 'simulator' && env.DEMO_RUNNER === 'separate') {
   commands = (id) => (projections.get(id) ? remoteCommands(bus, id) : undefined);
 } else if (env.ORCHESTRATOR === 'simulator') {
   const sims = new Map<string, ProjectCommands>();
-  const running: Simulation[] = [];
-  const startSimulation = (opts: {
-    name: string;
-    client: string;
-    sourceUrl?: string;
-    autopilot: boolean;
-    speed: number;
-  }) => {
-    const projectId = `prj-${randomUUID().slice(0, 8)}`;
-    const sim = new Simulation(store, playbook, { projectId, ...opts, seed: running.length + 1 });
-    sims.set(projectId, simulationCommands(sim));
-    running.push(sim);
-    void sim
-      .run(sitecoreScenario)
-      .catch((err) => console.error('simulation failed', projectId, err));
-    return projectId;
-  };
   // The demo project, played through the real API.
   for (const id of RETIRED_DEMO_PROJECTS) await store.reset(id);
   const demos = await startDemo(store, playbook, blobs, { speed: env.SIM_SPEED });
   for (const d of demos) sims.set(d.projectId, demoCommands(d));
   cleanups.push(async () => demos.forEach((d) => d.stop()));
   commands = (id) => sims.get(id);
-  const SEEDS = [
-    {
-      name: 'Acme corporate site',
-      client: 'Acme Corp',
-      sourceUrl: 'https://www.acme.example',
-      autopilot: false,
-      speedFactor: 1,
-    },
-    {
-      name: 'Northwind marketing site',
-      client: 'Northwind',
-      sourceUrl: 'https://www.northwind.example',
-      autopilot: true,
-      speedFactor: 3,
-    },
-  ];
-  for (const s of SEEDS.slice(0, env.SIM_PROJECTS)) {
-    startSimulation({ ...s, speed: env.SIM_SPEED * s.speedFactor });
-  }
-  cleanups.push(async () => running.forEach((s) => s.stop()));
+  // Scripted engagements beside it, each created on its own playbook and playing its scenario.
+  const scripted = startSimProjects({
+    store,
+    catalog,
+    count: env.SIM_PROJECTS,
+    speed: env.SIM_SPEED,
+  });
+  for (const [id, cmds] of scripted.commands) sims.set(id, cmds);
+  cleanups.push(async () => scripted.stop());
 } else {
   let address = env.TEMPORAL_ADDRESS;
   if (!address && env.INLINE_WORKER === 'false') {
@@ -683,6 +658,7 @@ const app = await buildApp({
         commands: opened.sql ? new CommandBus(opened.sql) : null,
         github,
         buildOrg: env.GITHUB_BUILD_ORG ?? null,
+        platform: hosting ? (s) => releasePlatformHosts(hosting, s) : null,
         hosting: hosting
           ? {
               deleteProject: (name) => deleteHostingProject(hosting, name),

@@ -48,6 +48,7 @@ Deleting a project means finding all of it. The survey found these:
 | GitHub | The build repo we created in `GITHUB_BUILD_ORG` | `project.updated {buildRepo}` |
 | Vercel | The client's hosting project and deployments we created; sandboxes (`lw-<id>-<task>`, gone after 45 idle minutes) | `project.updated {hosting}` |
 | SitecoreAI | Items under the project's owned paths, often on a shared tenant; content published to Edge | `platforms/sitecoreai/pack.ts:66-74` |
+| Optimizely CMS (SaaS) | The application with its start page, pages, shared blocks and media, on an instance shared with other teams; its hosts (the Vercel addresses); content types and display templates carrying the project's prefix; what is published to Graph | `platforms/optimizely/pack.ts` (`optimizelyOwnedPaths`) |
 | Saved connections | Shared by several projects | `intake.connectionId` |
 | Docs in the repo | `docs/runs/*.md` and `docs/projects/*.md` name project ids | text |
 
@@ -165,6 +166,7 @@ operator sees what will go:
 | Vercel hosting project in our team | Deleted with its deployments. One already moved to the client's team is left and recorded |
 | Saved connection | Removed when no other project uses it |
 | SitecoreAI items and Edge content | Left: it is the client's tenant. Demo slots are reset by their own task |
+| Optimizely application | Its hosts that are this project's Vercel addresses are removed, before the hosting project goes, so the application no longer routes to or previews on a host that isn't there (the `platform` step; kept when the hosting project is kept). The application, its content and the prefixed content types are left: deleting content is a person's decision, in Settings > Applications |
 
 Each result goes in the tombstone, so "what happened to the repo" has an answer.
 

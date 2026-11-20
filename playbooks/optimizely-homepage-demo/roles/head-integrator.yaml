@@ -85,7 +85,7 @@ tools:
 acceptance:
   - validator:build.green
   - validator:types.pushed
-  - validator:editing-host.responds
+  - validator:editing-host.deployed
 escalateWhen:
   - rejectedTwice
   - accessDenied

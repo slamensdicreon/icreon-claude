@@ -509,3 +509,124 @@ describe('Optimizely checks with an editing host', () => {
     expect(await run('routes.resolve', ctx(twoHosts), pages)).toMatchObject({ status: 'pass' });
   });
 });
+
+describe('Optimizely content, media and redirect checks', () => {
+  const pagesBlueprint = (pages: { key: string; path: string; route?: string }[]) => ({
+    blueprint: {
+      collections: {
+        ...blueprint.collections,
+        pages: pages.map((p) => ({
+          key: p.key,
+          name: p.key,
+          attrs: { path: p.path, ...(p.route ? { route: p.route } : {}) },
+        })),
+      },
+    },
+    document: async () => ({ origin: 'https://www.acme.com' }),
+  });
+  const words = (n: number, prefix = 'source') =>
+    `<main>${Array.from({ length: n }, (_, i) => `${prefix}word${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}`).join(' ')}</main>`;
+
+  it('holds each page to nine in ten of its source page’s words', async () => {
+    const c = ctx(
+      {},
+      pagesBlueprint([
+        { key: 'home', path: '/' },
+        { key: 'about', path: '/about' },
+      ]),
+    );
+    const same = words(40);
+    const pages = {
+      'https://www.acme.com/': { status: 200, html: same },
+      'https://acme.vercel.app/en/': { status: 200, html: same },
+      'https://www.acme.com/about': { status: 200, html: same },
+      'https://acme.vercel.app/en/about/': { status: 200, html: same },
+    };
+    expect(await run('parity.page', c, pages)).toMatchObject({
+      status: 'pass',
+      data: { parity: 100 },
+    });
+    const thin = {
+      ...pages,
+      'https://acme.vercel.app/en/about/': { status: 200, html: words(20) },
+    };
+    const r = await run('parity.page', c, thin);
+    expect(r).toMatchObject({ status: 'fail', data: { parity: 50 } });
+    expect(r.detail).toContain('Content parity 50% (98% needed)');
+    expect(r.detail).toContain('/about has 50% of the source page’s words'.replace('’', "'"));
+    // A source that can't be read is never counted as matching.
+    expect(
+      await run('parity.page', c, { 'https://acme.vercel.app/en/': { status: 200, html: same } }),
+    ).toMatchObject({
+      status: 'pending',
+    });
+  });
+
+  it('wants alt text on every image in the application’s own media', async () => {
+    const media = (items: unknown[]) => ({
+      'optimizely-graph graph.query': {
+        code: 200,
+        body: { data: { _Image: { total: items.length, items } } },
+      },
+    });
+    const asked: Record<string, unknown>[] = [];
+    const c = ctx(media([{ AltText: 'A hero', _metadata: { displayName: 'hero.webp' } }]));
+    const read = c.read;
+    c.read = async (server, op, args) => {
+      if (op === 'graph.query') asked.push(args);
+      return read(server, op, args);
+    };
+    expect(await run('media.alt-text', c)).toMatchObject({ status: 'pass', data: { images: 1 } });
+    // Only this application's media: its assets root, on this instance.
+    expect((asked[0]!.variables as { prefix: string }).prefix).toBe(
+      `https://app-acme.cms.optimizely.com/siteassets/${'b'.repeat(32)}/`,
+    );
+    const r = await run(
+      'media.alt-text',
+      ctx(
+        media([
+          { AltText: 'A hero', _metadata: { displayName: 'hero.webp' } },
+          { AltText: ' ', _metadata: { displayName: 'icon.svg' } },
+        ]),
+      ),
+    );
+    expect(r).toMatchObject({ status: 'fail', detail: 'icon.svg has no alt text' });
+    expect(await run('media.alt-text', ctx(media([])))).toMatchObject({ status: 'pending' });
+  });
+
+  it('wants a moved page to redirect permanently to its new address', async () => {
+    const redirect = (status: number, location?: string) =>
+      optimizelyChecks({
+        ...OPTIMIZELY_DEFAULTS,
+        fetch: (async () =>
+          new Response(null, { status, headers: location ? { location } : {} })) as typeof fetch,
+      })['experience.redirects-resolve']!;
+    const moved = ctx(
+      {},
+      pagesBlueprint([
+        { key: 'home', path: '/' },
+        { key: 'team', path: '/our-team', route: '/about/team' },
+      ]),
+    );
+    expect(await redirect(308, '/about/team')(moved)).toMatchObject({
+      status: 'pass',
+      data: { moved: 1 },
+    });
+    expect(await redirect(301, 'https://acme.vercel.app/en/about/team/')(moved)).toMatchObject({
+      status: 'pass',
+    });
+    expect((await redirect(302, '/about/team')(moved)).detail).toContain(
+      'not a permanent redirect',
+    );
+    expect((await redirect(301, '/somewhere-else')(moved)).detail).toContain('not /about/team');
+    expect((await redirect(404)(moved)).status).toBe('fail');
+    const unmoved = ctx(
+      {},
+      pagesBlueprint([
+        { key: 'home', path: '/' },
+        { key: 'about', path: '/about', route: '/about/' },
+      ]),
+    );
+    expect(await redirect(404)(unmoved)).toMatchObject({ status: 'pass' });
+  });
+});

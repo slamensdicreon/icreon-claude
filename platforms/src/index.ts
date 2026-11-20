@@ -79,6 +79,13 @@ export interface PlatformPack {
    * only when the app has them), the build script, and paths agents may not write.
    */
   buildRecipe?: { generate: string[]; build: string; readOnly: string[] };
+  /**
+   * The read operation that says what each route renders, in order: called with `{ paths }`,
+   * it answers `{ pages: [{ path, components: [{ component, placeholder, text }] }] }`. A page's
+   * failed check is sent to the component that draws the failing part with it; without one the
+   * failure stays with the page's task.
+   */
+  pageComponents?: { server: string; op: string };
   /** Acceptance checks only the platform knows how to run, by validator id. */
   checks?: Record<string, PlatformCheck>;
   /**

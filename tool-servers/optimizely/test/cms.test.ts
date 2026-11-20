@@ -307,6 +307,51 @@ describe('content', () => {
     expect((await call('content.publish', { path: '/content/acme_site/missing' })).code).toBe(404);
   });
 
+  it('says what each route is composed of, named as the Blueprint names components', async () => {
+    const { call } = await withApp();
+    await call('composition.write', {
+      path: '/content/acme_site',
+      nodes: [
+        {
+          name: 'Welcome',
+          contentType: 'AcmeHero',
+          properties: {
+            heading: 'Hello there',
+            image: '/media/acme_site/a.png',
+            body: { html: '<p>Body <b>copy</b></p>' },
+            cards: [
+              {
+                properties: {
+                  heading: 'Card one',
+                  link: { url: 'https://x.example/', text: 'Go' },
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const r = await call('page.components', { paths: ['/', '/missing'] });
+    expect(r).toMatchObject({
+      code: 200,
+      body: {
+        pages: [
+          {
+            path: '/',
+            components: [
+              {
+                component: 'Hero',
+                placeholder: 'Welcome',
+                text: 'Hello there Body copy Card one Go',
+              },
+            ],
+          },
+          { path: '/missing', components: null },
+        ],
+      },
+    });
+  });
+
   it('gives the addresses Visual Builder opens, once the application has a host', async () => {
     const { call } = await withApp();
     expect((await call('content.previews', { path: '/content/acme_site' })).code).toBe(404);
