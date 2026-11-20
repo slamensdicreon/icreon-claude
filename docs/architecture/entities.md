@@ -176,7 +176,7 @@ they would run with their own teams). The team goes from 24 roles to 21.
   - `optimizely-cms` on REST API v1: `application.{list,read,create}`, `hostname.{add,remove}`,
     `preview.configure`, `locale.list`, `contenttype.{list,read}`, `displaytemplate.{list,read}`,
     `manifest.export`, `content.{read,create,update,publish}`, `composition.write`,
-    `blueprint.{list,create}`, `media.upload`. The team's items have paths
+    `content.previews`, `blueprint.{list,create}`, `media.upload`. The team's items have paths
     (`/content/<application>/…`, `/shared/<application>/…`, `/media/<application>/…`) and an
     item's key is derived from its path, so a repeated create updates instead of duplicating.
     It writes only inside the project's application and only content of types carrying the
@@ -194,7 +194,7 @@ they would run with their own teams). The team goes from 24 roles to 21.
   `hostname.registered`, `graph.published`, `routes.resolve`, `head.preview-route`,
   `head.pages-render`, `head.header-footer`, `parity.render`, `parity.visual`); the step-based
   `types.defined` and `manifest.replays` are in `packages/stack/src/review.ts`.
-- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): thirteen rows proven on
+- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): eighteen rows proven on
   a live instance, then the rows from the documentation that no build has met yet.
 - **Playbooks**, both in the order the platform sets (content types first; then the application,
   whose start page is of a pushed experience type, with its host and live preview; then shared
@@ -203,13 +203,17 @@ they would run with their own teams). The team goes from 24 roles to 21.
   `playbooks/optimizely-homepage-demo` (the audit, then the homepage, header, footer and
   navigation; see [homepage-demo-playbook.md](homepage-demo-playbook.md)).
 - **First build**: Microsoft's homepage, the same one the SitecoreAI demo built, in
-  `icreon-launchworks/microsoft-sitecoreai` under `examples/optimizely-nextjs`: 19 content
-  types and 11 display templates (prefix `Msft`) pushed to the shared instance, the head
-  deployed, the migrated content and the script that creates it in the repository.
+  `icreon-launchworks/microsoft-sitecoreai` under `examples/optimizely-nextjs`, live at
+  https://microsoft-optimizely.vercel.app: 19 content types and 11 display templates (prefix
+  `Msft`), the application `microsoft_demo` with its own assets, 37 media items, shared
+  header, navigation and footer blocks, and the homepage as an experience of 12 sections,
+  published and served by Optimizely Graph. Run against it, the pack's checks pass 13 of 15:
+  `editor.new-experience` fails (no blueprint: the API key may not create one) and
+  `parity.visual` needs a connected model.
 
 `platforms/test/platforms.test.ts`, `platforms/test/optimizely-checks.test.ts`,
 `tool-servers/optimizely/test` and `tool-servers/sandbox/test` cover them; the read operations
-and the content-model checks were also run against the live instance.
+the content writes (media, shared blocks, pages, compositions, publishing) and every check were also run against the live instance.
 
 ## The Optimizely entity: to build
 
@@ -220,7 +224,7 @@ and the content-model checks were also run against the live instance.
 | O9 | Shared pieces that still read another platform's contract, so the Optimizely plans leave them out: `blueprint.coverage` (`attrs.fields`, `attrs.rendering`, `attrs.queryBudget`), `editing-host.responds` (`/api/editing/config`), and the `validators` server's `structural.run` scopes (`site`, `templates`, `renderings`) and `parity.run` (offered only when the pack has `parity.page`). Until they are portable the Blueprint is judged by the Discovery Lead and Gate 1, and the validator roles work through `acceptance.check` and reads | M |
 | O5 | Browser `visual-builder.drive` and `video.record`: the same capability gap as `page-builder.drive`; M7's driver should cover both editors | L (shared with M7) |
 | O6 | Catalog grouping and UI: `entity.yaml`, `GET /entities`, the wizard's entity step, platform names in copy | S |
-| O7 | Finish the first build: the API key needs content rights on the instance (Settings > Set Access Rights) before the application and its content can be created; then run both playbooks end to end with the Director | – |
+| O7 | Run both playbooks end to end with the Director on a live project (the first build was made by hand through the same REST calls and tool servers, to prove them) | – |
 | O8 | Webhooks from Graph to the head for on-demand revalidation (`webhook.{list,create}`: a Graph API, not the REST API's); the head revalidates on a timer until then. `locale.add`: locales are instance-wide, so enabling one stays a Director step | S |
 
 ## Decisions for the Director

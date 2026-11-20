@@ -275,18 +275,38 @@ describe('Optimizely checks', () => {
     expect(broken).toMatchObject({ status: 'fail', detail: '/en/ answered 500' });
   });
 
-  it('wants the preview route to answer without a login in front of it', async () => {
+  it('opens the preview as Visual Builder does and looks for what an editor needs', async () => {
     const url = 'https://acme.vercel.app/preview';
+    const edit = `${url}?key=a&ver=1&loc=en&ctx=edit&preview_token=t`;
+    const links = { 'optimizely-cms content.previews': { code: 200, body: { edit } } };
+    const bare = { status: 200, html: '<main>Preview</main>' };
+    const framed =
+      '<script src="https://app-acme.cms.optimizely.com/util/javascript/communicationinjector.js"></script>' +
+      '<div data-epi-block-id="1"><h1 data-epi-edit="heading">Hi</h1><p data-epi-edit="text">x</p></div>';
     expect(
-      await run('head.preview-route', ctx(), {
-        [url]: { status: 200, html: '<main>Preview</main>' },
+      await run('head.preview-route', ctx(links), {
+        [url]: bare,
+        [edit]: { status: 200, html: framed },
       }),
-    ).toMatchObject({ status: 'pass' });
-    const walled = await run('head.preview-route', ctx(), {
+    ).toMatchObject({ status: 'pass', data: { fields: 2, blocks: 1 } });
+    // A page that renders but marks nothing can't be edited in place.
+    const inert = await run('head.preview-route', ctx(links), {
+      [url]: bare,
+      [edit]: { status: 200, html: '<h1>Hi</h1>' },
+    });
+    expect(inert).toMatchObject({ status: 'fail' });
+    expect(inert.detail).toContain('communicationinjector.js');
+    expect(inert.detail).toContain('nothing on the page is marked editable');
+    expect(inert.detail).toContain('no section can be selected');
+    // The frame can't be opened yet (no host on the application): not a pass.
+    expect(await run('head.preview-route', ctx(), { [url]: bare })).toMatchObject({
+      status: 'pending',
+    });
+    const walled = await run('head.preview-route', ctx(links), {
       [url]: { status: 401, html: 'Authentication Required' },
     });
     expect(walled.detail).toContain('Vercel Authentication must be off');
-    expect(await run('head.preview-route', ctx(), {})).toMatchObject({ status: 'fail' });
+    expect(await run('head.preview-route', ctx(links), {})).toMatchObject({ status: 'fail' });
   });
 
   it('reads the rendered start page for what its sections hold', async () => {

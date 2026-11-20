@@ -501,16 +501,50 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
       const host = primaryHost(app);
       if (!host) return fail(['The application has no host to open the preview on']);
       const route = /^\{host\}(\/[^?]*)/.exec(app.previewUrl ?? '')?.[1] ?? '/preview';
-      const p = await page(cfg, `https://${host.host}${route}`);
-      if (behindLogin(p))
+      const bare = await page(cfg, `https://${host.host}${route}`);
+      if (behindLogin(bare))
         return fail([
           `${host.host}${route} is behind a login: Visual Builder loads it in a frame, so Vercel Authentication must be off for the project`,
         ]);
-      return p.status === 200
-        ? pass(`${host.host}${route} answers, and is not behind a login.`)
-        : fail([
-            `${host.host}${route} answered ${p.status || `nothing (${p.error ?? 'no response'})`}`,
-          ]);
+      if (bare.status !== 200)
+        return fail([
+          `${host.host}${route} answered ${bare.status || `nothing (${bare.error ?? 'no response'})`}`,
+        ]);
+      // The route exists. Now as Visual Builder opens it: the start page's latest version in the
+      // editing frame, with a preview token. An editor can select and edit only what the page
+      // marks, and saves reach the frame only through the CMS's own script.
+      const links = await ctx.read('optimizely-cms', 'content.previews', {
+        path: `/content/${app.key}`,
+      });
+      if (links.code !== 200)
+        return pending(
+          `${host.host}${route} answers and is not behind a login; the editing frame could not be opened to look inside (${reason(links)}).`,
+        );
+      const framed = await page(cfg, (links.body as { edit: string }).edit);
+      if (framed.status !== 200)
+        return fail([
+          `${host.host}${route} answered ${framed.status || 'nothing'} when opened with a preview token, as Visual Builder opens it`,
+        ]);
+      const count = (pattern: RegExp) => (framed.html.match(pattern) ?? []).length;
+      const fields = count(/data-epi-edit=/g);
+      const blocks = count(/data-epi-block-id=/g);
+      const problems = [
+        /communicationinjector\.js/.test(framed.html)
+          ? null
+          : "the preview does not load the CMS's communicationinjector.js, so edits never refresh it",
+        fields
+          ? null
+          : 'nothing on the page is marked editable (no data-epi-edit): properties need pa(...)',
+        blocks
+          ? null
+          : 'no section can be selected (no data-epi-block-id): the composition wrapper needs pa(node)',
+      ].filter((x): x is string => Boolean(x));
+      return problems.length
+        ? fail(problems, { fields, blocks })
+        : pass(
+            `${host.host}${route} opens the start page in the editing frame: ${fields} editable fields, ${blocks} selectable sections and blocks.`,
+            { fields, blocks },
+          );
     },
 
     // A page renders on the head and shows what its sections hold.

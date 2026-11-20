@@ -76,6 +76,9 @@ const NO_ACCESS =
 
 export { applicationKey } from '@lw/connectors';
 
+const NO_BLUEPRINTS =
+  "The API key may not create blueprints on this instance. That is a right of its own, separate from content rights (a key that creates and publishes pages is still refused). Don't retry: say so in your result. An editor makes the blueprint in Visual Builder from a finished page (the page's menu, save as blueprint), or a CMS admin gives the key that right.";
+
 /** The key of the item at a path of this instance: the same path always gives the same key. */
 export function keyForPath(cmsUrl: string, path: string): string {
   const host = cmsUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
@@ -215,7 +218,7 @@ const node = {
   required: ['name', 'contentType'],
 };
 const VALUES =
-  'Property values are written plainly: text as a string, a boolean or number as itself, rich text as { html }, a link as { url, text, title?, target? }, an inline component as { contentType, properties }, a list as an array of those. To point at another item (an image, a shared block, a page) give its path (/media/…, /shared/…, /content/…) or "cms://content/<key>".';
+  'Property values are written plainly: text as a string, a boolean or number as itself, rich text as { html }, a link as { url, text, title?, target? }, an item of a list of inline components as { properties } (the type of the list says what each item is), a list as an array of those. To point at another item (an image, a shared block, a page) give its path (/media/…, /shared/…, /content/…) or "cms://content/<key>".';
 
 export class OptimizelyCmsToolServer implements ToolServer {
   readonly name = 'optimizely-cms';
@@ -397,6 +400,18 @@ export class OptimizelyCmsToolServer implements ToolServer {
       mutates: true,
       pathArgs: ['path'],
     },
+    'content.previews': {
+      description:
+        "The addresses Visual Builder opens for an item's latest version (by path): the head's preview route with a short-lived preview token, as a visitor preview and as the editing frame. For checking the preview renders a draft; the token is good for a few minutes and reads only that item.",
+      inputSchema: {
+        type: 'object',
+        properties: { path: { type: 'string' }, locale: { type: 'string' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      mutates: false,
+      pathArgs: ['path'],
+    },
     'content.publish': {
       description:
         'Publish the latest draft of an item (by path), so Optimizely Graph serves it. An item with nothing to publish is reported as already published.',
@@ -506,6 +521,8 @@ export class OptimizelyCmsToolServer implements ToolServer {
           return await w.update(UpdateArgs.safeParse(args));
         case 'composition.write':
           return await w.compose(CompositionArgs.safeParse(args));
+        case 'content.previews':
+          return await w.previews(PublishArgs.safeParse(args));
         case 'content.publish':
           return await w.publish(PublishArgs.safeParse(args));
         case 'blueprint.list':
@@ -591,6 +608,8 @@ function problem(status: number, body: unknown): string {
     detail?: string;
     errors?: { detail?: string; field?: string }[];
   };
+  // Blueprints have a right of their own: a key with full content rights is still refused.
+  if (status === 403 && /create blueprints/i.test(b.detail ?? '')) return NO_BLUEPRINTS;
   if (status === 403 && /required access is|access rights/i.test(b.detail ?? '')) return NO_ACCESS;
   if (status === 401)
     return 'Optimizely refused the API key (401): it may have been deleted or rotated. Check it in Settings.';
@@ -1064,14 +1083,16 @@ class Work {
       const o = raw as Record<string, unknown>;
       // An already wrapped value: take what is inside.
       if ('value' in o && Object.keys(o).length === 1) return this.toValue(o.value);
-      if (typeof o.contentType === 'string') {
-        if (!this.owns(o.contentType))
+      // An inline component (a card in a list of cards): its properties only. The list's content
+      // type already says what each item is, and the API refuses an item that names its type.
+      if (o.properties && typeof o.properties === 'object' && !Array.isArray(o.properties)) {
+        if (typeof o.contentType === 'string' && !this.owns(o.contentType))
           return rejected(
             `${o.contentType} doesn't carry this project's prefix (${this.facts.typePrefix}): inline components are the project's own types.`,
           );
-        const properties = this.toProperties((o.properties as Record<string, unknown>) ?? {});
+        const properties = this.toProperties(o.properties as Record<string, unknown>);
         if (isResult(properties)) return properties;
-        return { contentType: o.contentType, properties };
+        return { properties };
       }
       return o;
     }
@@ -1337,6 +1358,40 @@ class Work {
     };
   }
 
+  async previews(a: Parsed<typeof PublishArgs>): Promise<ToolResult> {
+    if (!a.success) return invalid(a);
+    const found = await this.existing(a.data.path);
+    if (isResult(found)) return found;
+    const version = await this.latest(found.key, a.data.locale ?? this.locale);
+    if (!version?.version) return rejected(`${found.at.path} has no version to preview.`, 409);
+    const { body } = await this.rest.get(
+      `/content/${found.key}/versions/${version.version}/previews`,
+    );
+    const mine = ((body as { items?: { application?: string; url?: string }[] }).items ?? []).find(
+      (p) => p.application === this.facts.application,
+    );
+    if (!mine?.url)
+      return {
+        code: 404,
+        body: {
+          error: `Application ${this.facts.application} has no preview for ${found.at.path}.`,
+        },
+        summary: `No preview for ${found.at.path}: the application needs a host and a preview URL format (hostname.add, preview.configure)`,
+      };
+    return {
+      code: 200,
+      body: {
+        path: found.at.path,
+        version: version.version,
+        status: version.status,
+        preview: mine.url,
+        // The same address as Visual Builder's editing frame opens it.
+        edit: mine.url.replace(/([?&])ctx=[^&]*/, '$1ctx=edit'),
+      },
+      summary: `Preview address for ${found.at.path} (version ${version.version}, ${version.status ?? 'draft'})`,
+    };
+  }
+
   async publish(a: Parsed<typeof PublishArgs>): Promise<ToolResult> {
     if (!a.success) return invalid(a);
     const found = await this.existing(a.data.path);
@@ -1569,11 +1624,8 @@ function unwrap(
     if (Array.isArray(v)) return v.map(plain);
     if (v && typeof v === 'object') {
       const o = v as Record<string, unknown>;
-      if (typeof o.contentType === 'string' && o.properties && typeof o.properties === 'object')
-        return {
-          contentType: o.contentType,
-          properties: unwrap(o.properties as Record<string, { value?: unknown }>),
-        };
+      if (o.properties && typeof o.properties === 'object' && !Array.isArray(o.properties))
+        return { properties: unwrap(o.properties as Record<string, { value?: unknown }>) };
     }
     return v;
   };

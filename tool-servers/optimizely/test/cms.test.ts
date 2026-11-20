@@ -153,7 +153,8 @@ describe('content', () => {
       searchLabel: { value: 'Search' },
       logo: { value: contentRef(key('/media/acme_site/Brand/logo.png')) },
       cart: { value: { url: 'https://www.acme.com/cart', text: 'Cart' } },
-      links: { value: [{ contentType: 'AcmeHero', properties: { heading: { value: 'One' } } }] },
+      // An item of a list names no type: the list's content type says what it is.
+      links: { value: [{ properties: { heading: { value: 'One' } } }] },
     });
     // A block has no route.
     expect(header.versions[0]).not.toHaveProperty('routeSegment');
@@ -272,6 +273,18 @@ describe('content', () => {
     expect(again.summary).toContain('already published');
     expect(publishes()).toBe(1);
     expect((await call('content.publish', { path: '/content/acme_site/missing' })).code).toBe(404);
+  });
+
+  it('gives the addresses Visual Builder opens, once the application has a host', async () => {
+    const { call } = await withApp();
+    expect((await call('content.previews', { path: '/content/acme_site' })).code).toBe(404);
+    await call('hostname.add', { host: 'acme.vercel.app' });
+    const r = await call('content.previews', { path: '/content/acme_site' });
+    expect(r).toMatchObject({ code: 200, body: { version: '1', status: 'draft' } });
+    const { preview, edit } = r.body as { preview: string; edit: string };
+    expect(preview).toContain('https://acme.vercel.app/preview?key=');
+    expect(preview).toContain('ctx=preview');
+    expect(edit).toBe(preview.replace('ctx=preview', 'ctx=edit'));
   });
 
   it('reads an item back as plain values', async () => {

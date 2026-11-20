@@ -118,6 +118,15 @@ export function fakeCms(
         }
         return json(200, { items: c.versions });
       }
+      if ((m = /^\/content\/(\w+)\/versions\/(\d+)\/previews$/.exec(path))) {
+        const hosts = [...state.applications.values()].flatMap((a) =>
+          ((a.hosts as { authority: string }[] | undefined) ?? []).map((h) => ({
+            application: String(a.key),
+            url: `https://${h.authority}/preview?key=${m![1]}&ver=${m![2]}&loc=en&ctx=preview&preview_token=tok`,
+          })),
+        );
+        return json(200, { items: hosts });
+      }
       if ((m = /^\/content\/(\w+)\/versions\/(\d+):publish$/.exec(path))) {
         const c = state.content.get(m[1]!);
         const v = c?.versions.find((x) => x.version === m![2]);
