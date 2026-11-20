@@ -7,6 +7,12 @@
 # team is smaller (twenty roles): the content model is code, so the item-authoring roles of the
 # SitecoreAI team (registrar, layout engineer, provisioner, experience enabler) fold into the
 # engineers who write and integrate that code and into the Experience Builder who composes pages.
+#
+# The order follows the platform (0.5.0, after the first live build): content types first, page
+# types included; then the application, which can't exist without its start page, with its host
+# and live preview; then content. The head shows published content only, so content is published
+# where it is built, as releases the Director approves; and the API key's content rights are
+# confirmed in phase 0, because no read shows them.
 id: optimizely-saas-migration
 version: 0.5.0
 name: Build an Optimizely CMS (SaaS) website
@@ -64,7 +70,10 @@ intake:
       intro: >-
         The CMS instance the site is built in, the application (website) it becomes, and the
         prefix its content types carry. Content types are shared by every site on the instance;
-        the prefix keeps this project's apart.
+        the prefix keeps this project's apart. The API key needs content rights as well as API
+        access: in the CMS, Settings > Set Access Rights, on the Root, give the key Read, Create,
+        Change, Delete and Publish. Without them it can push content types and is still refused
+        every content write; the first step of the run asks you to confirm them.
       fields: [cmsUrl, application, typePrefix, languages]
       credentials:
         - { id: cms-api-client, required: true }
@@ -192,8 +201,9 @@ phases:
     exitCriteria: >-
       Every credential verified against its endpoint (GitHub clone, CMS REST API v1, Optimizely
       Graph, hosting); instance facts recorded (applications, locales, content types already
-      carrying the prefix); the application and prefix the project owns are fixed, and other
-      applications on the instance are left alone.
+      carrying the prefix); the Director has confirmed the API key's content rights on the Root
+      (no read shows them, and the first content write comes after Gate 1); the application and
+      prefix the project owns are fixed, and other applications on the instance are left alone.
   - number: 1
     name: Discovery and analysis
     shortName: Discovery
@@ -210,34 +220,36 @@ phases:
       page or experience type; the model contract approved: exact type keys with the prefix,
       property names and types, composition behaviour (section or element), display templates per
       variant, list limits, shared or per-page content; naming fixed; open decisions listed.
+  # The application is not made here: it needs its start page, and the start page is the home
+  # page, of a page type that reaches the CMS in phase 4.
   - number: 3
     name: Foundation
     shortName: Foundation
     exitCriteria: >-
-      The application exists with the project's locales and media folder; design tokens and shared
-      primitives extracted from the source; hosting project and env vars exist; the head's
-      /preview route loads the CMS communication script; an empty experience renders on the
-      editing host; zero critical findings.
+      Design tokens and shared primitives extracted from the source; the hosting project and its
+      variables exist and the head answers on Vercel, with Vercel Authentication off so Visual
+      Builder can frame it; zero critical findings.
   - number: 4
-    name: Component build and content types
+    name: Content types, the application and the pilot slice
     shortName: Components
     optionalGates:
       - pilot-slice-review
     exitCriteria: >-
-      Pilot slice proven end to end first: its components built, their content types and display
-      templates pushed, the editing host added as the application's hostname with live preview,
-      an experience composed from them, published, read back from Optimizely Graph, and a real
-      Visual Builder edit (including a new experience from a blueprint). Then 100% of Blueprint
-      components built, pushed and enabled in Visual Builder on the editing host.
+      Every page template is a page or experience type in code, pushed to the CMS; the
+      application exists with the home page as its start page, assets of its own and the editing
+      address as its host with live preview. Pilot slice proven end to end first: its components
+      (and the header, footer and navigation) built, their content types and display templates
+      pushed, an experience composed from them, published, served by Optimizely Graph and
+      rendered by the head, each ready for Visual Builder. Then 100% of Blueprint components
+      built, pushed and enabled in Visual Builder on the editing host.
   - number: 5
-    name: Page types, blueprints and site shell
+    name: Blueprints and site shell
     shortName: Templates
     dependsOn:
       - 3
     exitCriteria: >-
-      Every page template is a page or experience type in code, pushed to the CMS, with a blueprint
-      of its default sections; the shared header and footer render on every page from shared
-      content.
+      Every experience type has a blueprint of its default sections; the shared header and
+      footer are filled from the source, published, and render on every page.
   - number: 6
     name: Content and media migration
     shortName: Migration
@@ -245,23 +257,23 @@ phases:
       - 4
       - 5
     exitCriteria: >-
-      Content parity at or above 98%; all media uploaded with alt text; no broken internal links;
-      visual sample within tolerance.
+      Every page built and published on the application's host; content parity at or above 98%;
+      all media uploaded with alt text; no broken internal links; visual sample within tolerance.
   - number: 7
     name: Experience enablement
     shortName: Experience
     exitCriteria: >-
-      Redirects, SEO properties, sitemap, robots, 404/500 pages and Graph webhooks for
-      revalidation in place; when the brief confirms Experimentation is licensed, one experiment
-      on the pilot experience resolves on the editing host.
+      Redirects, SEO properties, sitemap, robots and 404/500 pages in place, and published pages
+      refresh on the head within a minute; when the brief confirms Experimentation is licensed,
+      one experiment on the pilot experience resolves on the editing host.
   - number: 8
     name: Deployment and publishing
     shortName: Deployment
     exitCriteria: >-
-      Three releases, each verified on its own: the deployed commit is the reviewed commit on the
-      editing and delivery hosts; the content model replays from the repository (manifest export
-      committed, dry-run push clean); every migrated page is published, indexed in Graph and
-      resolves on the delivery host. Smoke test green.
+      Each verified on its own: the deployed commit is the reviewed commit on the editing and
+      delivery hosts; the content model replays from the repository (manifest export committed,
+      a dry-run push builds the same model); every migrated page's final version is published,
+      indexed in Graph and resolves on the application's host. Smoke test done in Visual Builder.
   # Acceptance is the Director's, in the live systems (Visual Builder, the editing and delivery
   # hosts), against the Definition of Done in the handover pack: agents don't re-check the site.
   - number: 9

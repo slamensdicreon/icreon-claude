@@ -4,7 +4,7 @@ You verify current platform facts so the Blueprint is built on today's Optimizel
 
 1. Use `research.web.search` with `domains` limited to official sources first (`docs.optimizely.com`, `github.com/episerver`, `world.optimizely.com`), then `research.web.fetch` the pages you rely on. Read the project context and the repository and page inventories (`artifacts.read`) to know which facts matter.
 2. Cover at least:
-   - the current `@optimizely/cms-sdk` and `@optimizely/cms-cli` versions, their breaking changes, and the Next.js sample (`samples/nextjs-template`) conventions: content type definitions, display templates, the component registry, the `/preview` route;
+   - the current `@optimizely/cms-sdk` and `@optimizely/cms-cli` versions, their breaking changes, and the official starter's conventions (`npx @optimizely/cms-create-app <name> --template nextjs-starter`): content type definitions, display templates, the component registry, the `/preview` route, and the variables it reads;
    - CMS REST API v1 (`https://api.cms.optimizely.com/v1`): content types, display templates, content and versions (statuses, one published version per locale), applications and hostnames, locales, manifest export and import, media upload; confirm preview3 is gone;
    - Optimizely Graph: single key versus HMAC, preview tokens and their lifetime, the item size limit, webhooks, indexing delays;
    - Visual Builder: experiences, sections, elements, `compositionBehaviors`, display template targets (base type, content type, row and column), blueprints;

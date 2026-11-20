@@ -381,3 +381,78 @@ describe('Optimizely parity checks', () => {
     });
   });
 });
+
+describe('Optimizely page checks on the task’s own page', () => {
+  const withPages = {
+    blueprint: {
+      collections: {
+        ...blueprint.collections,
+        pages: [
+          { key: 'home', name: 'Home', attrs: { path: '/' } },
+          { key: 'about', name: 'About', attrs: { path: '/about' } },
+          { key: 'not-found', name: '404', attrs: { path: '/404', errorPage: 404 } },
+        ],
+      },
+    },
+  };
+  const about = { ...withPages, scope: { collection: 'pages', items: ['about'] } };
+
+  it('reads the page the task migrated, not the start page', async () => {
+    const asked: Record<string, unknown>[] = [];
+    const c = ctx({}, about);
+    const read = c.read;
+    c.read = async (server, op, args) => {
+      if (op === 'content.read') asked.push(args);
+      return read(server, op, args);
+    };
+    const pages = { 'https://acme.vercel.app/en/about/': { status: 200, html: HOME } };
+    expect(await run('head.pages-render', c, pages)).toMatchObject({ status: 'pass' });
+    expect(asked).toEqual([{ path: '/content/Acme_Site/about' }]);
+    // Nothing at the start page's address was fetched or would have passed for it.
+    expect(
+      await run('head.pages-render', c, {
+        'https://acme.vercel.app/en/': { status: 200, html: HOME },
+      }),
+    ).toMatchObject({
+      status: 'fail',
+      detail: 'https://acme.vercel.app/en/about/ answered 404',
+    });
+  });
+
+  it('compares it with the same page of the source', async () => {
+    const seen: unknown[] = [];
+    const c = ctx(
+      {},
+      {
+        ...about,
+        document: async () => ({ origin: 'https://www.acme.com' }),
+        compareScreens: async (pair: unknown) => {
+          seen.push(pair);
+          return { verdict: 'match' as const, differences: [], tokens: 1 };
+        },
+      },
+    );
+    expect(await run('parity.visual', c)).toMatchObject({ status: 'pass' });
+    expect(seen).toEqual([
+      {
+        path: '/about',
+        source: 'https://www.acme.com/about',
+        candidate: 'https://acme.vercel.app/en/about/',
+      },
+    ]);
+  });
+
+  it('names each failing page when a task covers several, and skips error pages', async () => {
+    const c = ctx(
+      { 'optimizely-cms content.read': { code: 404, body: { error: 'Nothing there' } } },
+      { ...withPages, scope: { collection: 'pages', items: ['home', 'about', 'not-found'] } },
+    );
+    const r = await run('structural.experiences', c);
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('/: The start page does not exist in the CMS yet');
+    expect(r.detail).toContain(
+      '/about: /about does not exist in the CMS yet (/content/Acme_Site/about)',
+    );
+    expect(r.detail).not.toContain('/404');
+  });
+});

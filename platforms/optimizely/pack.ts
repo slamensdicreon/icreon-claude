@@ -143,7 +143,7 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
         kind: 'text',
         required: true,
         placeholder: 'cablecom-website',
-        hint: 'The website in Settings → Applications this project builds. Created in Foundation if it does not exist; its key there uses underscores for spaces and dashes (Cablecom_Website).',
+        hint: 'The website in Settings → Applications this project builds. The team creates it if it does not exist, once the home page’s type is in the CMS; its key there uses underscores for spaces and dashes (Cablecom_Website).',
         pattern: '^[A-Za-z][A-Za-z0-9 _-]{1,99}$',
         defaultValue: null,
         defaultFrom: null,

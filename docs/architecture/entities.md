@@ -196,7 +196,10 @@ they would run with their own teams). The team goes from 24 roles to 21.
   `types.defined` and `manifest.replays` are in `packages/stack/src/review.ts`.
 - **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): thirteen rows proven on
   a live instance, then the rows from the documentation that no build has met yet.
-- **Playbooks**: `playbooks/optimizely-saas-migration` (the whole site) and
+- **Playbooks**, both in the order the platform sets (content types first; then the application,
+  whose start page is of a pushed experience type, with its host and live preview; then shared
+  blocks and pages, published as they are written, because the head and the checks read
+  published content): `playbooks/optimizely-saas-migration` (the whole site) and
   `playbooks/optimizely-homepage-demo` (the audit, then the homepage, header, footer and
   navigation; see [homepage-demo-playbook.md](homepage-demo-playbook.md)).
 - **First build**: Microsoft's homepage, the same one the SitecoreAI demo built, in
@@ -214,6 +217,7 @@ and the content-model checks were also run against the live instance.
 | -- | ---- | ---- |
 | O3 | The starter template repository. The official starter is `npx @optimizely/cms-create-app <name> --template nextjs-starter`; a build repository is generated from a template repository, so it needs a copy in `icreon-launchworks` marked as a template, then `pack.starter` and `pack.buildRecipe`. Until then intake refuses a build repository for this pack | S |
 | O4 | The checks nothing implements yet: `parity.page` (content parity by words needs the source inventory's pages mapped to routes), `media.alt-text` (needs a media listing), `experience.redirects-resolve` | S |
+| O9 | Shared pieces that still read another platform's contract, so the Optimizely plans leave them out: `blueprint.coverage` (`attrs.fields`, `attrs.rendering`, `attrs.queryBudget`), `editing-host.responds` (`/api/editing/config`), and the `validators` server's `structural.run` scopes (`site`, `templates`, `renderings`) and `parity.run` (offered only when the pack has `parity.page`). Until they are portable the Blueprint is judged by the Discovery Lead and Gate 1, and the validator roles work through `acceptance.check` and reads | M |
 | O5 | Browser `visual-builder.drive` and `video.record`: the same capability gap as `page-builder.drive`; M7's driver should cover both editors | L (shared with M7) |
 | O6 | Catalog grouping and UI: `entity.yaml`, `GET /entities`, the wizard's entity step, platform names in copy | S |
 | O7 | Finish the first build: the API key needs content rights on the instance (Settings > Set Access Rights) before the application and its content can be created; then run both playbooks end to end with the Director | – |

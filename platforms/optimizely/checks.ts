@@ -116,15 +116,84 @@ async function displayTemplates(ctx: PlatformCheckContext): Promise<TemplateView
   return (r.body as { displayTemplates?: TemplateView[] }).displayTemplates ?? [];
 }
 
-/** The start page's sections, as the CMS holds its latest version. */
-async function startPage(
+/**
+ * A page a check judges: the Blueprint's path for it, where the team's item for it is in the
+ * CMS, and its route on the head (routes start with the locale).
+ */
+interface PageRef {
+  path: string;
+  label: string;
+  cms(application: string): string;
+  route(locale: string): string;
+}
+
+const pageRef = (path: string): PageRef => {
+  const below = path.split('/').filter(Boolean).join('/');
+  return {
+    path: below ? `/${below}` : '/',
+    label: below ? `/${below}` : 'The start page',
+    cms: (application) => `/content/${application}${below ? `/${below}` : ''}`,
+    route: (locale) => `/${locale}${below ? `/${below}` : ''}/`,
+  };
+};
+
+/**
+ * The pages a check covers: the task's own (a page's migration is judged on that page), else
+ * the start page. Error pages have no route of their own and are left out.
+ */
+function pagesOf(ctx: PlatformCheckContext): PageRef[] {
+  if (ctx.scope.collection !== 'pages' || !ctx.scope.items.length) return [pageRef('/')];
+  const own = built(ctx.blueprint?.collections.pages)
+    .filter((p) => ctx.scope.items.includes(p.key) && !p.attrs?.errorPage)
+    .map((p) => p.attrs?.path)
+    .filter((path): path is string => typeof path === 'string' && path.startsWith('/'));
+  return own.length ? [...new Set(own)].slice(0, 20).map(pageRef) : [pageRef('/')];
+}
+
+/** One verdict over the task's pages: every failure named by its page, pending only when nothing failed. */
+const eachPage =
+  (one: (ctx: PlatformCheckContext, page: PageRef) => Promise<CheckResult>): PlatformCheck =>
+  async (ctx) => {
+    const pages = pagesOf(ctx);
+    const results: { page: PageRef; result: CheckResult }[] = [];
+    for (const p of pages) results.push({ page: p, result: await one(ctx, p) });
+    if (results.length === 1) return results[0]!.result;
+    const of = (status: CheckResult['status']) => results.filter((r) => r.result.status === status);
+    const data = results.map((r) => ({
+      path: r.page.path,
+      status: r.result.status,
+      data: r.result.data,
+    }));
+    if (of('fail').length)
+      return fail(
+        of('fail').map((r) => `${r.page.path}: ${r.result.detail}`),
+        data,
+      );
+    if (of('pending').length)
+      return {
+        status: 'pending',
+        detail: of('pending')
+          .map((r) => `${r.page.path}: ${r.result.detail}`)
+          .join('; '),
+        data,
+      };
+    return pass(
+      `${results.length} pages pass: ${results.map((r) => r.page.path).join(', ')}.`,
+      data,
+    );
+  };
+
+/** A page's sections, as the CMS holds its latest version. */
+async function pageContent(
   ctx: PlatformCheckContext,
-  app: string,
+  path: string,
+  label: string,
 ): Promise<
   { status?: string; sections: SectionView[]; properties: Record<string, unknown> } | CheckResult
 > {
-  const r = await ctx.read('optimizely-cms', 'content.read', { path: `/content/${app}` });
-  if (r.code !== 200) return pending(`The start page could not be read: ${reason(r)}`);
+  const r = await ctx.read('optimizely-cms', 'content.read', { path });
+  if (r.code === 404) return fail([`${label} does not exist in the CMS yet (${path})`]);
+  if (r.code !== 200) return pending(`${label} could not be read: ${reason(r)}`);
   const b = r.body as {
     status?: string;
     composition?: SectionView[];
@@ -191,9 +260,10 @@ function headingsOf(properties: Record<string, unknown> | undefined): string[] {
   return out;
 }
 
-/** The source's home page and the new one, or why they can't be compared yet. */
+/** A source page and the new one, or why they can't be compared yet. */
 async function sourceAndCandidate(
   ctx: PlatformCheckContext,
+  pg: PageRef,
 ): Promise<{ source: string; candidate: string } | CheckResult> {
   const { languages } = optimizelyTarget({ target: ctx.target });
   const inv = ((await ctx.document('page-inventory')) ??
@@ -206,7 +276,10 @@ async function sourceAndCandidate(
   if (isResult(app)) return app;
   const host = primaryHost(app);
   if (!host) return fail(['The application has no host to compare on']);
-  return { source: `${origin}/`, candidate: `https://${host.host}/${languages[0] ?? 'en'}/` };
+  return {
+    source: `${origin}${pg.path === '/' ? '/' : pg.path}`,
+    candidate: `https://${host.host}${pg.route(languages[0] ?? 'en')}`,
+  };
 }
 
 export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, PlatformCheck> {
@@ -328,14 +401,14 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
         : fail(["There is no blueprint for any of the project's experience types"]);
     },
 
-    // The start page is composed from the project's own sections, each on a display template.
-    'structural.experiences': async (ctx) => {
+    // A page is composed from the project's own sections, each on a display template.
+    'structural.experiences': eachPage(async (ctx, pg) => {
       const { typePrefix } = optimizelyTarget({ target: ctx.target });
       const app = await application(ctx);
       if (isResult(app)) return app;
-      const start = await startPage(ctx, app.key);
+      const start = await pageContent(ctx, pg.cms(app.key), pg.label);
       if (isResult(start)) return start;
-      if (!start.sections.length) return fail(['The start page has no sections']);
+      if (!start.sections.length) return fail([`${pg.label} has no sections`]);
       const problems = start.sections.flatMap((s) => [
         ...(s.contentType?.startsWith(typePrefix)
           ? []
@@ -347,12 +420,12 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
       return problems.length
         ? fail(problems, { sections: start.sections.length })
         : pass(
-            `The start page has ${start.sections.length} sections, all the project's own types on display templates.`,
+            `${pg.label} has ${start.sections.length} sections, all the project's own types on display templates.`,
             {
               sections: start.sections.map((s) => ({ name: s.name, contentType: s.contentType })),
             },
           );
-    },
+    }),
 
     // The application answers on the head's host, over https.
     'hostname.registered': async (ctx) => {
@@ -440,16 +513,16 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
           ]);
     },
 
-    // The start page renders on the head and shows what its sections hold.
-    'head.pages-render': async (ctx) => {
+    // A page renders on the head and shows what its sections hold.
+    'head.pages-render': eachPage(async (ctx, pg) => {
       const { languages } = optimizelyTarget({ target: ctx.target });
       const app = await application(ctx);
       if (isResult(app)) return app;
       const host = primaryHost(app);
       if (!host) return fail(['The application has no host']);
-      const start = await startPage(ctx, app.key);
+      const start = await pageContent(ctx, pg.cms(app.key), pg.label);
       if (isResult(start)) return start;
-      const url = `https://${host.host}/${languages[0] ?? 'en'}/`;
+      const url = `https://${host.host}${pg.route(languages[0] ?? 'en')}`;
       const p = await page(cfg, url);
       if (p.status !== 200) return fail([`${url} answered ${p.status || 'nothing'}`]);
       const text = fold(visibleText(p.html));
@@ -467,11 +540,11 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
             `${url} renders all ${owed.length} headings of its ${start.sections.length} sections.`,
             { owed: owed.length },
           );
-    },
+    }),
 
-    // The start page reads like the source's: every heading a visitor sees there is here too.
-    'parity.render': async (ctx) => {
-      const pair = await sourceAndCandidate(ctx);
+    // A page reads like the source's: every heading a visitor sees there is here too.
+    'parity.render': eachPage(async (ctx, pg) => {
+      const pair = await sourceAndCandidate(ctx, pg);
       if ('status' in pair) return pair;
       const [source, candidate] = await Promise.all([
         page(cfg, pair.source),
@@ -505,26 +578,26 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
             missing.slice(0, 15).map((h) => `"${h}" is on the source page and not on the new one`),
             data,
           );
-    },
+    }),
 
-    // The start page looks like the source's, section by section, as a model sees both.
-    'parity.visual': async (ctx) => {
-      const pair = await sourceAndCandidate(ctx);
+    // A page looks like the source's, section by section, as a model sees both.
+    'parity.visual': eachPage(async (ctx, pg) => {
+      const pair = await sourceAndCandidate(ctx, pg);
       if ('status' in pair) return pair;
       if (!ctx.compareScreens) return pending('No model is connected to compare screenshots.');
       const r = await ctx.compareScreens({
-        path: '/',
+        path: pg.path,
         source: pair.source,
         candidate: pair.candidate,
       });
       if ('error' in r) return pending(`The pages could not be compared: ${r.error}`);
       return r.verdict === 'match'
         ? pass(
-            `The start page matches the source${r.minor?.length ? ` (minor: ${r.minor.slice(0, 5).join('; ')})` : ''}.`,
+            `${pg.label} matches the source${r.minor?.length ? ` (minor: ${r.minor.slice(0, 5).join('; ')})` : ''}.`,
             r,
           )
         : fail(r.differences.slice(0, 12), r);
-    },
+    }),
 
     // The start page carries the shared header and footer, and they render.
     'head.header-footer': async (ctx) => {

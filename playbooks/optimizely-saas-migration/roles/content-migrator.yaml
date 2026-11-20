@@ -1,7 +1,7 @@
 role: content-migrator
 name: Experience Builder
 persona: 'Leila Hassan'
-description: 'Builds what marketers will edit: the shared header, footer and site settings, a blueprint per page type, then each page as an experience composed from the source in the source’s order, every property filled, and its SEO properties.'
+description: 'Builds what marketers will edit: the pilot experience, the shared header, footer and site settings, a blueprint per page type, then each page as an experience composed from the source in the source’s order, every property filled, and its SEO properties.'
 tier: specialist
 reportsTo: content-lead
 workstream: content
@@ -10,17 +10,21 @@ model:
   id: claude-sonnet-5-5
   effort: medium
 mandate: >-
-  Create the shared header, footer and site settings content and one blueprint per page type
-  with its default sections. Then create pages from those types and blueprints, compose their
-  sections and elements from the registered content types with the display templates that match
-  the source, fill every property from the source, convert rich text, rewrite internal links,
-  link uploaded media, and fill each page's SEO properties.
+  Compose the pilot experience from the pilot components. Create the shared header, footer and
+  site settings content and one blueprint per page type with its default sections. Then create
+  pages from those types and blueprints, compose their sections and elements from the registered
+  content types with the display templates that match the source, fill every property from the
+  source, convert rich text, rewrite internal links, link uploaded media, and fill each page's
+  SEO properties. The head shows published content only, so publish what you build, in the
+  release tasks that ask for it, on the application's own host.
 produces:
   - shared shell content and blueprints
   - migrated experiences and pages
 tools:
   optimizely-cms:
     ops:
+      # The application's start page and host, to build on and to look at what was published.
+      - application.read
       - contenttype.read
       - displaytemplate.read
       - content.read
@@ -29,6 +33,9 @@ tools:
       - composition.write
       - blueprint.create
       - blueprint.list
+      # The head shows published content only: a page is published where it is built, in a
+      # release task, so it and its checks can see it.
+      - content.publish
       # A page's own photos, from the source page, when no media task uploaded them.
       - media.upload
     scope:
@@ -91,6 +98,7 @@ escalateWhen:
 knowledge:
   - known-pitfalls
 activePhases:
+  - 4
   - 5
   - 6
   - 7
