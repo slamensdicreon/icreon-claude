@@ -1,0 +1,285 @@
+# Example Blueprint for demos and tests: a member portal for a risk pool, with a business manager
+# and a finance contact, in this platform's model. Every key carries the project's prefix (Acme
+# here); every component has a default display template of its own, whose settings are the
+# column a section sits in and the role it is shown to; the one page type is an experience type;
+# and each page lists its sections in order. The dashboard shows each role its own welcome and
+# promo: two sections of the same component, each set to one role.
+version: 1
+collections:
+  components:
+    - key: welcome
+      name: Welcome
+      pilot: true
+      attrs:
+        contentType: AcmeWelcome
+        behaviour: section
+        properties:
+          - { name: eyebrow, type: string, localized: true }
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: string, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+          - { name: primaryLink, type: link, localized: true }
+          - { name: secondaryLink, type: link, localized: true }
+        data: { reads: [persona, district] }
+        interactive: true
+        content: page
+        pages: ['/']
+        displayTemplates:
+          - key: AcmeWelcomeDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+    - key: page-header
+      name: Page Header
+      pilot: true
+      attrs:
+        contentType: AcmePageHeader
+        behaviour: section
+        properties:
+          - { name: eyebrow, type: string, localized: true }
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: subtitle, type: string, localized: true }
+        data: null
+        interactive: false
+        content: page
+        pages: ['/claims', '/billing']
+        displayTemplates:
+          - key: AcmePageHeaderDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+    - key: next-steps
+      name: Next Steps
+      attrs:
+        contentType: AcmeNextSteps
+        behaviour: section
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: subtitle, type: string, localized: true }
+          - { name: emptyText, type: string, localized: true }
+        data: { reads: [tasks] }
+        interactive: true
+        content: page
+        pages: ['/']
+        displayTemplates:
+          - key: AcmeNextStepsDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+    - key: claims-table
+      name: Claims Table
+      pilot: true
+      attrs:
+        contentType: AcmeClaimsTable
+        behaviour: section
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: emptyText, type: string, localized: true }
+        data: { reads: [claims], actions: [addDocument] }
+        interactive: true
+        content: page
+        pages: ['/claims']
+        displayTemplates:
+          - key: AcmeClaimsTableDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+    - key: claim-report
+      name: Claim Report
+      attrs:
+        contentType: AcmeClaimReport
+        behaviour: section
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: intro, type: string, localized: true }
+          - { name: receivedTitle, type: string, localized: true }
+          - { name: receivedText, type: string, localized: true }
+        data: { reads: [persona, district], actions: [submitClaim] }
+        interactive: true
+        content: page
+        pages: ['/report']
+        children:
+          contentType: AcmeClaimReportStep
+          properties:
+            - { name: heading, type: string, required: true, localized: true }
+            - { name: help, type: string, localized: true }
+          max: 6
+        displayTemplates:
+          - key: AcmeClaimReportDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+    - key: financial-account
+      name: Financial Account
+      attrs:
+        contentType: AcmeFinancialAccount
+        behaviour: section
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: balanceLabel, type: string, localized: true }
+          - { name: dueText, type: string, localized: true }
+          - { name: paidText, type: string, localized: true }
+          - { name: wageTitle, type: string, localized: true }
+        data: { reads: [balance, invoices, wages], actions: [payInvoice, submitWages] }
+        interactive: true
+        content: page
+        pages: ['/billing']
+        displayTemplates:
+          - key: AcmeFinancialAccountDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+    - key: promo
+      name: Promo
+      attrs:
+        contentType: AcmePromo
+        behaviour: section
+        properties:
+          - { name: eyebrow, type: string, localized: true }
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: richText, localized: true }
+          - { name: link, type: link, localized: true }
+        data: null
+        interactive: false
+        content: page
+        pages: ['/']
+        displayTemplates:
+          - key: AcmePromoDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+    - key: sign-in
+      name: Sign In
+      attrs:
+        contentType: AcmeSignIn
+        behaviour: section
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: intro, type: richText, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+        data: { reads: [personas] }
+        interactive: true
+        content: page
+        pages: ['/sign-in']
+        displayTemplates:
+          - key: AcmeSignInDefault
+            name: Default
+            default: true
+            settings:
+              column: [full, main, side]
+              audience: [everyone, business-manager, finance-contact]
+  templates:
+    - key: portal-page
+      name: Portal Page
+      attrs:
+        kind: experience
+        contentType: AcmePortalPage
+        properties:
+          - { name: metaTitle, type: string, localized: true }
+          - { name: bare, type: boolean }
+  pages:
+    - key: overview
+      name: Overview
+      attrs:
+        path: /
+        title: Overview
+        template: portal-page
+        personas: [business-manager, finance-contact]
+        components:
+          - { component: welcome, column: full, audience: business-manager }
+          - { component: welcome, column: full, audience: finance-contact }
+          - { component: next-steps, column: main }
+          - { component: promo, column: side, audience: business-manager }
+          - { component: promo, column: side, audience: finance-contact }
+    - key: claims
+      name: Claims
+      attrs:
+        path: /claims
+        title: Claims
+        template: portal-page
+        personas: [business-manager]
+        components:
+          - { component: page-header, column: full }
+          - { component: claims-table, column: full }
+    - key: report
+      name: Report a claim
+      attrs:
+        path: /report
+        title: Report a claim
+        template: portal-page
+        personas: [business-manager]
+        components: [{ component: claim-report, column: full }]
+    - key: billing
+      name: Billing and payments
+      attrs:
+        path: /billing
+        title: Billing & payments
+        template: portal-page
+        personas: [business-manager, finance-contact]
+        components:
+          - { component: page-header, column: full }
+          - { component: financial-account, column: full }
+    - key: sign-in
+      name: Sign in
+      attrs:
+        path: /sign-in
+        title: Sign in
+        template: portal-page
+        bare: true
+        personas: []
+        components: [{ component: sign-in, column: full }]
+  media:
+    - key: campus-sunset
+      name: campus-sunset.jpg
+      attrs: { path: public/assets/campus-sunset.jpg, pages: ['/'] }
+    - key: campus
+      name: campus.jpg
+      attrs: { path: public/assets/campus.jpg, pages: ['/sign-in'] }
+  personas:
+    - key: business-manager
+      name: Angela Mitchell
+      attrs:
+        name: Angela Mitchell
+        email: angela.mitchell@cedargroveisd.example
+        role: District Business Manager
+        organisation: Cedar Grove ISD
+        audience: business-manager
+        navigation: [overview, claims, report, billing]
+        presentationPath:
+          - { page: overview, step: Sign in; the dashboard greets Angela with her tasks }
+          - { page: report, step: Report storm damage with the example details and a sample photo }
+          - { page: claims, step: The new claim is at the top of the list }
+        variants: []
+    - key: finance-contact
+      name: Elena Morris
+      attrs:
+        name: Elena Morris
+        email: elena.morris@pinehollowisd.example
+        role: Finance & Payroll Contact
+        organisation: Pine Hollow ISD
+        audience: finance-contact
+        navigation: [overview, billing]
+        presentationPath:
+          - { page: overview, step: Sign in as Elena; billing content instead of claims }
+          - { page: billing, step: Confirm the demo payment and record the Q3 wage submission }
+        variants:
+          - { page: overview, component: welcome, content: 'Primary button: Review billing' }
+          - {
+              page: overview,
+              component: promo,
+              content: 'Your fall contribution statement is ready.',
+            }

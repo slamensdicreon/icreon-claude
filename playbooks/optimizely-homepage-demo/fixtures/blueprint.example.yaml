@@ -10,7 +10,8 @@
 # here); every component has a default display template of its own; a variant is a display
 # template (Featured Banner: Promo, Feature, Message); what varies per placement is a setting
 # (the band's tone, the hero tab, Horizontal Card's image side); repeating items are inline child
-# types with a limit.
+# types with a limit. It passes the checks the Blueprint step names (blueprint.coverage,
+# discovery.blueprint, blueprint.demo-slice).
 version: 1
 collections:
   components:
@@ -23,6 +24,10 @@ collections:
         content: shared
         shared: true
         pages: ['/']
+        properties:
+          - { name: logo, type: contentReference, allowedTypes: [_image] }
+          - { name: navigation, type: contentReference, allowedTypes: [AcmeMainNavigation] }
+          - { name: signIn, type: link }
     - key: main-navigation
       name: Main Navigation
       pilot: true
@@ -32,7 +37,10 @@ collections:
         content: shared
         shared: true
         pages: ['/']
-        children: { contentType: AcmeNavGroup, max: 8 }
+        children:
+          contentType: AcmeNavGroup
+          max: 8
+          properties: [{ name: label, type: string }, { name: links, type: array }]
     - key: site-footer
       name: Site Footer
       pilot: true
@@ -42,7 +50,12 @@ collections:
         content: shared
         shared: true
         pages: ['/']
-        children: { contentType: AcmeFooterColumn, max: 6 }
+        properties:
+          - { name: legal, type: richText, localized: true }
+        children:
+          contentType: AcmeFooterColumn
+          max: 6
+          properties: [{ name: heading, type: string }, { name: links, type: array }]
     - key: announcement-banner
       name: Announcement Banner
       pilot: true
@@ -51,6 +64,9 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
+        properties:
+          - { name: message, type: richText, required: true, localized: true }
+          - { name: link, type: link }
         displayTemplates:
           - {
               key: AcmeAnnouncementBannerDefault,
@@ -66,6 +82,11 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: richText, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+          - { name: cta, type: link }
         displayTemplates:
           - {
               key: AcmeHeroWithTabsDefault,
@@ -81,7 +102,18 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
-        children: { contentType: AcmePromoCard, max: 12 }
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmePromoCard
+          max: 12
+          properties:
+            [
+              { name: title, type: string },
+              { name: text, type: richText },
+              { name: image, type: contentReference, allowedTypes: [_image] },
+              { name: link, type: link },
+            ]
         displayTemplates:
           - {
               key: AcmePromoCardCarouselDefault,
@@ -97,7 +129,12 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
-        children: { contentType: AcmeQuickLink, max: 8 }
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmeQuickLink
+          max: 8
+          properties: [{ name: label, type: string }, { name: link, type: link }]
         displayTemplates:
           - {
               key: AcmeQuickLinksDefault,
@@ -113,6 +150,11 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: richText, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+          - { name: cta, type: link }
         # One display template per variant of the source component.
         displayTemplates:
           - key: AcmeFeaturedBannerPromo
@@ -133,7 +175,17 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
-        children: { contentType: AcmeFeatureCard, max: 6 }
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmeFeatureCard
+          max: 6
+          properties:
+            [
+              { name: title, type: string },
+              { name: text, type: richText },
+              { name: icon, type: contentReference, allowedTypes: [_image] },
+            ]
         displayTemplates:
           - {
               key: AcmeFeatureCardGridDefault,
@@ -149,6 +201,11 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: richText, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+          - { name: cta, type: link }
         # Image left or right is a setting of the one template, not a second template.
         displayTemplates:
           - {
@@ -165,7 +222,17 @@ collections:
         behaviour: section
         content: page
         pages: ['/']
-        children: { contentType: AcmeSocialLink, max: 8 }
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmeSocialLink
+          max: 8
+          properties:
+            [
+              { name: label, type: string },
+              { name: link, type: link },
+              { name: icon, type: contentReference, allowedTypes: [_image] },
+            ]
         displayTemplates:
           - {
               key: AcmeSocialFollowDefault,
@@ -179,6 +246,10 @@ collections:
       attrs:
         kind: experience
         contentType: AcmeExperience
+        # What the head's <title> and meta description read.
+        properties:
+          - { name: metaTitle, type: string, localized: true }
+          - { name: metaDescription, type: string, localized: true }
         shell:
           - { property: header, component: site-header }
           - { property: footer, component: site-footer }
@@ -195,19 +266,24 @@ collections:
     - key: campaign-banner
       name: campaign-2019.jpg
       status: drop
-      attrs: { pages: ['/'], reason: Expired 2019 campaign banner; won't move }
+      attrs:
+        {
+          url: 'https://cdn.example.com/home/campaign-2019.jpg',
+          pages: ['/'],
+          reason: Expired 2019 campaign banner; won't move,
+        }
     - key: logo-header
       name: header-logo.png
-      attrs: { pages: ['/'], shared: true }
+      attrs: { url: 'https://cdn.example.com/home/header-logo.png', pages: ['/'], shared: true }
     - key: hero-background
       name: home-hero-background.webp
-      attrs: { pages: ['/'] }
+      attrs: { url: 'https://cdn.example.com/home/home-hero-background.webp', pages: ['/'] }
     - key: promo-card-1
       name: home-promo-card-1.webp
-      attrs: { pages: ['/'] }
+      attrs: { url: 'https://cdn.example.com/home/home-promo-card-1.webp', pages: ['/'] }
     - key: feature-card-1
       name: home-feature-card-1.webp
-      attrs: { pages: ['/'] }
+      attrs: { url: 'https://cdn.example.com/home/home-feature-card-1.webp', pages: ['/'] }
     - key: social-icon-1
       name: social-icon-1.webp
-      attrs: { pages: ['/'] }
+      attrs: { url: 'https://cdn.example.com/home/social-icon-1.webp', pages: ['/'] }

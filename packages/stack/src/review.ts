@@ -149,8 +149,8 @@ async function ownedFiles(
 }
 
 /**
- * The checks that exist, by validator id; the platform pack adds its own. Everything else a plan
- * names is pending.
+ * The checks that exist, by validator id; the platform pack adds its own, and its check of an id
+ * here replaces this one for that platform. Everything else a plan names is pending.
  */
 /** The plan task that fills the shared header, footer and navigation content, once, before pages. */
 export const SHARED_CHROME_TASK = 'migrate-shared-chrome';
@@ -317,6 +317,8 @@ export const CHECKS: Record<string, Check> = {
   },
 
   // Gate 1's model contract: every page placed, every component specified, a pilot slice chosen.
+  // This reads SitecoreAI's contract (fields, rendering, query budget); a platform with another
+  // registers its own check under this id (platforms/optimizely/blueprint-checks.ts).
   'blueprint.coverage': async (ctx) => {
     const bp = (await readJson(ctx, 'blueprint')) as {
       collections?: Record<string, Item[]>;
@@ -964,11 +966,13 @@ export interface CheckRow {
   detail: string;
 }
 
-type CheckDeps = Pick<ReviewDeps, 'checks' | 'library' | 'fetch' | 'platform'>;
+type CheckDeps = Pick<ReviewDeps, 'checks' | 'library' | 'fetch' | 'platform'> &
+  Partial<Pick<ReviewDeps, 'playbook'>>;
 
 /**
  * A task's acceptance checks (its `validator:` entries), run the way the Lead's review runs them:
- * the shared checks first, then the platform's. Records nothing; a check that can't run is pending.
+ * the platform's own check of an id when its pack has one (it reads that platform's contract),
+ * else the shared one. Records nothing; a check that can't run is pending.
  */
 export async function runChecks(
   deps: CheckDeps,
@@ -1009,6 +1013,7 @@ export async function runChecks(
       target: state.intake.target,
       scope: { collection: task.collection, items: task.itemKeys },
       blueprint,
+      plan: deps.playbook && { pilot: Boolean(deps.playbook.plan.pilot) },
       read: (server, op, args) => platform.read(req.projectId, server, op, args),
       credential: (id) => platform.credential(req.projectId, id),
       compareScreens:
@@ -1031,10 +1036,10 @@ export async function runChecks(
     const fromPlatform = platform?.checks?.[id];
     let r: CheckResult;
     try {
-      r = check
-        ? await check(ctx)
-        : fromPlatform
-          ? await platformCheck(fromPlatform)
+      r = fromPlatform
+        ? await platformCheck(fromPlatform)
+        : check
+          ? await check(ctx)
           : { status: 'pending', detail: 'No automated check exists for this yet.' };
     } catch (err) {
       r = { status: 'pending', detail: `The check could not run: ${(err as Error).message}` };

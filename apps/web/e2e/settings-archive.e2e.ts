@@ -29,6 +29,8 @@ test('archive waits for a pause, and an archived project offers Restore instead 
   await expect(page.getByRole('button', { name: 'Archive', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Restore project' }).click();
   await expect.poll(() => restored).toBe(true);
+  // A poll still in the route's fetch when the test ends would fail the run, not the test.
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
   run.clean();
 });
 
@@ -75,6 +77,8 @@ test('an archived project can be scheduled for deletion, and the deletion cancel
   await page.reload();
   await page.waitForLoadState('networkidle');
   await expect(page.getByRole('button', { name: 'Delete in 30 days' })).toBeVisible();
+  // A poll still in the route's fetch when the test ends would fail the run, not the test.
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
   run.clean();
 });
 
@@ -126,6 +130,8 @@ test('an archived project offers its documents and log to download', async ({ pa
     new RegExp(`/projects/${PROJECT}/documents\\.zip$`),
   );
   await expect(page.getByRole('link', { name: 'Activity (.csv)' })).toBeVisible();
+  // A poll still in the route's fetch when the test ends would fail the run, not the test.
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
   run.clean();
 });
 

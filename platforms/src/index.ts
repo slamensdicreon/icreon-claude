@@ -86,7 +86,11 @@ export interface PlatformPack {
    * failure stays with the page's task.
    */
   pageComponents?: { server: string; op: string };
-  /** Acceptance checks only the platform knows how to run, by validator id. */
+  /**
+   * Acceptance checks only the platform knows how to run, by validator id. One with the id of a
+   * shared check replaces it for this platform (`blueprint.coverage` reads the platform's own
+   * Blueprint contract).
+   */
   checks?: Record<string, PlatformCheck>;
   /**
    * Plan features a look at the target switches on when the project starts, beside the brief's
@@ -146,6 +150,11 @@ export interface PlatformCheckContext {
       }[]
     >;
   } | null;
+  /**
+   * What the playbook's plan does that a check of the Blueprint depends on: whether it proves a
+   * pilot slice before the rest is built. Absent when the caller doesn't know the plan.
+   */
+  plan?: { pilot: boolean };
   /** A read operation on one of the platform's tool servers, with the project's credential. */
   read(
     server: string,

@@ -1,0 +1,103 @@
+role: content-migrator
+name: Page Composer
+persona: 'Leila Hassan'
+description: 'Builds what marketers will edit: each portal page as an experience composed from its prototype screen, every property filled with the prototype’s copy, each section set to the column it sits in and the role it is shown to.'
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Compose the pilot page first, then each page under the start page: its sections from the
+  registered content types in the prototype's order, every property filled word for word from
+  the prototype's copy, each section's display template with its column and its audience (the
+  role it is shown to, or everyone). Publish what you write, on the portal's own application, so
+  the head shows it. When the brief asks for content by role, prove each role sees its own
+  sections and write the plan a marketer changes them from. Never invent copy.
+produces:
+  - composed and published portal pages
+  - role content plan
+tools:
+  optimizely-cms:
+    ops:
+      - application.read
+      - contenttype.read
+      - displaytemplate.read
+      - content.read
+      - content.create
+      - content.update
+      - composition.write
+      # The head shows published content only: what this role writes it publishes, on the
+      # portal's own application, so it and its checks can see the page.
+      - content.publish
+      # A page's own images, from the prototype, when no media task uploaded them.
+      - media.upload
+    scope:
+      paths:
+        - '{contentRoot}/**'
+        - '{sharedRoot}/**'
+        - /media/{application}/**
+      # Types, templates and the application to compose with: read only.
+      readPaths:
+        - /applications/**
+        - /contenttypes/**
+        - /displaytemplates/**
+        - /content/**
+        - /shared/**
+        - /media/**
+  optimizely-graph:
+    ops:
+      - graph.item
+  browser:
+    ops:
+      # An image the prototype shows, when no media task uploaded it.
+      - fetch.asset
+      # The prototype screen's copy and structure, so content is carried over, never invented.
+      - snapshot
+      # Images set by CSS (a banner's background) aren't in a snapshot: computed styles give their URL.
+      - page.styles
+      # The page's content as its CMS delivered it (fields, images, links, lists the page builds
+      # in the browser), when it embeds its layout data, as some Next.js sites do.
+      - page.data
+  # The prototype's repository, where its copy lives (screens, components, seed files).
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      # The role content plan.
+      - write
+  # Reproduce a page on the head and read what the server logged (a 500 names what threw).
+  hosting:
+    ops:
+      - logs.runtime
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:structural.experiences
+  - validator:portal.pages-render
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+  - portal-on-optimizely
+activePhases:
+  - 4
+  - 5

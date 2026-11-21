@@ -16,6 +16,7 @@ describe('acceptance check coverage', () => {
       'sitecoreai-homepage-demo',
       'optimizely-saas-migration',
       'optimizely-homepage-demo',
+      'optimizely-customer-portal',
     ]) {
       const pb = await loadPlaybook(dir(id));
       found[id] = uncheckedValidators(pb, platforms.get(pb.manifest.platform)?.checks ?? {});
@@ -25,6 +26,9 @@ describe('acceptance check coverage', () => {
     expect(found['sitecoreai-homepage-demo']).toEqual([]);
     expect(found['optimizely-saas-migration']).toEqual(EXPECTED_OPTIMIZELY);
     expect(found['optimizely-homepage-demo']).toEqual(EXPECTED_OPTIMIZELY_DEMO);
+    // The portal's own checks (its Blueprint, the sign-in, pages read as a persona, content by
+    // role, production) are in the Optimizely pack; the rest are the website playbooks'.
+    expect(found['optimizely-customer-portal']).toEqual([]);
   });
 });
 

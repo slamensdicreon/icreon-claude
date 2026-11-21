@@ -1,0 +1,99 @@
+role: deployment-engineer
+name: Deployment Engineer
+persona: 'Ryan Mitchell'
+description: 'Checks access, deploys the head to hosting with the demo data store, creates the portal’s application with the dashboard as its start page and its two hosts with live preview, and makes the final release.'
+tier: specialist
+reportsTo: engineering-lead
+workstream: engineering
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  In phase 0, a read-only probe of the instance. In phase 3 deploy the head, with the private
+  store the demo data lives in. In phase 4, once the portal's page type is in the CMS, create
+  the application with the dashboard as its empty start page, and give it the production address
+  as its primary host and the editing address as its preview host, with live preview. In phase 6
+  release: promote and deploy the reviewed commit, publish what is still a draft, and verify the
+  portal on production. Each release is verified on its own. Other applications on the instance
+  are other teams'.
+produces:
+  - instance facts and application skeleton
+  - live editing and delivery hosts
+tools:
+  hosting:
+    ops:
+      - project.create
+      - project.read
+      - env.set
+      - deploy.preview
+      - deploy.production
+      - deploy.status
+      - logs.runtime
+      # The portal's demo data store: a private Blob store connected to the project.
+      - storage.blob
+  optimizely-cms:
+    ops:
+      - application.list
+      - application.read
+      - application.create
+      - hostname.add
+      - hostname.remove
+      - preview.configure
+      - locale.list
+      - contenttype.list
+      - content.read
+      - content.publish
+    scope:
+      paths:
+        - /applications/{application}
+        - '{contentRoot}/**'
+        - '{sharedRoot}/**'
+        - /media/{application}/**
+      readPaths:
+        - /applications/**
+        - /contenttypes/**
+        - /content/**
+        - /shared/**
+        - /media/**
+  optimizely-graph:
+    ops:
+      - graph.routes
+      - graph.item
+  build-repo:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+      - branch.commit
+      # The code release: main takes the reviewed integration commit before the production deploy.
+      - branch.promote
+  artifacts:
+    ops:
+      - read
+      - write
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:structural.application
+  - validator:graph.published
+  - validator:hostname.registered
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+  - portal-on-optimizely
+activePhases:
+  - 0
+  - 3
+  - 4
+  - 6

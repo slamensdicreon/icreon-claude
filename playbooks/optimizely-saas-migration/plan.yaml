@@ -74,20 +74,28 @@ templates:
     phase: 1
     role: content-analyst
     title: Crawl the source site and build the page inventory
-    acceptance: [validator:inventory.complete]
+    # Compared with a sample of source pages: each page's <title> and meta description, forms,
+    # URLs that redirect elsewhere, embedded layout data, media hosts, and how much it covers.
+    acceptance: [validator:discovery.inventory]
   - id: platform-notes
     phase: 1
     role: research-agent
     title: Verify platform facts and write Platform Notes
 
   # 2 — Blueprint
-  # No automated check of the Blueprint on this platform yet: the shared one reads another
-  # platform's model contract. The Discovery Lead's review and Gate 1 judge it.
   - id: draft-blueprint
     phase: 2
     role: solution-architect
     title: Draft the Implementation Blueprint
     dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
+    # blueprint.coverage: this platform's model contract. Every inventoried page on a page type;
+    # every component with its prefixed content type key, typed properties, composition behaviour,
+    # display templates with one default and limits on child items; the shared blocks marked; a
+    # pilot slice chosen.
+    # discovery.blueprint: every source form placed (a component the team builds, or a
+    # third-party form the Director decides on), redirects decided, the 404 page left to the
+    # head's not-found page, source components mapped, media hosts named.
+    acceptance: [validator:blueprint.coverage, validator:discovery.blueprint]
 
   # 3 — Foundation
   - id: design-system
@@ -190,8 +198,10 @@ templates:
         The start page had no published version before: unpublish it in the CMS, or leave it,
         since the application's hosts are the project's own Vercel addresses. Migration replaces its
         sections.
-    acceptance:
-      [validator:structural.experiences, validator:head.pages-render, validator:graph.published]
+    # The pilot's own checks: the same judgements as a page's (composed from the project's
+    # sections, rendered by the head), on the start page alone. The page checks would look at
+    # every page the Blueprint keeps, and none of the others exists yet.
+    acceptance: [validator:pilot.composed, validator:pilot.renders, validator:graph.published]
   # Then the slice is read back: the types in the CMS, each pilot component ready for Visual
   # Builder, the preview route on the editing address, the page in Graph. Visual Builder
   # itself has no driver yet: a person edits in it at the smoke test and at acceptance.
@@ -231,7 +241,9 @@ templates:
       rollback: >-
         Publish the blocks' and the start page's earlier versions again (create a version from
         each and publish it), or clear the start page's header and footer and publish that.
-    acceptance: [validator:head.header-footer]
+    # parity.chrome: each shared block holds its links and items with no placeholder copy, and
+    # the start page renders them.
+    acceptance: [validator:head.header-footer, validator:parity.chrome]
   - id: blueprint-{key}
     phase: 5
     role: content-migrator
@@ -306,6 +318,10 @@ templates:
     role: content-migrator
     title: Fill every page's SEO properties from the source
     uses: [optimizely-cms, browser, blackboard, artifacts]
+    # Each page's title property holds the source page's <title>. These are drafts until the
+    # phase 8 release: the check fails a page whose property isn't set, and compares the head's
+    # <title> itself once the page is published (publish-site runs it again).
+    acceptance: [validator:seo.titles]
   # By hand until an agent can drive Visual Builder: experiments are made there, not through the
   # REST API.
   - id: prove-experimentation
@@ -351,7 +367,8 @@ templates:
         Publish the previous versions again (the ones now previouslyPublished can't be; create a
         version from each and publish it); reverting the repository doesn't change what Graph
         serves.
-    acceptance: [validator:graph.published, validator:routes.resolve]
+    # seo.titles: with the SEO properties published, each page's <title> is the source page's.
+    acceptance: [validator:graph.published, validator:routes.resolve, validator:seo.titles]
   - id: perf-a11y-audit
     phase: 8
     role: perf-a11y-qa

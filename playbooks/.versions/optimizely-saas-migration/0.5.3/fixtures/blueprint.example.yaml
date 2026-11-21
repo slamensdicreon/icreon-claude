@@ -1,0 +1,840 @@
+# Example Blueprint for demos and tests: a mid-size corporate site with a blog, on Optimizely.
+#
+# It is written to this platform's model contract, as the Solution Architect's prompt asks for
+# it, and passes the checks the Blueprint step names (blueprint.coverage, discovery.blueprint):
+# every key carries the project's prefix (Acme here); each component has its properties with
+# their types, its composition behaviour and a default display template of its own; repeating
+# items are child types with a limit; the header, footer and navigation are shared blocks; three
+# sections the home page shows are the pilot. Each page is on a page type, one source URL that
+# redirects is kept as a parent with its redirect, and the 404 page is left to the head.
+version: 1
+collections:
+  components:
+    - key: hero
+      name: Hero
+      pilot: true
+      attrs:
+        contentType: AcmeHero
+        behaviour: section
+        content: page
+        properties:
+          [
+            { name: heading, type: string, required: true, localized: true },
+            { name: text, type: richText, localized: true },
+            { name: image, type: contentReference, allowedTypes: [_image] },
+            { name: cta, type: link },
+          ]
+        displayTemplates:
+          - { key: AcmeHeroDefault, name: Default, default: true, settings: { tone: [none, navy] } }
+        # The source names this block HeroBanner in the layout data its pages embed.
+        sourceComponents: [HeroBanner]
+    - key: promo-card
+      name: PromoCard
+      pilot: true
+      attrs:
+        contentType: AcmePromoCard
+        behaviour: both
+        content: page
+        properties:
+          [
+            { name: title, type: string, required: true },
+            { name: text, type: richText },
+            { name: image, type: contentReference, allowedTypes: [_image] },
+            { name: link, type: link },
+          ]
+        displayTemplates:
+          - {
+              key: AcmePromoCardDefault,
+              name: Default,
+              default: true,
+              settings: { imageSide: [left, right] },
+            }
+    - key: rich-text
+      name: RichText
+      pilot: true
+      attrs:
+        contentType: AcmeRichText
+        behaviour: both
+        content: page
+        properties: [{ name: body, type: richText, required: true, localized: true }]
+        displayTemplates:
+          - { key: AcmeRichTextDefault, name: Default, default: true }
+    - key: header
+      name: Header
+      attrs:
+        contentType: AcmeHeader
+        # A shared block the page types refer to: built with the pilot, never added to a page.
+        behaviour: shell
+        content: shared
+        shared: true
+        properties:
+          - { name: logo, type: contentReference, allowedTypes: [_image] }
+          - { name: navigation, type: contentReference, allowedTypes: [AcmeNavigation] }
+          - { name: cta, type: link }
+    - key: footer
+      name: Footer
+      attrs:
+        contentType: AcmeFooter
+        behaviour: shell
+        content: shared
+        shared: true
+        properties:
+          [
+            { name: logo, type: contentReference, allowedTypes: [_image] },
+            { name: legal, type: richText },
+          ]
+        children:
+          contentType: AcmeFooterColumn
+          max: 6
+          properties: [{ name: heading, type: string }, { name: links, type: array }]
+        # Every form on the source is accounted for. This one doesn't move.
+        forms:
+          - id: newsletter
+            pages: ['*']
+            drop: The newsletter sign-up moved to the client’s email platform; the footer links to it
+    - key: card-grid
+      name: CardGrid
+      attrs:
+        contentType: AcmeCardGrid
+        behaviour: section
+        content: page
+        properties: [{ name: heading, type: string }]
+        children:
+          contentType: AcmeCard
+          max: 12
+          properties:
+            [
+              { name: title, type: string },
+              { name: text, type: richText },
+              { name: image, type: contentReference, allowedTypes: [_image] },
+              { name: link, type: link },
+            ]
+        # One display template per layout the source shows; the column count is a setting.
+        displayTemplates:
+          - {
+              key: AcmeCardGridDefault,
+              name: Default,
+              default: true,
+              settings: { columns: ['2', '3', '4'] },
+            }
+          - { key: AcmeCardGridPanel, name: Panel, layout: '1 tall panel left, 2 stacked right' }
+    - key: testimonial
+      name: Testimonial
+      attrs:
+        contentType: AcmeTestimonial
+        behaviour: both
+        content: page
+        properties:
+          [
+            { name: quote, type: richText, required: true },
+            { name: name, type: string },
+            { name: role, type: string },
+            { name: photo, type: contentReference, allowedTypes: [_image] },
+          ]
+        displayTemplates:
+          - { key: AcmeTestimonialDefault, name: Default, default: true }
+    - key: cta-banner
+      name: CtaBanner
+      attrs:
+        contentType: AcmeCtaBanner
+        behaviour: section
+        content: page
+        properties:
+          [
+            { name: heading, type: string, required: true },
+            { name: text, type: richText },
+            { name: cta, type: link },
+          ]
+        displayTemplates:
+          - {
+              key: AcmeCtaBannerDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, navy, red] },
+            }
+    - key: accordion
+      name: Accordion
+      attrs:
+        contentType: AcmeAccordion
+        behaviour: section
+        content: page
+        properties: [{ name: heading, type: string }]
+        children:
+          contentType: AcmeAccordionItem
+          max: 20
+          properties: [{ name: question, type: string }, { name: answer, type: richText }]
+        displayTemplates:
+          - { key: AcmeAccordionDefault, name: Default, default: true }
+    - key: tabs
+      name: Tabs
+      attrs:
+        contentType: AcmeTabs
+        behaviour: section
+        content: page
+        children:
+          contentType: AcmeTab
+          max: 6
+          properties: [{ name: label, type: string }, { name: body, type: richText }]
+        displayTemplates:
+          - { key: AcmeTabsDefault, name: Default, default: true }
+    - key: image-gallery
+      name: ImageGallery
+      attrs:
+        contentType: AcmeImageGallery
+        behaviour: section
+        content: page
+        properties: [{ name: heading, type: string }]
+        children:
+          contentType: AcmeGalleryImage
+          max: 24
+          properties:
+            [
+              { name: image, type: contentReference, allowedTypes: [_image] },
+              { name: caption, type: string },
+            ]
+        displayTemplates:
+          - { key: AcmeImageGalleryDefault, name: Default, default: true }
+    - key: video-embed
+      name: VideoEmbed
+      attrs:
+        contentType: AcmeVideoEmbed
+        behaviour: both
+        content: page
+        properties:
+          [
+            { name: heading, type: string },
+            { name: video, type: url, required: true },
+            { name: poster, type: contentReference, allowedTypes: [_image] },
+          ]
+        displayTemplates:
+          - { key: AcmeVideoEmbedDefault, name: Default, default: true }
+    - key: navigation
+      name: Navigation
+      status: merge
+      attrs:
+        contentType: AcmeNavigation
+        # A consolidation on record: the source's main and utility menus become this one block.
+        # It names no mergedInto, so it is still built, as its own shared block.
+        consolidates: [main menu, utility menu]
+        behaviour: shell
+        content: shared
+        shared: true
+        children:
+          contentType: AcmeNavigationGroup
+          max: 8
+          properties: [{ name: label, type: string }, { name: links, type: array }]
+    - key: breadcrumb
+      name: Breadcrumb
+      attrs:
+        contentType: AcmeBreadcrumb
+        behaviour: element
+        content: page
+        properties: [{ name: showHome, type: boolean }]
+        displayTemplates:
+          - { key: AcmeBreadcrumbDefault, name: Default, default: true }
+    - key: stats-strip
+      name: StatsStrip
+      attrs:
+        contentType: AcmeStatsStrip
+        behaviour: section
+        content: page
+        children:
+          contentType: AcmeStat
+          max: 6
+          properties: [{ name: value, type: string }, { name: label, type: string }]
+        displayTemplates:
+          - {
+              key: AcmeStatsStripDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, faint] },
+            }
+    - key: logo-wall
+      name: LogoWall
+      attrs:
+        contentType: AcmeLogoWall
+        behaviour: section
+        content: page
+        properties: [{ name: heading, type: string }]
+        children:
+          contentType: AcmeLogo
+          max: 24
+          properties:
+            [
+              { name: logo, type: contentReference, allowedTypes: [_image] },
+              { name: link, type: link },
+            ]
+        displayTemplates:
+          - { key: AcmeLogoWallDefault, name: Default, default: true }
+  # Page types. An experience is composed freely in Visual Builder; a page is a fixed form.
+  templates:
+    - key: home
+      name: Home Page
+      attrs:
+        kind: experience
+        contentType: AcmeHomePage
+        properties:
+          [
+            { name: metaTitle, type: string, localized: true },
+            { name: metaDescription, type: string, localized: true },
+          ]
+        defaultSections: [hero, promo-card, rich-text]
+    - key: landing
+      name: Landing Page
+      attrs:
+        kind: experience
+        contentType: AcmeLandingPage
+        properties:
+          [
+            { name: metaTitle, type: string, localized: true },
+            { name: metaDescription, type: string, localized: true },
+          ]
+        defaultSections: [hero, card-grid, cta-banner]
+    - key: article
+      name: Article Page
+      attrs:
+        kind: page
+        contentType: AcmeArticlePage
+        properties:
+          [
+            { name: metaTitle, type: string, localized: true },
+            { name: metaDescription, type: string, localized: true },
+          ]
+    - key: listing
+      name: Listing Page
+      attrs:
+        kind: experience
+        contentType: AcmeListingPage
+        properties:
+          [
+            { name: metaTitle, type: string, localized: true },
+            { name: metaDescription, type: string, localized: true },
+          ]
+        defaultSections: [hero, card-grid]
+    - key: blog-post
+      name: Blog Post
+      attrs:
+        kind: page
+        contentType: AcmeBlogPost
+        properties:
+          [
+            { name: metaTitle, type: string, localized: true },
+            { name: metaDescription, type: string, localized: true },
+          ]
+  pages:
+    - key: page-1
+      name: Page 1
+      attrs: { path: '/', template: home }
+    - key: page-2
+      name: Page 2
+      attrs: { path: '/page-2', template: landing }
+    - key: page-3
+      name: Page 3
+      attrs: { path: '/page-3', template: landing }
+    - key: page-4
+      name: Page 4
+      attrs: { path: '/page-4', template: landing }
+    - key: page-5
+      name: Page 5
+      attrs: { path: '/page-5', template: landing }
+    - key: page-6
+      name: Page 6
+      attrs: { path: '/page-6', template: landing }
+    - key: page-7
+      name: Page 7
+      attrs: { path: '/page-7', template: landing }
+    - key: page-8
+      name: Page 8
+      attrs: { path: '/page-8', template: landing }
+    - key: page-9
+      name: Page 9
+      attrs: { path: '/page-9', template: landing }
+    # The source sends /services to the home page. The pages under it need it as their
+    # parent, so it is kept, with where its visitors go: the routing step adds the redirect.
+    - key: page-10
+      name: Page 10
+      attrs: { path: '/services', template: landing, redirect: '/' }
+    - key: page-11
+      name: Page 11
+      attrs: { path: '/services/page-11', template: article }
+    - key: page-12
+      name: Page 12
+      attrs: { path: '/services/page-12', template: article }
+    - key: page-13
+      name: Page 13
+      attrs: { path: '/services/page-13', template: article }
+    - key: page-14
+      name: Page 14
+      attrs: { path: '/services/page-14', template: article }
+    - key: page-15
+      name: Page 15
+      attrs: { path: '/services/page-15', template: article }
+    - key: page-16
+      name: Page 16
+      attrs: { path: '/services/page-16', template: article }
+    - key: page-17
+      name: Page 17
+      attrs: { path: '/services/page-17', template: article }
+    - key: page-18
+      name: Page 18
+      attrs: { path: '/services/page-18', template: article }
+    - key: page-19
+      name: Page 19
+      attrs: { path: '/services/page-19', template: article }
+    - key: page-20
+      name: Page 20
+      attrs: { path: '/services/page-20', template: article }
+    - key: page-21
+      name: Page 21
+      attrs: { path: '/services/page-21', template: article }
+    - key: page-22
+      name: Page 22
+      attrs: { path: '/services/page-22', template: article }
+    - key: page-23
+      name: Page 23
+      attrs: { path: '/services/page-23', template: article }
+    - key: page-24
+      name: Page 24
+      attrs: { path: '/services/page-24', template: article }
+    - key: page-25
+      name: Page 25
+      attrs: { path: '/services/page-25', template: article }
+    - key: page-26
+      name: Page 26
+      attrs: { path: '/services/page-26', template: article }
+    - key: page-27
+      name: Page 27
+      attrs: { path: '/services/page-27', template: article }
+    - key: page-28
+      name: Page 28
+      attrs: { path: '/services/page-28', template: article }
+    - key: page-29
+      name: Page 29
+      attrs: { path: '/services/page-29', template: article }
+    - key: page-30
+      name: Page 30
+      attrs: { path: '/services/page-30', template: article }
+    - key: page-31
+      name: Page 31
+      attrs: { path: '/page-31', template: listing }
+    - key: page-32
+      name: Page 32
+      attrs: { path: '/page-32', template: listing }
+    - key: page-33
+      name: Page 33
+      attrs: { path: '/page-33', template: listing }
+    - key: page-34
+      name: Page 34
+      attrs: { path: '/page-34', template: listing }
+    - key: page-35
+      name: Page 35
+      attrs: { path: '/page-35', template: listing }
+    - key: page-36
+      name: Page 36
+      attrs: { path: '/page-36', template: listing }
+    - key: page-37
+      name: Page 37
+      attrs: { path: '/page-37', template: listing }
+    - key: page-38
+      name: Page 38
+      attrs: { path: '/page-38', template: listing }
+    - key: page-39
+      name: Page 39
+      attrs: { path: '/page-39', template: listing }
+    - key: page-40
+      name: Page 40
+      attrs: { path: '/blog', template: listing }
+    - key: blog-1
+      name: Blog post 1
+      attrs: { path: '/blog/post-1', template: blog-post }
+    - key: blog-2
+      name: Blog post 2
+      attrs: { path: '/blog/post-2', template: blog-post }
+    - key: blog-3
+      name: Blog post 3
+      attrs: { path: '/blog/post-3', template: blog-post }
+    - key: blog-4
+      name: Blog post 4
+      attrs: { path: '/blog/post-4', template: blog-post }
+    - key: blog-5
+      name: Blog post 5
+      attrs: { path: '/blog/post-5', template: blog-post }
+    - key: blog-6
+      name: Blog post 6
+      attrs: { path: '/blog/post-6', template: blog-post }
+    - key: blog-7
+      name: Blog post 7
+      attrs: { path: '/blog/post-7', template: blog-post }
+    - key: blog-8
+      name: Blog post 8
+      attrs: { path: '/blog/post-8', template: blog-post }
+    # The 404 page is the head's not-found page on this platform, not a page in the CMS.
+    - key: not-found
+      name: Page not found
+      status: drop
+      attrs:
+        path: '/404'
+        errorPage: 404
+        reason: The head's not-found page shows it, written from the inventory's errorPage
+  # One entry per file, each with its full address: the media download reads only named hosts.
+  media:
+    - key: media-1
+      name: Media item 1
+      attrs: { url: 'https://cdn.example.com/site/media-1.jpg' }
+    - key: media-2
+      name: Media item 2
+      attrs: { url: 'https://cdn.example.com/site/media-2.jpg' }
+    - key: media-3
+      name: Media item 3
+      attrs: { url: 'https://cdn.example.com/site/media-3.jpg' }
+    - key: media-4
+      name: Media item 4
+      attrs: { url: 'https://cdn.example.com/site/media-4.jpg' }
+    - key: media-5
+      name: Media item 5
+      attrs: { url: 'https://cdn.example.com/site/media-5.jpg' }
+    - key: media-6
+      name: Media item 6
+      attrs: { url: 'https://cdn.example.com/site/media-6.jpg' }
+    - key: media-7
+      name: Media item 7
+      attrs: { url: 'https://cdn.example.com/site/media-7.jpg' }
+    - key: media-8
+      name: Media item 8
+      attrs: { url: 'https://cdn.example.com/site/media-8.jpg' }
+    - key: media-9
+      name: Media item 9
+      attrs: { url: 'https://cdn.example.com/site/media-9.jpg' }
+    - key: media-10
+      name: Media item 10
+      attrs: { url: 'https://cdn.example.com/site/media-10.jpg' }
+    - key: media-11
+      name: Media item 11
+      attrs: { url: 'https://cdn.example.com/site/media-11.jpg' }
+    - key: media-12
+      name: Media item 12
+      attrs: { url: 'https://cdn.example.com/site/media-12.jpg' }
+    - key: media-13
+      name: Media item 13
+      attrs: { url: 'https://cdn.example.com/site/media-13.jpg' }
+    - key: media-14
+      name: Media item 14
+      attrs: { url: 'https://cdn.example.com/site/media-14.jpg' }
+    - key: media-15
+      name: Media item 15
+      attrs: { url: 'https://cdn.example.com/site/media-15.jpg' }
+    - key: media-16
+      name: Media item 16
+      attrs: { url: 'https://cdn.example.com/site/media-16.jpg' }
+    - key: media-17
+      name: Media item 17
+      attrs: { url: 'https://cdn.example.com/site/media-17.jpg' }
+    - key: media-18
+      name: Media item 18
+      attrs: { url: 'https://cdn.example.com/site/media-18.jpg' }
+    - key: media-19
+      name: Media item 19
+      attrs: { url: 'https://cdn.example.com/site/media-19.jpg' }
+    - key: media-20
+      name: Media item 20
+      attrs: { url: 'https://cdn.example.com/site/media-20.jpg' }
+    - key: media-21
+      name: Media item 21
+      attrs: { url: 'https://cdn.example.com/site/media-21.jpg' }
+    - key: media-22
+      name: Media item 22
+      attrs: { url: 'https://cdn.example.com/site/media-22.jpg' }
+    - key: media-23
+      name: Media item 23
+      attrs: { url: 'https://cdn.example.com/site/media-23.jpg' }
+    - key: media-24
+      name: Media item 24
+      attrs: { url: 'https://cdn.example.com/site/media-24.jpg' }
+    - key: media-25
+      name: Media item 25
+      attrs: { url: 'https://cdn.example.com/site/media-25.jpg' }
+    - key: media-26
+      name: Media item 26
+      attrs: { url: 'https://cdn.example.com/site/media-26.jpg' }
+    - key: media-27
+      name: Media item 27
+      attrs: { url: 'https://cdn.example.com/site/media-27.jpg' }
+    - key: media-28
+      name: Media item 28
+      attrs: { url: 'https://cdn.example.com/site/media-28.jpg' }
+    - key: media-29
+      name: Media item 29
+      attrs: { url: 'https://cdn.example.com/site/media-29.jpg' }
+    - key: media-30
+      name: Media item 30
+      attrs: { url: 'https://cdn.example.com/site/media-30.jpg' }
+    - key: media-31
+      name: Media item 31
+      attrs: { url: 'https://cdn.example.com/site/media-31.jpg' }
+    - key: media-32
+      name: Media item 32
+      attrs: { url: 'https://cdn.example.com/site/media-32.jpg' }
+    - key: media-33
+      name: Media item 33
+      attrs: { url: 'https://cdn.example.com/site/media-33.jpg' }
+    - key: media-34
+      name: Media item 34
+      attrs: { url: 'https://cdn.example.com/site/media-34.jpg' }
+    - key: media-35
+      name: Media item 35
+      attrs: { url: 'https://cdn.example.com/site/media-35.jpg' }
+    - key: media-36
+      name: Media item 36
+      attrs: { url: 'https://cdn.example.com/site/media-36.jpg' }
+    - key: media-37
+      name: Media item 37
+      attrs: { url: 'https://cdn.example.com/site/media-37.jpg' }
+    - key: media-38
+      name: Media item 38
+      attrs: { url: 'https://cdn.example.com/site/media-38.jpg' }
+    - key: media-39
+      name: Media item 39
+      attrs: { url: 'https://cdn.example.com/site/media-39.jpg' }
+    - key: media-40
+      name: Media item 40
+      attrs: { url: 'https://cdn.example.com/site/media-40.jpg' }
+    - key: media-41
+      name: Media item 41
+      attrs: { url: 'https://cdn.example.com/site/media-41.jpg' }
+    - key: media-42
+      name: Media item 42
+      attrs: { url: 'https://cdn.example.com/site/media-42.jpg' }
+    - key: media-43
+      name: Media item 43
+      attrs: { url: 'https://cdn.example.com/site/media-43.jpg' }
+    - key: media-44
+      name: Media item 44
+      attrs: { url: 'https://cdn.example.com/site/media-44.jpg' }
+    - key: media-45
+      name: Media item 45
+      attrs: { url: 'https://cdn.example.com/site/media-45.jpg' }
+    - key: media-46
+      name: Media item 46
+      attrs: { url: 'https://cdn.example.com/site/media-46.jpg' }
+    - key: media-47
+      name: Media item 47
+      attrs: { url: 'https://cdn.example.com/site/media-47.jpg' }
+    - key: media-48
+      name: Media item 48
+      attrs: { url: 'https://cdn.example.com/site/media-48.jpg' }
+    - key: media-49
+      name: Media item 49
+      attrs: { url: 'https://cdn.example.com/site/media-49.jpg' }
+    - key: media-50
+      name: Media item 50
+      attrs: { url: 'https://cdn.example.com/site/media-50.jpg' }
+    - key: media-51
+      name: Media item 51
+      attrs: { url: 'https://cdn.example.com/site/media-51.jpg' }
+    - key: media-52
+      name: Media item 52
+      attrs: { url: 'https://cdn.example.com/site/media-52.jpg' }
+    - key: media-53
+      name: Media item 53
+      attrs: { url: 'https://cdn.example.com/site/media-53.jpg' }
+    - key: media-54
+      name: Media item 54
+      attrs: { url: 'https://cdn.example.com/site/media-54.jpg' }
+    - key: media-55
+      name: Media item 55
+      attrs: { url: 'https://cdn.example.com/site/media-55.jpg' }
+    - key: media-56
+      name: Media item 56
+      attrs: { url: 'https://cdn.example.com/site/media-56.jpg' }
+    - key: media-57
+      name: Media item 57
+      attrs: { url: 'https://cdn.example.com/site/media-57.jpg' }
+    - key: media-58
+      name: Media item 58
+      attrs: { url: 'https://cdn.example.com/site/media-58.jpg' }
+    - key: media-59
+      name: Media item 59
+      attrs: { url: 'https://cdn.example.com/site/media-59.jpg' }
+    - key: media-60
+      name: Media item 60
+      attrs: { url: 'https://cdn.example.com/site/media-60.jpg' }
+    - key: media-61
+      name: Media item 61
+      attrs: { url: 'https://cdn.example.com/site/media-61.jpg' }
+    - key: media-62
+      name: Media item 62
+      attrs: { url: 'https://cdn.example.com/site/media-62.jpg' }
+    - key: media-63
+      name: Media item 63
+      attrs: { url: 'https://cdn.example.com/site/media-63.jpg' }
+    - key: media-64
+      name: Media item 64
+      attrs: { url: 'https://cdn.example.com/site/media-64.jpg' }
+    - key: media-65
+      name: Media item 65
+      attrs: { url: 'https://cdn.example.com/site/media-65.jpg' }
+    - key: media-66
+      name: Media item 66
+      attrs: { url: 'https://cdn.example.com/site/media-66.jpg' }
+    - key: media-67
+      name: Media item 67
+      attrs: { url: 'https://cdn.example.com/site/media-67.jpg' }
+    - key: media-68
+      name: Media item 68
+      attrs: { url: 'https://cdn.example.com/site/media-68.jpg' }
+    - key: media-69
+      name: Media item 69
+      attrs: { url: 'https://cdn.example.com/site/media-69.jpg' }
+    - key: media-70
+      name: Media item 70
+      attrs: { url: 'https://cdn.example.com/site/media-70.jpg' }
+    - key: media-71
+      name: Media item 71
+      attrs: { url: 'https://cdn.example.com/site/media-71.jpg' }
+    - key: media-72
+      name: Media item 72
+      attrs: { url: 'https://cdn.example.com/site/media-72.jpg' }
+    - key: media-73
+      name: Media item 73
+      attrs: { url: 'https://cdn.example.com/site/media-73.jpg' }
+    - key: media-74
+      name: Media item 74
+      attrs: { url: 'https://cdn.example.com/site/media-74.jpg' }
+    - key: media-75
+      name: Media item 75
+      attrs: { url: 'https://cdn.example.com/site/media-75.jpg' }
+    - key: media-76
+      name: Media item 76
+      attrs: { url: 'https://cdn.example.com/site/media-76.jpg' }
+    - key: media-77
+      name: Media item 77
+      attrs: { url: 'https://cdn.example.com/site/media-77.jpg' }
+    - key: media-78
+      name: Media item 78
+      attrs: { url: 'https://cdn.example.com/site/media-78.jpg' }
+    - key: media-79
+      name: Media item 79
+      attrs: { url: 'https://cdn.example.com/site/media-79.jpg' }
+    - key: media-80
+      name: Media item 80
+      attrs: { url: 'https://cdn.example.com/site/media-80.jpg' }
+    - key: media-81
+      name: Media item 81
+      attrs: { url: 'https://cdn.example.com/site/media-81.jpg' }
+    - key: media-82
+      name: Media item 82
+      attrs: { url: 'https://cdn.example.com/site/media-82.jpg' }
+    - key: media-83
+      name: Media item 83
+      attrs: { url: 'https://cdn.example.com/site/media-83.jpg' }
+    - key: media-84
+      name: Media item 84
+      attrs: { url: 'https://cdn.example.com/site/media-84.jpg' }
+    - key: media-85
+      name: Media item 85
+      attrs: { url: 'https://cdn.example.com/site/media-85.jpg' }
+    - key: media-86
+      name: Media item 86
+      attrs: { url: 'https://cdn.example.com/site/media-86.jpg' }
+    - key: media-87
+      name: Media item 87
+      attrs: { url: 'https://cdn.example.com/site/media-87.jpg' }
+    - key: media-88
+      name: Media item 88
+      attrs: { url: 'https://cdn.example.com/site/media-88.jpg' }
+    - key: media-89
+      name: Media item 89
+      attrs: { url: 'https://cdn.example.com/site/media-89.jpg' }
+    - key: media-90
+      name: Media item 90
+      attrs: { url: 'https://cdn.example.com/site/media-90.jpg' }
+    - key: media-91
+      name: Media item 91
+      attrs: { url: 'https://cdn.example.com/site/media-91.jpg' }
+    - key: media-92
+      name: Media item 92
+      attrs: { url: 'https://cdn.example.com/site/media-92.jpg' }
+    - key: media-93
+      name: Media item 93
+      attrs: { url: 'https://cdn.example.com/site/media-93.jpg' }
+    - key: media-94
+      name: Media item 94
+      attrs: { url: 'https://cdn.example.com/site/media-94.jpg' }
+    - key: media-95
+      name: Media item 95
+      attrs: { url: 'https://cdn.example.com/site/media-95.jpg' }
+    - key: media-96
+      name: Media item 96
+      attrs: { url: 'https://cdn.example.com/site/media-96.jpg' }
+    - key: media-97
+      name: Media item 97
+      attrs: { url: 'https://cdn.example.com/site/media-97.jpg' }
+    - key: media-98
+      name: Media item 98
+      attrs: { url: 'https://cdn.example.com/site/media-98.jpg' }
+    - key: media-99
+      name: Media item 99
+      attrs: { url: 'https://cdn.example.com/site/media-99.jpg' }
+    - key: media-100
+      name: Media item 100
+      attrs: { url: 'https://cdn.example.com/site/media-100.jpg' }
+    - key: media-101
+      name: Media item 101
+      attrs: { url: 'https://cdn.example.com/site/media-101.jpg' }
+    - key: media-102
+      name: Media item 102
+      attrs: { url: 'https://cdn.example.com/site/media-102.jpg' }
+    - key: media-103
+      name: Media item 103
+      attrs: { url: 'https://cdn.example.com/site/media-103.jpg' }
+    - key: media-104
+      name: Media item 104
+      attrs: { url: 'https://cdn.example.com/site/media-104.jpg' }
+    - key: media-105
+      name: Media item 105
+      attrs: { url: 'https://cdn.example.com/site/media-105.jpg' }
+    - key: media-106
+      name: Media item 106
+      attrs: { url: 'https://cdn.example.com/site/media-106.jpg' }
+    - key: media-107
+      name: Media item 107
+      attrs: { url: 'https://cdn.example.com/site/media-107.jpg' }
+    - key: media-108
+      name: Media item 108
+      attrs: { url: 'https://cdn.example.com/site/media-108.jpg' }
+    - key: media-109
+      name: Media item 109
+      attrs: { url: 'https://cdn.example.com/site/media-109.jpg' }
+    - key: media-110
+      name: Media item 110
+      attrs: { url: 'https://cdn.example.com/site/media-110.jpg' }
+    - key: media-111
+      name: Media item 111
+      attrs: { url: 'https://cdn.example.com/site/media-111.jpg' }
+    - key: media-112
+      name: Media item 112
+      attrs: { url: 'https://cdn.example.com/site/media-112.jpg' }
+    - key: media-113
+      name: Media item 113
+      attrs: { url: 'https://cdn.example.com/site/media-113.jpg' }
+    - key: media-114
+      name: Media item 114
+      attrs: { url: 'https://cdn.example.com/site/media-114.jpg' }
+    - key: media-115
+      name: Media item 115
+      attrs: { url: 'https://cdn.example.com/site/media-115.jpg' }
+    - key: media-116
+      name: Media item 116
+      attrs: { url: 'https://cdn.example.com/site/media-116.jpg' }
+    - key: media-117
+      name: Media item 117
+      attrs: { url: 'https://cdn.example.com/site/media-117.jpg' }
+    - key: media-118
+      name: Media item 118
+      attrs: { url: 'https://cdn.example.com/site/media-118.jpg' }
+    - key: media-119
+      name: Media item 119
+      attrs: { url: 'https://cdn.example.com/site/media-119.jpg' }
+    - key: media-120
+      name: Media item 120
+      attrs: { url: 'https://cdn.example.com/site/media-120.jpg' }

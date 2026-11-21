@@ -64,6 +64,12 @@ export interface IntakeDeps {
   connections?: IntegrationStore;
   /** Who owns each project: a new project is filed under its organization before its first event. */
   organizations?: OrganizationStore;
+  /**
+   * Whose the hosting project of a name is, asked of the host: this project's (linked to its
+   * build repository), another's, nobody's, or null when it couldn't say. Without it (tests, a
+   * local run) the project's own record decides.
+   */
+  hostingOwner?: (name: string, repo: string | null) => Promise<'ours' | 'another' | 'none' | null>;
 }
 
 /** A saved connection as stored: secrets by vault reference, sealed to the connection. */
@@ -90,6 +96,8 @@ interface ConnectionRecord {
 }
 
 const CONNECTION = 'connection:';
+/** The intake value that names the head's hosting project. */
+const HOSTING_PROJECT = 'hostingProject';
 
 /** A name under a prefix, once; Vercel's and GitHub's limit is 100 characters. */
 export const prefixed = (prefix: string, name: string) =>
@@ -760,7 +768,29 @@ export class IntakeService {
     if (s.mode !== 'live' || !s.playbook || !s.intake) {
       throw new CommandError(409, 'not_live', 'Only real projects have intake values.');
     }
-    if (s.status !== 'intake') {
+    // One value outlives Start: the head's hosting project is named at intake but made in the
+    // build, and a name another project turns out to hold stops that step for good (nobody on
+    // the team can rename it). Until the hosting project exists, the Director still can.
+    const lateHosting =
+      key === HOSTING_PROJECT && (s.status === 'running' || s.status === 'paused');
+    if (lateHosting) {
+      // The host says whose the project of the current name is. A record of it here is not
+      // enough: one was once written from another project's head of the same name.
+      const named = s.intake.target[HOSTING_PROJECT];
+      const current = typeof named === 'string' ? named : '';
+      const asked = current
+        ? await this.deps.hostingOwner?.(current, s.buildRepo?.repo ?? null)
+        : 'none';
+      const owner = asked ?? (s.hosting ? 'ours' : 'none');
+      if (owner === 'ours') {
+        throw new CommandError(
+          409,
+          'hosting_exists',
+          `This project's hosting project has been created as ${current}, so its name can no longer change here.`,
+        );
+      }
+    }
+    if (s.status !== 'intake' && !lateHosting) {
       throw new CommandError(
         409,
         'started',
@@ -792,7 +822,12 @@ export class IntakeService {
         actor: { kind: 'director', id: 'director' },
         subject: { kind: 'project', id: s.projectId },
         severity: 'notable',
-        data: { intakeTarget: { [key]: target[key]! }, target: pack.describe(target).target },
+        data: {
+          intakeTarget: { [key]: target[key]! },
+          target: pack.describe(target).target,
+          // What was recorded under the old name was never this project's hosting.
+          ...(lateHosting && s.hosting ? { hosting: null } : {}),
+        },
       },
     ]);
   }
