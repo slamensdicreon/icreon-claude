@@ -10,7 +10,7 @@ import {
 import { InMemoryEventStore, MemoryVault, Projections } from '@lw/events';
 import { MemoryBlobStore } from '@lw/tool-gateway';
 import { loadCatalog } from '@lw/playbook-sdk';
-import { createPlatforms } from '@lw/platforms';
+import { createPlatforms, type PlatformPack } from '@lw/platforms';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
@@ -64,6 +64,15 @@ const intake = (over: ProjectIntakeInput['credentials'] = {}): ProjectIntakeInpu
   },
 });
 
+const withFeatures = (
+  platforms: ReturnType<typeof createPlatforms>,
+  features?: NonNullable<PlatformPack['features']>,
+) => {
+  if (features)
+    for (const [id, pack] of platforms) platforms.set(id, { ...pack, features } as PlatformPack);
+  return platforms;
+};
+
 let app: FastifyInstance | null = null;
 afterEach(async () => {
   await app?.close();
@@ -75,6 +84,8 @@ async function start(
     orchestrator?: boolean;
     github?: unknown;
     hosting?: Parameters<typeof buildApp>[0]['hosting'];
+    /** What the platform reads off the target as a project starts (its `features` hook). */
+    features?: NonNullable<PlatformPack['features']>;
   } = {},
 ) {
   const store = new InMemoryEventStore();
@@ -91,7 +102,7 @@ async function start(
     intake: new IntakeService({
       store,
       catalog: await loadCatalog(PLAYBOOKS),
-      platforms: createPlatforms({ sitecore: verify }),
+      platforms: withFeatures(createPlatforms({ sitecore: verify }), opts.features),
       vault: new MemoryVault(),
       start: opts.orchestrator ? async (input) => void started.push(input) : undefined,
       stop: opts.orchestrator ? async (id) => void stopped.push(id) : undefined,
@@ -256,6 +267,34 @@ describe('New Project wizard', () => {
         features: ['source-repo'],
       },
     ]);
+  });
+
+  it('adds what the platform reads off the target at start, and starts without it when that fails', async () => {
+    // The platform sees the project's own credential, opened from the vault.
+    const seen: (string | undefined)[] = [];
+    const { started } = await start({
+      orchestrator: true,
+      features: async (target, deps) => {
+        seen.push((await deps.credential('sitecore-environment'))?.clientId);
+        return typeof target.cmHost === 'string' ? ['content-rights-proven', 'source-repo'] : [];
+      },
+    });
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    expect((await post(`/projects/${projectId}/start`)).statusCode).toBe(200);
+    expect(seen).toEqual(['env-id']);
+    // Once each, the brief's and the repository's first.
+    expect(started.at(-1)!.features).toEqual(['source-repo', 'content-rights-proven']);
+    await app?.close();
+
+    const unreachable = await start({
+      orchestrator: true,
+      features: async () => {
+        throw new Error('the instance did not answer');
+      },
+    });
+    const second = (await post('/projects', intake())).json() as { projectId: string };
+    expect((await post(`/projects/${second.projectId}/start`)).statusCode).toBe(200);
+    expect(unreachable.started.at(-1)!.features).toEqual(['source-repo']);
   });
 
   it('starts a project without a repository from the live site alone, and needs one of the two', async () => {

@@ -148,8 +148,15 @@ describe('Optimizely website playbook: the order the platform sets', () => {
     // The API key's content rights are confirmed before Gate 1; Visual Builder has no driver.
     expect(template('confirm-content-rights')).toMatchObject({
       phase: 0,
+      unless: 'content-rights-proven',
       manual: expect.stringContaining('Set Access Rights'),
     });
+    // A key whose earlier content proves its rights is not asked: the step leaves the plan.
+    const { blueprint: example } = await loadFixtures(DIR);
+    const ids = (features: string[]) =>
+      compilePlan(pb, example, { skipMerged: true, features }).tasks.map((t) => t.taskId);
+    expect(ids([])).toContain('confirm-content-rights');
+    expect(ids(['content-rights-proven'])).not.toContain('confirm-content-rights');
     for (const id of ['smoke-test', 'prove-experimentation'])
       expect(template(id).manual, id).toBeDefined();
     // No check that reads another platform's contract or endpoints.

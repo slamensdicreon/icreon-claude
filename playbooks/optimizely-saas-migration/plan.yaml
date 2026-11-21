@@ -40,9 +40,12 @@ templates:
     title: Verify credentials and record instance facts
     acceptance: [validator:credentials.verified]
   # If it is missed, the application's creation in phase 4 stops as an access card saying the same.
+  # Left out when the key has already created and published content on the instance (the
+  # platform reads that as the project starts): its rights are then proven, not asked for.
   - id: confirm-content-rights
     phase: 0
     role: deployment-engineer
+    unless: content-rights-proven
     title: Give the API key content rights in the CMS
     manual: >-
       In the CMS, open Settings > Set Access Rights and select the Root. Add the API key (search

@@ -104,15 +104,85 @@ export async function optimizelyToken(
   };
 }
 
-/** CMS REST API key: a token, then the instance's content types (read-only). */
+/** The root every instance has: its key is the same on all of them. */
+const ROOT = '43f936c99b234ea397b261c538ad07c9';
+
+type Json = Record<string, unknown>;
+const bearer = (token: string) => ({
+  authorization: `Bearer ${token}`,
+  accept: 'application/json',
+});
+
+/**
+ * Whether a REST API key may write content on its instance, read from what it has already
+ * written: content at the top of the instance that this key created, with a version this key
+ * published. Access rights can't be read and a refused write is told apart from a malformed one
+ * only by sending a real one, so a key that has written nothing yet stays unknown.
+ */
+export async function contentRightsProven(
+  cfg: OptimizelyVerifyConfig,
+  token: string,
+  clientId: string,
+): Promise<boolean> {
+  const id = clientId.trim().toLowerCase();
+  const by = (v: unknown) => typeof v === 'string' && v.toLowerCase() === id;
+  const top = await call(cfg, `${cfg.apiUrl}/v1/content/${ROOT}/items?pageSize=100`, {
+    headers: bearer(token),
+  });
+  if ('error' in top || top.status !== 200) return false;
+  const made = (((top.body ?? {}) as { items?: Json[] }).items ?? [])
+    .filter((i) => by(i.createdBy) && typeof i.key === 'string')
+    .slice(0, 5);
+  for (const item of made) {
+    const versions = await call(
+      cfg,
+      `${cfg.apiUrl}/v1/content/${String(item.key)}/versions?pageSize=20`,
+      { headers: bearer(token) },
+    );
+    if ('error' in versions || versions.status !== 200) continue;
+    const published = (((versions.body ?? {}) as { items?: Json[] }).items ?? []).some(
+      (v) => v.status === 'published' && by(v.lastModifiedBy),
+    );
+    if (published) return true;
+  }
+  return false;
+}
+
+/** Every content type key on the instance (a few pages at most), or null when one can't be read. */
+async function contentTypeKeys(
+  cfg: OptimizelyVerifyConfig,
+  token: string,
+  first: Json,
+): Promise<string[]> {
+  const keys = (b: Json) =>
+    ((b.items ?? []) as { key?: string }[]).map((i) => i.key ?? '').filter(Boolean);
+  const out = keys(first);
+  const total = Number(first.totalItemCount ?? out.length);
+  for (let page = 1; out.length < total && page < 10; page++) {
+    const r = await call(cfg, `${cfg.apiUrl}/v1/contenttypes?pageSize=100&pageIndex=${page}`, {
+      headers: bearer(token),
+    });
+    if ('error' in r || r.status !== 200) break;
+    const more = keys((r.body ?? {}) as Json);
+    if (!more.length) break;
+    out.push(...more);
+  }
+  return out;
+}
+
+/**
+ * CMS REST API key: a token, then the instance's content types (read-only). With the project's
+ * prefix and application it also says what on the instance already carries them, so a new build
+ * picks names of its own before it starts rather than being asked about them in phase 0.
+ */
 export async function verifyCmsApiClient(
   cfg: OptimizelyVerifyConfig,
-  input: { clientId: string; clientSecret: string },
+  input: { clientId: string; clientSecret: string; typePrefix?: string; application?: string },
 ): Promise<VerifyResult> {
   const t = await optimizelyToken(cfg, input.clientId, input.clientSecret);
   if (!('token' in t)) return t;
   const r = await call(cfg, `${cfg.apiUrl}/v1/contenttypes?pageSize=100`, {
-    headers: { authorization: `Bearer ${t.token}`, accept: 'application/json' },
+    headers: bearer(t.token),
   });
   if ('error' in r) return { ok: false, detail: r.error };
   if (r.status === 401 || r.status === 403) {
@@ -130,9 +200,42 @@ export async function verifyCmsApiClient(
   const items = b.items ?? [];
   const own = items.filter((i) => i.source !== '_system').length;
   const total = b.totalItemCount ?? items.length;
+
+  // What already carries this project's names. Neither is an error (a project may continue an
+  // earlier build), so the check passes and says it.
+  const prefix = input.typePrefix?.trim() ?? '';
+  const taken = prefix
+    ? (await contentTypeKeys(cfg, t.token, b as Json)).filter((k) =>
+        k.toLowerCase().startsWith(prefix.toLowerCase()),
+      ).length
+    : 0;
+  const appKey = input.application?.trim() ? applicationKey(input.application) : '';
+  const app = appKey
+    ? await call(cfg, `${cfg.apiUrl}/v1/applications/${encodeURIComponent(appKey)}`, {
+        headers: bearer(t.token),
+      })
+    : null;
+  const appExists = !!app && !('error' in app) && app.status === 200;
+  const inUse = [
+    taken
+      ? `${taken} content ${taken === 1 ? 'type' : 'types'} already ${taken === 1 ? 'starts' : 'start'} with ${prefix}`
+      : '',
+    appExists ? `the application ${appKey} already exists` : '',
+  ].filter(Boolean);
+  const rights = await contentRightsProven(cfg, t.token, input.clientId);
   return {
     ok: true,
-    detail: `CMS REST API v1 reached. ${total} content types on the instance, ${own} of them created by its teams.`,
+    detail: [
+      `CMS REST API v1 reached. ${total} content types on the instance, ${own} of them created by its teams.`,
+      rights
+        ? 'This key has created and published content here before, so it has content rights.'
+        : '',
+      inUse.length
+        ? `On this instance ${inUse.join(' and ')}: for a new build, choose ${[taken ? 'a prefix' : '', appExists ? 'an application name' : ''].filter(Boolean).join(' and ')} nobody uses, or it shares them with the build that made them.`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
     expiresAt: t.expiresAt,
   };
 }

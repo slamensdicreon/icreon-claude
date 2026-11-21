@@ -13,8 +13,10 @@
 # 0.1.1: the build repository's starter generates its component registry from the component
 # folders and carries no samples, so a component is one folder and branches built at the same time
 # never edit the same file; the prompts say so.
+# 0.1.2: a key that has already published content on the instance is not asked for its content
+# rights, and names an earlier build holds are settled as one decision: continue it, or reset.
 id: optimizely-homepage-demo
-version: 0.1.1
+version: 0.1.2
 name: Optimizely homepage demo
 description: >-
   Audits a prospect's whole site in numbers, then blueprints and builds their homepage,

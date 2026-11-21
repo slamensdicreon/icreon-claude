@@ -89,6 +89,14 @@ export interface PlatformPack {
   /** Acceptance checks only the platform knows how to run, by validator id. */
   checks?: Record<string, PlatformCheck>;
   /**
+   * Plan features a look at the target switches on when the project starts, beside the brief's
+   * (a step with `unless: <feature>` is then left out). Read only; an error counts as none.
+   */
+  features?(
+    target: TargetValues,
+    deps: { credential(credentialId: string): Promise<Record<string, string> | null> },
+  ): Promise<string[]>;
+  /**
    * What a successful tool call made that later tasks look up (a rendering's ID, a page's item),
    * read from its result. Absent: only facts agents publish themselves are recorded.
    */

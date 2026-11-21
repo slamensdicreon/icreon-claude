@@ -1623,6 +1623,82 @@ describe('Optimizely pack', () => {
     expect(calls.filter((c) => c.includes('/oauth/token'))).toHaveLength(2);
   });
 
+  it('reads content rights from what the key already published, and says which names are taken', async () => {
+    const ROOT = '43f936c99b234ea397b261c538ad07c9';
+    // The instance of an earlier build: its types carry the prefix, its application exists, and
+    // its start page was created and published by this key.
+    const instance = (opts: { author: string; publishedBy: string }) =>
+      withFetch(async (input) => {
+        const url = String(input);
+        if (url.endsWith('/oauth/token')) return okJson({ access_token: 'tok', expires_in: 300 });
+        if (url.includes('/v1/contenttypes'))
+          return okJson({
+            items: [
+              { key: '_page', source: '_system' },
+              { key: 'AcmeHero', source: '' },
+              { key: 'AcmeExperience', source: '' },
+              { key: 'GlobexHero', source: '' },
+            ],
+            totalItemCount: 4,
+          });
+        if (url.includes('/v1/applications/acme_demo')) return okJson({ key: 'acme_demo' });
+        if (url.includes('/v1/applications/')) return okJson({ title: 'Not found' }, 404);
+        if (url.includes(`/v1/content/${ROOT}/items`))
+          return okJson({
+            items: [
+              { key: 'a'.repeat(32), createdBy: 'someone@example.com' },
+              { key: 'b'.repeat(32), createdBy: opts.author },
+            ],
+          });
+        if (url.includes(`/v1/content/${'b'.repeat(32)}/versions`))
+          return okJson({
+            items: [
+              { status: 'draft', lastModifiedBy: opts.author },
+              { status: 'published', lastModifiedBy: opts.publishedBy },
+            ],
+          });
+        return okJson({}, 404);
+      });
+    const secret = { clientId: 'KEY1', clientSecret: 's' };
+    const cms = 'https://app-x.cms.optimizely.com';
+    const credential = async (id: string) => (id === 'cms-api-client' ? secret : null);
+
+    const earlier = instance({ author: 'key1', publishedBy: 'key1' });
+    const taken = await earlier.credentials['cms-api-client']!.check(secret, {
+      cmsUrl: cms,
+      application: 'acme-demo',
+      typePrefix: 'Acme',
+    });
+    expect(taken.ok).toBe(true);
+    expect(taken.detail).toContain('it has content rights');
+    expect(taken.detail).toContain('2 content types already start with Acme');
+    expect(taken.detail).toContain('the application acme_demo already exists');
+    expect(taken.detail).toContain('choose a prefix and an application name nobody uses');
+    expect(await earlier.features!({ cmsUrl: cms }, { credential })).toEqual([
+      'content-rights-proven',
+    ]);
+    // Names of its own: nothing to say about them.
+    const apart = await earlier.credentials['cms-api-client']!.check(secret, {
+      cmsUrl: cms,
+      application: 'Initech',
+      typePrefix: 'Initech',
+    });
+    expect(apart.detail).not.toContain('already');
+    expect(apart.detail).toContain('it has content rights');
+
+    // Content someone else made, or a page this key created and someone else published,
+    // proves nothing about this key: the by-hand step stays.
+    const stranger = instance({ author: 'another-key', publishedBy: 'another-key' });
+    expect(await stranger.features!({ cmsUrl: cms }, { credential })).toEqual([]);
+    expect(
+      (await stranger.credentials['cms-api-client']!.check(secret, { cmsUrl: cms })).detail,
+    ).not.toContain('content rights');
+    const draftsOnly = instance({ author: 'key1', publishedBy: 'an-editor@example.com' });
+    expect(await draftsOnly.features!({ cmsUrl: cms }, { credential })).toEqual([]);
+    // No key given: nothing proven, nothing called.
+    expect(await earlier.features!({ cmsUrl: cms }, { credential: async () => null })).toEqual([]);
+  });
+
   it('gives the head the Graph keys and the sandbox the REST API key too', async () => {
     const pack = platforms.get('optimizely')!;
     const target = {

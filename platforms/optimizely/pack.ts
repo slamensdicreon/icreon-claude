@@ -3,6 +3,7 @@ import type { IntakeFacts } from '@lw/contracts';
 import {
   applicationKey,
   optimizelyCmsUrl,
+  contentRightsProven,
   optimizelyToken,
   verifyCmsApiClient,
   verifyGraphHmac,
@@ -15,6 +16,8 @@ import { optimizelyChecks } from './checks';
 import { optimizelyFacts } from './facts';
 
 export const OPTIMIZELY = 'optimizely';
+/** The plan feature a key with proven content rights switches on (see the pack's `features`). */
+export const CONTENT_RIGHTS_PROVEN = 'content-rights-proven';
 
 /**
  * Optimizely CMS (SaaS): one instance reached through the CMS REST API v1 (content types,
@@ -209,10 +212,12 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
         uses: [],
         hintField: 'clientSecret',
         scope: (t) => `CMS REST API v1, ${hostOf(text(t, 'cmsUrl'))}`,
-        check: (s) =>
+        check: (s, t) =>
           verifyCmsApiClient(cfg, {
             clientId: s.clientId ?? '',
             clientSecret: s.clientSecret ?? '',
+            typePrefix: text(t, 'typePrefix'),
+            application: text(t, 'application'),
           }),
       },
       'graph-single-key': {
@@ -292,6 +297,17 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     checks: optimizelyChecks(cfg),
     facts: (call, body, target) => optimizelyFacts(call, body, optimizelyBindings(target)),
     pageComponents: { server: 'optimizely-cms', op: 'page.components' },
+    // A key that has already created and published content on the instance has content rights:
+    // the plans then leave out the by-hand step that asks the Director to grant them.
+    features: async (_t, deps) => {
+      const client = await deps.credential('cms-api-client');
+      if (!client?.clientId || !client.clientSecret) return [];
+      const token = await optimizelyToken(cfg, client.clientId, client.clientSecret);
+      if (!('token' in token)) return [];
+      return (await contentRightsProven(cfg, token.token, client.clientId))
+        ? [CONTENT_RIGHTS_PROVEN]
+        : [];
+    },
     headEnv: async (t, _which, deps) => headVars(t, deps.credential, deps.hosts),
     // The sandbox also runs `optimizely-cms-cli config push`, which signs in with the REST API
     // key. The head never needs that key, so it stays off the hosting project.

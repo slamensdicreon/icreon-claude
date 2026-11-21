@@ -16,7 +16,7 @@ const PLATFORM_KNOWLEDGE = fileURLToPath(
 describe('optimizely-homepage-demo playbook', () => {
   it('loads, with the Blueprint gate and the Visual Builder gate', async () => {
     const pb = await loadPlaybook(DEMO);
-    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.1' });
+    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.2' });
     expect(pb.manifest.phases).toHaveLength(10);
     expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
       2, 9,
@@ -38,9 +38,11 @@ describe('optimizely-homepage-demo playbook', () => {
     // in the playbook. The Director's cards are the two gates and the two steps by hand.
     for (const t of pb.plan.templates.filter((t) => t.release))
       expect(t.release?.standing, t.id).toBe(true);
-    // The API key's content rights are confirmed before Gate 1: no read shows them.
+    // The API key's content rights are confirmed before Gate 1, unless the key's earlier
+    // content proves them (the platform reads that as the project starts).
     expect(pb.plan.templates.find((t) => t.id === 'confirm-content-rights')).toMatchObject({
       phase: 0,
+      unless: 'content-rights-proven',
       manual: expect.stringContaining('Set Access Rights'),
     });
     expect(pb.plan.templates.find((t) => t.id === 'visual-builder-check')).toMatchObject({
@@ -101,7 +103,7 @@ describe('optimizely-homepage-demo playbook', () => {
     const { blueprint } = await loadFixtures(DEMO);
     const result = await CHECKS['blueprint.demo-slice']!({
       projectId: 'p1',
-      state: { playbook: { id: 'optimizely-homepage-demo', version: '0.1.1' } },
+      state: { playbook: { id: 'optimizely-homepage-demo', version: '0.1.2' } },
       library: {
         read: async (_p: string, id: string) =>
           id === 'blueprint' ? { content: JSON.stringify(blueprint) } : null,
