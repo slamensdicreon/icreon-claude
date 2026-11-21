@@ -84,3 +84,36 @@ test('Everything opens a card as a brief, and a gate sent back requires notes', 
   await expect(sendBack).toBeEnabled();
   run.clean();
 });
+
+test('Mission Control leads with the same brief, and the others open in Needs you', async ({
+  page,
+}) => {
+  for (const k of ['kit', 'thumb']) {
+    await page.request.post(`${API}/projects/${PROJECT}/scenarios/${k}`, { data: {} });
+  }
+  const run = await open(page, `/p/${PROJECT}`, { mode: 'bliss' });
+  // One brief at the top, written as a question, its answers to tap.
+  const brief = page.getByRole('radiogroup').first();
+  await expect(brief.getByRole('radio').first()).toBeVisible();
+  // The others: one quiet line each, the question and what silence does.
+  const also = page.getByRole('region', { name: 'Also yours' });
+  const row = also.getByRole('button').first();
+  await expect(row).toContainText(/If you don't answer|Waits for you/);
+  const question = (await row.locator('span > span').first().textContent())!.trim();
+  await row.click();
+  await expect(page).toHaveURL(/\/inbox/);
+  await expect(page.getByRole('region', { name: question })).toBeVisible();
+  run.clean();
+});
+
+test('Mission Control in Everything lists the questions, not the error titles', async ({
+  page,
+}) => {
+  await page.request.post(`${API}/projects/${PROJECT}/scenarios/thumb`, { data: {} });
+  const run = await open(page, `/p/${PROJECT}`);
+  const panel = page.getByRole('region', { name: /Needs you/ }).first();
+  await expect(panel.getByText(/Retry, or skip the images for now\?/)).toBeVisible();
+  await expect(panel.getByText('Thumbnail upload returned 403')).toHaveCount(0);
+  await expect(panel.getByText(/, then [A-D]\b/)).toHaveCount(0);
+  run.clean();
+});

@@ -16,7 +16,14 @@ import { useJump } from '../../parts/bits';
 import { useNow } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Eye } from '../../ui/Eye';
-import { picks, questionOf, raisedLine, shortOf, useYoursActions } from '../../ui/cypher/cards';
+import {
+  minutesLeft,
+  picks,
+  questionOf,
+  raisedLine,
+  shortOf,
+  useYoursActions,
+} from '../../ui/cypher/cards';
 import { Button } from '../../ui/cypher/parts';
 import { ago } from '../mission/model';
 import s from './brief.module.css';
@@ -37,14 +44,6 @@ const OWN = '__own';
 
 /** "2:24", in the project's zone, without AM/PM. */
 const hmOf = (at: string, tz: string) => clock(at, tz).replace(/\s?[AP]M$/, '');
-
-/** "24 min left", "1 h 05 m left". */
-export function minutesLeft(deadline: string, now: number): string {
-  const m = Math.max(0, Math.round((Date.parse(deadline) - now) / 60_000));
-  return m >= 60
-    ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} m left`
-    : `${m} min left`;
-}
 
 function choicesOf(x: EscalationView): Choice[] {
   const { pick } = picks(x);

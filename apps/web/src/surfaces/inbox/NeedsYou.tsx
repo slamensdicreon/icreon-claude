@@ -1,18 +1,25 @@
 import type { EscalationView, MissionControlSnapshot } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
 import { API } from '../../lib/api';
-import { TYPE_LABEL } from '../../lib/escalation';
 import { isWatching } from '../../lib/role';
 import { age, clock } from '../../lib/fmt';
 import { Mode } from '../../mode/Mode';
 import { useApp, useMission, useNow } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Eye } from '../../ui/Eye';
-import { pillHue, pillOf, questionOf, shortOf, useYoursActions } from '../../ui/cypher/cards';
+import {
+  countWord,
+  fallbackOf,
+  minutesLeft,
+  pillHue,
+  kindWordOf,
+  questionOf,
+  useYoursActions,
+} from '../../ui/cypher/cards';
 import { Button, Closing, Hero, Panel, SectionHeading, urgencyOf } from '../../ui/cypher/parts';
 import { useEyeState } from '../../voice/eye';
 import { ago, openCards, voiceOf } from '../mission/model';
-import { BlissBrief, EverythingBrief, minutesLeft } from './Brief';
+import { BlissBrief, EverythingBrief } from './Brief';
 import b from './brief.module.css';
 import s from './inbox.module.css';
 
@@ -203,7 +210,7 @@ function NeedsEverything({ mc }: { mc: MissionControlSnapshot }) {
           {deferred.map((x) => (
             <div key={x.escalationId} className={`${s.simpleRow} type-table`}>
               <span className={`${s.pill} type-label`} style={{ background: pillHue(x) }}>
-                {pillOf(x)}
+                {kindWordOf(x)}
               </span>
               <span className={s.grow}>{x.title}</span>
               <span className="type-meta">
@@ -270,7 +277,7 @@ function Fold({
         onClick={onToggle}
       >
         <span className={`${s.pill} type-label`} style={{ background: pillHue(x) }}>
-          {x.type === 'gate' ? pillOf(x) : (TYPE_LABEL[x.type] ?? pillOf(x))}
+          {kindWordOf(x)}
         </span>
         <span className={s.foldText}>
           <span className={s.foldTitle}>{questionOf(x)}</span>
@@ -319,13 +326,3 @@ function Fold({
     </div>
   );
 }
-
-/** "If you don't answer: keep the contact page", or what happens meanwhile. */
-function fallbackOf(x: EscalationView): string | null {
-  const d = x.deadline ? x.options.find((o) => o.id === x.defaultOptionId) : undefined;
-  if (d) return `If you don't answer: ${shortOf(d)}`;
-  return x.waitNote;
-}
-
-const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-const countWord = (n: number) => WORDS[n] ?? String(n);

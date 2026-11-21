@@ -3,7 +3,7 @@ import { ProjectIcon } from '../../ui/project-icon';
 import { age, clock } from '../../lib/fmt';
 import { useMode } from '../../mode/mode';
 import { useApp, useNow } from '../../state';
-import { clockOf, kindOf, raisedLine, useYoursActions } from '../../ui/cypher/cards';
+import { clockOf, kindOf, raisedLine, shortContext, useYoursActions } from '../../ui/cypher/cards';
 import {
   Button,
   Handled,
@@ -15,7 +15,6 @@ import {
   YoursCard,
 } from '../../ui/cypher/parts';
 import { useEyeState } from '../../voice/eye';
-import { shortContext } from '../mission/Decision';
 import { ago } from '../mission/model';
 import s from './dashboard.module.css';
 import { platformOf, playbookShort } from './projectNames';

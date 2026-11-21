@@ -25,13 +25,53 @@
 .trackRight {
   margin-left: auto;
 }
-.two {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-4);
-}
 .more {
-  margin: calc(var(--space-5) * -1) 0 0;
+  margin: 0;
+  color: var(--text-3);
+  text-align: center;
+}
+/* The other cards that are yours, under the brief: a quiet line each. */
+.upNext {
+  width: 100%;
+  max-width: calc(var(--measure) * 0.54);
+  margin: calc(var(--space-4) * -1) auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.upNextRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.upNextRow:hover {
+  border-color: var(--text-3);
+}
+.upNextText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.upNextText :global(.type-meta) {
+  color: var(--text-3);
+}
+.upNextQuestion {
+  font-weight: 700;
+}
+.upNextChev {
+  flex: none;
   color: var(--text-3);
 }
 .teamAndHandled {
@@ -242,7 +282,6 @@
 }
 
 @media (max-width: 1000px) {
-  .two,
   .teamAndHandled,
   .teamActivity,
   .metrics {

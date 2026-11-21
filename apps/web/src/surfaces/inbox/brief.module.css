@@ -13,6 +13,14 @@
   border-radius: var(--radius-xxl);
   background: var(--surface);
   box-shadow: var(--shadow-decision);
+  /* It arrives rising, then holds still while the Director reads. */
+  animation: rise var(--dur-3) var(--ease-out) both;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-3));
+  }
 }
 .blissHead {
   display: flex;
@@ -349,5 +357,8 @@
 @media (prefers-reduced-motion: reduce) {
   .row {
     transition: none;
+  }
+  .bliss {
+    animation: none;
   }
 }

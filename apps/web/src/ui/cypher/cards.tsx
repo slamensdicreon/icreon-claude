@@ -7,6 +7,7 @@ import type { EscalationView } from '@lw/contracts';
 import { post } from '../../lib/api';
 import { isWatching } from '../../lib/role';
 import { clock } from '../../lib/fmt';
+import { TYPE_LABEL } from '../../lib/escalation';
 import { TypedConfirm } from '../../overlays/Dialogs';
 import { useApp, type Surface } from '../../state';
 import { hueOf, type CardAction } from './parts';
@@ -22,12 +23,12 @@ export const KIND: Record<string, string> = {
 };
 /** The one action a Needs-you row offers. */
 const ROW_ACTION: Record<string, string> = {
-  decision: 'Choose',
+  decision: 'Answer',
   gate: 'Review',
-  access: 'Grant',
-  blocker: 'Unblock',
-  budget: 'Review',
-  risk: 'Review',
+  access: 'Answer',
+  blocker: 'Answer',
+  budget: 'Answer',
+  risk: 'Answer',
 };
 const WORKSTREAM: Record<string, string> = {
   discovery: 'Discovery',
@@ -40,6 +41,9 @@ export const kindOf = (x: EscalationView) => KIND[x.type] ?? 'Decide';
 /** The Everything pill: the gate's own label ("Gate 1") or the kind. */
 export const pillOf = (x: EscalationView) =>
   x.type === 'gate' && x.typeLabel ? x.typeLabel : kindOf(x);
+/** The kind as a plain word for a row's pill: a gate's own label ("Gate 1"), else Decision, Review… */
+export const kindWordOf = (x: EscalationView) =>
+  x.type === 'gate' && x.typeLabel ? x.typeLabel : (TYPE_LABEL[x.type] ?? kindOf(x));
 /** The pill's color: the team that raised it; a gate is ink. */
 export const pillHue = (x: EscalationView) =>
   x.type === 'gate' ? 'var(--ink)' : hueOf(x.raisedBy?.workstream ?? null);
@@ -73,6 +77,38 @@ export const questionOf = (x: EscalationView) => x.question?.trim() || x.title;
 
 /** The option in a few plain words (Bliss); its label when the raiser wrote none. */
 export const shortOf = (o: EscalationView['options'][number]) => o.short?.trim() || o.label;
+
+/** "If you don't answer: The contact page", or what happens meanwhile. */
+export function fallbackOf(x: EscalationView): string | null {
+  const d = x.deadline ? x.options.find((o) => o.id === x.defaultOptionId) : undefined;
+  if (d) return `If you don't answer: ${shortOf(d)}`;
+  return x.waitNote;
+}
+
+/** "24 min left", "1 h 05 m left". */
+export function minutesLeft(deadline: string, now: number): string {
+  const m = Math.max(0, Math.round((Date.parse(deadline) - now) / 60_000));
+  return m >= 60
+    ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} m left`
+    : `${m} min left`;
+}
+
+/** "2:24 PM · 24 min left", or "No deadline": a row's clock, without option letters. */
+export const dueOf = (x: EscalationView, tz: string, now: number) =>
+  x.deadline ? `${clock(x.deadline, tz)} · ${minutesLeft(x.deadline, now)}` : 'No deadline';
+
+/** Where the API wrote no gist: the context's first sentence, stopped before a long list. */
+export function shortContext(text: string): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  let first = /^(.+?[.!?])(?=\s+["“(]?[A-Z0-9])/.exec(t)?.[1] ?? t;
+  const colon = first.indexOf(': ');
+  if (colon > 20 && first.length - colon > 70) first = `${first.slice(0, colon)}.`;
+  return first.length > 170 ? `${first.slice(0, first.lastIndexOf(' ', 168))}…` : first;
+}
+
+const COUNT = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+/** Counts under ten as words ("Three"). */
+export const countWord = (n: number) => COUNT[n] ?? String(n);
 
 /** The option Cypher would pick, then the other one. */
 export function picks(x: EscalationView) {
