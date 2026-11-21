@@ -411,6 +411,20 @@ export class HostingToolServer implements ToolServer {
     const targets = which === 'both' ? (['preview', 'production'] as const) : [which];
     const set: { key: string; target: string }[] = [];
     const missing = new Set<string>();
+    // What the project had before: a variable it gets only now is in no deployment yet.
+    const before = await this.request(
+      'GET',
+      `/v10/projects/${encodeURIComponent(facts.project)}/env`,
+    );
+    const had =
+      before.status === 200
+        ? new Set(
+            (
+              (before.body as { envs?: { key?: string; target?: string[] | string }[] }).envs ?? []
+            ).flatMap((e) => [e.target ?? []].flat().map((t) => `${e.key}:${t}`)),
+          )
+        : null;
+    const added = new Set<string>();
     for (const target of targets) {
       const { vars, missing: m } = await this.opts.env(projectId, target);
       m.forEach((x) => missing.add(x));
@@ -433,12 +447,20 @@ export class HostingToolServer implements ToolServer {
           `Vercel refused ${failed.map((f) => `${f.error.key ?? '?'} (${f.error.message})`).join(', ')}.`,
         );
       }
-      for (const v of vars) set.push({ key: v.key, target });
+      for (const v of vars) {
+        set.push({ key: v.key, target });
+        if (had && had.size && !had.has(`${v.key}:${target}`)) added.add(v.key);
+      }
     }
+    // A deployment keeps the variables it was built with: the editing host answered 404 for a
+    // published start page because the application's host was set a minute after its build.
+    const stale = added.size
+      ? `. New since the last deployments: ${[...added].join(', ')}. A deployment keeps the variables it was built with: deploy again (deploy.preview of the integration branch for the editing host) for the head to read ${added.size === 1 ? 'it' : 'them'}`
+      : '';
     return {
       code: 200,
-      body: { set, missing: [...missing] },
-      summary: `Set ${set.length} variable${set.length === 1 ? '' : 's'} on ${facts.project}: ${[...new Set(set.map((s) => s.key))].join(', ')}${missing.size ? `. Not set yet: ${[...missing].join('; ')}` : ''}`,
+      body: { set, missing: [...missing], added: [...added] },
+      summary: `Set ${set.length} variable${set.length === 1 ? '' : 's'} on ${facts.project}: ${[...new Set(set.map((s) => s.key))].join(', ')}${missing.size ? `. Not set yet: ${[...missing].join('; ')}` : ''}${stale}`,
     };
   }
 
