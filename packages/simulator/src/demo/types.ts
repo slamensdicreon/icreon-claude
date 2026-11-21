@@ -125,6 +125,8 @@ export interface DemoEscalation {
   evidence?: { label: string; go: Jump }[];
   reversible?: boolean;
   waitNote?: string;
+  /** The task this holds, so the Plan can show the decision on that task's activity. */
+  taskId?: string;
   /** What the Lead made of it before it reached the Director (Lead triage). */
   lead?: {
     leadId: string;

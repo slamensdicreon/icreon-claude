@@ -1582,6 +1582,7 @@ export const ansell: DemoScenario = {
   escalations: {
     'E-06': () => ({
       id: 'E-06',
+      taskId: 't4',
       type: 'gate',
       title: 'Pilot slice review',
       reversible: false,
@@ -1623,6 +1624,7 @@ export const ansell: DemoScenario = {
     }),
     'E-07': () => ({
       id: 'E-07',
+      taskId: 't12',
       type: 'decision',
       title: 'Where search reads its content',
       reversible: true,
@@ -1703,6 +1705,7 @@ export const ansell: DemoScenario = {
     }),
     'E-08': () => ({
       id: 'E-08',
+      taskId: 'r3',
       type: 'access',
       title: 'Thumbnail upload returned 403',
       context:
