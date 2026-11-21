@@ -49,6 +49,8 @@ const ICONS = {
   back: <path d="m15 6-6 6 6 6" />,
   forward: <path d="m9 6 6 6-6 6" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  /* A pencil: write in your own words (a brief's "Write my own"). */
+  edit: <path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   more: (
     <>

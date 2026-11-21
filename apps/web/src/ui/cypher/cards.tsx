@@ -68,6 +68,12 @@ export function raisedLine(x: EscalationView, ago: string): string {
   return `${verb} ${r.firstName}${team} · ${ago}`;
 }
 
+/** The decision as a plain question; the title on cards raised without one. */
+export const questionOf = (x: EscalationView) => x.question?.trim() || x.title;
+
+/** The option in a few plain words (Bliss); its label when the raiser wrote none. */
+export const shortOf = (o: EscalationView['options'][number]) => o.short?.trim() || o.label;
+
 /** The option Cypher would pick, then the other one. */
 export function picks(x: EscalationView) {
   const pickId =
@@ -101,12 +107,14 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
         'Undoing',
       ).then(done),
   });
-  const resolve = (x: EscalationView, optionId: string) => {
+  /** Answers the card; `notes` (a note, or what an option asks for) reach the agent with it. */
+  const resolve = (x: EscalationView, optionId: string, notes?: string) => {
     const chose = x.options.find((o) => o.id === optionId)?.label;
     void run(
       () =>
         post(`${base}/escalations/${x.escalationId}/resolve`, {
           optionId,
+          ...(notes?.trim() ? { notes: notes.trim() } : {}),
           ...(x.group ? { all: true } : {}),
         }),
       {
@@ -230,5 +238,24 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
       'Sending it back',
     ).then(done);
 
-  return { cardActions, rowAction, resolve, defer, approve, open, resume, undo, sendBack };
+  /**
+   * An answer in the Director's own words, for none of the options: it goes to Cypher as a message
+   * about the card, which answers the card or passes it to the team. The card stays open meanwhile.
+   */
+  const reply = (x: EscalationView, text: string) =>
+    void run(
+      () =>
+        post(`${base}/messages`, {
+          body: `About "${questionOf(x)}": ${text.trim()}`,
+          about: x.escalationId,
+        }),
+      {
+        title: 'Sent to Cypher',
+        detail: 'Your answer goes to the team. The card stays here until it is settled.',
+        tone: 'info',
+      },
+      'Sending your answer',
+    ).then(done);
+
+  return { cardActions, rowAction, resolve, reply, defer, approve, open, resume, undo, sendBack };
 }

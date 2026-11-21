@@ -116,9 +116,24 @@ export interface DemoEscalation {
   type: EscalationType;
   typeLabel?: string;
   title: string;
+  /** The decision as a plain question for the Director. */
+  question?: string;
+  /** What it is about in one or two plain sentences. */
+  plain?: string;
   context: string;
   impact: string;
-  options?: { label: string; rec?: boolean }[];
+  /**
+   * The options, with their plain words. On a gate the options are fixed (Approve, Send back);
+   * two entries here give them their words, in that order.
+   */
+  options?: {
+    label: string;
+    rec?: boolean;
+    short?: string;
+    hint?: string;
+    detail?: string;
+    asks?: string;
+  }[];
   defaultIdx?: number;
   /** Real minutes before the default applies (divided by the simulation speed). */
   deadlineMinutes?: number;

@@ -1303,6 +1303,9 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
         id: `opt-${i + 1}`,
         label,
         recommended: label === d.recommended,
+        // Plain words when the agent wrote them; absent otherwise, so earlier histories replay
+        // to the same card.
+        ...(d.hints?.[i]?.trim() ? { hint: d.hints[i]!.trim().slice(0, 60) } : {}),
       }));
       const recommended = options.find((o) => o.recommended) ?? options[0]!;
       recommended.recommended = true;
@@ -1318,6 +1321,7 @@ export async function projectWorkflow(input: ProjectInput): Promise<void> {
       const card = {
         type: 'decision' as const,
         title: clip(d.question),
+        ...(d.plain?.trim() ? { plain: d.plain.trim().slice(0, 280) } : {}),
         context: [
           again
             ? `${t.title} has stopped on a question ${asked} times in a row, and each answer sent it straight back here: answering the same way again won't move it. Choose another way, or hold it until something has changed.`

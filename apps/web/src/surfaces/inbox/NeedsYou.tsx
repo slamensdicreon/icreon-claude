@@ -1,26 +1,19 @@
 import type { EscalationView, MissionControlSnapshot } from '@lw/contracts';
 import { useEffect, useRef } from 'react';
 import { API } from '../../lib/api';
+import { TYPE_LABEL } from '../../lib/escalation';
 import { isWatching } from '../../lib/role';
 import { age, clock } from '../../lib/fmt';
 import { Mode } from '../../mode/Mode';
-import { TextForm } from '../../overlays/Dialogs';
 import { useApp, useMission, useNow } from '../../state';
 import { Icon } from '../../theme/icons';
 import { Eye } from '../../ui/Eye';
-import { kindOf, leftOf, picks, pillHue, pillOf, useYoursActions } from '../../ui/cypher/cards';
-import {
-  Button,
-  Closing,
-  Hero,
-  Panel,
-  SectionHeading,
-  urgencyOf,
-  Verdict,
-} from '../../ui/cypher/parts';
+import { pillHue, pillOf, questionOf, shortOf, useYoursActions } from '../../ui/cypher/cards';
+import { Button, Closing, Hero, Panel, SectionHeading, urgencyOf } from '../../ui/cypher/parts';
 import { useEyeState } from '../../voice/eye';
-import { Decision } from '../mission/Decision';
 import { ago, openCards, voiceOf } from '../mission/model';
+import { BlissBrief, EverythingBrief, minutesLeft } from './Brief';
+import b from './brief.module.css';
 import s from './inbox.module.css';
 
 /** Needs you, in both faces (component table: Decision Inbox and Smart Recommendation). */
@@ -97,7 +90,7 @@ function NeedsBliss({ mc }: { mc: MissionControlSnapshot }) {
         )}
       />
       {focus ? (
-        <Decision x={focus} mc={mc} />
+        <BlissBrief key={focus.escalationId} x={focus} mc={mc} />
       ) : (
         <section className={s.clear} aria-label="Nothing is yours">
           <Eye state="resting" size={64} decorative />
@@ -105,31 +98,32 @@ function NeedsBliss({ mc }: { mc: MissionControlSnapshot }) {
         </section>
       )}
 
-      {rest.length > 0 && (
-        <section className={s.section} aria-label="Waiting their turn">
-          <SectionHeading>Waiting their turn</SectionHeading>
-          <ul className={s.stack}>
-            {rest.map((x) => (
-              <li key={x.escalationId}>
-                <button
-                  type="button"
-                  className={s.stackRow}
-                  onClick={() => setUi({ expanded: x.escalationId })}
-                >
-                  <span className={`${s.stackLabel} type-label`}>{kindOf(x)}</span>
-                  <span className={s.stackTitle}>{x.title}</span>
-                  <span
-                    className={`${s.stackClock} type-meta`}
-                    data-yours={!!x.deadline || undefined}
-                  >
-                    {x.deadline ? `before ${hm(x.deadline)}` : 'no clock'}
-                  </span>
-                  <Icon name="chevron" size={18} className={s.stackChev} />
-                </button>
-              </li>
+      {rest.length > 0 && focus && (
+        // The others wait as dots, one per card: Bliss shows one decision at a time.
+        <nav className={b.queue} aria-label="Waiting their turn">
+          <span className={b.queueDots}>
+            {cards.map((x) => (
+              <button
+                key={x.escalationId}
+                type="button"
+                className={b.queueDot}
+                aria-current={x === focus}
+                aria-label={questionOf(x)}
+                title={questionOf(x)}
+                onClick={() => setUi({ expanded: x.escalationId })}
+              />
             ))}
-          </ul>
-        </section>
+          </span>
+          <button
+            type="button"
+            className={b.quiet}
+            onClick={() => setUi({ expanded: rest[0]!.escalationId })}
+          >
+            {rest.length === 1
+              ? 'One more after this'
+              : `${countWord(rest.length)} more after this`}
+          </button>
+        </nav>
       )}
 
       {deferred.length > 0 && (
@@ -138,8 +132,7 @@ function NeedsBliss({ mc }: { mc: MissionControlSnapshot }) {
           <ul className={s.stack}>
             {deferred.map((x) => (
               <li key={x.escalationId} className={s.stackRow} data-static>
-                <span className={`${s.stackLabel} type-label`}>{kindOf(x)}</span>
-                <span className={s.stackTitle}>{x.title}</span>
+                <span className={s.stackTitle}>{questionOf(x)}</span>
                 <span className={`${s.stackClock} type-meta`}>
                   {x.deferredUntil ? `back at ${hm(x.deferredUntil)}` : 'deferred'}
                 </span>
@@ -264,9 +257,8 @@ function Fold({
   onToggle: () => void;
   now: number;
 }) {
-  const { openOverlay, closeOverlay, setComposer, setLayout } = useApp();
+  const { setComposer, setLayout } = useApp();
   const act = useYoursActions(mc.project.id, mc.project.name);
-  const { pick } = picks(x);
   const id = `fold-${x.escalationId}`;
   return (
     <div className={s.fold} data-open={open || undefined}>
@@ -278,93 +270,62 @@ function Fold({
         onClick={onToggle}
       >
         <span className={`${s.pill} type-label`} style={{ background: pillHue(x) }}>
-          {pillOf(x)}
+          {x.type === 'gate' ? pillOf(x) : (TYPE_LABEL[x.type] ?? pillOf(x))}
         </span>
         <span className={s.foldText}>
-          <span className={s.foldTitle}>{x.title}</span>
+          <span className={s.foldTitle}>{questionOf(x)}</span>
           <span className="type-meta">
-            {[x.raisedBy?.name, ago(age(x.raisedAt, now)), x.impact].filter(Boolean).join(' · ')}
+            {[fallbackOf(x), x.raisedBy?.firstName, ago(age(x.raisedAt, now))]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
         </span>
-        <span className={`${s.clock} type-button`} data-yours={!!x.deadline || undefined}>
-          {leftOf(x, now)}
+        <span className={s.clockCol}>
+          <span className={`${s.clock} type-button`} data-yours={!!x.deadline || undefined}>
+            {x.deadline ? clock(x.deadline, mc.project.timezone) : 'No deadline'}
+          </span>
+          {x.deadline && <span className="type-meta">{minutesLeft(x.deadline, now)}</span>}
         </span>
         <Icon name="chevron" size={18} className={s.chev} />
       </button>
       {open && (
         <div id={id} className={s.foldBody}>
-          <p className="type-body-small">{x.context}</p>
-          {x.recommendation && <Verdict rec={x.recommendation} />}
-          {isWatching() ? (
-            <p className="type-meta">You are watching: the Director decides this one.</p>
-          ) : (
-            <>
-              <div className={s.options}>
-                {x.type === 'gate' ? (
-                  <>
-                    <Button onClick={() => act.approve(x)} trailing="A">
-                      Approve
-                    </Button>
-                    <Button
-                      kind="secondary"
-                      onClick={() =>
-                        openOverlay(
-                          <TextForm
-                            title={`Send back ${x.title}`}
-                            body="Say what has to change. The team picks it up from your notes."
-                            label="Notes"
-                            placeholder="What needs to change"
-                            submitLabel="Send back"
-                            onSubmit={(notes) => {
-                              closeOverlay();
-                              act.sendBack(x, notes);
-                            }}
-                          />,
-                        )
-                      }
-                    >
-                      Send back with notes
-                    </Button>
-                  </>
-                ) : (
-                  x.options.map((o, i) => (
-                    <Button
-                      key={o.id}
-                      kind={o.id === pick?.id ? 'primary' : 'secondary'}
-                      onClick={() => act.resolve(x, o.id)}
-                      trailing={
-                        o.id === pick?.id && x.recommendation
-                          ? `Cypher's pick · ${o.key ?? i + 1}`
-                          : (o.key ?? String(i + 1))
-                      }
-                    >
-                      {o.label}
-                    </Button>
-                  ))
-                )}
-              </div>
-              <div className={`${s.foldFoot} type-meta`}>
-                {x.type !== 'gate' && (
-                  <button type="button" className={s.link} onClick={() => act.defer(x)}>
-                    Defer half an hour (D)
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className={s.link}
-                  onClick={() => {
-                    setComposer({ text: `About ${x.title}: `, about: x.escalationId, focus: true });
-                    setLayout({ dockOpen: true });
-                  }}
-                >
-                  Ask a question
+          <EverythingBrief x={x} mc={mc} />
+          {!isWatching() && (
+            <div className={`${s.foldFoot} type-meta`}>
+              {x.type !== 'gate' && (
+                <button type="button" className={s.link} onClick={() => act.defer(x)}>
+                  Defer half an hour (D)
                 </button>
-                {x.waitNote && <span className={s.quiet}>{x.waitNote}</span>}
-              </div>
-            </>
+              )}
+              <button
+                type="button"
+                className={s.link}
+                onClick={() => {
+                  setComposer({
+                    text: `About ${questionOf(x)}: `,
+                    about: x.escalationId,
+                    focus: true,
+                  });
+                  setLayout({ dockOpen: true });
+                }}
+              >
+                Ask a question
+              </button>
+            </div>
           )}
         </div>
       )}
     </div>
   );
 }
+
+/** "If you don't answer: keep the contact page", or what happens meanwhile. */
+function fallbackOf(x: EscalationView): string | null {
+  const d = x.deadline ? x.options.find((o) => o.id === x.defaultOptionId) : undefined;
+  if (d) return `If you don't answer: ${shortOf(d)}`;
+  return x.waitNote;
+}
+
+const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+const countWord = (n: number) => WORDS[n] ?? String(n);
