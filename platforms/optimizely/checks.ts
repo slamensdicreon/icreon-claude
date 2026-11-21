@@ -247,6 +247,29 @@ const primaryHost = (a: ApplicationView) =>
 const buildHost = (a: ApplicationView) =>
   (a.hosts ?? []).find((h) => h.type === 'preview') ?? primaryHost(a);
 
+/** A name as its words: lower case, without the file extension. */
+const words = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/, '')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * Whether an uploaded file is a Blueprint media item's: its name holds every word of the item's
+ * key, of its name, or of its source file's name (hero-background is hero-background-desktop.jpg).
+ */
+function namedFor(
+  fileName: string,
+  item: { key: string; name: string; attrs?: Record<string, unknown> },
+): boolean {
+  const have = new Set(words(fileName));
+  const source = typeof item.attrs?.url === 'string' ? item.attrs.url.split(/[?#]/)[0]! : '';
+  return [item.key, item.name, source.slice(source.lastIndexOf('/') + 1)]
+    .map(words)
+    .some((want) => want.length > 0 && want.every((w) => have.has(w)));
+}
+
 /** A page of the head as a visitor gets it: status, final URL and body. */
 async function page(cfg: OptimizelyVerifyConfig, url: string) {
   try {
@@ -1271,10 +1294,33 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
       ).data?._Image;
       const items = images?.items ?? [];
       if (!items.length) return pending("No published image in the application's media yet.");
-      const without = items
+      const total = images?.total ?? items.length;
+      const bare = items
         .filter((i) => !(i.AltText ?? '').trim())
         .map((i) => i._metadata?.displayName ?? '?');
-      const total = images?.total ?? items.length;
+      // A task that uploads one file answers for that file: another task's image, uploaded a
+      // moment ago and not yet described, is that task's to put right, and failing every upload
+      // for it stopped them all.
+      const own =
+        ctx.scope.collection === 'media' && ctx.scope.items.length
+          ? (ctx.blueprint?.collections.media ?? []).filter((m) => ctx.scope.items.includes(m.key))
+          : null;
+      if (own) {
+        const mine = bare.filter((name) => own.some((m) => namedFor(name, m)));
+        return mine.length
+          ? fail(
+              mine.map(
+                (name) =>
+                  `${name} has no alt text: call media.upload again with its path and \`alt\``,
+              ),
+              { images: total, without: mine.length },
+            )
+          : pass(
+              `No image of ${own.map((m) => m.key).join(', ') || 'this task'} lacks alt text (${total} images in the application's media${bare.length ? `, ${bare.length} of other tasks still without` : ''}).`,
+              { images: total },
+            );
+      }
+      const without = bare;
       return without.length
         ? fail(
             without.slice(0, 20).map((name) => `${name} has no alt text`),
