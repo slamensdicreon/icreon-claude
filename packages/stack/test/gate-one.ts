@@ -120,13 +120,25 @@ export function exampleInventory(blueprint: Blueprint, over: Record<string, unkn
  * Every check a step of the playbook names (`draft-blueprint` unless another is given), run on
  * these documents.
  */
+/**
+ * A playbook is read from disk once per test file: a test that asks for the verdicts on a dozen
+ * variations of one Blueprint otherwise parses every role, prompt and plan a dozen times, which
+ * took it past its time limit on a slow machine.
+ */
+const playbooks = new Map<string, ReturnType<typeof loadPlaybook>>();
+const playbookOf = (id: string) => {
+  let loading = playbooks.get(id);
+  if (!loading) playbooks.set(id, (loading = loadPlaybook(playbookDir(id))));
+  return loading;
+};
+
 export async function gateOne(
   playbookId: string,
   docs: { blueprint: unknown; inventory: unknown },
   source: SourceSite = exampleSource,
   step = 'draft-blueprint',
 ): Promise<{ named: string[]; rows: CheckRow[] }> {
-  const playbook = await loadPlaybook(playbookDir(playbookId));
+  const playbook = await playbookOf(playbookId);
   const pack = createPlatforms({
     sitecore: SITECORE_DEFAULTS,
     optimizely: { ...OPTIMIZELY_DEFAULTS, fetch: fetcher(source) },
