@@ -6,6 +6,7 @@ import { compilePlan } from '@lw/plan';
 import { loadPlaybook, loadRolePrompts } from '@lw/playbook-sdk';
 import { describe, expect, it } from 'vitest';
 import { CHECKS } from '../src';
+import { demoSource, exampleInventory, gateOne } from './gate-one';
 
 const dir = (id: string) => fileURLToPath(new URL(`../../../playbooks/${id}`, import.meta.url));
 const DEMO = dir('optimizely-homepage-demo');
@@ -128,6 +129,108 @@ describe('optimizely-homepage-demo playbook', () => {
       status: 'pass',
       detail: 'The demo builds 1 page, 1 template, 11 components and 5 media.',
     });
+  });
+
+  // The prompt, the example and the checks describe one contract: the example, as it is on
+  // disk, passes every check the Blueprint step names, on a page inventory of the homepage with
+  // the rest of the site in its audit.
+  it('passes every check its Blueprint step names, with its example Blueprint', async () => {
+    const { blueprint } = await loadFixtures(DEMO);
+    const inventory = (bp: typeof blueprint) =>
+      exampleInventory(bp, {
+        crawl: {
+          pagesFound: 62,
+          pagesInventoried: 1,
+          partial: true,
+          sampling: 'homepage demo: the homepage',
+        },
+        siteAudit: { pagesFound: 62, templates: [{ name: 'content', pages: 40 }] },
+        forms: [],
+        layoutData: null,
+        mediaHosts: ['https://cdn.example.com/home/'],
+      });
+    const { named, rows } = await gateOne(
+      'optimizely-homepage-demo',
+      { blueprint, inventory: inventory(blueprint) },
+      demoSource,
+    );
+    expect(named).toEqual(['blueprint.coverage', 'discovery.blueprint', 'blueprint.demo-slice']);
+    // The inventory is one the crawl step's own check accepts.
+    const crawl = await gateOne(
+      'optimizely-homepage-demo',
+      { blueprint: null, inventory: inventory(blueprint) },
+      demoSource,
+      'crawl-site',
+    );
+    expect(crawl.rows.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: 'discovery.inventory', status: 'pass' },
+    ]);
+    expect(rows.map(({ id, status, detail }) => ({ id, status, detail }))).toEqual([
+      {
+        id: 'blueprint.coverage',
+        status: 'pass',
+        detail:
+          '1 page, 1 page type and 11 components, each with a model contract: keys with the prefix Acme, typed properties, a composition behaviour and display templates. Covers 1 of 62 pages found; the site audit counts the rest.',
+      },
+      {
+        id: 'discovery.blueprint',
+        status: 'pass',
+        detail:
+          '1 source pages compared with the Blueprint: 0 forms accounted for, 0 redirects decided, the 404 page left to the head, 0 source components mapped, media hosts named.',
+      },
+      {
+        id: 'blueprint.demo-slice',
+        status: 'pass',
+        detail: 'The demo builds 1 page, 1 template, 11 components and 5 media.',
+      },
+    ]);
+
+    // And fails when the example leaves out what the prompt asks for.
+    const verdicts = async (change: (bp: typeof blueprint) => void) => {
+      const changed = structuredClone(blueprint);
+      change(changed);
+      const run = await gateOne(
+        'optimizely-homepage-demo',
+        { blueprint: changed, inventory: inventory(blueprint) },
+        demoSource,
+      );
+      return Object.fromEntries(run.rows.map((r) => [r.id, `${r.status}: ${r.detail}`]));
+    };
+    const component = (bp: typeof blueprint, key: string) =>
+      bp.collections.components!.find((c) => c.key === key)!;
+    expect(
+      (await verdicts((bp) => delete component(bp, 'featured-banner').attrs.properties))[
+        'blueprint.coverage'
+      ],
+    ).toBe('fail: featured-banner has no properties.');
+    expect(
+      (
+        await verdicts((bp) => {
+          const templates = component(bp, 'featured-banner').attrs.displayTemplates;
+          delete (templates as { default?: boolean }[])[0]!.default;
+        })
+      )['blueprint.coverage'],
+    ).toBe(
+      'fail: featured-banner has 0 default display templates: exactly one is marked default: true.',
+    );
+    expect(
+      (
+        await verdicts((bp) => {
+          (component(bp, 'main-navigation').attrs.children as { max?: number }).max = undefined;
+        })
+      )['blueprint.coverage'],
+    ).toBe("fail: main-navigation's child items have no limit (children.max).");
+    const kept = await verdicts((bp) => {
+      bp.collections.pages![1]!.status = 'keep';
+    });
+    expect(kept['discovery.blueprint']).toContain(
+      'fail: not-found (/404) is the 404 page, kept as a page',
+    );
+    // The whole Blueprint is the slice: no pilot is asked for where the plan proves none.
+    const unmarked = await verdicts((bp) => {
+      for (const c of bp.collections.components!) c.pilot = false;
+    });
+    expect(unmarked['blueprint.coverage']).toContain('pass: ');
   });
 
   it('grants every tool a role prompt tells the agent to use, and finds its knowledge', async () => {

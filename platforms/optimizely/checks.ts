@@ -448,6 +448,61 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
         );
   };
 
+  /** A page is composed from the project's own sections, each on a display template. */
+  const composed = async (ctx: PlatformCheckContext, pg: PageRef): Promise<CheckResult> => {
+    const { typePrefix } = optimizelyTarget({ target: ctx.target });
+    const app = await application(ctx);
+    if (isResult(app)) return app;
+    const start = await pageContent(ctx, pg.cms(app.key), pg.label);
+    if (isResult(start)) return start;
+    if (!start.sections.length) return fail([`${pg.label} has no sections`]);
+    const problems = start.sections.flatMap((s) => [
+      ...(s.contentType?.startsWith(typePrefix)
+        ? []
+        : [`"${s.name}" is ${s.contentType ?? 'an unknown type'}, not one of the project's`]),
+      ...(s.contentType && !s.displayTemplate
+        ? [`"${s.name}" has no display template chosen`]
+        : []),
+    ]);
+    return problems.length
+      ? fail(problems, { sections: start.sections.length })
+      : pass(
+          `${pg.label} has ${start.sections.length} sections, all the project's own types on display templates.`,
+          {
+            sections: start.sections.map((s) => ({ name: s.name, contentType: s.contentType })),
+          },
+        );
+  };
+
+  /** A page renders on the head and shows what its sections hold. */
+  const renders = async (ctx: PlatformCheckContext, pg: PageRef): Promise<CheckResult> => {
+    const { languages } = optimizelyTarget({ target: ctx.target });
+    const app = await application(ctx);
+    if (isResult(app)) return app;
+    const host = buildHost(app);
+    if (!host) return fail(['The application has no host']);
+    const start = await pageContent(ctx, pg.cms(app.key), pg.label);
+    if (isResult(start)) return start;
+    const url = `https://${host.host}${pg.route(languages[0] ?? 'en')}`;
+    const p = await page(cfg, url);
+    if (p.status !== 200) return fail([`${url} answered ${p.status || 'nothing'}`]);
+    const text = fold(visibleText(p.html));
+    const owed = start.sections.flatMap((s) =>
+      headingsOf(s.properties).map((h) => ({ section: s.name, heading: h })),
+    );
+    const missing = owed.filter((o) => !text.includes(fold(o.heading)));
+    if (!owed.length) return pass(`${url} renders (its sections have no headings to look for).`);
+    return missing.length
+      ? fail(
+          missing.slice(0, 12).map((m) => `"${m.heading}" (${m.section}) is not on the page`),
+          { owed: owed.length, missing: missing.length },
+        )
+      : pass(
+          `${url} renders all ${owed.length} headings of its ${start.sections.length} sections.`,
+          { owed: owed.length },
+        );
+  };
+
   return {
     // The application exists with a start page, assets of its own and live preview configured.
     'structural.application': async (ctx) => {
@@ -529,31 +584,10 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
         : fail(["There is no blueprint for any of the project's experience types"]);
     },
 
-    // A page is composed from the project's own sections, each on a display template.
-    'structural.experiences': eachPage(async (ctx, pg) => {
-      const { typePrefix } = optimizelyTarget({ target: ctx.target });
-      const app = await application(ctx);
-      if (isResult(app)) return app;
-      const start = await pageContent(ctx, pg.cms(app.key), pg.label);
-      if (isResult(start)) return start;
-      if (!start.sections.length) return fail([`${pg.label} has no sections`]);
-      const problems = start.sections.flatMap((s) => [
-        ...(s.contentType?.startsWith(typePrefix)
-          ? []
-          : [`"${s.name}" is ${s.contentType ?? 'an unknown type'}, not one of the project's`]),
-        ...(s.contentType && !s.displayTemplate
-          ? [`"${s.name}" has no display template chosen`]
-          : []),
-      ]);
-      return problems.length
-        ? fail(problems, { sections: start.sections.length })
-        : pass(
-            `${pg.label} has ${start.sections.length} sections, all the project's own types on display templates.`,
-            {
-              sections: start.sections.map((s) => ({ name: s.name, contentType: s.contentType })),
-            },
-          );
-    }),
+    'structural.experiences': eachPage(composed),
+    // The pilot composes the start page only: the pages are migrated later, so its checks look
+    // at that one page, whatever the Blueprint keeps.
+    'pilot.composed': (ctx) => composed(ctx, pageRef('/')),
 
     // The application answers on the head's host, over https.
     'hostname.registered': async (ctx) => {
@@ -688,34 +722,8 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
           );
     },
 
-    // A page renders on the head and shows what its sections hold.
-    'head.pages-render': eachPage(async (ctx, pg) => {
-      const { languages } = optimizelyTarget({ target: ctx.target });
-      const app = await application(ctx);
-      if (isResult(app)) return app;
-      const host = buildHost(app);
-      if (!host) return fail(['The application has no host']);
-      const start = await pageContent(ctx, pg.cms(app.key), pg.label);
-      if (isResult(start)) return start;
-      const url = `https://${host.host}${pg.route(languages[0] ?? 'en')}`;
-      const p = await page(cfg, url);
-      if (p.status !== 200) return fail([`${url} answered ${p.status || 'nothing'}`]);
-      const text = fold(visibleText(p.html));
-      const owed = start.sections.flatMap((s) =>
-        headingsOf(s.properties).map((h) => ({ section: s.name, heading: h })),
-      );
-      const missing = owed.filter((o) => !text.includes(fold(o.heading)));
-      if (!owed.length) return pass(`${url} renders (its sections have no headings to look for).`);
-      return missing.length
-        ? fail(
-            missing.slice(0, 12).map((m) => `"${m.heading}" (${m.section}) is not on the page`),
-            { owed: owed.length, missing: missing.length },
-          )
-        : pass(
-            `${url} renders all ${owed.length} headings of its ${start.sections.length} sections.`,
-            { owed: owed.length },
-          );
-    }),
+    'head.pages-render': eachPage(renders),
+    'pilot.renders': (ctx) => renders(ctx, pageRef('/')),
 
     // A page reads like the source's: every heading a visitor sees there is here too.
     'parity.render': eachPage(async (ctx, pg) => {

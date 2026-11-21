@@ -58,7 +58,7 @@ an entity (an instance's shared facts and secrets) and is offered to every playb
 | `parity.render`, `parity.visual`, `parity.page` (the judge and the word-coverage logic)       | Shared logic, entity read |
 | `discovery.inventory`, `discovery.blueprint` (reading the source site and the project's documents) | Shared logic (`platforms/src/discovery.ts`); each entity's rules for forms, redirects and the 404 page (`platforms/<entity>/discovery-checks.ts`) |
 | `component-map.registered`, `serialization.replays`, `head.editing-scripts`, `rendering-host.set`, `structural.*`, `edge.published`, `routes.resolve`, `media.alt-text` | SitecoreAI entity (the first four still sit in the shared file: see the coupling map) |
-| `types.defined`, `types.pushed`, `structural.application`, `structural.content-types`, `structural.templates`, `structural.experiences`, `hostname.registered`, `head.preview-route`, `editor.element-enabled`, `editor.new-experience`, `graph.published`, `manifest.replays`, `experience.redirects-resolve`, `parity.chrome`, `seo.titles`, and its own `blueprint.coverage` | Optimizely entity: `platforms/optimizely/checks.ts`; `blueprint.coverage` reads Optimizely's Blueprint contract (`platforms/optimizely/blueprint-checks.ts`) and replaces the shared one for its projects |
+| `types.defined`, `types.pushed`, `structural.application`, `structural.content-types`, `structural.templates`, `structural.experiences`, `pilot.composed`, `pilot.renders`, `hostname.registered`, `head.preview-route`, `editor.element-enabled`, `editor.new-experience`, `graph.published`, `manifest.replays`, `experience.redirects-resolve`, `parity.chrome`, `seo.titles`, and its own `blueprint.coverage` | Optimizely entity: `platforms/optimizely/checks.ts`; `blueprint.coverage` reads Optimizely's Blueprint contract (`platforms/optimizely/blueprint-checks.ts`) and replaces the shared one for its projects |
 
 **Roles and prompts.** Thirteen of the SitecoreAI playbook's twenty-four roles are
 platform-free (the Chief of Staff, the four Leads, Solution Architect, Repo Analyst, Content
@@ -194,7 +194,10 @@ they would run with their own teams). The team goes from 24 roles to 21.
   `structural.experiences`, `types.pushed`, `editor.element-enabled`, `editor.new-experience`,
   `hostname.registered`, `graph.published`, `routes.resolve`, `head.preview-route`,
   `head.pages-render`, `head.header-footer`, `parity.render`, `parity.visual`, `parity.page`,
-  `media.alt-text`, `experience.redirects-resolve`); the step-based `types.defined` and
+  `parity.chrome`, `seo.titles`, `media.alt-text`, `experience.redirects-resolve`, and
+  `pilot.composed` and `pilot.renders`, the page checks held to the start page for the pilot);
+  `blueprint-checks.ts` and `discovery-checks.ts` beside it hold the Blueprint's (`blueprint.coverage`,
+  `discovery.inventory`, `discovery.blueprint`); the step-based `types.defined` and
   `manifest.replays` are in `packages/stack/src/review.ts`. Every check the two playbooks name
   is implemented.
 - **Operations**: the pack's `starter` and `buildRecipe` (build repositories), `facts` (what

@@ -8,7 +8,7 @@ You build what marketers will edit: first the pilot experience (phase 4), then t
 
 1. The pilot components are the Blueprint's components marked `pilot` (`optimizely-cms.contenttype.read` and `displaytemplate.read` for their keys, properties, templates and settings).
 2. `composition.write` on the start page: one section per pilot component that is section-enabled, in the order the source's home page shows them, each with a display template and its properties filled from the source (`browser.snapshot` of the source page that uses it): real copy, never placeholders. Migration replaces these sections when it builds the home page.
-3. `content.publish` the start page, wait for Graph and the head as above, then `browser.snapshot` the editing address: every section shows its heading and its items. Report the route, the sections and the published version.
+3. `content.publish` the start page, wait for Graph and the head as above, then `browser.snapshot` the editing address: every section shows its heading and its items. Run your acceptance checks (`acceptance.check`): `pilot.composed` and `pilot.renders` judge the start page alone (no other page exists yet), and `graph.published` that Graph serves it. Report the route, the sections and the published version.
 
 **"Create the shared header, footer and site settings content"** (`migrate-shared-chrome`, phase 5). The header and footer are shared blocks of their own, in the application's own assets. A page shows the ones its `header` and `footer` properties point at, and a page that leaves them empty shows the start page's: you fill them once and point the start page at them.
 

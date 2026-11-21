@@ -198,8 +198,10 @@ templates:
         The start page had no published version before: unpublish it in the CMS, or leave it,
         since the application's hosts are the project's own Vercel addresses. Migration replaces its
         sections.
-    acceptance:
-      [validator:structural.experiences, validator:head.pages-render, validator:graph.published]
+    # The pilot's own checks: the same judgements as a page's (composed from the project's
+    # sections, rendered by the head), on the start page alone. The page checks would look at
+    # every page the Blueprint keeps, and none of the others exists yet.
+    acceptance: [validator:pilot.composed, validator:pilot.renders, validator:graph.published]
   # Then the slice is read back: the types in the CMS, each pilot component ready for Visual
   # Builder, the preview route on the editing address, the page in Graph. Visual Builder
   # itself has no driver yet: a person edits in it at the smoke test and at acceptance.

@@ -508,6 +508,124 @@ describe('Optimizely experience.redirects-resolve', () => {
   });
 });
 
+describe('Optimizely pilot checks: the start page alone, before any page is migrated', () => {
+  // A Blueprint of several pages, of which only the start page exists in the CMS: the pilot
+  // composed and published it, and the pages come later.
+  const blueprint = {
+    collections: {
+      components: [{ key: 'hero', name: 'Hero', pilot: true }],
+      pages: [
+        { key: 'home', name: 'Home', attrs: { path: '/' } },
+        { key: 'about', name: 'About', attrs: { path: '/about' } },
+        { key: 'contact', name: 'Contact', attrs: { path: '/contact' } },
+      ],
+    },
+  };
+  const START = {
+    status: 'published',
+    properties: {},
+    composition: [
+      {
+        name: 'Hero',
+        contentType: 'AcmeHero',
+        displayTemplate: 'AcmeHeroDefault',
+        properties: { heading: 'Welcome to Acme' },
+      },
+    ],
+  };
+  const asked: string[] = [];
+  const read = async (_server: string, op: string, args: Record<string, unknown>) => {
+    if (op === 'application.read') return { code: 200, body: APP };
+    asked.push(String(args.path));
+    return args.path === '/content/Acme_Site'
+      ? { code: 200, body: START }
+      : { code: 404, body: { error: 'Nothing there' } };
+  };
+  const pages = {
+    'https://acme-editing.vercel.app/en/': {
+      status: 200,
+      html: '<html><body><main><h1>Welcome to Acme</h1></main></body></html>',
+    },
+  };
+  const run = (id: string, over: Partial<PlatformCheckContext> = {}, site: Pages = pages) =>
+    optimizelyChecks({ ...OPTIMIZELY_DEFAULTS, fetch: fetcher(site) })[id]!(
+      // The pilot's task covers the pilot components, not pages.
+      ctx({ blueprint, read, scope: { collection: 'components', items: ['hero'] }, ...over }),
+    );
+
+  it('passes on the start page, though no other page of the Blueprint exists yet', async () => {
+    asked.length = 0;
+    expect(await run('pilot.composed')).toMatchObject({
+      status: 'pass',
+      detail: "The start page has 1 sections, all the project's own types on display templates.",
+    });
+    expect(await run('pilot.renders')).toMatchObject({
+      status: 'pass',
+      detail: 'https://acme-editing.vercel.app/en/ renders all 1 headings of its 1 sections.',
+    });
+    // Only the start page was read.
+    expect([...new Set(asked)]).toEqual(['/content/Acme_Site']);
+    // The page checks on the same task would look at every page, and fail on the ones to come.
+    const everyPage = await run('structural.experiences');
+    expect(everyPage.status).toBe('fail');
+    expect(everyPage.detail).toContain('/about: /about does not exist in the CMS yet');
+    expect((await run('head.pages-render')).status).toBe('fail');
+  });
+
+  it('still fails a later page task whose page does not exist', async () => {
+    const about = { scope: { collection: 'pages', items: ['about'] } };
+    expect(await run('structural.experiences', about)).toMatchObject({
+      status: 'fail',
+      detail: '/about does not exist in the CMS yet (/content/Acme_Site/about)',
+    });
+    expect(await run('head.pages-render', about)).toMatchObject({ status: 'fail' });
+  });
+
+  it('holds the start page to the same judgement as any page', async () => {
+    const empty = async (_server: string, op: string) =>
+      op === 'application.read'
+        ? { code: 200, body: APP }
+        : { code: 200, body: { ...START, composition: [] } };
+    expect(await run('pilot.composed', { read: empty })).toMatchObject({
+      status: 'fail',
+      detail: 'The start page has no sections',
+    });
+    const foreign = async (_server: string, op: string) =>
+      op === 'application.read'
+        ? { code: 200, body: APP }
+        : {
+            code: 200,
+            body: { ...START, composition: [{ name: 'Hero', contentType: 'OtherHero' }] },
+          };
+    expect((await run('pilot.composed', { read: foreign })).detail).toContain(
+      '"Hero" is OtherHero, not one of the project\'s',
+    );
+    expect(
+      await run(
+        'pilot.renders',
+        {},
+        {
+          'https://acme-editing.vercel.app/en/': {
+            status: 200,
+            html: '<main><h1>Hello</h1></main>',
+          },
+        },
+      ),
+    ).toMatchObject({
+      status: 'fail',
+      detail: '"Welcome to Acme" (Hero) is not on the page',
+    });
+    expect(await run('pilot.renders', {}, {})).toMatchObject({
+      status: 'fail',
+      detail: 'https://acme-editing.vercel.app/en/ answered 404',
+    });
+    // Unreadable is pending, never passed.
+    const down = async () => ({ code: 503, body: { error: 'CMS is down' } });
+    expect(await run('pilot.composed', { read: down })).toMatchObject({ status: 'pending' });
+    expect(await run('pilot.renders', { read: down })).toMatchObject({ status: 'pending' });
+  });
+});
+
 describe('Optimizely blueprint.coverage', () => {
   const checks = createPlatforms({ sitecore: SITECORE_DEFAULTS }).get('optimizely')!.checks!;
   const inventory = async () => ({
@@ -614,10 +732,13 @@ describe('Optimizely blueprint.coverage', () => {
       } as never;
     const r = await run(bp);
     expect(r.status).toBe('fail');
-    expect(r.detail).toContain('hero has no content type key');
     expect(r.detail).toContain('hero has no composition behaviour');
     expect(r.detail).toContain('hero has no properties');
-    expect(r.detail).toMatch(/; and \d+ more\.$/);
+    expect(r.detail).toContain('no component is marked shared: true');
+    // One verdict lists eight problems and counts the rest.
+    for (const c of bp.collections.components.slice(0, 3))
+      (c.attrs as Record<string, unknown>).children = { template: 'Card' };
+    expect((await run(bp)).detail).toMatch(/; and \d+ more\.$/);
   });
 
   it('checks each rule of the contract on its own', async () => {
@@ -629,9 +750,21 @@ describe('Optimizely blueprint.coverage', () => {
     const component = (bp: ReturnType<typeof good>, i: number) =>
       bp.collections.components[i]! as { pilot?: boolean; attrs: Record<string, unknown> };
     // Keys: named, prefixed, and no two items with the same one.
-    expect(await broken((bp) => delete component(bp, 0).attrs.contentType)).toBe(
-      'hero has no content type key (Acme and its name in PascalCase, such as AcmeHero).',
-    );
+    // A component that names no key gets the one every other check derives: the prefix and
+    // its name (Hero is AcmeHero). That is a contract too, so it passes.
+    expect(await broken((bp) => delete component(bp, 0).attrs.contentType)).toMatch(/^2 pages, /);
+    expect(
+      await broken(
+        (bp) => delete (bp.collections.templates[0]!.attrs as { contentType?: string }).contentType,
+      ),
+    ).toMatch(/^2 pages, /);
+    // A derived key is held to the same rules: Card Grid's would be AcmeCardGrid, taken here.
+    expect(
+      await broken((bp) => {
+        delete component(bp, 1).attrs.contentType;
+        component(bp, 0).attrs.contentType = 'AcmeCardGrid';
+      }),
+    ).toBe('hero and card-grid both use the key AcmeCardGrid.');
     expect(await broken((bp) => (component(bp, 0).attrs.contentType = 'Hero'))).toBe(
       "hero's content type key Hero doesn't start with the project's prefix Acme: keys are shared by every site on the instance.",
     );
@@ -656,6 +789,26 @@ describe('Optimizely blueprint.coverage', () => {
       ),
     ).toBe(
       "hero's property image (contentReference) names no allowedTypes: the push fails without them.",
+    );
+    // A type is read whatever its case or hyphens; one the platform doesn't have is not.
+    expect(
+      await broken(
+        (bp) =>
+          (component(bp, 0).attrs.properties = [
+            { name: 'heading', type: 'String' },
+            { name: 'body', type: 'rich-text' },
+            { name: 'starts', type: 'DateTime' },
+            { name: 'image', type: 'Content Reference', allowedTypes: ['_image'] },
+          ]),
+      ),
+    ).toMatch(/^2 pages, /);
+    expect(
+      await broken(
+        (bp) =>
+          (component(bp, 0).attrs.properties = [{ name: 'image', type: 'content-reference' }]),
+      ),
+    ).toBe(
+      "hero's property image (content-reference) names no allowedTypes: the push fails without them.",
     );
     // Behaviour and display templates.
     expect(await broken((bp) => delete component(bp, 0).attrs.behaviour)).toContain(
@@ -716,6 +869,18 @@ describe('Optimizely blueprint.coverage', () => {
     );
   });
 
+  it('holds an item that only records a consolidation to its contract, and skips one merged into another', async () => {
+    // `tile` is merged into card-grid: it ships as part of it and has no contract of its own.
+    expect(await run(good())).toMatchObject({ status: 'pass' });
+    // Without mergedInto the item is still built (the plan gives it tasks), so it needs one.
+    const bp = good();
+    bp.collections.components[3]!.attrs = {} as never;
+    const r = await run(bp);
+    expect(r.status).toBe('fail');
+    expect(r.detail).toContain('tile has no composition behaviour');
+    expect(r.detail).toContain('tile has no properties');
+  });
+
   it('wants a pilot slice only where the plan proves one', async () => {
     const bp = good();
     delete (bp.collections.components[0] as { pilot?: boolean }).pilot;
@@ -728,7 +893,7 @@ describe('Optimizely blueprint.coverage', () => {
     expect(await run(bp, { plan: { pilot: false } })).toMatchObject({ status: 'pass' });
     // A pilot of shared blocks alone gives the pilot experience nothing to be composed from.
     (bp.collections.components[2] as { pilot?: boolean }).pilot = true;
-    expect((await run(bp)).detail).toContain('no pilot component can be added to a page');
+    expect((await run(bp)).detail).toContain('no pilot component is a section');
   });
 
   it('asks for the scope decision when Discovery read only part of the site', async () => {

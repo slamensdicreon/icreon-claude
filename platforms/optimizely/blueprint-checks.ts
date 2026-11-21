@@ -1,4 +1,5 @@
 import type { CheckResult, PlatformCheck, PlatformCheckContext } from '../src/index';
+import { typeKeyOf } from './checks';
 import { optimizelyTarget } from './pack';
 
 /**
@@ -8,6 +9,11 @@ import { optimizelyTarget } from './pack';
  * behaviour, display templates with one default, limits on child items), the shared blocks
  * marked, and a pilot slice chosen where the plan proves one first. It reads the Blueprint and
  * the page inventory only: nothing is in the CMS yet.
+ *
+ * It asks for what a builder can't work out and nothing more. A component or page type that names
+ * no content type key gets the one every other check derives (the prefix and its name); a
+ * property type is read whatever its case or hyphens. Each playbook's example Blueprint passes it
+ * (packages/stack/test): the prompt, the example and this check describe one contract.
  */
 
 type Item = NonNullable<PlatformCheckContext['blueprint']>['collections'][string][number];
@@ -37,12 +43,20 @@ const PROPERTY_TYPES = [
   'binary',
 ];
 
+/** The SDK's name for a property type as an architect wrote it ("Rich text", "date-time"), or null. */
+const propertyType = (written: string) =>
+  PROPERTY_TYPES.find((t) => t.toLowerCase() === written.replace(/[^A-Za-z]/g, '').toLowerCase()) ??
+  null;
+
 /** The composition behaviours a component's contract names. */
 const ADDABLE = ['section', 'element', 'both'];
 
 const dropped = (i: Item) => ['drop', 'dropped', 'out-of-scope'].includes(i.status ?? '');
-/** An item that ships as part of another gets no contract of its own. */
-const merged = (i: Item) => i.status === 'merge';
+/**
+ * An item that ships as part of another (`merge`, naming it in `attrs.mergedInto`) gets no tasks
+ * and no contract of its own. One that only records a consolidation is still built.
+ */
+const merged = (i: Item) => i.status === 'merge' && Boolean(i.attrs?.mergedInto);
 
 const pathOf = (v: unknown) => String(v ?? '').replace(/\/$/, '') || '/';
 const record = (v: unknown): Record<string, unknown> | null =>
@@ -68,7 +82,8 @@ export function blueprintChecks(): Record<string, PlatformCheck> {
       const problems: string[] = [];
 
       // Keys are shared by every site on the instance: each carries the prefix, and no two items
-      // of this Blueprint claim the same one.
+      // of this Blueprint claim the same one. A component's or page type's key is the one it
+      // names, else the one every other check derives for it (typeKeyOf); a child type's is named.
       const owners = new Map<string, string>();
       const keyProblems = (
         owner: string,
@@ -104,14 +119,15 @@ export function blueprintChecks(): Record<string, PlatformCheck> {
             problems.push(`${owner} has a property with no name`);
             continue;
           }
+          const type = named(p.type) ? propertyType(p.type) : null;
           if (!named(p.type)) problems.push(`${owner}'s property ${p.name} has no type`);
-          else if (!PROPERTY_TYPES.includes(p.type)) {
+          else if (!type) {
             problems.push(
               `${owner}'s property ${p.name} has the type "${p.type}", which is not an Optimizely property type${typesNamed ? '' : ` (${PROPERTY_TYPES.join(', ')})`}`,
             );
             typesNamed = true;
           } else if (
-            ['content', 'contentReference'].includes(p.type) &&
+            ['content', 'contentReference'].includes(type) &&
             !list(p.allowedTypes).length &&
             !list(p.restrictedTypes).length &&
             !named(p.contentType)
@@ -175,7 +191,7 @@ export function blueprintChecks(): Record<string, PlatformCheck> {
         keyProblems(
           owner,
           { none: `${owner} has no content type key`, its: `${owner}'s content type key` },
-          a.contentType,
+          typeKeyOf(t, typePrefix),
         );
         if (!['experience', 'page'].includes(String(a.kind ?? '')))
           problems.push(
@@ -204,7 +220,7 @@ export function blueprintChecks(): Record<string, PlatformCheck> {
         keyProblems(
           c.key,
           { none: `${c.key} has no content type key`, its: `${c.key}'s content type key` },
-          a.contentType,
+          typeKeyOf(c, typePrefix),
         );
         const behaviour = String(a.behaviour ?? a.behavior ?? '');
         // An item that only lives inside another component is never added to a page by itself.
@@ -279,10 +295,12 @@ export function blueprintChecks(): Record<string, PlatformCheck> {
             'no pilot components: mark 2 to 4 representative components the home page shows pilot: true',
           );
         else if (
-          !pilots.some((c) => ADDABLE.includes(String(c.attrs?.behaviour ?? c.attrs?.behavior)))
+          !pilots.some((c) =>
+            ['section', 'both'].includes(String(c.attrs?.behaviour ?? c.attrs?.behavior)),
+          )
         )
           problems.push(
-            'no pilot component can be added to a page (behaviour "section", "element" or "both"): the pilot experience is composed from them',
+            'no pilot component is a section (behaviour "section" or "both"): the pilot experience is composed from the pilot\'s sections',
           );
       }
 

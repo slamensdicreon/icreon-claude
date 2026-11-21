@@ -2,27 +2,21 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
-import { createProjectState } from '@lw/domain';
-import { InMemoryEventStore, type Projections } from '@lw/events';
 import { loadFixtures } from '@lw/orchestrator';
 import { compilePlan } from '@lw/plan';
 import { createPlatforms, optimizelyBindings } from '@lw/platforms';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import { inScope, MemoryBlobStore } from '@lw/tool-gateway';
+import { inScope } from '@lw/tool-gateway';
 import { OptimizelyCmsToolServer, OptimizelyGraphToolServer } from '@lw/tool-optimizely';
-import { ArtifactLibrary } from '@lw/tool-workspace';
 import { describe, expect, it } from 'vitest';
-import { CHECKS, selfCheck } from '../src';
+import { CHECKS } from '../src';
+import { EXAMPLE_ORIGIN, exampleInventory, gateOne } from './gate-one';
 
 const dir = (id: string) => fileURLToPath(new URL(`../../../playbooks/${id}`, import.meta.url));
 const PLAYBOOKS = ['optimizely-saas-migration', 'optimizely-homepage-demo'];
-// No source site answers here: a check that reads one finds nothing to compare.
 const OPTIMIZELY = createPlatforms({
   sitecore: SITECORE_DEFAULTS,
-  optimizely: {
-    ...OPTIMIZELY_DEFAULTS,
-    fetch: (async () => new Response('', { status: 404 })) as typeof fetch,
-  },
+  optimizely: OPTIMIZELY_DEFAULTS,
 }).get('optimizely')!;
 // Two projects on one instance: content types, templates and Graph are shared between them.
 const acme = optimizelyBindings({ application: 'Acme Site', typePrefix: 'Acme' });
@@ -86,7 +80,7 @@ describe('Optimizely website playbook: the order the platform sets', () => {
       blueprint.collections.templates!.map((t) => `push-type-${t.key}`).sort(),
     );
     // A page type refers to the header's and footer's types: it waits on those, not on every
-    // component (the example marks none shared, so their names stand for them).
+    // component (the example marks the header, the footer and the navigation shared).
     expect(task('push-type-home').dependsOn.sort()).toEqual([
       'define-type-home',
       'integrate-footer',
@@ -111,6 +105,8 @@ describe('Optimizely website playbook: the order the platform sets', () => {
       'graph.published',
       'head.header-footer',
       'head.pages-render',
+      'pilot.composed',
+      'pilot.renders',
       'parity.render',
       'parity.visual',
       'parity.chrome',
@@ -185,6 +181,20 @@ describe('Optimizely website playbook: the order the platform sets', () => {
       expect.arrayContaining(['blueprint.coverage', 'discovery.blueprint']),
     );
     expect(named).not.toContain('validator:editing-host.responds');
+    // The pilot composes the start page only, so it is judged on that page. The per-page checks
+    // look at every page a task covers: they belong to the tasks that have pages of their own.
+    expect(template('compose-pilot').acceptance).toEqual([
+      'validator:pilot.composed',
+      'validator:pilot.renders',
+      'validator:graph.published',
+    ]);
+    for (const t of pb.plan.templates)
+      if (
+        t.acceptance.some((x) =>
+          ['validator:structural.experiences', 'validator:head.pages-render'].includes(x),
+        )
+      )
+        expect(t.forEach, t.id).toBe('pages');
     // What the SitecoreAI playbooks check by the same ids, on the corresponding steps.
     expect(template('crawl-site').acceptance).toEqual(['validator:discovery.inventory']);
     expect(template('migrate-shared-chrome').acceptance).toEqual([
@@ -261,50 +271,16 @@ describe('the Blueprint check an Optimizely project runs', () => {
       media: [],
     },
   });
-  const checker = async (playbookId: string, content: unknown) => {
-    const store = new InMemoryEventStore();
-    const library = new ArtifactLibrary(store, new MemoryBlobStore());
-    const state = {
-      ...createProjectState('p1'),
-      intake: { platform: 'optimizely', target: { application: 'Acme Site', typePrefix: 'Acme' } },
-    };
-    const write = (artifactId: string, body: unknown) =>
-      library.write('p1', {
-        artifactId,
-        kind: artifactId === 'blueprint' ? 'blueprint' : 'inventory',
-        title: artifactId,
-        format: 'json',
-        content: JSON.stringify(body),
-        producer: 'solution-architect',
-      });
-    await write('blueprint', content);
-    await write('page-inventory', { origin: 'https://www.acme.com', pages: [{ path: '/' }] });
-    const run = selfCheck({
-      store,
-      projections: { catchUp: async () => {}, get: () => state } as unknown as Projections,
-      playbook: await loadPlaybook(dir(playbookId)),
-      library,
-      platform: {
-        checks: OPTIMIZELY.checks,
-        read: async () => ({ code: 404, body: { error: 'Not connected' } }),
-        credential: async () => null,
-      },
-    });
-    return async () =>
-      (
-        await run('p1', {
-          taskId: 'draft-blueprint',
-          templateId: 'draft-blueprint',
-          acceptance: [],
-          collection: null,
-          itemKeys: [],
-        })
-      ).find((r) => r.id === 'blueprint.coverage');
-  };
+  const inventory = { origin: EXAMPLE_ORIGIN, pages: [{ path: '/' }] };
+  const coverage = async (playbookId: string, content: unknown) =>
+    (await gateOne(playbookId, { blueprint: content, inventory })).rows.find(
+      (r) => r.id === 'blueprint.coverage',
+    );
 
   it("is the platform's own: it reads this platform's contract, not the shared check's", async () => {
-    const check = await checker('optimizely-saas-migration', blueprint(true));
-    expect(await check()).toMatchObject({ status: 'pass' });
+    expect(await coverage('optimizely-saas-migration', blueprint(true))).toMatchObject({
+      status: 'pass',
+    });
     // The shared check, which reads another platform's contract, fails the same Blueprint.
     const shared = await CHECKS['blueprint.coverage']!({
       projectId: 'p1',
@@ -318,13 +294,160 @@ describe('the Blueprint check an Optimizely project runs', () => {
   });
 
   it('wants a pilot slice on the website playbook, whose plan proves one, and not on the demo', async () => {
-    const website = await checker('optimizely-saas-migration', blueprint(false));
-    expect(await website()).toMatchObject({
+    expect(await coverage('optimizely-saas-migration', blueprint(false))).toMatchObject({
       status: 'fail',
       detail: expect.stringContaining('no pilot components'),
     });
-    const demo = await checker('optimizely-homepage-demo', blueprint(false));
-    expect(await demo()).toMatchObject({ status: 'pass' });
+    expect(await coverage('optimizely-homepage-demo', blueprint(false))).toMatchObject({
+      status: 'pass',
+    });
+  });
+});
+
+/**
+ * The prompt, the example and the checks describe one contract: the example Blueprint, as it is
+ * on disk, passes every check the Blueprint step names. A check made stricter than the example,
+ * or an example that drops what the prompt asks for, fails here and not on a live project.
+ */
+describe('Optimizely website playbook: its example Blueprint at Gate 1', () => {
+  const ID = 'optimizely-saas-migration';
+  const example = async () => (await loadFixtures(dir(ID))).blueprint;
+
+  it('passes every check its Blueprint step names', async () => {
+    const blueprint = await example();
+    const { named, rows } = await gateOne(ID, {
+      blueprint,
+      inventory: exampleInventory(blueprint),
+    });
+    expect(named).toEqual(['blueprint.coverage', 'discovery.blueprint']);
+    expect(rows.map(({ id, status, detail }) => ({ id, status, detail }))).toEqual([
+      {
+        id: 'blueprint.coverage',
+        status: 'pass',
+        detail:
+          '48 pages, 5 page types and 16 components, each with a model contract: keys with the prefix Acme, typed properties, a composition behaviour and display templates.',
+      },
+      {
+        id: 'discovery.blueprint',
+        status: 'pass',
+        detail:
+          '20 source pages compared with the Blueprint: 1 form accounted for, 1 redirect decided, the 404 page left to the head, 2 source components mapped, media hosts named.',
+      },
+    ]);
+  });
+
+  it("rests on a page inventory the crawl step's own check accepts", async () => {
+    // The inventory these tests give the Blueprint checks is written as the Content Analyst's
+    // prompt asks, for the same source: discovery.inventory passes it.
+    const blueprint = await example();
+    const { named, rows } = await gateOne(
+      ID,
+      { blueprint: null, inventory: exampleInventory(blueprint) },
+      undefined,
+      'crawl-site',
+    );
+    expect(named).toEqual(['discovery.inventory']);
+    expect(rows.map(({ id, status, detail }) => ({ id, status, detail }))).toEqual([
+      {
+        id: 'discovery.inventory',
+        status: 'pass',
+        detail:
+          '47 pages, each with its <title> and meta description; 20 source pages read, their forms, redirects, layout data and media hosts recorded; the whole site.',
+      },
+    ]);
+  });
+
+  it('fails when the example leaves out what the prompt asks for', async () => {
+    const verdicts = async (
+      change: (bp: Awaited<ReturnType<typeof example>>) => void,
+      recorded: Record<string, unknown> = {},
+    ) => {
+      const blueprint = structuredClone(await example());
+      const inventory = exampleInventory(blueprint, recorded);
+      change(blueprint);
+      const { rows } = await gateOne(ID, { blueprint, inventory });
+      return Object.fromEntries(rows.map((r) => [r.id, `${r.status}: ${r.detail}`]));
+    };
+    const component = (bp: Awaited<ReturnType<typeof example>>, key: string) =>
+      bp.collections.components!.find((c) => c.key === key)!;
+    // The model contract.
+    expect(
+      (await verdicts((bp) => delete component(bp, 'hero').attrs.properties))['blueprint.coverage'],
+    ).toBe('fail: hero has no properties.');
+    expect(
+      (await verdicts((bp) => delete component(bp, 'card-grid').attrs.displayTemplates))[
+        'blueprint.coverage'
+      ],
+    ).toContain('fail: card-grid has no display template');
+    expect(
+      (await verdicts((bp) => delete component(bp, 'navigation').attrs.shared))[
+        'blueprint.coverage'
+      ],
+    ).toContain('fail: navigation is a shared block (behaviour "shell") not marked shared: true');
+    expect(
+      (await verdicts((bp) => delete bp.collections.templates![0]!.attrs.kind))[
+        'blueprint.coverage'
+      ],
+    ).toContain('fail: template home has no kind');
+    expect(
+      (await verdicts((bp) => delete bp.collections.pages![1]!.attrs.template))[
+        'blueprint.coverage'
+      ],
+    ).toBe('fail: page page-2 is on no page type (attrs.template).');
+    expect(
+      (await verdicts((bp) => (component(bp, 'hero').pilot = false)))['blueprint.coverage'],
+    ).toContain('pass: ');
+    expect(
+      (
+        await verdicts((bp) => {
+          for (const c of bp.collections.components!) c.pilot = false;
+        })
+      )['blueprint.coverage'],
+    ).toContain('fail: no pilot components');
+    // What discovery found on the source.
+    expect(
+      (await verdicts((bp) => delete component(bp, 'footer').attrs.forms))['discovery.blueprint'],
+    ).toContain(
+      "fail: forms on the source the Blueprint doesn't account for: form#newsletter on /",
+    );
+    expect(
+      (await verdicts((bp) => delete bp.collections.pages![9]!.attrs.redirect))[
+        'discovery.blueprint'
+      ],
+    ).toContain('fail: source URLs that redirect elsewhere with no decision: /services (page-10)');
+    expect((await verdicts((bp) => bp.collections.pages!.pop()))['discovery.blueprint']).toContain(
+      "fail: the Blueprint doesn't say what happens to the 404 page",
+    );
+    expect(
+      (await verdicts((bp) => delete component(bp, 'hero').attrs.sourceComponents))[
+        'discovery.blueprint'
+      ],
+    ).toContain('fail: source components no Blueprint component maps: HeroBanner (/)');
+    expect(
+      (await verdicts((bp) => delete bp.collections.media![0]!.attrs.url))['discovery.blueprint'],
+    ).toContain('pass: ');
+    expect(
+      (
+        await verdicts(
+          (bp) => {
+            for (const m of bp.collections.media!) delete m.attrs.url;
+          },
+          { mediaHosts: [] },
+        )
+      )['discovery.blueprint'],
+    ).toContain(
+      'fail: media on 1 host neither the Blueprint nor an inventory names: cdn.example.com',
+    );
+  });
+
+  it('takes the key every other check derives when the example names none', async () => {
+    // attrs.contentType is the key the architect chose; without it the key is the prefix and
+    // the item's name, as the checks that read the CMS derive it. Both are a contract.
+    const blueprint = structuredClone(await example());
+    for (const c of [...blueprint.collections.components!, ...blueprint.collections.templates!])
+      delete c.attrs.contentType;
+    const { rows } = await gateOne(ID, { blueprint, inventory: exampleInventory(blueprint) });
+    expect(rows.find((r) => r.id === 'blueprint.coverage')).toMatchObject({ status: 'pass' });
   });
 });
 
