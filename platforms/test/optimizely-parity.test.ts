@@ -869,6 +869,42 @@ describe('Optimizely blueprint.coverage', () => {
     );
   });
 
+  it("wants a page type an empty draft can satisfy: the application's start page is made empty", async () => {
+    const withProperties = (kind: string, properties: unknown[], shell: unknown[] = []) => {
+      const bp = good();
+      Object.assign(bp.collections.templates[0]!.attrs, { kind, properties, shell });
+      return run(bp);
+    };
+    expect(
+      (
+        await withProperties('experience', [
+          { name: 'metaTitle', type: 'string', required: true },
+          { name: 'metaDescription', type: 'string' },
+        ])
+      ).detail,
+    ).toBe(
+      "template landing marks metaTitle required: a page of this type is first made as an empty draft (the application's start page) and the CMS refuses it with a required property empty. Leave them optional.",
+    );
+    // A fixed page type may require its own properties, never the shared blocks it references.
+    const page = await withProperties(
+      'page',
+      [
+        { name: 'title', type: 'string', required: true },
+        {
+          name: 'header',
+          type: 'contentReference',
+          allowedTypes: ['AcmeSiteHeader'],
+          required: true,
+        },
+      ],
+      [{ property: 'header', component: 'site-header' }],
+    );
+    expect(page.detail).toMatch(/^template landing marks header required: /);
+    expect(
+      (await withProperties('experience', [{ name: 'metaTitle', type: 'string' }])).status,
+    ).toBe('pass');
+  });
+
   it('holds an item that only records a consolidation to its contract, and skips one merged into another', async () => {
     // `tile` is merged into card-grid: it ships as part of it and has no contract of its own.
     expect(await run(good())).toMatchObject({ status: 'pass' });

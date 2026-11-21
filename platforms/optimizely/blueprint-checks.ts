@@ -198,6 +198,20 @@ export function blueprintChecks(): Record<string, PlatformCheck> {
             `${owner} has no kind (attrs.kind: "experience", composed in Visual Builder, or "page", a fixed form)`,
           );
         if (Array.isArray(a.properties)) propertyProblems(owner, a.properties);
+        // An application's start page is made as an empty draft, before any content or shared
+        // block exists, and the CMS refuses an item that leaves a required property empty.
+        // Dropping the requirement afterwards is a change the CMS takes only when told to.
+        const shell = new Set(list(a.shell).map((x) => String(record(x)?.property ?? '')));
+        const demanded = list(a.properties)
+          .map((x) => record(x))
+          .filter(
+            (x) => x?.required === true && (a.kind === 'experience' || shell.has(String(x.name))),
+          )
+          .map((x) => String(x!.name));
+        if (demanded.length)
+          problems.push(
+            `${owner} marks ${demanded.join(', ')} required: a page of this type is first made as an empty draft (the application's start page) and the CMS refuses it with a required property empty. Leave them optional`,
+          );
         for (const k of list(a.defaultSections))
           if (typeof k === 'string' && !componentKeys.has(k))
             problems.push(

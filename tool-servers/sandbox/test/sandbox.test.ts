@@ -5,6 +5,7 @@ import {
   pullFailed,
   pushFailure,
   readOnly,
+  relaxedOnly,
   safePath,
   SandboxToolServer,
   SITECORE_RECIPE,
@@ -1015,6 +1016,83 @@ describe('a content model the CMS would refuse', () => {
       'The choices object contains a field whose name is too short. What it did take: Successfully imported 21 content types.',
     );
     expect(pushFailure('')).toBe('the CLI gave no reason');
+  });
+});
+
+describe('a property that stops being required', () => {
+  const optimizely = async () => ({ ...(await facts()), typePrefix: 'Acme' });
+  const manifest = JSON.stringify({
+    contentTypes: [{ key: 'AcmeExperience' }, { key: 'AcmeHero' }],
+    displayTemplates: [{ key: 'AcmeHeroDefault' }],
+  });
+  const objection = (property: string, change: string, type = 'AcmeExperience') =>
+    `  - Property '${property}' on content type '${type}' ${change} The change could result in data loss. Use the '--force' flag to apply the changes anyway.`;
+  const relax = "changes 'isRequired' from 'true' to 'false'.";
+  const refusal = (...lines: string[]) =>
+    ['✔ Configuration file uploaded', '', '\u001b[31mErrors:\u001b[39m', ...lines].join('\n');
+  const server = (firstPush: string) => {
+    let pushes = 0;
+    const fake = fakeBox(
+      { 'examples/basic-nextjs/.optimizely-manifest.json': manifest },
+      (cmd, args) =>
+        args.includes('--only') && !args.includes('--force') && pushes++ === 0
+          ? { exitCode: 1, output: firstPush }
+          : null,
+    );
+    const s = new SandboxToolServer({
+      provider: fake.provider,
+      facts: optimizely,
+      buildEnv: async () => ({}),
+    });
+    const sent = () =>
+      fake.runs
+        .filter((r) => r.args.includes('optimizely-cms-cli') && !r.args.includes('--dryRun'))
+        .map((r) => r.args.slice(5).join(' '));
+    return { s, sent };
+  };
+
+  it('is sent again with the override, for those types only, then the whole model', async () => {
+    const { s, sent } = server(refusal(objection('seoTitle', relax), objection('header', relax)));
+    const r = await s.call('exec.optimizely-cli', { command: 'push' }, ctx);
+    expect(r.code).toBe(200);
+    expect(sent()).toEqual([
+      '--only AcmeExperience,AcmeHero,AcmeHeroDefault',
+      '--only AcmeExperience --force',
+      '--only AcmeExperience,AcmeHero,AcmeHeroDefault',
+    ]);
+    expect(r.summary).toBe(
+      'Pushed 2 content types and 1 display templates to the CMS; made optional first, which the CMS takes only when told to: AcmeExperience.seoTitle, AcmeExperience.header',
+    );
+    expect(r.body).toMatchObject({
+      sent: true,
+      madeOptional: ['AcmeExperience.seoTitle', 'AcmeExperience.header'],
+    });
+  });
+
+  it('is never forced beside a change that can lose data', async () => {
+    const { s, sent } = server(
+      refusal(
+        objection('seoTitle', relax),
+        "  - Property 'legacy' is removed from content type 'AcmeExperience'. The change could result in data loss. Use the '--force' flag to apply the changes anyway.",
+      ),
+    );
+    const r = await s.call('exec.optimizely-cli', { command: 'push' }, ctx);
+    expect(r.code).toBe(500);
+    expect(r.summary).toContain("Property 'legacy' is removed");
+    expect(sent().join(' ')).not.toContain('--force');
+  });
+
+  it("names only this project's types, and only a requirement that is dropped", () => {
+    expect(relaxedOnly(refusal(objection('a', relax)), 'Acme')).toEqual({
+      types: ['AcmeExperience'],
+      properties: ['AcmeExperience.a'],
+    });
+    expect(relaxedOnly(refusal(objection('a', relax, 'OtherPage')), 'Acme')).toBeNull();
+    expect(
+      relaxedOnly(refusal(objection('a', "changes 'isRequired' from 'false' to 'true'.")), 'Acme'),
+    ).toBeNull();
+    expect(relaxedOnly('Error 400: One or more validation errors occurred.', 'Acme')).toBeNull();
+    expect(relaxedOnly(refusal(), 'Acme')).toBeNull();
   });
 });
 

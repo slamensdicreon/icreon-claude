@@ -18,8 +18,13 @@
 # 0.1.3: Discovery and the Blueprint are checked, as the website playbook's are (what the source site has that
 # would otherwise surface mid-build, and the model contract at Gate 1), the shared header, footer
 # and navigation are checked for content, and page titles against the source's.
+# 0.1.4: from the first live run. Model files name a property's options `isRequired` and
+# `isLocalized` (the Blueprint's `required` and `localized` are refused by the CMS), a display
+# setting's choice key has two characters or more, a new branch starts from the design system, a
+# page type an application starts on has no required property, and the push says why the CMS
+# refused it.
 id: optimizely-homepage-demo
-version: 0.1.3
+version: 0.1.4
 name: Optimizely homepage demo
 description: >-
   Audits a prospect's whole site in numbers, then blueprints and builds their homepage,
