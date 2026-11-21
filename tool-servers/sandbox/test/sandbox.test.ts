@@ -1069,6 +1069,23 @@ describe('a property that stops being required', () => {
     });
   });
 
+  it("is read whatever the order the CLI's two streams arrive in", () => {
+    // As a machine hands them over: everything printed, then the progress lines.
+    const printed = [
+      'Pushing content types: [AcmeExperience]',
+      '',
+      'Errors:',
+      objection('a', relax),
+    ];
+    const progress = ['- Uploading configuration file', '✔ Configuration file uploaded'];
+    const want = { types: ['AcmeExperience'], properties: ['AcmeExperience.a'] };
+    expect(relaxedOnly([...printed, ...progress].join('\n'), 'Acme')).toEqual(want);
+    expect(relaxedOnly([...progress, ...printed].join('\n'), 'Acme')).toEqual(want);
+    expect(pushFailure([...printed, ...progress].join('\n'))).toMatch(
+      /data loss\. Use the '--force' flag to apply the changes anyway\.$/,
+    );
+  });
+
   it('is never forced beside a change that can lose data', async () => {
     const { s, sent } = server(
       refusal(
