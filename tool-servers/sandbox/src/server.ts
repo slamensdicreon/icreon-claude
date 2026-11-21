@@ -108,8 +108,12 @@ const OpenArgs = z.object({
   ref: z.string().regex(AGENT_BRANCH, 'an agent branch, launchworks/…').optional(),
   fresh: z.boolean().optional(),
 });
-const ListArgs = z.object({ path: z.string().max(300).optional() });
+const ListArgs = z.object({
+  ref: z.string().regex(AGENT_BRANCH, 'an agent branch, launchworks/…').optional(),
+  path: z.string().max(300).optional(),
+});
 const ReadArgs = z.object({
+  ref: z.string().regex(AGENT_BRANCH, 'an agent branch, launchworks/…').optional(),
   paths: z.preprocess(
     (v) => (typeof v === 'string' ? [v] : v),
     z.array(z.string().min(1).max(300)).min(1).max(20),
@@ -175,6 +179,8 @@ const CliArgs = z.object({
  * a rebuild included, so hand fixes never drop out; agents don't commit to it.
  */
 export const DIRECTOR_BRANCH = 'launchworks/director';
+/** The design system task's branch: tokens and the shared ui/ files every component uses. */
+export const DESIGN_SYSTEM_BRANCH = 'launchworks/design-system';
 /** Files the build generates: a conflict in them is settled by generating them again. */
 const GENERATED = /(^|\/)(\.sitecore\/component-map(\.client)?\.ts|package-lock\.json)$/;
 const IntegrateArgs = z.object({
@@ -224,8 +230,7 @@ export class SandboxToolServer implements ToolServer {
       mutates: true,
     },
     'workspace.open': {
-      description:
-        "Open this task's working copy of the build repository, on your agent branch (launchworks/…; created from the default branch if new), and install dependencies. Call it first; it is reused for the rest of the task. A working copy kept from an earlier run is brought up to date with the branch on GitHub, and the summary names any uncommitted files it holds. `fresh: true` discards everything uncommitted and starts again from the branch as pushed: use it when the build fails in files you never changed. Commit before you finish: an unused working copy expires after 45 minutes.",
+      description: `Open this task's working copy of the build repository, on your agent branch (launchworks/…; if new, created from the design system's branch, ${DESIGN_SYSTEM_BRANCH}, once that exists, else from the default branch), and install dependencies. Call it first; it is reused for the rest of the task. A working copy kept from an earlier run is brought up to date with the branch on GitHub, and the summary names any uncommitted files it holds. \`fresh: true\` discards everything uncommitted and starts again from the branch as pushed: use it when the build fails in files you never changed. Commit before you finish: an unused working copy expires after 45 minutes.`,
       inputSchema: {
         type: 'object',
         properties: { ref: { type: 'string' }, fresh: { type: 'boolean' } },
@@ -235,20 +240,23 @@ export class SandboxToolServer implements ToolServer {
     },
     'fs.list': {
       description:
-        'List files in the working copy (without node_modules and .git), optionally under `path`.',
+        'List files in the working copy (without node_modules and .git), optionally under `path`. With `ref`, list what another agent branch has on GitHub instead.',
       inputSchema: {
         type: 'object',
-        properties: { path: { type: 'string' } },
+        properties: { ref: { type: 'string' }, path: { type: 'string' } },
         additionalProperties: false,
       },
       mutates: false,
       untrusted: true,
     },
     'fs.read': {
-      description: 'Read up to 20 files from the working copy, by repository-relative path.',
+      description: `Read up to 20 files from the working copy, by repository-relative path. With \`ref\`, read them as another agent branch has them on GitHub instead (${INTEGRATION_BRANCH} for the shared ui/ files as integrated, ${DESIGN_SYSTEM_BRANCH} for the design system), without changing the working copy.`,
       inputSchema: {
         type: 'object',
-        properties: { paths: { type: 'array', items: { type: 'string' } } },
+        properties: {
+          ref: { type: 'string' },
+          paths: { type: 'array', items: { type: 'string' } },
+        },
         required: ['paths'],
         additionalProperties: false,
       },
@@ -498,6 +506,18 @@ export class SandboxToolServer implements ToolServer {
           // Kept from an earlier run: the branch may have moved on GitHub since.
           synced = await catchUp();
         }
+        // New work starts from the accepted design system when there is one, not from the bare
+        // starter: every component then has the tokens and the shared ui/ files as accepted,
+        // byte for byte, without reading another branch. Only a working copy with nothing of
+        // its own yet: a branch just made here, or a machine just cloned.
+        const isNew = ref ? current !== ref && fetched?.exitCode !== 0 : created;
+        if (isNew && ref !== DESIGN_SYSTEM_BRANCH) {
+          const shared = await run('git', [...auth, 'fetch', 'origin', DESIGN_SYSTEM_BRANCH]);
+          if (shared.exitCode === 0) {
+            await run('git', ['reset', '-q', '--hard', 'FETCH_HEAD']);
+            synced = `started from ${DESIGN_SYSTEM_BRANCH}`;
+          }
+        }
         if (a.data.fresh) {
           await run('git', [
             'reset',
@@ -535,6 +555,26 @@ export class SandboxToolServer implements ToolServer {
         if (!a.success) return rejected(a.error.issues[0]!.message);
         const under = a.data.path ? safePath(a.data.path) : '.';
         if (!under) return rejected(`${a.data.path} is outside the repository.`);
+        if (a.data.ref) {
+          const ref = a.data.ref;
+          const fetched = await run('git', [...auth, 'fetch', 'origin', ref]);
+          if (fetched.exitCode !== 0)
+            return { code: 404, body: { ref }, summary: `No branch ${ref} on GitHub yet` };
+          const tree = await run('git', [
+            'ls-tree',
+            '-r',
+            '--name-only',
+            'FETCH_HEAD',
+            '--',
+            under,
+          ]);
+          const files = tree.output.split('\n').filter(Boolean).slice(0, 3000);
+          return {
+            code: tree.exitCode === 0 ? 200 : 404,
+            body: { ref, files },
+            summary: `${files.length} files on ${ref}${a.data.path ? ` under ${a.data.path}` : ''}`,
+          };
+        }
         const r = await run('find', [
           under,
           '-type',
@@ -563,6 +603,33 @@ export class SandboxToolServer implements ToolServer {
       case 'fs.read': {
         const a = ReadArgs.safeParse(args);
         if (!a.success) return rejected(a.error.issues[0]!.message);
+        if (a.data.ref) {
+          const ref = a.data.ref;
+          const fetched = await run('git', [...auth, 'fetch', 'origin', ref]);
+          if (fetched.exitCode !== 0)
+            return { code: 404, body: { ref }, summary: `No branch ${ref} on GitHub yet` };
+          // One at a time: each reads the same fetched commit.
+          const at = [];
+          for (const p of a.data.paths) {
+            const path = safePath(p);
+            if (!path) at.push({ path: p, error: 'not readable' });
+            else {
+              const shown = await run('git', ['show', `FETCH_HEAD:${path}`]);
+              at.push(
+                shown.exitCode !== 0
+                  ? { path, error: 'not found' }
+                  : shown.output.length > MAX_FILE
+                    ? { path, error: `too large (${shown.output.length} bytes)` }
+                    : { path, content: redact(shown.output) },
+              );
+            }
+          }
+          return {
+            code: 200,
+            body: { ref, files: at },
+            summary: `Read ${at.filter((f) => 'content' in f).length} of ${at.length} files as ${ref} has them`,
+          };
+        }
         const files = await Promise.all(
           a.data.paths.map(async (p) => {
             const path = safePath(p);
@@ -883,6 +950,9 @@ export class SandboxToolServer implements ToolServer {
           return rejected(
             'The content model is empty: optimizely.config.mjs found no content types. Check its components glob matches the *.model.ts files.',
           );
+        // What the CMS refuses and the CLI's dry run lets through, said here in the model's words.
+        const faults = modelFaults(manifest);
+        if (faults.length) return rejected(faults.join(' '));
         const found = { contentTypes, displayTemplates };
         if (a.data.command === 'push-dry-run')
           return {
@@ -903,7 +973,7 @@ export class SandboxToolServer implements ToolServer {
           summary:
             pushed.exitCode === 0
               ? `Pushed ${contentTypes.length} content types and ${displayTemplates.length} display templates to the CMS`
-              : `optimizely-cms-cli config push: exit ${pushed.exitCode}`,
+              : `The CMS refused the push: ${pushFailure(pushed.output)}`,
         };
       }
       case 'exec.content-sdk-cli': {
@@ -1014,6 +1084,68 @@ const pushRefusal = (output: string) => {
     .slice(0, 3);
   return [bang, ...remote].filter(Boolean).join(' ') || lastError(output);
 };
+
+const named = (keys: string[], most = 4) =>
+  `${keys.slice(0, most).join(', ')}${keys.length > most ? ` and ${keys.length - most} more` : ''}`;
+
+/**
+ * What the CMS refuses in a content model that the CLI's dry run lets through, each said so the
+ * model files can be put right: the SDK's types don't catch a misnamed property option, and the
+ * CMS answers a push with the first one only.
+ */
+export function modelFaults(manifest: unknown): string[] {
+  const m = (manifest ?? {}) as {
+    contentTypes?: { key?: string; properties?: Record<string, unknown> }[];
+    displayTemplates?: { key?: string; settings?: Record<string, { choices?: object }> }[];
+  };
+  const misnamed: string[] = [];
+  for (const t of m.contentTypes ?? [])
+    for (const [name, property] of Object.entries(t.properties ?? {})) {
+      const p = (property ?? {}) as Record<string, unknown>;
+      const items = (p.items ?? {}) as Record<string, unknown>;
+      if (['required', 'localized'].some((f) => f in p || f in items))
+        misnamed.push(`${t.key}.${name}`);
+    }
+  const short: string[] = [];
+  for (const t of m.displayTemplates ?? [])
+    for (const [name, setting] of Object.entries(t.settings ?? {}))
+      for (const choice of Object.keys(setting?.choices ?? {}))
+        if (choice.length < 2) short.push(`${t.key}.${name} "${choice}"`);
+  return [
+    ...(misnamed.length
+      ? [
+          `${misnamed.length === 1 ? 'A property uses' : `${misnamed.length} properties use`} \`required\` or \`localized\` (${named(misnamed)}). The CMS calls them \`isRequired\` and \`isLocalized\` and refuses the whole push otherwise: rename them in the *.model.ts files.`,
+        ]
+      : []),
+    ...(short.length
+      ? [
+          `A display setting's choice key needs at least two characters (${named(short)}): rename it (\`cols3\` for \`3\`) and read the new key in the component.`,
+        ]
+      : []),
+  ];
+}
+
+/** Why the CMS refused a push, from the CLI's output: its error lines, without colours or labels. */
+export function pushFailure(output: string): string {
+  const lines = output
+    // eslint-disable-next-line no-control-regex
+    .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')
+    .split(/[\r\n]+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const at = lines.findIndex((l) => /^Error \d+:|^Errors:$/.test(l));
+  const said = (at < 0 ? lines.slice(-3) : lines.slice(at))
+    .filter((l) => !/^Errors:$|^- ERROR \d+$/.test(l))
+    .map((l) => l.replace(/^\[(DETAIL|FIELD)\]\s*/, '').replace(/^- /, ''))
+    .join(' ');
+  const imported = lines
+    .filter((l) => /Successfully imported/.test(l))
+    .map((l) => l.replace(/^- /, ''));
+  return `${said || 'the CLI gave no reason'}${imported.length ? ` What it did take: ${imported.join(' ')}` : ''}`.slice(
+    0,
+    340,
+  );
+}
 
 /** The line that says why a build failed: the page that failed to prerender, else the first error. */
 const firstFailure = (output: string) =>
