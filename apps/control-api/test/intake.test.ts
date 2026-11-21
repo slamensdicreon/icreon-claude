@@ -86,6 +86,11 @@ async function start(
     hosting?: Parameters<typeof buildApp>[0]['hosting'];
     /** What the platform reads off the target as a project starts (its `features` hook). */
     features?: NonNullable<PlatformPack['features']>;
+    /** Whose the hosting project of a name is, as the host answers. */
+    hostingOwner?: (
+      name: string,
+      repo: string | null,
+    ) => Promise<'ours' | 'another' | 'none' | null>;
   } = {},
 ) {
   const store = new InMemoryEventStore();
@@ -108,6 +113,7 @@ async function start(
       stop: opts.orchestrator ? async (id) => void stopped.push(id) : undefined,
       blobs,
       ...(opts.github ? { github: opts.github as never, buildOrg: 'icreon-launchworks' } : {}),
+      ...(opts.hostingOwner ? { hostingOwner: opts.hostingOwner } : {}),
     }),
     hosting: opts.hosting,
   });
@@ -471,6 +477,82 @@ describe('New Project wizard', () => {
       },
     ]);
     expect((await put('hostingProject', 'globex-again')).json().error.code).toBe('hosting_exists');
+  });
+
+  it("renames the hosting project of a running build when the name it has is another project's", async () => {
+    // The host is asked whose the project of the current name is: a record of it here is not
+    // enough, because one was once written from another project's head of the same name.
+    const asked: [string, string | null][] = [];
+    let owner: 'ours' | 'another' | 'none' | null = 'another';
+    const { store } = await start({
+      orchestrator: true,
+      hostingOwner: async (name, repo) => {
+        asked.push([name, repo]);
+        return owner;
+      },
+    });
+    const { projectId } = (await post('/projects', intake())).json() as { projectId: string };
+    await post(`/projects/${projectId}/start`);
+    const system = { kind: 'system', id: 'orchestrator' } as const;
+    const subject = { kind: 'project', id: projectId } as const;
+    const taken = 'https://globex-website.vercel.app';
+    await store.append(projectId, [
+      {
+        type: 'project.status',
+        actor: system,
+        subject,
+        severity: 'routine',
+        data: { status: 'running' },
+      },
+      // What the lookup once recorded: the other project's head, as this project's hosting.
+      {
+        type: 'project.updated',
+        actor: system,
+        subject,
+        severity: 'routine',
+        data: { hosting: { provider: 'vercel', project: 'globex-website', url: taken } },
+      },
+    ]);
+    const put = (value: string) =>
+      app!.inject({
+        method: 'PUT',
+        url: `/projects/${projectId}/target/hostingProject`,
+        payload: { value },
+      });
+    const view = async () =>
+      MissionControlSnapshot.parse(
+        (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+      ).project;
+    expect((await view()).hosting?.url).toBe(taken);
+
+    expect((await put('globex-optimizely')).statusCode).toBe(200);
+    expect(asked).toEqual([['globex-website', null]]);
+    const renamed = await view();
+    expect(renamed.intake?.target.hostingProject).toBe('globex-optimizely');
+    // The other project's address is forgotten with the name.
+    expect(renamed.hosting).toBeNull();
+
+    // The team then makes the project under the new name: it starts without the old address.
+    await store.append(projectId, [
+      {
+        type: 'project.updated',
+        actor: system,
+        subject,
+        severity: 'routine',
+        data: { hosting: { provider: 'vercel', project: 'globex-optimizely', url: null } },
+      },
+    ]);
+    expect((await view()).hosting).toEqual({
+      provider: 'vercel',
+      project: 'globex-optimizely',
+      url: null,
+    });
+    // Now the name is this project's own project: it stays.
+    owner = 'ours';
+    expect((await put('globex-third')).json().error.code).toBe('hosting_exists');
+    // When the host can't say, the project's own record decides.
+    owner = null;
+    expect((await put('globex-third')).json().error.code).toBe('hosting_exists');
   });
 
   it('sets the source site after intake, for the crawl and the agents', async () => {

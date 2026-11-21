@@ -304,9 +304,16 @@ export function applyEvent(s: ProjectState, e: LwEvent): void {
       if (d.budgets !== undefined) s.budgets = d.budgets;
       if (d.intakeTarget && s.intake)
         s.intake = { ...s.intake, target: { ...s.intake.target, ...d.intakeTarget } };
-      // A URL once known stays until a newer one replaces it.
-      if (d.hosting !== undefined)
-        s.hosting = { ...d.hosting, url: d.hosting.url ?? s.hosting?.url ?? null };
+      // A URL once known stays until a newer one replaces it, for the same hosting project: one
+      // recorded under another name was never this one's. `null` forgets the hosting, and the
+      // deployment recorded with it (the project was renamed before it was made).
+      if (d.hosting === null) {
+        s.hosting = null;
+        s.preview = { ...s.preview, target: null };
+      } else if (d.hosting !== undefined) {
+        const same = s.hosting?.project === d.hosting.project;
+        s.hosting = { ...d.hosting, url: d.hosting.url ?? (same ? s.hosting!.url : null) };
+      }
       if (d.sourceUrl !== undefined) {
         s.sourceUrl = d.sourceUrl;
         s.source = { ...s.source, url: d.sourceUrl };

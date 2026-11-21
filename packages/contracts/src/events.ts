@@ -431,7 +431,8 @@ export const EventBody = z.discriminatedUnion('type', [
       /** The live site being migrated; the crawl and QA tools may only reach its host. */
       sourceUrl: z.string().url().nullable().optional(),
       buildRepo: BuildRepo.optional(),
-      hosting: HostingState.optional(),
+      /** `null` forgets it: the hosting project was renamed before it was made. */
+      hosting: HostingState.nullable().optional(),
       /** Budgets the Director changed after start. */
       budgets: Budgets.optional(),
       /** Intake target values changed in Settings before Start, merged over intake's. */

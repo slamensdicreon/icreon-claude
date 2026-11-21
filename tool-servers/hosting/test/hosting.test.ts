@@ -169,6 +169,25 @@ describe('HostingToolServer', () => {
     const r = await server(v.fetch).call('project.create', {}, ctx);
     expect(r.code).toBe(422);
     expect(v.calls.some((c) => c.method === 'PATCH')).toBe(false);
+    // Nobody on the team can rename it: the refusal says who can, and where.
+    expect((r.body as { error: string }).error).toContain('the Director changes');
+  });
+
+  it("never takes another project's head of the same name for this project's own", async () => {
+    // A client's site on another platform holds the name, live, with variables of its own.
+    const records: HostingRecord[] = [];
+    const v = fakeVercel({
+      existing: { repo: 'someone/else' },
+      production: { alias: 'acme-site.vercel.app', state: 'READY' },
+    });
+    const r = await server(v.fetch, records).call('project.read', {}, ctx);
+    expect(r.code).toBe(409);
+    expect((r.body as { error: string }).error).toContain('linked to someone/else');
+    expect((r.body as { error: string }).error).toContain('this project has none yet');
+    // Its address is not recorded as this project's, and nothing of it is read or shown.
+    expect(records).toEqual([]);
+    expect(r.body).not.toHaveProperty('variables');
+    expect(v.calls.some((c) => /\/env$|\/deployments/.test(c.path))).toBe(false);
   });
 
   it('sets variables from the project, sensitive ones as sensitive, and never returns values', async () => {
