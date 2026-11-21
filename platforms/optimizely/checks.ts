@@ -547,22 +547,32 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
       const count = (pattern: RegExp) => (framed.html.match(pattern) ?? []).length;
       const fields = count(/data-epi-edit=/g);
       const blocks = count(/data-epi-block-id=/g);
+      // What must be marked depends on what the page holds. An application is created on an
+      // empty start page, and the shared header and footer arrive before its sections: a page
+      // with no sections has none to select, and that is not a fault of the preview route.
+      const start = await pageContent(ctx, `/content/${app.key}`, 'The start page');
+      if (isResult(start)) return start;
+      const sections = start.sections.length;
       const problems = [
         /communicationinjector\.js/.test(framed.html)
           ? null
           : "the preview does not load the CMS's communicationinjector.js, so edits never refresh it",
-        fields
+        fields || !sections
           ? null
           : 'nothing on the page is marked editable (no data-epi-edit): properties need pa(...)',
-        blocks
+        blocks || !sections
           ? null
           : 'no section can be selected (no data-epi-block-id): the composition wrapper needs pa(node)',
       ].filter((x): x is string => Boolean(x));
-      return problems.length
-        ? fail(problems, { fields, blocks })
-        : pass(
+      if (problems.length) return fail(problems, { fields, blocks, sections });
+      return sections
+        ? pass(
             `${host.host}${route} opens the start page in the editing frame: ${fields} editable fields, ${blocks} selectable sections and blocks.`,
-            { fields, blocks },
+            { fields, blocks, sections },
+          )
+        : pass(
+            `${host.host}${route} opens the start page in the editing frame and loads the CMS's script. The page has no sections yet, so there is none to select (${fields} editable fields so far); this is checked again once it has.`,
+            { fields, blocks, sections },
           );
     },
 

@@ -172,7 +172,7 @@ Still to do: the 30-day cleanup (M4).
 
 ## On Optimizely CMS (SaaS)
 
-`playbooks/optimizely-homepage-demo/` (0.1.0, 2026-11-20) is the same demo on the Optimizely
+`playbooks/optimizely-homepage-demo/` (0.1.0, 2026-11-20; 0.1.1 builds on the starter's generated registry) is the same demo on the Optimizely
 entity: this playbook's scope and method (the whole-site audit, the one-page Blueprint checked by
 `blueprint.demo-slice`, no pilot block, standing releases, the two gates) with
 `optimizely-saas-migration`'s team, intake and tools. Gate 2 is the Director's check in Visual

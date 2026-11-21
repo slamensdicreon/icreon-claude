@@ -298,6 +298,29 @@ describe('Optimizely checks', () => {
     expect(inert.detail).toContain('communicationinjector.js');
     expect(inert.detail).toContain('nothing on the page is marked editable');
     expect(inert.detail).toContain('no section can be selected');
+    // An application is created on an empty start page: the frame opens and loads the CMS's
+    // script, and there is nothing yet to mark. The same page with sections must mark them.
+    const empty = { 'optimizely-cms content.read': { code: 200, body: { properties: {} } } };
+    const injector =
+      '<script src="https://app-acme.cms.optimizely.com/util/javascript/communicationinjector.js"></script>';
+    const fresh = await run('head.preview-route', ctx({ ...links, ...empty }), {
+      [url]: bare,
+      [edit]: { status: 200, html: `${injector}<main></main>` },
+    });
+    expect(fresh).toMatchObject({ status: 'pass', data: { sections: 0, blocks: 0 } });
+    expect(fresh.detail).toContain('no sections yet');
+    expect(
+      await run('head.preview-route', ctx({ ...links, ...empty }), {
+        [url]: bare,
+        [edit]: { status: 200, html: '<main></main>' },
+      }),
+    ).toMatchObject({ status: 'fail' });
+    expect(
+      await run('head.preview-route', ctx(links), {
+        [url]: bare,
+        [edit]: { status: 200, html: `${injector}<main><h1>Hi</h1></main>` },
+      }),
+    ).toMatchObject({ status: 'fail' });
     // The frame can't be opened yet (no host on the application): not a pass.
     expect(await run('head.preview-route', ctx(), { [url]: bare })).toMatchObject({
       status: 'pending',

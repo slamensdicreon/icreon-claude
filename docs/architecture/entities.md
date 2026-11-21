@@ -202,7 +202,7 @@ they would run with their own teams). The team goes from 24 roles to 21.
   `platform` step of a project's deletion (the application lets go of the project's hosts).
   An application has a primary host (production: where visitors get the site and what Graph's
   routes are on) and a preview host (the editing address: where Visual Builder opens pages).
-- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): twenty-one rows proven on
+- **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): twenty-three rows proven on
   a live instance, then the rows from the documentation that no build has met yet.
 - **Playbooks**, both in the order the platform sets (content types first; then the application,
   whose start page is of a pushed experience type, with its host and live preview; then shared
@@ -233,7 +233,7 @@ draws it, cleanup on delete, a simulated project, and the product's wording.
 
 | #   | Work | Size |
 | --- | ---- | ---- |
-| O3  | Create the starter's template repository (`icreon-launchworks/optimizely-starter-nextjs`, marked as a template, readable by the GitHub App). Its contents are ready: Optimizely's official starter (`npx @optimizely/cms-create-app head --template nextjs-starter`) in `head/`. The pack names it already; until it exists, creating a build repository answers that GitHub can't find the starter | S |
+| O3  | Done (2026-11-21): the starter's template repository exists (`icreon-launchworks/optimizely-starter-nextjs`, marked as a template). `head/` is Optimizely's official starter (`npx @optimizely/cms-create-app head --template nextjs-starter`) without its samples, with a generated component registry and the routing and preview code the first live build proved. Still to confirm on a live project: the GitHub App can read it (it is private) | S |
 | O5  | Browser `visual-builder.drive` and `video.record`: the same capability gap as `page-builder.drive`; M7's driver should cover both editors. Until then the Visual Builder steps are by hand, as the Page builder ones are | L (shared with M7) |
 | O6  | Catalog grouping and UI: `entity.yaml`, `GET /entities`, the wizard's entity step | S |
 | O7  | Run both playbooks end to end with the Director on a live project (the first build was made through the same REST calls and tool servers, to prove them) | – |
@@ -255,11 +255,15 @@ draws it, cleanup on delete, a simulated project, and the product's wording.
 3. **Hosting on our Vercel team**, as for SitecoreAI, with the editing host as a hostname of the
    application. Optimizely's own frontend hosting (`optimizely-cms-cli deploy`) is possible later
    as a second hosting provider.
-4. **The starter**: Optimizely's own, unchanged, as with Sitecore's. The Microsoft build started
-   from `npx @optimizely/cms-create-app --template nextjs-starter` and the team added the design
-   system, the registry and the model files as project work, the way the SitecoreAI team does on
-   Sitecore's starter. What remains is a template repository holding that starter (O3): GitHub
-   generates a build repository only from a repository marked as a template.
+4. **The starter**: Optimizely's own, as a baseline of ours in a template repository (GitHub
+   generates a build repository only from one). The Microsoft build started from
+   `npx @optimizely/cms-create-app --template nextjs-starter` and one person added the design
+   system, the registry and the model files. A team of agents builds a component per branch, and
+   on the plain starter every branch had to remove the same samples and add a line to the same
+   hand-written registry, so the baseline removes the samples, generates the registry from the
+   component folders (as the Content SDK generates SitecoreAI's component map), adds the
+   `type-check` script the sandbox's build runs, and carries the routing, preview, shared block
+   and alt text code that build proved.
 5. **Catalog grouping now or after the pilot** (O6): small either way; the wizard works today
    because the two playbooks show their entity names.
 

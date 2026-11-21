@@ -367,7 +367,10 @@ describe('the catalog, across platforms', () => {
     // A version that isn't kept, or none: the current one.
     expect(versionOf(entry, '0.1.0')).toBe(entry);
     expect(versionOf(entry, null)).toBe(entry);
-    // The demo has only ever had one version.
-    expect(catalog.get('optimizely-homepage-demo')!.older).toEqual([]);
+    // The demo's first version is kept for a project started before the starter's generated
+    // registry (0.1.1).
+    expect(
+      catalog.get('optimizely-homepage-demo')!.older!.map((o) => o.playbook.manifest.version),
+    ).toEqual(['0.1.0']);
   });
 });
