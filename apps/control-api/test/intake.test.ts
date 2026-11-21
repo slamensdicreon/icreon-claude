@@ -450,7 +450,27 @@ describe('New Project wizard', () => {
         data: { status: 'running' },
       },
     ]);
-    expect((await put('hostingProject', 'globex-later')).json().error.code).toBe('started');
+    // Started, an intake value is fixed, with one exception: the hosting project is named at
+    // intake and made in the build, so until it exists its name can still change (a name another
+    // project holds would otherwise stop the build, with nobody on the team able to rename it).
+    expect((await put('site', 'Other')).json().error.code).toBe('started');
+    expect((await put('hostingProject', 'Globex Later')).statusCode).toBe(422);
+    expect((await put('hostingProject', 'globex-later')).statusCode).toBe(200);
+    const running = MissionControlSnapshot.parse(
+      (await app!.inject(`/projects/${projectId}/mission-control`)).json(),
+    );
+    expect(running.project.intake?.target.hostingProject).toBe('globex-later');
+    // Once the hosting project is made under that name, it stays.
+    await store.append(projectId, [
+      {
+        type: 'project.updated',
+        actor: { kind: 'system', id: 'orchestrator' },
+        subject: { kind: 'project', id: projectId },
+        severity: 'routine',
+        data: { hosting: { provider: 'vercel', project: 'globex-later', url: null } },
+      },
+    ]);
+    expect((await put('hostingProject', 'globex-again')).json().error.code).toBe('hosting_exists');
   });
 
   it('sets the source site after intake, for the crawl and the agents', async () => {

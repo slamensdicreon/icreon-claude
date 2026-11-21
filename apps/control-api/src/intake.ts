@@ -90,6 +90,8 @@ interface ConnectionRecord {
 }
 
 const CONNECTION = 'connection:';
+/** The intake value that names the head's hosting project. */
+const HOSTING_PROJECT = 'hostingProject';
 
 /** A name under a prefix, once; Vercel's and GitHub's limit is 100 characters. */
 export const prefixed = (prefix: string, name: string) =>
@@ -760,7 +762,19 @@ export class IntakeService {
     if (s.mode !== 'live' || !s.playbook || !s.intake) {
       throw new CommandError(409, 'not_live', 'Only real projects have intake values.');
     }
-    if (s.status !== 'intake') {
+    // One value outlives Start: the head's hosting project is named at intake but made in the
+    // build, and a name another project turns out to hold stops that step for good (nobody on
+    // the team can rename it). Until the hosting project exists, the Director still can.
+    const lateHosting =
+      key === HOSTING_PROJECT && (s.status === 'running' || s.status === 'paused');
+    if (lateHosting && s.hosting) {
+      throw new CommandError(
+        409,
+        'hosting_exists',
+        'The hosting project has been created under this name, so it can no longer change here.',
+      );
+    }
+    if (s.status !== 'intake' && !lateHosting) {
       throw new CommandError(
         409,
         'started',
