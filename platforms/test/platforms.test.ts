@@ -21,6 +21,15 @@ describe('showsHeading', () => {
     expect(showsHeading(page, source!)).toBe(true);
     expect(showsHeading(page, 'Learn more about our Vulcan series')).toBe(false);
   });
+
+  it('never owes a new page what the source says to a program reading it', async () => {
+    const { headingsOf } = await import('../sitecoreai/checks');
+    expect(
+      headingsOf(
+        '<h1>Your current User-Agent string appears to be from an automated process, if this is incorrect, please click this link:</h1><h2>Meet the new Surface</h2><h2>Process automation for teams</h2>',
+      ),
+    ).toEqual(['Meet the new Surface', 'Process automation for teams']);
+  });
 });
 
 describe('platform packs', () => {

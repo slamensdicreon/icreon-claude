@@ -1185,7 +1185,17 @@ export const headingsOf = (html: string) =>
   [...html.matchAll(/<h[1-3]\b([^>]*)>([\s\S]*?)<\/h[1-3]>/gi)]
     .filter((m) => !/class="[^"]*(screen-reader-text|sr-only|visually-hidden)/i.test(m[1]!))
     .map((m) => visibleText(m[2]!))
-    .filter((h) => h.length > 2);
+    .filter((h) => h.length > 2 && !isBotNotice(h));
+
+/**
+ * What a site says to a reader it takes for a program, in a heading of an otherwise whole page
+ * ("Your current User-Agent string appears to be from an automated process…"). It is addressed
+ * to the check, not part of the page: no visitor sees it and no new page should carry it.
+ */
+export const isBotNotice = (text: string) =>
+  /\bautomated (process|quer(y|ies)|requests?|access|traffic)\b|\bunusual traffic\b|\bare you a (robot|human)\b|\bverify (that )?you are (a )?human\b/i.test(
+    text,
+  );
 
 /**
  * The components in a Content SDK page's layout data, with the fields each received: read from

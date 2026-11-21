@@ -247,6 +247,13 @@ const primaryHost = (a: ApplicationView) =>
 const buildHost = (a: ApplicationView) =>
   (a.hosts ?? []).find((h) => h.type === 'preview') ?? primaryHost(a);
 
+/**
+ * Why the start page didn't answer, with the cause seen on a build when it is published and in
+ * Graph all the same: the host was deployed before it was told its application's host.
+ */
+const startPageAnswered = (status: number, host: string) =>
+  `The start page answered ${status || 'nothing'}${status === 404 ? ` on ${host}. If it is published and in Graph, that host was built before OPTIMIZELY_APPLICATION_HOST was set (a deployment keeps the variables it was built with): deploy it again, with hosting.deploy.preview of the integration branch` : ''}`;
+
 /** A name as its words: lower case, without the file extension. */
 const words = (name: string) =>
   name
@@ -1615,7 +1622,7 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
       const host = buildHost(app);
       if (!host) return fail(['The application has no host']);
       const p = await page(cfg, `https://${host.host}/${languages[0] ?? 'en'}/`);
-      if (p.status !== 200) return fail([`The start page answered ${p.status || 'nothing'}`]);
+      if (p.status !== 200) return fail([startPageAnswered(p.status, host.host)]);
       const links = (tag: string) =>
         (new RegExp(`<${tag}\\b[\\s\\S]*?</${tag}>`, 'i').exec(p.html)?.[0].match(/<a\b/gi) ?? [])
           .length;

@@ -117,7 +117,7 @@ describe('setUpHosting', () => {
     const patch = vercel.calls.find((c) => c.method === 'PATCH')!;
     expect(patch.body).toMatchObject({ ssoProtection: null });
     // The secrets went to Vercel as sensitive values, and nowhere in the answer.
-    const env = vercel.calls.find((c) => c.path.endsWith('/env'))!.body as {
+    const env = vercel.calls.find((c) => c.method === 'POST' && c.path.endsWith('/env'))!.body as {
       key: string;
       value: string;
       type: string;
@@ -251,7 +251,8 @@ describe('setUpHosting', () => {
       const vercel = fakeVercel();
       const { w } = wiring(optimizely(), vercel.fetch);
       await setUpHosting({ ...w, tokenFor: async () => 'cms-token' }, 'p1');
-      const env = vercel.calls.find((c) => c.path.endsWith('/env'))!.body as {
+      const env = vercel.calls.find((c) => c.method === 'POST' && c.path.endsWith('/env'))!
+        .body as {
         key: string;
         value: string;
       }[];

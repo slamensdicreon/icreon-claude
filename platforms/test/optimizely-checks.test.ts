@@ -388,6 +388,18 @@ describe('Optimizely parity checks', () => {
     expect(await run('parity.render', ctx({}, inventory), pages)).toMatchObject({
       status: 'pending',
     });
+    // A whole page whose one heading is the site's notice to automated readers: nothing to owe.
+    const noticed = {
+      ...pages,
+      'https://www.acme.com/': {
+        status: 200,
+        html: `<main><h1>Your current User-Agent string appears to be from an automated process, if this is incorrect, please click this link:</h1>${'<p>Real copy of the page.</p>'.repeat(30)}</main>`,
+      },
+    };
+    expect(await run('parity.render', ctx({}, inventory), noticed)).toMatchObject({
+      status: 'pending',
+      detail: 'The source page https://www.acme.com/ shows no headings to compare.',
+    });
     const challenged = {
       ...pages,
       'https://www.acme.com/': { status: 200, html: '<title>Just a moment...</title>' },

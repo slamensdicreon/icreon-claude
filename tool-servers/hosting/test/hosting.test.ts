@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { HostingToolServer, type HostingRecord } from '../src';
 
 function fakeVercel(
-  opts: { existing?: { repo: string }; production?: { alias: string; state: string } } = {},
+  opts: {
+    existing?: { repo: string };
+    production?: { alias: string; state: string };
+    envs?: { key: string; target: string[] }[];
+  } = {},
 ) {
   let editingAt: string | undefined;
   let slowReads = 0;
@@ -66,6 +70,8 @@ function fakeVercel(
             ]
           : [],
       });
+    if (p === '/v10/projects/acme-site/env' && method === 'GET')
+      return json(200, { envs: opts.envs ?? [] });
     if (p === '/v10/projects/acme-site/env' && method === 'POST')
       return json(201, { created: body, failed: [] });
     if (p === '/v13/deployments' && method === 'POST')
@@ -197,13 +203,36 @@ describe('HostingToolServer', () => {
     expect(JSON.stringify(r)).not.toContain('secret-');
     expect(r.body).toMatchObject({ missing: ['the preview Context ID'] });
     const posts = v.calls
-      .filter((c) => c.path.endsWith('/env'))
+      .filter((c) => c.path.endsWith('/env') && c.method === 'POST')
       .map((c) => c.body as { type: string; key: string; target: string[] }[]);
     expect(posts).toHaveLength(2);
     expect(posts[0]!.find((x) => x.key === 'SITECORE_EDITING_SECRET')).toMatchObject({
       type: 'sensitive',
       target: ['preview'],
     });
+  });
+
+  it('says a variable the project gets only now is in no deployment yet', async () => {
+    const repo = 'icreon-launchworks/acme-site-sitecoreai';
+    // The first variables of a project: nothing is deployed with others.
+    const first = await server(fakeVercel({ existing: { repo } }).fetch).call(
+      'env.set',
+      { target: 'preview' },
+      ctx,
+    );
+    expect(first.summary).not.toContain('deploy again');
+    // Later, one more: the deployments already built don't have it.
+    const v = fakeVercel({
+      existing: { repo },
+      envs: [{ key: 'NEXT_PUBLIC_DEFAULT_SITE_NAME', target: ['preview'] }],
+    });
+    const r = await server(v.fetch).call('env.set', { target: 'preview' }, ctx);
+    expect(r.code).toBe(200);
+    expect(r.summary).toContain('New since the last deployments: SITECORE_EDITING_SECRET');
+    expect(r.summary).toContain('deploy again (deploy.preview of the integration branch');
+    expect(r.summary).not.toMatch(
+      /New since the last deployments: [^.]*NEXT_PUBLIC_DEFAULT_SITE_NAME/,
+    );
   });
 
   it('deploys only agent branches as previews, the default branch to production, and records a ready deployment', async () => {
