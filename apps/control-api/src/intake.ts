@@ -514,8 +514,28 @@ export class IntakeService {
       sourceUrl: s.sourceUrl,
       budgets: s.budgets,
       playbookId: s.playbook?.id ?? 'sitecoreai-migration',
-      features: this.featuresOf(s),
+      features: [...new Set([...this.featuresOf(s), ...(await this.platformFeatures(s))])],
     });
+  }
+
+  /**
+   * Features the platform reads off the target as the project starts (a key whose content
+   * rights are already proven), so the plan leaves out the steps that would ask for them. A
+   * platform that can't be reached adds none: the steps are then asked as usual.
+   */
+  private async platformFeatures(s: ProjectState): Promise<string[]> {
+    const pack = this.packOf(s);
+    if (!pack?.features || !s.intake) return [];
+    const credential = async (id: string) => {
+      const ref = s.credentials[id]?.reference;
+      return ref ? (JSON.parse(await this.deps.vault.open(ref)) as Record<string, string>) : null;
+    };
+    try {
+      return await pack.features(s.intake.target, { credential });
+    } catch (err) {
+      console.warn(`Platform features for ${s.projectId} not read: ${(err as Error).message}`);
+      return [];
+    }
   }
 
   /**

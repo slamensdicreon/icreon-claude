@@ -17,8 +17,10 @@
 # 0.5.1: the build repository's starter generates its component registry from the component
 # folders and carries no samples, so a component is one folder and branches built at the same time
 # never edit the same file; the prompts say so.
+# 0.5.2: a key that has already published content on the instance is not asked for its content
+# rights, and names an earlier build holds are settled as one decision: continue it, or reset.
 id: optimizely-saas-migration
-version: 0.5.1
+version: 0.5.2
 name: Build an Optimizely CMS (SaaS) website
 description: >-
   Rebuilds a client's live site as an Optimizely CMS (SaaS) application with a Next.js head on

@@ -30,9 +30,12 @@ templates:
   # the Root. No call can test that without writing, and the first write is after Gate 1 (the
   # application, in phase 5), so the Director confirms it here. If it is missed, that first write
   # stops as an access card saying the same.
+  # Left out when the key has already created and published content on the instance (the
+  # platform reads that as the project starts): its rights are then proven, not asked for.
   - id: confirm-content-rights
     phase: 0
     role: deployment-engineer
+    unless: content-rights-proven
     title: Give the API key content rights in the CMS
     manual: >-
       In the CMS, open Settings > Set Access Rights and select the Root. Add the API key (search
