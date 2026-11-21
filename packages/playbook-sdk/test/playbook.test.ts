@@ -444,6 +444,6 @@ describe('the catalog, across platforms', () => {
     // registry (0.1.1).
     expect(
       catalog.get('optimizely-homepage-demo')!.older!.map((o) => o.playbook.manifest.version),
-    ).toEqual(['0.1.1', '0.1.0']);
+    ).toEqual(['0.1.2', '0.1.1', '0.1.0']);
   });
 });

@@ -19,8 +19,12 @@
 # never edit the same file; the prompts say so.
 # 0.5.2: a key that has already published content on the instance is not asked for its content
 # rights, and names an earlier build holds are settled as one decision: continue it, or reset.
+# 0.5.3: Discovery and the Blueprint are checked as on SitecoreAI (what the source site has that
+# would otherwise surface mid-migration, and the model contract at Gate 1), the shared header,
+# footer and navigation are checked for content, page titles against the source's, and the pilot
+# is judged on the start page alone.
 id: optimizely-saas-migration
-version: 0.5.2
+version: 0.5.3
 name: Build an Optimizely CMS (SaaS) website
 description: >-
   Rebuilds a client's live site as an Optimizely CMS (SaaS) application with a Next.js head on

@@ -17,7 +17,7 @@ const PLATFORM_KNOWLEDGE = fileURLToPath(
 describe('optimizely-homepage-demo playbook', () => {
   it('loads, with the Blueprint gate and the Visual Builder gate', async () => {
     const pb = await loadPlaybook(DEMO);
-    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.2' });
+    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.3' });
     expect(pb.manifest.phases).toHaveLength(10);
     expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
       2, 9,
@@ -119,7 +119,7 @@ describe('optimizely-homepage-demo playbook', () => {
     const { blueprint } = await loadFixtures(DEMO);
     const result = await CHECKS['blueprint.demo-slice']!({
       projectId: 'p1',
-      state: { playbook: { id: 'optimizely-homepage-demo', version: '0.1.2' } },
+      state: { playbook: { id: 'optimizely-homepage-demo', version: '0.1.3' } },
       library: {
         read: async (_p: string, id: string) =>
           id === 'blueprint' ? { content: JSON.stringify(blueprint) } : null,

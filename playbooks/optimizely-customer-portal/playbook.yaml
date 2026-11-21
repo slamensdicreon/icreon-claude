@@ -26,7 +26,7 @@ description: >-
   Rebuilds a client or customer portal prototype as a portal on Optimizely CMS (SaaS): a sign-in
   that looks real and signs into demo personas, navigation by role, pages and words that
   marketers own in Visual Builder, content shown by role, and working journeys on simulated,
-  resettable data, ready to present.
+  resettable data, ready to present. First version: not yet run on a live project.
 platform: optimizely
 charter:
   mission: >-
