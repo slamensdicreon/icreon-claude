@@ -231,6 +231,78 @@ describe('sitecoreai-customer-portal playbook', () => {
   });
 });
 
+describe('optimizely-customer-portal playbook', () => {
+  const PORTAL = join(ROOT, 'optimizely-customer-portal');
+
+  it('loads and passes bundle validation, with the Blueprint and acceptance gates', async () => {
+    const pb = await loadPlaybook(PORTAL);
+    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.0' });
+    expect(pb.manifest.phases).toHaveLength(8);
+    expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
+      2, 7,
+    ]);
+    expect(validatePlaybook(pb)).toEqual([]);
+    // The same method as every playbook: one Lead per workstream under the Chief of Staff. The
+    // team is the Optimizely one without the roles a portal has no work for (no crawl, no
+    // parity, no audits): sixteen.
+    const r = roster(pb);
+    expect(r).toHaveLength(16);
+    expect(
+      r
+        .filter((a) => a.tier === 'lead')
+        .map((a) => a.workstream)
+        .sort(),
+    ).toEqual(['content', 'discovery', 'engineering', 'quality']);
+    for (const t of pb.plan.templates) {
+      const role = pb.roles.find((x) => x.role === t.role);
+      expect(role, t.id).toBeDefined();
+      expect(role!.activePhases === 'all' || role!.activePhases.includes(t.phase), t.id).toBe(true);
+    }
+    // It closes on the Director's UAT on production: each persona walked, then Visual Builder.
+    expect(pb.plan.templates.find((t) => t.id === 'director-uat')).toMatchObject({
+      phase: 7,
+      dependsOn: ['walk-*'],
+      manual: expect.stringContaining('Visual Builder'),
+    });
+    expect(pb.plan.templates.find((t) => t.id === 'walk-{key}')).toMatchObject({
+      forEach: 'personas',
+      manual: expect.any(String),
+    });
+    expect(pb.plan.templates.find((t) => t.id === 'draft-blueprint')?.acceptance).toEqual([
+      'validator:blueprint.portal',
+      'validator:blueprint.personas',
+    ]);
+  });
+
+  it('grants every tool a role prompt tells the agent to use', async () => {
+    expect(await ungranted(PORTAL, await loadPlaybook(PORTAL))).toEqual([]);
+  });
+
+  it('loads its prompts with the platform’s pitfalls and its own two references', async () => {
+    const pb = await loadPlaybook(PORTAL);
+    const prompts = await loadRolePrompts(PORTAL, pb, [OPTIMIZELY_KNOWLEDGE]);
+    const prompted = (await readdir(join(PORTAL, 'prompts'))).map((f) => f.slice(0, -3));
+    const consulting = pb.roles.filter((r) => r.knowledge.length).map((r) => r.role);
+    expect(Object.keys(prompts).sort()).toEqual([...new Set([...prompted, ...consulting])].sort());
+    expect(prompts['component-engineer']).toContain(
+      'Reference: known Optimizely CMS (SaaS) pitfalls',
+    );
+    // How a portal is delivered on this platform reaches everyone who builds or describes it.
+    for (const role of [
+      'solution-architect',
+      'component-engineer',
+      'head-integrator',
+      'content-migrator',
+      'handover-writer',
+    ])
+      expect(prompts[role], role).toContain(
+        'Reference: a customer portal on Optimizely CMS (SaaS)',
+      );
+    expect(prompts['handover-writer']).toContain('Reference: Definition of Done (customer portal)');
+    expect(prompts['component-engineer']).not.toContain('SitecoreAI pitfalls');
+  });
+});
+
 describe.each(['optimizely-saas-migration', 'optimizely-homepage-demo'])('%s playbook', (id) => {
   const OPTIMIZELY = join(ROOT, id);
 
@@ -312,6 +384,7 @@ describe('the catalog, across platforms', () => {
   it('loads every playbook folder with a platform pack, a charter and the two Director gates', async () => {
     const catalog = await loadCatalog(ROOT);
     expect([...catalog.keys()].sort()).toEqual([
+      'optimizely-customer-portal',
       'optimizely-homepage-demo',
       'optimizely-saas-migration',
       'sitecoreai-customer-portal',

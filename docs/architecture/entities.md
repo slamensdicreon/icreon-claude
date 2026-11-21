@@ -194,8 +194,10 @@ they would run with their own teams). The team goes from 24 roles to 21.
   `hostname.registered`, `graph.published`, `routes.resolve`, `head.preview-route`,
   `head.pages-render`, `head.header-footer`, `parity.render`, `parity.visual`, `parity.page`,
   `media.alt-text`, `experience.redirects-resolve`); the step-based `types.defined` and
-  `manifest.replays` are in `packages/stack/src/review.ts`. Every check the two playbooks name
-  is implemented.
+  `manifest.replays` are in `packages/stack/src/review.ts`. The customer portal's own are there
+  too (`blueprint.portal`, `portal.sign-in`, `portal.pilot-page`, `portal.pages-render`,
+  `portal.role-content`, `portal.production`): they sign in as a demo persona before they read a
+  page. Every check the three playbooks name is implemented.
 - **Operations**: the pack's `starter` and `buildRecipe` (build repositories), `facts` (what
   each call made), `pageComponents` (what a route renders, for routing a failed check), the
   Director's hosting setup (the editing host becomes the application's preview host) and the
@@ -204,12 +206,15 @@ they would run with their own teams). The team goes from 24 roles to 21.
   routes are on) and a preview host (the editing address: where Visual Builder opens pages).
 - **Knowledge** (`platforms/optimizely/knowledge/known-pitfalls.md`): twenty-three rows proven on
   a live instance, then the rows from the documentation that no build has met yet.
-- **Playbooks**, both in the order the platform sets (content types first; then the application,
+- **Playbooks**, all in the order the platform sets (content types first; then the application,
   whose start page is of a pushed experience type, with its host and live preview; then shared
   blocks and pages, published as they are written, because the head and the checks read
-  published content): `playbooks/optimizely-saas-migration` (the whole site) and
+  published content): `playbooks/optimizely-saas-migration` (the whole site),
   `playbooks/optimizely-homepage-demo` (the audit, then the homepage, header, footer and
-  navigation; see [homepage-demo-playbook.md](homepage-demo-playbook.md)).
+  navigation; see [homepage-demo-playbook.md](homepage-demo-playbook.md)) and
+  `playbooks/optimizely-customer-portal` (a portal prototype rebuilt behind a demo sign-in; see
+  [the customer portal on Optimizely](#the-customer-portal-on-optimizely) below). The entity
+  now offers the same three playbooks SitecoreAI does.
 - **First build**: Microsoft's homepage, the same one the SitecoreAI demo built, in
   `icreon-launchworks/microsoft-sitecoreai` under `examples/optimizely-nextjs`, live at
   https://microsoft-optimizely.vercel.app: 19 content types and 11 display templates (prefix
@@ -222,6 +227,45 @@ they would run with their own teams). The team goes from 24 roles to 21.
 `platforms/test/platforms.test.ts`, `platforms/test/optimizely-checks.test.ts`,
 `tool-servers/optimizely/test` and `tool-servers/sandbox/test` cover them; the read operations
 the content writes (media, shared blocks, pages, compositions, publishing) and every check were also run against the live instance.
+
+### The customer portal on Optimizely
+
+`playbooks/optimizely-customer-portal/` (0.1.0, 2026-11-21) is `sitecoreai-customer-portal` on
+the Optimizely entity, derived the way the homepage demo was: that playbook's scope and method
+(the same charter outcomes, brief, eight phases and two gates; the shell built once before the
+components; the pilot; a walk per persona and the Director's UAT on production) on
+`optimizely-saas-migration`'s team, intake, tools and platform order. Sixteen roles: the
+Optimizely team without the crawl, parity and audit roles a portal has no work for.
+**Nothing in it has run against a live instance**; `knowledge/portal-on-optimizely.md` in the
+playbook says how each capability is delivered and lists what is unproven.
+
+| SitecoreAI portal | Optimizely portal |
+| --- | --- |
+| Sign-in into demo personas, signed sessions, the sign-in gate, navigation by role, the demo data service with Reset demo | The same, in the head: the shell's code (`src/proxy.ts`, `src/portal/`, `/api/session`, `/api/demo`) on the Optimizely starter. The session is signed with a key derived from `BLOB_READ_WRITE_TOKEN` (no tool sets a secret of the portal's own); the gate lets `/preview` through for Visual Builder |
+| Renderings, datasource templates, a container with dynamic placeholders for the dashboard's columns | Content types in code with the project's prefix, each with a default display template; the page type is one experience type; a section's column is a display setting (`column`), because `composition.write` composes whole sections |
+| Personalization: variant datasources made by agents, then audiences and page variants made by hand in Page builder (`personalize-by-role`) | No product beyond the CMS: every section's display template carries a **Shown to** setting (`audience`: everyone, or one role), the agents place each role's sections with the page, and the head shows a signed-in persona the sections set to everyone or to their role. A marketer changes it in Visual Builder. No step by hand; `role-content` proves it and writes the plan |
+| Draft content read through the preview Context ID; nothing published | The head reads published content only, so pages are published as they are composed: standing releases (the portal's own application and Vercel addresses; behind the sign-in on the editing address, while production runs the bare starter until phase 6). Creating the application and the two releases of phase 6 ask the Director |
+| `blueprint.coverage`, `blueprint.personas` | `blueprint.portal` (this platform's model contract, and every role's content placed for that role alone) and the shared `blueprint.personas`, which reads only personas, pages and components |
+| Checks of the site's structure and the editing host | The website playbooks' structure checks, and the portal's own, which sign in first: `portal.sign-in` (the gate, every demo account, a stranger refused), `portal.pilot-page`, `portal.pages-render` (each page as a persona who may open it), `portal.role-content` (each persona sees their own sections and none of another role's), `portal.production` |
+
+Left out, each because a portal page answers a signed-out reader with the sign-in screen or
+because the check reads SitecoreAI's contract: `head.pages-render`, `routes.resolve`,
+`head.header-footer`, `head.sections`, the parity checks (the SitecoreAI portal has none
+either: fidelity is the Director's walk), `component-map.registered`, `editing-host.responds`,
+`head.editing-scripts`, and SitecoreAI's structural and editor checks.
+
+Open for the Director: whether publishing a portal page should ask each time (it is standing
+now); whether a client with Web or Feature Experimentation should use it for content by role
+(the playbook records it as an open decision at Gate 1 and builds the setting regardless);
+a section is shown to everyone or to exactly one role (content two of three roles share is
+placed twice); and the session secret (the Director can set `DEMO_SESSION_SECRET` in Vercel).
+
+Tests: `packages/stack/test/optimizely-customer-portal.test.ts` (it loads, the example
+Blueprint's plan is in the platform's order with the pilot first, both Blueprint checks pass,
+prompts name only granted tools), `packages/orchestrator/test/optimizely-customer-portal.test.ts`
+(a whole project with stub agents, with and without content by role) and
+`platforms/test/optimizely-portal-checks.test.ts` (the checks against a head that answers as
+the prompts fix it).
 
 ## The Optimizely entity: to build
 
@@ -236,9 +280,9 @@ draws it, cleanup on delete, a simulated project, and the product's wording.
 | O3  | Done (2026-11-21): the starter's template repository exists (`icreon-launchworks/optimizely-starter-nextjs`, marked as a template). `head/` is Optimizely's official starter (`npx @optimizely/cms-create-app head --template nextjs-starter`) without its samples, with a generated component registry and the routing and preview code the first live build proved. Still to confirm on a live project: the GitHub App can read it (it is private) | S |
 | O5  | Browser `visual-builder.drive` and `video.record`: the same capability gap as `page-builder.drive`; M7's driver should cover both editors. Until then the Visual Builder steps are by hand, as the Page builder ones are | L (shared with M7) |
 | O6  | Catalog grouping and UI: `entity.yaml`, `GET /entities`, the wizard's entity step | S |
-| O7  | Run both playbooks end to end with the Director on a live project (the first build was made through the same REST calls and tool servers, to prove them) | – |
+| O7  | Run the playbooks end to end with the Director on a live project (the first build was made through the same REST calls and tool servers, to prove them). The customer portal has not met a live instance at all: its shell, its content by role and its checks are a design until a first run | – |
 | O8  | Webhooks from Graph to the head for on-demand revalidation; the head revalidates on a timer until then. Enabling a locale stays a Director step: locales are instance-wide | S |
-| O9  | Two shared checks still read SitecoreAI's contract, so the Optimizely plans leave them out: `blueprint.coverage` (`attrs.fields`, `attrs.rendering`, `attrs.queryBudget`) and `editing-host.responds` (`/api/editing/config`). The Blueprint is judged by the Discovery Lead and Gate 1 | S |
+| O9  | Two shared checks still read SitecoreAI's contract, so the Optimizely plans leave them out: `blueprint.coverage` (`attrs.fields`, `attrs.rendering`, `attrs.queryBudget`) and `editing-host.responds` (`/api/editing/config`). The website's Blueprint is judged by the Discovery Lead and Gate 1; the homepage demo's by `blueprint.demo-slice`, the portal's by `blueprint.portal` | S |
 | O10 | The large-site bulk import (`packages/stack/src/import`, the page-template checks) writes through `sitecore-authoring` only. An Optimizely site of several hundred pages is migrated page by page | L |
 | O11 | Blueprints need a right of their own on the instance; where the API key lacks it an editor saves the blueprint in Visual Builder | – |
 

@@ -11,7 +11,11 @@ import { describe, expect, it } from 'vitest';
 import { CHECKS } from '../src';
 
 const dir = (id: string) => fileURLToPath(new URL(`../../../playbooks/${id}`, import.meta.url));
-const PLAYBOOKS = ['optimizely-saas-migration', 'optimizely-homepage-demo'];
+const PLAYBOOKS = [
+  'optimizely-saas-migration',
+  'optimizely-homepage-demo',
+  'optimizely-customer-portal',
+];
 // Two projects on one instance: content types, templates and Graph are shared between them.
 const acme = optimizelyBindings({ application: 'Acme Site', typePrefix: 'Acme' });
 

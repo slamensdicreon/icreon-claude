@@ -310,6 +310,7 @@ describe('scenarios by playbook', () => {
     expect(scenarioFor(await loadPlaybook(PLAYBOOK))).toBe(optimizelyScenario);
     // A playbook without a scripted engagement has none, rather than another playbook's.
     expect(scenarioFor(await loadPlaybook(dir('optimizely-homepage-demo')))).toBeUndefined();
+    expect(scenarioFor(await loadPlaybook(dir('optimizely-customer-portal')))).toBeUndefined();
     expect(scenarioFor(await loadPlaybook(dir('sitecoreai-homepage-demo')))).toBeUndefined();
   });
 

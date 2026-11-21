@@ -26,6 +26,7 @@ const PLAYBOOKS = [
   'sitecoreai-customer-portal',
   'optimizely-saas-migration',
   'optimizely-homepage-demo',
+  'optimizely-customer-portal',
 ];
 
 const COMPONENTS = [
