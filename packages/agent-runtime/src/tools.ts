@@ -16,6 +16,10 @@ export const SubmitInput = z.object({
       question: z.string(),
       options: z.array(z.string()).min(2).max(4),
       recommended: z.string(),
+      /** What it is about for the Director, in plain words. */
+      plain: z.string().max(280).optional(),
+      /** What each option means, in a few plain words, in the options' order. */
+      hints: z.array(z.string().max(60)).max(4).optional(),
     })
     .optional(),
   waitingOn: z
@@ -98,6 +102,18 @@ const submitTool: BetaTool = {
             description: 'Each option a short action, under 100 characters.',
           },
           recommended: { type: 'string' },
+          plain: {
+            type: 'string',
+            description:
+              'What the decision is about, for a Director who is not technical: one or two plain sentences on what is happening and what it affects (the site, its visitors, editors, cost or time). No file names, code, IDs, status codes or tool names.',
+          },
+          hints: {
+            type: 'array',
+            items: { type: 'string' },
+            maxItems: 4,
+            description:
+              'What each option means for the Director, in the same order as options, in two to five plain words ("works today", "needs a new licence", "editors see blank tiles").',
+          },
         },
         required: ['question', 'options', 'recommended'],
       },

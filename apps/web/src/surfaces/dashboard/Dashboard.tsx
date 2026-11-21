@@ -16,7 +16,7 @@ export function Dashboard() {
   const r = () => void refresh();
   return (
     <Mode
-      bliss={<DashboardBliss o={data} refresh={r} />}
+      bliss={<DashboardBliss o={data} />}
       everything={<DashboardEverything o={data} refresh={r} />}
     />
   );

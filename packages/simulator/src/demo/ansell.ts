@@ -1584,6 +1584,22 @@ export const ansell: DemoScenario = {
       id: 'E-06',
       type: 'gate',
       title: 'Pilot slice review',
+      question: 'Are the first three homepage sections right before we build the rest?',
+      plain:
+        'The hero banner, quick actions and hazard finder are built, and the home page works in the page builder. Editors can now change the hazards themselves.',
+      options: [
+        {
+          label: 'Approve',
+          hint: 'the team builds the rest',
+          detail: 'The team builds the other 12 sections the same way.',
+        },
+        {
+          label: 'Send back',
+          hint: 'pauses the other 12',
+          detail:
+            'Building pauses at the next checkpoint while the lead reworks the pilot from your notes.',
+        },
+      ],
       reversible: false,
       waitNote: 'Waits for you. Batch 2 continues meanwhile',
       context:
@@ -1625,6 +1641,9 @@ export const ansell: DemoScenario = {
       id: 'E-07',
       type: 'decision',
       title: 'Where search reads its content',
+      question: 'How should site search find products after the move?',
+      plain:
+        'Today the search box looks things up in a list built into the website. Once products move into Sitecore, that list goes out of date.',
       reversible: true,
       context:
         'SearchBody and search-engine.ts (about 930 lines) answer queries from corpus.ts in the browser. Once products, topics and documents live in Sitecore, search needs a new source.',
@@ -1637,9 +1656,26 @@ export const ansell: DemoScenario = {
           'The Blueprint keeps products, topics and documents in Sitecore, so search should read them from there too.',
       },
       options: [
-        { label: SEARCH_OPTS[0]!, rec: true },
-        { label: SEARCH_OPTS[1]! },
-        { label: SEARCH_OPTS[2]! },
+        {
+          label: SEARCH_OPTS[0]!,
+          rec: true,
+          short: 'Read from Sitecore',
+          hint: 'no extra cost',
+          detail: 'Search reads from Sitecore: editors update a product once and search keeps up.',
+        },
+        {
+          label: SEARCH_OPTS[1]!,
+          short: "Buy Sitecore's search",
+          hint: 'needs a new licence',
+          detail:
+            "Sitecore's own search product: the best results, but a licence outside this budget.",
+        },
+        {
+          label: SEARCH_OPTS[2]!,
+          short: 'Keep the list in code',
+          hint: 'a developer for every change',
+          detail: 'Search stays as it is today, and every product change needs a developer.',
+        },
       ],
       defaultIdx: 0,
       deadlineMinutes: 20,
@@ -1705,13 +1741,27 @@ export const ansell: DemoScenario = {
       id: 'E-08',
       type: 'access',
       title: 'Thumbnail upload returned 403',
+      question: 'Sitecore blocked a preview image upload. Retry, or skip the images for now?',
+      plain:
+        'Sitecore refused one of the preview images editors see when they pick a page section. Usually it is a short lock.',
       context:
         'The Authoring API refused the HazardRoute rendering thumbnail with 403. The Automation credential verified at 8:02 AM with xmcloud.cm:admin. The media upload mutation may need an additional scope on this tenant.',
       impact:
         'Rendering Registrar is blocked on thumbnails. Renderings register without them, so Page builder shows blank tiles until this is fixed.',
       options: [
-        { label: 'Re-verify the credential and retry the upload', rec: true },
-        { label: 'Continue without thumbnails. Retry them in phase 9' },
+        {
+          label: 'Re-verify the credential and retry the upload',
+          rec: true,
+          short: 'Retry now',
+          hint: 'about a minute',
+          detail: 'We double-check our Sitecore login and upload the image again.',
+        },
+        {
+          label: 'Continue without thumbnails. Retry them in phase 9',
+          short: 'Skip the images for now',
+          hint: 'blank tiles until phase 9',
+          detail: 'Sections go in without preview images; editors see blank tiles until phase 9.',
+        },
       ],
       defaultIdx: 0,
       deadlineMinutes: 15,
@@ -1774,15 +1824,37 @@ export const ansell: DemoScenario = {
       id: 'E-09',
       type: 'decision',
       title: 'Sample kit requests have nowhere to go',
+      question: 'Where should sample kit requests go?',
+      plain:
+        "Visitors can build a sample kit on the new site, but the form doesn't send anywhere yet.",
       reversible: true,
       context:
         'KitRail.tsx collects company, work email, ZIP and consent, then creates an SK-26 reference in the browser. Nothing is sent. VERCEL.md confirms fulfillment is not deployed.',
       impact:
         'Phase 6 cannot finish the Samples experience without a destination. Workflow and integrations are outside this scope, so option A needs an endpoint from Ansell IT.',
       options: [
-        { label: KIT_OPTS[0]!, rec: true },
-        { label: KIT_OPTS[1]! },
-        { label: KIT_OPTS[2]! },
+        {
+          label: KIT_OPTS[0]!,
+          rec: true,
+          short: "Ansell's system",
+          hint: 'needs an IT contact',
+          detail:
+            "Requests go straight to Ansell's team. Ansell IT gives us the address to send them to.",
+          asks: 'Who at Ansell IT should we ask for the address?',
+        },
+        {
+          label: KIT_OPTS[1]!,
+          short: 'The contact page',
+          hint: 'works today',
+          detail: 'Visitors go to the contact page, as they do now, and type their details again.',
+        },
+        {
+          label: KIT_OPTS[2]!,
+          short: 'Launch now, connect later',
+          hint: 'requests wait',
+          detail:
+            "The Samples page ships on time, but requests aren't captured until a later release.",
+        },
       ],
       defaultIdx: 1,
       deadlineMinutes: 30,

@@ -3,13 +3,13 @@
  * built from in both modes. They render what the consumer gives them; Cypher's words arrive as
  * strings from the API and are never composed here. Every color, size and radius is a token.
  */
-import type { Face, HandledItem, ReadTone, Recommendation, Voice, Workstream } from '@lw/contracts';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { Face, HandledItem, ReadTone, Voice, Workstream } from '@lw/contracts';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Icon } from '../../theme/icons';
 import { Eye } from '../Eye';
 import { LiveEye, type Urgency } from '../eye/LiveEye';
 import type { EyeState } from '../../voice/eye';
-import { reducedMotion, useGlide } from './motion';
+import { useGlide } from './motion';
 import s from './parts.module.css';
 
 /* ---------- color by meaning ---------- */
@@ -146,18 +146,6 @@ export function Closing({ text }: { text: string }) {
   );
 }
 
-/** Cypher's verdict inside a card: the eye, the verdict in bold, the reason after it. */
-export function Verdict({ rec, plain }: { rec: Recommendation; plain?: boolean }) {
-  return (
-    <span className={plain ? s.verdictPlain : s.verdict}>
-      <Eye state="watching" size={22} decorative />
-      <span className="type-body-small">
-        <b>{rec.verdict}</b> {rec.why}
-      </span>
-    </span>
-  );
-}
-
 /* ---------- buttons ---------- */
 
 export function Button({
@@ -188,183 +176,10 @@ export function Button({
   );
 }
 
-/* ---------- the Yours card, three ways ---------- */
-
+/** An action on a row: its word and what it does. */
 export interface CardAction {
   label: string;
   run: () => void;
-  /** Settles the card (answer, defer, approve): it collapses away while the answer goes in. */
-  leaves?: boolean;
-}
-
-/**
- * A card that is being settled plays its exit (data-leaving) while the request runs; the refresh
- * then removes it. If it is still there a few seconds later (the request failed), it comes back.
- */
-function useLeaving() {
-  const [leaving, setLeaving] = useState(false);
-  useEffect(() => {
-    if (!leaving) return;
-    const t = window.setTimeout(() => setLeaving(false), 6000);
-    return () => window.clearTimeout(t);
-  }, [leaving]);
-  const wrap = (a: CardAction) => () => {
-    if (a.leaves && !reducedMotion()) setLeaving(true);
-    a.run();
-  };
-  return { leaving, wrap };
-}
-
-/** A thing that is the Director's (Yours card guideline): label, question, context, verdict, two buttons, who. */
-export function YoursCard({
-  kind,
-  project,
-  clock,
-  clockYours,
-  title,
-  body,
-  rec,
-  primary,
-  secondary,
-  raiser,
-  meta,
-}: {
-  kind: string;
-  project?: string;
-  clock: string;
-  clockYours: boolean;
-  title: string;
-  body: string;
-  rec: Recommendation | null;
-  primary: CardAction;
-  secondary: CardAction | null;
-  raiser: Face | null;
-  meta: string;
-}) {
-  const { leaving, wrap } = useLeaving();
-  return (
-    <article className={s.yours} data-leaving={leaving || undefined}>
-      <span className={`${s.cardLabel} type-label`}>
-        <Eye state="needs-a-word" size={20} decorative />
-        <span className={s.labelText}>
-          {kind}
-          {project && <> · {project}</>}
-        </span>
-        <span className={s.clock} data-yours={clockYours || undefined}>
-          {clock}
-        </span>
-      </span>
-      <h3 className={`${s.yoursTitle} type-card-title-large`}>{title}</h3>
-      <p className={`${s.body} type-body-small`}>{body}</p>
-      {rec && <Verdict rec={rec} />}
-      <span className={s.actions}>
-        <Button onClick={wrap(primary)}>{primary.label}</Button>
-        {secondary && (
-          <Button kind="secondary" onClick={wrap(secondary)}>
-            {secondary.label}
-          </Button>
-        )}
-      </span>
-      <span className={`${s.who} type-meta`}>
-        {raiser && <Avatar face={{ ...raiser, working: true }} size="xs" />}
-        {meta}
-      </span>
-    </article>
-  );
-}
-
-/** The one decision on Mission Control, in its large form. */
-export function DecisionCard({
-  label,
-  title,
-  context,
-  raiser,
-  meta,
-  rec,
-  pick,
-  other,
-  quiet,
-  fallback,
-}: {
-  label: string;
-  title: string;
-  context: string;
-  raiser: Face | null;
-  meta: ReactNode;
-  rec: Recommendation | null;
-  pick: CardAction;
-  other: CardAction | null;
-  quiet: CardAction[];
-  fallback: string | null;
-}) {
-  const { leaving, wrap } = useLeaving();
-  return (
-    <section className={s.decision} aria-label="Yours now" data-leaving={leaving || undefined}>
-      <div className={s.decisionLeft}>
-        <span className={`${s.cardLabel} type-label`}>
-          <Eye state="needs-a-word" size={20} decorative />
-          {label}
-        </span>
-        <h2 className={`${s.decisionTitle} type-decision-title`}>{title}</h2>
-        <p className={`${s.body} type-body`}>{context}</p>
-        <span className={`${s.who} type-meta`}>
-          {raiser && <Avatar face={{ ...raiser, working: true }} size="xs" />}
-          {meta}
-        </span>
-      </div>
-      <div className={s.decisionRight}>
-        {rec && <Verdict rec={rec} />}
-        <Button large onClick={wrap(pick)} trailing={rec ? "Cypher's pick" : undefined}>
-          {pick.label}
-        </Button>
-        {other && (
-          <Button large kind="secondary" onClick={wrap(other)}>
-            {other.label}
-          </Button>
-        )}
-        <span className={`${s.decisionFoot} type-meta`}>
-          {quiet.map((q) => (
-            <button key={q.label} type="button" className={s.link} onClick={wrap(q)}>
-              {q.label}
-            </button>
-          ))}
-          {fallback && <span className={s.fallback}>{fallback}</span>}
-        </span>
-      </div>
-    </section>
-  );
-}
-
-/** A quieter card that is also yours (Mission Control, under the decision). */
-export function QuietCard({
-  label,
-  title,
-  rec,
-  primary,
-  secondary,
-}: {
-  label: string;
-  title: string;
-  rec: Recommendation | null;
-  primary: CardAction;
-  secondary: CardAction | null;
-}) {
-  const { leaving, wrap } = useLeaving();
-  return (
-    <article className={s.quietCard} data-leaving={leaving || undefined}>
-      <span className={`${s.quietLabel} type-label`}>{label}</span>
-      <span className="type-card-title">{title}</span>
-      {rec && <Verdict rec={rec} plain />}
-      <span className={s.actions}>
-        <Button onClick={wrap(primary)}>{primary.label}</Button>
-        {secondary && (
-          <Button kind="secondary" onClick={wrap(secondary)}>
-            {secondary.label}
-          </Button>
-        )}
-      </span>
-    </article>
-  );
 }
 
 /* ---------- projects and people in one line ---------- */

@@ -179,6 +179,21 @@ describe('Ansell, mid-build', () => {
     });
   });
 
+  it('writes its cards for the Director in plain words: a question, a sentence, what each option means', async () => {
+    await ansell.runScenario('kit');
+    const kit = ansell.state.escalations['E-09']!;
+    expect(kit.question).toBe('Where should sample kit requests go?');
+    expect(kit.plain).not.toMatch(/\.tsx|\.md|SK-26/);
+    expect(kit.options.map((o) => o.short)).toEqual([
+      "Ansell's system",
+      'The contact page',
+      'Launch now, connect later',
+    ]);
+    expect(kit.options.every((o) => o.hint && o.detail)).toBe(true);
+    // Only the option that needs something more asks for it.
+    expect(kit.options.map((o) => !!o.asks)).toEqual([true, false, false]);
+  });
+
   it('lets a choice be undone inside its window', async () => {
     await ansell.runScenario('kit');
     await ansell.resolve('E-09', 'B');
