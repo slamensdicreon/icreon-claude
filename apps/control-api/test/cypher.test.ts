@@ -579,6 +579,7 @@ it('lists the playbooks of both platforms, and drafts an Optimizely site remixed
     brief: { key: string }[];
   }[];
   expect(playbooks.map((b) => [b.id, b.platform]).sort()).toEqual([
+    ['optimizely-customer-portal', 'Optimizely CMS (SaaS)'],
     ['optimizely-homepage-demo', 'Optimizely CMS (SaaS)'],
     ['optimizely-saas-migration', 'Optimizely CMS (SaaS)'],
     ['sitecoreai-customer-portal', 'SitecoreAI'],

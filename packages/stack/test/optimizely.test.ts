@@ -13,7 +13,11 @@ import { CHECKS } from '../src';
 import { EXAMPLE_ORIGIN, exampleInventory, gateOne } from './gate-one';
 
 const dir = (id: string) => fileURLToPath(new URL(`../../../playbooks/${id}`, import.meta.url));
-const PLAYBOOKS = ['optimizely-saas-migration', 'optimizely-homepage-demo'];
+const PLAYBOOKS = [
+  'optimizely-saas-migration',
+  'optimizely-homepage-demo',
+  'optimizely-customer-portal',
+];
 const OPTIMIZELY = createPlatforms({
   sitecore: SITECORE_DEFAULTS,
   optimizely: OPTIMIZELY_DEFAULTS,

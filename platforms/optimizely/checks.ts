@@ -51,6 +51,8 @@ interface SectionView {
   name?: string;
   contentType?: string;
   displayTemplate?: string;
+  /** The display template's settings as chosen for this section (a portal's column and audience). */
+  settings?: Record<string, string> | null;
   properties?: Record<string, unknown>;
 }
 interface RouteView {
@@ -232,6 +234,8 @@ async function pageContent(
   return { status: b.status, sections: b.composition ?? [], properties: b.properties ?? {} };
 }
 
+type HostView = NonNullable<ApplicationView['hosts']>[number];
+
 const primaryHost = (a: ApplicationView) =>
   (a.hosts ?? []).find((h) => h.type === 'primary') ?? (a.hosts ?? [])[0] ?? null;
 
@@ -410,7 +414,411 @@ async function sourceAndCandidate(
   };
 }
 
+/**
+ * A customer portal (`playbooks/optimizely-customer-portal`). Its head keeps every page but the
+ * sign-in screen behind a demo sign-in, so a check that reads a page signs in first, the way the
+ * playbook's prompts fix it: `POST /api/session` with a persona's demo email answers 2xx and
+ * sets the session cookie, any other email is refused, and a signed-out reader of a page is
+ * redirected to `/sign-in`. A section's `audience` display setting says who it is shown to
+ * (`everyone`, or one persona's audience), and the head marks each section it renders with
+ * `data-audience`. Signing in changes nothing: the session is a signed cookie the check holds
+ * for its own requests, and no check touches the demo data (it never posts to `/api/demo`).
+ * Nothing here has met a live portal yet: these read the contract as written.
+ */
+const SESSION_PATH = '/api/session';
+const EVERYONE = 'everyone';
+
+interface Persona {
+  key: string;
+  name: string;
+  email: string;
+  audience: string;
+}
+
+/** The Blueprint's demo accounts, in its order: the first is the default persona. */
+const personasOf = (ctx: PlatformCheckContext): Persona[] =>
+  built(ctx.blueprint?.collections.personas)
+    .map((p) => ({
+      key: p.key,
+      name: String(p.attrs?.name ?? p.name),
+      email: typeof p.attrs?.email === 'string' ? p.attrs.email.trim() : '',
+      audience: typeof p.attrs?.audience === 'string' ? p.attrs.audience : p.key,
+    }))
+    .filter((p) => p.email);
+
+const audienceOf = (s: SectionView) => (s.settings?.audience ?? '').trim() || EVERYONE;
+
+/** Whether a path or address is the portal's sign-in screen (with or without the locale). */
+const isSignIn = (address: string) => {
+  try {
+    return /\/sign-in$/.test(
+      new URL(address, 'https://portal.invalid').pathname.replace(/\/$/, ''),
+    );
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The words a heading owes the page whoever is signed in: the head fills `{firstName}` and the
+ * like from the persona, so only what stands around the tokens is looked for.
+ */
+const literalParts = (heading: string) =>
+  heading
+    .split(/\{[A-Za-z][A-Za-z0-9]*\}/)
+    .map((part) => fold(part).replace(/^[\s,.:;!?]+|[\s,.:;!?]+$/g, ''))
+    .filter((part) => part.length > 2);
+
+const strings = (v: unknown) =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+
+/** A page's sections as the Blueprint places them: the component, and who it is shown to. */
+const placementsOf = (page: Item) =>
+  (Array.isArray(page.attrs?.components) ? (page.attrs.components as unknown[]) : []).map((c) => {
+    const o = (c && typeof c === 'object' ? c : {}) as Record<string, unknown>;
+    return {
+      component: typeof o.component === 'string' ? o.component : '',
+      audience: typeof o.audience === 'string' && o.audience ? o.audience : EVERYONE,
+      column: typeof o.column === 'string' ? o.column : '',
+    };
+  });
+
+const pathOf = (page: Item) => pageRef(String(page.attrs?.path ?? '')).path;
+
+/**
+ * What is wrong with a portal Blueprint on this platform, in the Architect's words: every screen
+ * placed, every component a prefixed content type with something to edit and a default display
+ * template of its own, a pilot, the page type, a start page and a sign-in screen, and each
+ * role's content placed for that role alone.
+ */
+export function portalBlueprintProblems(
+  blueprint: NonNullable<PlatformCheckContext['blueprint']>,
+  inventory: { pages?: { path?: string; url?: string }[] } | null,
+  prefix: string,
+): string[] {
+  const all = (c: string) => blueprint.collections[c] ?? [];
+  const kept = (c: string) => built(all(c));
+  const problems: string[] = [];
+  const pages = kept('pages');
+  const components = kept('components');
+  const templates = kept('templates');
+  const personas = kept('personas');
+  const audiences = new Set(
+    personas.map((p) => (typeof p.attrs?.audience === 'string' ? p.attrs.audience : p.key)),
+  );
+
+  const placed = new Set(all('pages').map(pathOf));
+  for (const p of inventory?.pages ?? []) {
+    let path = p.path ?? '';
+    if (!path && p.url)
+      try {
+        path = new URL(p.url).pathname;
+      } catch {
+        /* not an address: reported as unplaced below */
+      }
+    if (!placed.has(pageRef(path).path))
+      problems.push(`screen ${pageRef(path).path} is neither mapped nor dropped`);
+  }
+
+  if (!templates.length)
+    problems.push('no page type: a `templates` entry for the experience type every page uses');
+  for (const t of templates)
+    if (!typeKeyOf(t, prefix).startsWith(prefix))
+      problems.push(`page type ${t.key}'s key ${typeKeyOf(t, prefix)} lacks the prefix ${prefix}`);
+
+  if (!components.length) problems.push('no components');
+  else if (!components.some((c) => c.pilot)) problems.push('no pilot components');
+  const byKey = new Map(components.map((c) => [c.key, c]));
+  const defaultTemplate = (c: Item) => {
+    const list = Array.isArray(c.attrs?.displayTemplates)
+      ? (c.attrs.displayTemplates as Record<string, unknown>[])
+      : [];
+    const defaults = list.filter((t) => t?.default === true);
+    return defaults.length === 1 ? defaults[0]! : null;
+  };
+  for (const c of components) {
+    const a = c.attrs ?? {};
+    const key = typeKeyOf(c, prefix);
+    if (!key.startsWith(prefix))
+      problems.push(`${c.key}'s content type ${key} lacks the prefix ${prefix}`);
+    const properties = Array.isArray(a.properties) ? a.properties : [];
+    if (!properties.length && !(a.data && typeof a.data === 'object'))
+      problems.push(`${c.key} has neither properties a marketer edits nor demo data to show`);
+    const template = defaultTemplate(c);
+    if (!template) problems.push(`${c.key} has no single default display template of its own`);
+    else if (typeof template.key !== 'string' || !template.key.startsWith(prefix))
+      problems.push(`${c.key}'s default display template's key lacks the prefix ${prefix}`);
+    const children = a.children as { max?: unknown; contentType?: unknown } | undefined;
+    if (children && typeof children.max !== 'number')
+      problems.push(`${c.key}'s child items have no limit`);
+    if (children && !String(children.contentType ?? '').startsWith(prefix))
+      problems.push(`${c.key}'s child type lacks the prefix ${prefix}`);
+  }
+
+  const templateKeys = new Set(templates.map((t) => t.key));
+  const personaKeys = new Set(personas.map((p) => p.key));
+  const used = new Set<string>();
+  if (!pages.some((p) => pathOf(p) === '/'))
+    problems.push('no start page: a page with attrs.path "/" (the dashboard)');
+  const signIn = pages.find((p) => isSignIn(pathOf(p)));
+  if (!signIn)
+    problems.push('no sign-in screen: a page with attrs.path "/sign-in" and attrs.bare: true');
+  else if (signIn.attrs?.bare !== true)
+    problems.push(`the sign-in screen (${signIn.key}) is not marked attrs.bare: true`);
+  for (const p of pages) {
+    if (!templateKeys.has(String(p.attrs?.template ?? '')))
+      problems.push(`page ${p.key} names no page type the Blueprint has (attrs.template)`);
+    for (const who of strings(p.attrs?.personas))
+      if (!personaKeys.has(who)) problems.push(`page ${p.key} is opened by unknown persona ${who}`);
+    const placements = placementsOf(p);
+    if (!placements.length) problems.push(`page ${p.key} has no components`);
+    for (const s of placements) {
+      const component = byKey.get(s.component);
+      if (!component) {
+        problems.push(`page ${p.key} places unknown component ${s.component || '(unnamed)'}`);
+        continue;
+      }
+      used.add(component.key);
+      if (s.audience !== EVERYONE && !audiences.has(s.audience))
+        problems.push(
+          `page ${p.key} shows ${s.component} to ${s.audience}, which is no persona's audience`,
+        );
+      // What a section is set to in Visual Builder is a choice its display template offers
+      // (a component without a template is named once, above).
+      const template = defaultTemplate(component);
+      if (!template) continue;
+      const settings = (template.settings ?? {}) as Record<string, unknown>;
+      for (const [setting, value] of [
+        ['audience', s.audience === EVERYONE ? '' : s.audience],
+        ['column', s.column],
+      ] as const)
+        if (value && !strings(settings[setting]).includes(value))
+          problems.push(
+            `page ${p.key} sets ${s.component}'s ${setting} to ${value}, which its default display template doesn't offer`,
+          );
+    }
+  }
+  for (const c of components)
+    if (!used.has(c.key)) problems.push(`${c.key} is on no page: place it, or leave it out`);
+
+  const pageByKey = new Map(pages.map((p) => [p.key, p]));
+  for (const persona of personas) {
+    const audience = typeof persona.attrs?.audience === 'string' ? persona.attrs.audience : '';
+    for (const key of strings(persona.attrs?.navigation)) {
+      const page = pageByKey.get(key);
+      if (page && Array.isArray(page.attrs?.personas) && !page.attrs.personas.includes(persona.key))
+        problems.push(
+          `${persona.key}'s navigation shows ${key}, which they may not open (its attrs.personas)`,
+        );
+    }
+    const variants = Array.isArray(persona.attrs?.variants) ? persona.attrs.variants : [];
+    for (const v of variants as { page?: unknown; component?: unknown }[]) {
+      const page = typeof v?.page === 'string' ? pageByKey.get(v.page) : undefined;
+      if (!page || typeof v.component !== 'string') continue; // blueprint.personas names these
+      const same = placementsOf(page).filter((s) => s.component === v.component);
+      if (!same.some((s) => s.audience === audience))
+        problems.push(
+          `${persona.key}'s own ${v.component} on ${page.key} is not placed: add it to the page's components with audience ${audience}`,
+        );
+      else if (same.some((s) => s.audience === EVERYONE))
+        problems.push(
+          `${page.key} also shows a ${v.component} to everyone, so ${persona.key} would see both: set it to the roles it is for`,
+        );
+    }
+  }
+  return problems;
+}
+
 export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, PlatformCheck> {
+  // The portal's checks: sign in as a demo persona, then read pages as that persona.
+
+  /** A request the portal head answers, or null when it doesn't. */
+  const call = async (url: string, init: RequestInit = {}) => {
+    try {
+      return await cfg.fetch(url, {
+        ...init,
+        headers: { 'user-agent': 'Launchworks checks', ...(init.headers as object | undefined) },
+        signal: AbortSignal.timeout(cfg.timeoutMs),
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  /** Signs in with an email as the sign-in screen does: the session cookie, when one is given. */
+  const signIn = async (origin: string, email: string) => {
+    const res = await call(`${origin}${SESSION_PATH}`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'launchworks-check' }),
+    });
+    if (!res) return { status: 0, cookie: null };
+    const one = res.headers.get('set-cookie');
+    const set = res.headers.getSetCookie?.() ?? (one ? [one] : []);
+    const cookie = set
+      .map((c) => c.split(';')[0]!.trim())
+      // A cleared cookie (name=) is a sign-out, not a session.
+      .filter((c) => /^[^=]+=.+/.test(c))
+      .join('; ');
+    return { status: res.status, cookie: res.ok && cookie ? cookie : null };
+  };
+
+  /** A page as a signed-in persona gets it (or a signed-out reader, without a cookie). */
+  const open = async (url: string, cookie: string | null) => {
+    const res = await call(url, { redirect: 'follow', headers: cookie ? { cookie } : {} });
+    if (!res) return { status: 0, url, html: '' };
+    return { status: res.status, url: res.url || url, html: await res.text() };
+  };
+
+  /** One sign-in per persona for a whole check. */
+  const sessions = (origin: string) => {
+    const known = new Map<string, Promise<{ status: number; cookie: string | null }>>();
+    return (persona: Persona) => {
+      if (!known.has(persona.key)) known.set(persona.key, signIn(origin, persona.email));
+      return known.get(persona.key)!;
+    };
+  };
+
+  /**
+   * The sign-in as a whole: a signed-out reader is sent to the sign-in screen, an email that is
+   * no demo account's is refused, every persona signs in, and a session is let past the gate.
+   */
+  const signInProblems = async (origin: string, personas: Persona[]): Promise<string[]> => {
+    const problems: string[] = [];
+    const out = await call(`${origin}/`, { redirect: 'manual' });
+    const location = out?.headers.get('location') ?? '';
+    if (!out || out.status < 300 || out.status >= 400 || !isSignIn(location))
+      problems.push(
+        `A signed-out reader of ${origin}/ is not sent to the sign-in screen (it answered ${out?.status || 'nothing'}${location ? `, to ${location}` : ''})`,
+      );
+    const stranger = await signIn(origin, 'nobody@launchworks.invalid');
+    if (stranger.cookie)
+      problems.push(
+        'The sign-in accepts an email that is no demo account: only the personas may sign in',
+      );
+    const session = sessions(origin);
+    for (const persona of personas.slice(0, 10)) {
+      const s = await session(persona);
+      if (!s.cookie)
+        problems.push(
+          `${persona.name} (${persona.email}) can't sign in: ${SESSION_PATH} answered ${s.status || 'nothing'}${s.status >= 200 && s.status < 300 ? ' without a session cookie' : ''}`,
+        );
+    }
+    const first = personas[0] ? await session(personas[0]) : null;
+    if (first?.cookie) {
+      const home = await call(`${origin}/`, {
+        redirect: 'manual',
+        headers: { cookie: first.cookie },
+      });
+      const to = home?.headers.get('location') ?? '';
+      if (!home || home.status >= 500 || (home.status >= 300 && home.status < 400 && isSignIn(to)))
+        problems.push(
+          `Signed in as ${personas[0]!.name}, ${origin}/ ${home && home.status < 500 ? 'still sends them to the sign-in screen' : `answered ${home?.status || 'nothing'}`}`,
+        );
+    }
+    return problems;
+  };
+
+  /** A Blueprint page with who reads it for a check: the first persona who may open it. */
+  const portalPages = (ctx: PlatformCheckContext, personas: Persona[], cap = 20) => {
+    const all = routedPages(ctx);
+    const own =
+      ctx.scope.collection === 'pages' && ctx.scope.items.length
+        ? all.filter((p) => ctx.scope.items.includes(p.key))
+        : all;
+    return own.slice(0, cap).map((item) => {
+      const allowed = Array.isArray(item.attrs?.personas) ? strings(item.attrs.personas) : null;
+      const readers = allowed ? personas.filter((p) => allowed.includes(p.key)) : personas;
+      // The sign-in screen, and any page nobody is named for, is read signed out.
+      return { ref: pageRef(String(item.attrs!.path)), readers, reader: readers[0] ?? null };
+    });
+  };
+
+  /** One page as one persona: it answers, isn't the sign-in screen, and shows their sections. */
+  const renderProblems = async (
+    ctx: PlatformCheckContext,
+    a: {
+      origin: string;
+      application: string;
+      ref: PageRef;
+      reader: Persona | null;
+      cookie: string | null;
+      wantSections?: boolean;
+    },
+  ): Promise<{ problems: string[]; pending?: string; sections: SectionView[] }> => {
+    const { languages } = optimizelyTarget({ target: ctx.target });
+    const content = await pageContent(ctx, a.ref.cms(a.application), a.ref.label);
+    if (isResult(content))
+      return content.status === 'pending'
+        ? { problems: [], pending: content.detail, sections: [] }
+        : { problems: [content.detail], sections: [] };
+    const url = `${a.origin}${a.ref.route(languages[0] ?? 'en')}`;
+    const who = a.reader ? `as ${a.reader.name}` : 'signed out';
+    const p = await open(url, a.cookie);
+    if (p.status !== 200)
+      return {
+        problems: [`${url} answered ${p.status || 'nothing'} ${who}`],
+        sections: content.sections,
+      };
+    if (isSignIn(p.url) && !isSignIn(a.ref.path))
+      return {
+        problems: [`${url} shows the sign-in screen ${who}`],
+        sections: content.sections,
+      };
+    if (a.wantSections && !content.sections.length)
+      return { problems: [`${a.ref.label} has no sections yet`], sections: [] };
+    const text = fold(visibleText(p.html));
+    const theirs = content.sections.filter(
+      (s) => audienceOf(s) === EVERYONE || audienceOf(s) === a.reader?.audience,
+    );
+    const missing = theirs.flatMap((s) =>
+      headingsOf(s.properties)
+        .filter((h) => !literalParts(h).every((part) => text.includes(part)))
+        .map((h) => `"${h}" (${s.name ?? s.contentType}) is not on ${a.ref.path} ${who}`),
+    );
+    return { problems: missing.slice(0, 8), sections: content.sections };
+  };
+
+  /** Every page the task covers, each read by a persona who may open it. */
+  const pagesRender = async (
+    ctx: PlatformCheckContext,
+    which: (a: ApplicationView) => HostView | null,
+  ): Promise<{ problems: string[]; pending: string[]; read: string[] } | CheckResult> => {
+    if (!ctx.blueprint) return pending('There is no approved Blueprint to check against.');
+    const personas = personasOf(ctx);
+    if (!personas.length) return pending('The Blueprint lists no persona with a demo email.');
+    const app = await application(ctx);
+    if (isResult(app)) return app;
+    const host = which(app);
+    if (!host) return fail(['The application has no host to read the portal on']);
+    const origin = `https://${host.host}`;
+    const session = sessions(origin);
+    const problems: string[] = [];
+    const waiting: string[] = [];
+    const read: string[] = [];
+    for (const pg of portalPages(ctx, personas)) {
+      const s = pg.reader ? await session(pg.reader) : null;
+      if (pg.reader && !s?.cookie) {
+        problems.push(
+          `${pg.ref.path}: ${pg.reader.name} can't sign in (${SESSION_PATH} answered ${s?.status || 'nothing'})`,
+        );
+        continue;
+      }
+      const r = await renderProblems(ctx, {
+        origin,
+        application: app.key,
+        ref: pg.ref,
+        reader: pg.reader,
+        cookie: s?.cookie ?? null,
+      });
+      if (r.pending) waiting.push(`${pg.ref.path}: ${r.pending}`);
+      problems.push(...r.problems);
+      read.push(`${pg.ref.path} ${pg.reader ? `as ${pg.reader.name}` : 'signed out'}`);
+    }
+    return { problems, pending: waiting, read };
+  };
+
   /** Every Blueprint component and page type has its content type in the CMS, with the right base. */
   const typesInCms = async (
     ctx: PlatformCheckContext,
@@ -1175,6 +1583,221 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
         : pass(
             `The start page renders its header (${links('header')} links) and footer (${links('footer')} links).`,
           );
+    },
+
+    // A portal's Blueprint (customer portal playbook, Gate 1), in this platform's model contract.
+    // The shared blueprint.coverage reads another platform's (field types, a rendering name, a
+    // query budget); blueprint.personas, which reads only the personas, runs beside this one.
+    'blueprint.portal': async (ctx) => {
+      const { typePrefix } = optimizelyTarget({ target: ctx.target });
+      if (!ctx.blueprint?.collections) return fail(['No Blueprint has been written']);
+      const inventory = (await ctx.document('page-inventory')) as {
+        pages?: { path?: string; url?: string }[];
+      } | null;
+      const problems = portalBlueprintProblems(ctx.blueprint, inventory, typePrefix);
+      if (problems.length)
+        return fail([
+          ...problems.slice(0, 10),
+          ...(problems.length > 10 ? [`and ${problems.length - 10} more`] : []),
+        ]);
+      const kept = (c: string) => built(ctx.blueprint!.collections[c]);
+      const forOneRole = kept('pages')
+        .flatMap(placementsOf)
+        .filter((s) => s.audience !== EVERYONE).length;
+      return pass(
+        `${kept('pages').length} pages on ${kept('templates').length} page ${kept('templates').length === 1 ? 'type' : 'types'} and ${kept('components').length} components, each a ${typePrefix} content type with a default display template of its own; ${forOneRole} ${forOneRole === 1 ? 'section is' : 'sections are'} shown to one role.`,
+      );
+    },
+
+    // The portal's door, on the editing address: a signed-out reader is sent to the sign-in
+    // screen, the demo accounts sign in, nobody else does, and a session is let through.
+    'portal.sign-in': async (ctx) => {
+      const personas = personasOf(ctx);
+      if (!personas.length) return pending('The Blueprint lists no persona with a demo email.');
+      const app = await application(ctx);
+      if (isResult(app)) return app;
+      const host = buildHost(app);
+      if (!host) return fail(['The application has no host to sign in on']);
+      const problems = await signInProblems(`https://${host.host}`, personas);
+      return problems.length
+        ? fail(problems)
+        : pass(
+            `On ${host.host} a signed-out reader is sent to the sign-in screen, ${personas.length === 1 ? 'the demo account signs' : `all ${personas.length} demo accounts sign`} in, and another email is refused.`,
+          );
+    },
+
+    // The pilot's page: the start page, composed and published, as the default persona reads it.
+    'portal.pilot-page': async (ctx) => {
+      const personas = personasOf(ctx);
+      if (!personas.length) return pending('The Blueprint lists no persona with a demo email.');
+      const app = await application(ctx);
+      if (isResult(app)) return app;
+      const host = buildHost(app);
+      if (!host) return fail(['The application has no host to read the page on']);
+      const origin = `https://${host.host}`;
+      const start = routedPages(ctx).find((p) => pathOf(p) === '/');
+      const allowed = Array.isArray(start?.attrs?.personas) ? strings(start.attrs.personas) : null;
+      const reader = (allowed && personas.find((p) => allowed.includes(p.key))) || personas[0]!;
+      const s = await signIn(origin, reader.email);
+      if (!s.cookie)
+        return fail([
+          `${reader.name} can't sign in on ${host.host} (${SESSION_PATH} answered ${s.status || 'nothing'})`,
+        ]);
+      const r = await renderProblems(ctx, {
+        origin,
+        application: app.key,
+        ref: pageRef('/'),
+        reader,
+        cookie: s.cookie,
+        wantSections: true,
+      });
+      if (r.pending) return pending(r.pending);
+      return r.problems.length
+        ? fail(r.problems)
+        : pass(
+            `Signed in as ${reader.name}, the start page renders its ${r.sections.length} ${r.sections.length === 1 ? 'section' : 'sections'} on ${host.host}.`,
+            { sections: r.sections.map((x) => ({ name: x.name, contentType: x.contentType })) },
+          );
+    },
+
+    // Each portal page renders for a persona who may open it, with the sections they are shown.
+    // (The website playbooks' head.pages-render reads signed out: here that is the sign-in screen.)
+    'portal.pages-render': async (ctx) => {
+      const r = await pagesRender(ctx, buildHost);
+      if ('status' in r) return r;
+      if (r.problems.length) return fail(r.problems.slice(0, 15), { read: r.read });
+      if (r.pending.length) return pending(r.pending.join('; '));
+      return r.read.length
+        ? pass(
+            `${r.read.length} ${r.read.length === 1 ? 'page renders' : 'pages render'} their sections: ${r.read.join(', ')}.`,
+            { read: r.read },
+          )
+        : pending('The Blueprint lists no page to read.');
+    },
+
+    // Content by role: each role's own sections are in the CMS where the Blueprint places them,
+    // each persona's pages show theirs, and none shows a section set for another role.
+    'portal.role-content': async (ctx) => {
+      const { typePrefix, languages } = optimizelyTarget({ target: ctx.target });
+      if (!ctx.blueprint) return pending('There is no approved Blueprint to check against.');
+      const personas = personasOf(ctx);
+      if (!personas.length) return pending('The Blueprint lists no persona with a demo email.');
+      const app = await application(ctx);
+      if (isResult(app)) return app;
+      const host = buildHost(app);
+      if (!host) return fail(['The application has no host to read the portal on']);
+      const origin = `https://${host.host}`;
+      const audiences = new Set(personas.map((p) => p.audience));
+      const components = new Map(
+        built(ctx.blueprint.collections.components).map((c) => [c.key, c]),
+      );
+      const problems: string[] = [];
+      const waiting: string[] = [];
+      const session = sessions(origin);
+      let forOneRole = 0;
+      let pagesWith = 0;
+      for (const item of routedPages(ctx).slice(0, 20)) {
+        const ref = pageRef(String(item.attrs!.path));
+        const content = await pageContent(ctx, ref.cms(app.key), ref.label);
+        if (isResult(content)) {
+          (content.status === 'pending' ? waiting : problems).push(content.detail);
+          continue;
+        }
+        const roleSections = content.sections.filter((s) => audienceOf(s) !== EVERYONE);
+        for (const s of roleSections)
+          if (!audiences.has(audienceOf(s)))
+            problems.push(
+              `"${s.name}" on ${ref.path} is shown to ${audienceOf(s)}, which is no persona's audience`,
+            );
+        // What the Blueprint gives each persona on this page is there, for that role alone.
+        for (const persona of built(ctx.blueprint.collections.personas)) {
+          const audience = String(persona.attrs?.audience ?? persona.key);
+          const variants = Array.isArray(persona.attrs?.variants) ? persona.attrs.variants : [];
+          for (const v of variants as { page?: unknown; component?: unknown }[]) {
+            const component = typeof v?.component === 'string' ? components.get(v.component) : null;
+            if (v?.page !== item.key || !component) continue;
+            const type = typeKeyOf(component, typePrefix).toLowerCase();
+            const same = content.sections.filter((s) => s.contentType?.toLowerCase() === type);
+            if (!same.some((s) => audienceOf(s) === audience))
+              problems.push(
+                `${ref.path} has no ${component.name} section shown to ${audience}: ${persona.name}'s own content is missing`,
+              );
+            else if (same.some((s) => audienceOf(s) === EVERYONE))
+              problems.push(
+                `${ref.path} also shows a ${component.name} section to everyone, so ${persona.name} sees both`,
+              );
+          }
+        }
+        if (!roleSections.length) continue;
+        forOneRole += roleSections.length;
+        pagesWith++;
+        const allowed = Array.isArray(item.attrs?.personas) ? strings(item.attrs.personas) : null;
+        for (const reader of personas.filter((p) => !allowed || allowed.includes(p.key))) {
+          const s = await session(reader);
+          if (!s.cookie) {
+            problems.push(`${reader.name} can't sign in (${SESSION_PATH} answered ${s.status})`);
+            continue;
+          }
+          const p = await open(`${origin}${ref.route(languages[0] ?? 'en')}`, s.cookie);
+          if (p.status !== 200 || isSignIn(p.url)) {
+            problems.push(
+              `${ref.path} ${isSignIn(p.url) ? 'shows the sign-in screen' : `answered ${p.status || 'nothing'}`} as ${reader.name}`,
+            );
+            continue;
+          }
+          const marked = [...p.html.matchAll(/data-audience="([^"]*)"/g)].map((m) => m[1]!);
+          const others = [
+            ...new Set(marked.filter((a) => a !== EVERYONE && a !== reader.audience)),
+          ];
+          const own = roleSections.filter((x) => audienceOf(x) === reader.audience);
+          const shown = marked.filter((a) => a === reader.audience).length;
+          if (others.length)
+            problems.push(
+              `${ref.path} shows ${reader.name} a section set for ${others.join(', ')}`,
+            );
+          if (shown < own.length)
+            problems.push(
+              `${ref.path} shows ${reader.name} ${shown} of the ${own.length} ${own.length === 1 ? 'section' : 'sections'} set for ${reader.audience} (each rendered section carries data-audience)`,
+            );
+          const text = fold(visibleText(p.html));
+          for (const x of own)
+            for (const h of headingsOf(x.properties))
+              if (!literalParts(h).every((part) => text.includes(part)))
+                problems.push(`"${h}" (${x.name}) is not on ${ref.path} as ${reader.name}`);
+        }
+      }
+      if (problems.length) return fail(problems.slice(0, 15), { forOneRole, pages: pagesWith });
+      if (waiting.length) return pending(waiting.join('; '));
+      return forOneRole
+        ? pass(
+            `${forOneRole} ${forOneRole === 1 ? 'section is' : 'sections are'} shown to one role, on ${pagesWith} ${pagesWith === 1 ? 'page' : 'pages'}: each persona sees their own and none of another role's.`,
+            { forOneRole, pages: pagesWith },
+          )
+        : fail([
+            'No section on any page is shown to one role: the brief asks for content by role, so place each role’s sections with their audience',
+          ]);
+    },
+
+    // The portal where the presenter uses it: on the application's primary host (production)
+    // the sign-in works as on the editing address and every page renders for its persona.
+    // (routes.resolve would follow each route to the sign-in screen and call that an answer.)
+    'portal.production': async (ctx) => {
+      const personas = personasOf(ctx);
+      if (!personas.length) return pending('The Blueprint lists no persona with a demo email.');
+      const app = await application(ctx);
+      if (isResult(app)) return app;
+      const host = primaryHost(app);
+      if (!host) return fail(['The application has no primary host: production has no address']);
+      const door = await signInProblems(`https://${host.host}`, personas);
+      if (door.length) return fail(door);
+      const r = await pagesRender(ctx, primaryHost);
+      if ('status' in r) return r;
+      if (r.problems.length) return fail(r.problems.slice(0, 15), { read: r.read });
+      if (r.pending.length) return pending(r.pending.join('; '));
+      return pass(
+        `On production (${host.host}) the demo accounts sign in and ${r.read.length} ${r.read.length === 1 ? 'page renders' : 'pages render'} for a persona who may open ${r.read.length === 1 ? 'it' : 'them'}.`,
+        { read: r.read },
+      );
     },
   };
 }
