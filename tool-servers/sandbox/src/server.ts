@@ -1139,14 +1139,18 @@ export function modelFaults(manifest: unknown): string[] {
   ];
 }
 
-/** The CLI's output as lines, without colours. */
+/**
+ * The CLI's output as lines, without colours and without its progress lines. Those go to the
+ * other stream, so they can arrive anywhere among the lines that matter, and one of them
+ * ("- Uploading configuration file") reads as an item of whatever list it lands in.
+ */
 const cliLines = (output: string) =>
   output
     // eslint-disable-next-line no-control-regex
     .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')
     .split(/[\r\n]+/)
     .map((l) => l.trim())
-    .filter(Boolean);
+    .filter((l) => l && !/(Uploading configuration file|Configuration file uploaded)$/.test(l));
 
 /** Why the CMS refused a push, from the CLI's output: its error lines, without colours or labels. */
 export function pushFailure(output: string): string {
@@ -1178,7 +1182,6 @@ export function relaxedOnly(
   const lines = cliLines(output);
   const at = lines.indexOf('Errors:');
   if (at < 0) return null;
-  // Each objection is a list item; a spinner's line can land among them.
   const objections = lines.slice(at + 1).filter((l) => l.startsWith('- '));
   const relaxed = objections.map((l) =>
     /^- Property '([^']+)' on content type '([^']+)' changes 'isRequired' from 'true' to 'false'\./.exec(
