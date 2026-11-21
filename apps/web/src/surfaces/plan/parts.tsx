@@ -1,6 +1,6 @@
 /*
  * Plan's small pieces: the glyph and word every task state carries (so a state reads without
- * color), the owner cell, the Director's gate mark and the legend.
+ * color) and the owner cell.
  */
 import type { AgentView, TaskState } from '@lw/contracts';
 import type { ReactNode } from 'react';
@@ -8,7 +8,7 @@ import { useApp } from '../../state';
 import { Avatar } from '../../ui/cypher/parts';
 import { Eye } from '../../ui/Eye';
 import { useEyeState } from '../../voice/eye';
-import { at, faceOf, LOOKS, roleOf, stateOf, type Look } from './model';
+import { faceOf, roleOf, stateOf, type Look } from './model';
 import s from './plan.module.css';
 
 const GLYPH: Record<Look, ReactNode> = {
@@ -109,45 +109,5 @@ export function Owner({
         {!compact && <span className="type-meta">{roleOf(agent)}</span>}
       </span>
     </button>
-  );
-}
-
-/** The Director's gate: a coral diamond, because the gate is the Director's. */
-export function GateMark({ label, x }: { label: string; x?: number }) {
-  return (
-    <span
-      className={s.gate}
-      role="img"
-      aria-label={label}
-      title={label}
-      style={x === undefined ? undefined : at(x)}
-    />
-  );
-}
-
-export function Legend({ gate = true, now = true }: { gate?: boolean; now?: boolean }) {
-  return (
-    <ul className={`${s.legend} type-meta`} aria-label="Legend">
-      {LOOKS.map(({ look, word }) => (
-        <li key={look}>
-          <span className={s.swatch} data-look={look} aria-hidden="true">
-            <Glyph look={look} />
-          </span>
-          {word}
-        </li>
-      ))}
-      {gate && (
-        <li>
-          <span className={s.gateKey} aria-hidden="true" />
-          Director gate
-        </li>
-      )}
-      {now && (
-        <li>
-          <span className={s.nowKey} aria-hidden="true" />
-          Now
-        </li>
-      )}
-    </ul>
   );
 }

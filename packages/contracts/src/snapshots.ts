@@ -830,7 +830,7 @@ export const WorkbenchSnapshot = z.object({
 export type WorkbenchSnapshot = z.infer<typeof WorkbenchSnapshot>;
 
 // ---------------------------------------------------------------------------
-// Schedule: the Plan surface's Today, Engagement and list views
+// Schedule: the Plan surface's activity list (`today` is no longer read by the web app)
 // ---------------------------------------------------------------------------
 
 export const ScheduledTask = z.object({

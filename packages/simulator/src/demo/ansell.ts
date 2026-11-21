@@ -1582,6 +1582,7 @@ export const ansell: DemoScenario = {
   escalations: {
     'E-06': () => ({
       id: 'E-06',
+      taskId: 't4',
       type: 'gate',
       title: 'Pilot slice review',
       question: 'Are the first three homepage sections right before we build the rest?',
@@ -1739,6 +1740,7 @@ export const ansell: DemoScenario = {
     }),
     'E-08': () => ({
       id: 'E-08',
+      taskId: 'r3',
       type: 'access',
       title: 'Thumbnail upload returned 403',
       question: 'Sitecore blocked a preview image upload. Retry, or skip the images for now?',

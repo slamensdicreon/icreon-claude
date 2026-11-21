@@ -1,18 +1,22 @@
 /*
- * Plan's model: what each task state is called and how it looks, the time axes the timelines
- * share, and the small derivations the views need. No geometry in pixels lives here: the views
- * place things in percentages of their track, and the CSS module owns every length.
+ * Plan's model. The plan is one list of activities, read at two depths: every activity in
+ * Everything, and what needs the Director, what is moving and what comes next in Bliss. This file
+ * holds what both faces derive from the schedule: what each state is called, which decisions hold
+ * which activity, what an activity waits on, how its time reads, and where its window sits on the
+ * engagement. No pixel lengths live here: the window bar is placed in percent of its track.
  */
 import type {
   AgentView,
+  EscalationView,
   Face,
   ScheduleActivity,
+  ScheduledTask,
   ScheduleSnapshot,
   TaskState,
   Workstream,
 } from '@lw/contracts';
 import type { CSSProperties } from 'react';
-import { fmt, initials } from '../../lib/fmt';
+import { clock, fmt, initials, localDate, shortDay } from '../../lib/fmt';
 
 /** How a state is drawn; each look also carries a glyph, so a state never rests on color alone. */
 export type Look = 'done' | 'running' | 'ready' | 'planned' | 'waiting' | 'blocked';
@@ -32,41 +36,95 @@ export const STATE: Record<TaskState, { word: string; look: Look }> = {
 };
 export const stateOf = (s: TaskState) => STATE[s] ?? { word: s, look: 'planned' as const };
 
-/** The legend: one entry per look, in the order a task moves through them. */
-export const LOOKS: { look: Look; word: string }[] = [
-  { look: 'planned', word: 'Planned' },
-  { look: 'ready', word: 'Ready' },
-  { look: 'running', word: 'Running' },
-  { look: 'waiting', word: 'Waiting' },
-  { look: 'blocked', word: 'Blocked' },
-  { look: 'done', word: 'Done' },
-];
+/** An activity with the phase it belongs to. */
+export type Activity = ScheduleActivity & { phase: number; phaseName: string };
 
-export const LANES: [Workstream, string][] = [
-  ['engineering', 'Engineering'],
-  ['quality', 'Quality'],
-  ['discovery', 'Discovery'],
-  ['content', 'Content'],
-];
+/** Every activity of the engagement, phase by phase, each phase in start order. */
+export function activitiesOf(s: ScheduleSnapshot): Activity[] {
+  return s.phases.flatMap((p) =>
+    p.activities
+      .map((a) => ({ ...a, phase: p.phase, phaseName: p.name }))
+      .sort((a, b) => a.start.localeCompare(b.start)),
+  );
+}
 
-export type PlanView = 'today' | 'engagement' | 'list';
-export const VIEWS: { value: PlanView; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: 'engagement', label: 'Engagement' },
-  { value: 'list', label: 'Activity list' },
-];
+const ENDED: ReadonlySet<TaskState> = new Set(['done', 'cancelled', 'rolled_back']);
+export const isOpen = (a: { state: TaskState }) => !ENDED.has(a.state);
+export const isMoving = (a: { state: TaskState }) =>
+  a.state === 'running' || a.state === 'validating';
+export const isHeld = (a: { state: TaskState }) =>
+  a.state === 'waiting' || a.state === 'blocked' || a.state === 'paused' || a.state === 'rejected';
 
 /**
- * The working day the scheduler plans in (packages/domain/src/time.ts): the Engagement view's
- * day columns run from its start to its end.
+ * The open decisions that hold each activity: a card whose task (`sourceTaskId`) is one of the
+ * activity's tasks. A card with no task holds no row; it still shows in Needs you.
  */
-export const WORKDAY = { start: 8, end: 18 } as const;
-export const WORK_HOURS = WORKDAY.end - WORKDAY.start;
+export function holdsOf(
+  activities: Activity[],
+  cards: readonly EscalationView[],
+): Map<string, EscalationView[]> {
+  const byTask = new Map<string, EscalationView[]>();
+  for (const c of cards)
+    if (c.status === 'open' && c.sourceTaskId)
+      byTask.set(c.sourceTaskId, [...(byTask.get(c.sourceTaskId) ?? []), c]);
+  const out = new Map<string, EscalationView[]>();
+  for (const a of activities) {
+    const held = a.taskIds.flatMap((id) => byTask.get(id) ?? []);
+    if (held.length) out.set(a.key, held);
+  }
+  return out;
+}
 
-const HOUR_MS = 3_600_000;
+type Tasks = ReadonlyMap<string, ScheduledTask>;
+
+/** The task an activity is on: the one moving or held, else the next one not finished. */
+export function currentTask(a: Activity, tasks: Tasks): ScheduledTask | undefined {
+  const list = a.taskIds.map((id) => tasks.get(id)).filter((t): t is ScheduledTask => !!t);
+  return list.find((t) => isMoving(t) || isHeld(t)) ?? list.find((t) => isOpen(t)) ?? list.at(-1);
+}
+
+/** The first unfinished task the activity's next step depends on, from another step. */
+export function waitingOn(a: Activity, tasks: Tasks): ScheduledTask | undefined {
+  const t = a.taskIds.map((id) => tasks.get(id)).find((x) => x && isOpen(x));
+  return t?.dependsOn.map((id) => tasks.get(id)).find((d) => d && isOpen(d));
+}
+
+/** Finished tasks out of all, for the progress pips. */
+export const progressOf = (a: Activity, tasks: Tasks) => ({
+  done: a.taskIds.filter((id) => tasks.get(id)?.state === 'done').length,
+  total: a.taskIds.length,
+});
+
+/** True when the times shown are the scheduler's estimate rather than recorded or planned. */
+export const isForecast = (a: Activity, tasks: Tasks) =>
+  a.taskIds.some((id) => {
+    const t = tasks.get(id);
+    return t && isOpen(t) && t.basis === 'forecast';
+  });
+
+/** "today 2:30 PM" or "Mon 23, 9 AM", in the project's zone. */
+export function moment(t: string, tz: string, now: number): string {
+  const time = clock(t, tz).replace(/:00(?=\s)/, '');
+  return localDate(t, tz) === localDate(now, tz) ? `today ${time}` : `${shortDay(t, tz)}, ${time}`;
+}
+
+/** How an activity's time reads: "Done Fri 20, 12:45 PM", "Ends ~today 4 PM", "Starts ~Mon 23, 9 AM". */
+export function whenOf(a: Activity, tasks: Tasks, tz: string, now: number): string {
+  if (!isOpen(a)) return `Done ${moment(a.end, tz, now)}`;
+  const about = isForecast(a, tasks) ? '~' : '';
+  return Date.parse(a.start) <= now
+    ? `Ends ${about}${moment(a.end, tz, now)}`
+    : `Starts ${about}${moment(a.start, tz, now)}`;
+}
+
+/**
+ * The working day the scheduler plans in (packages/domain/src/time.ts): each listed day spans
+ * 8 AM to 6 PM on the window bar's track.
+ */
+const WORKDAY = { start: 8, end: 18 } as const;
 
 /** Hours since local midnight in the project's zone (9:30 AM is 9.5). */
-export function hourOf(t: string | number, tz: string): number {
+function hourOf(t: string | number, tz: string): number {
   const parts = fmt(tz, { hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(
     new Date(t),
   );
@@ -75,87 +133,30 @@ export function hourOf(t: string | number, tz: string): number {
   return h + m / 60;
 }
 
-/** "8 AM" in the project's zone. */
-export const hourLabel = (t: number, tz: string) => fmt(tz, { hour: 'numeric' }).format(t);
-
-/** Position on a track as CSS custom properties: left (and width) in percent of the track. */
-export const at = (x: number, w?: number, extra?: Record<string, string | number>) =>
-  ({ '--x': x, ...(w === undefined ? {} : { '--w': w }), ...extra }) as CSSProperties;
-
-/** Custom properties for the CSS module to read (zoom, grid cells, a hue). */
-export const vars = (v: Record<string, string | number>) => v as CSSProperties;
-
-/** A hue for a mark, as a custom property its CSS reads. */
-export const hueVar = (hue: string) => vars({ '--hue': hue });
-
-export const clampPct = (n: number) => Math.max(0, Math.min(100, n));
-
-/** The Today axis: the snapshot's own span (8 AM to 8 PM local), as percentages of the track. */
-export function todayAxis(s: ScheduleSnapshot) {
-  const from = Date.parse(s.today.from);
-  const to = Date.parse(s.today.to);
-  const span = Math.max(1, to - from);
-  return {
-    from,
-    to,
-    hours: span / HOUR_MS,
-    x: (t: string | number) =>
-      clampPct(((Number(typeof t === 'string' ? Date.parse(t) : t) - from) / span) * 100),
-    /** Tick marks every `step` hours, as times. */
-    ticks: (step: number) =>
-      Array.from(
-        { length: Math.floor(span / (step * HOUR_MS)) + 1 },
-        (_, i) => from + i * step * HOUR_MS,
-      ),
-  };
-}
-
-/** The Engagement axis: the day's index plus its fraction of the working day, over all days. */
-export function engagementAxis(s: ScheduleSnapshot) {
+/**
+ * The engagement's working days as one track, in percent: a time on a day off sits at the end of
+ * the working day before it, so a weekend takes no room.
+ */
+export function windowAxis(s: ScheduleSnapshot) {
   const tz = s.timezone;
-  const index = new Map(s.days.map((d, i) => [d.date, i]));
-  const n = s.days.length || 1;
-  const first = s.days[0]?.date ?? '';
-  return {
-    days: n,
-    x: (t: string | number) => {
-      const date = fmt(tz, {}, 'en-CA').format(new Date(t));
-      const i = index.get(date) ?? (date < first ? 0 : n - 1);
+  const days = s.days.map((d) => d.date);
+  const n = days.length || 1;
+  return (t: string | number) => {
+    const date = fmt(tz, {}, 'en-CA').format(new Date(t));
+    const i = days.findIndex((d) => d >= date);
+    let pos: number;
+    if (i === -1) pos = n;
+    else if (days[i] !== date) pos = i;
+    else {
       const h = Math.max(WORKDAY.start, Math.min(WORKDAY.end, hourOf(t, tz)));
-      return clampPct(((i + (h - WORKDAY.start) / WORK_HOURS) / n) * 100);
-    },
-    /** Hour marks inside each day, every `step` hours, as percentages and the hour they mark. */
-    hourTicks: (step: number) =>
-      step
-        ? s.days.flatMap((d, i) =>
-            Array.from({ length: WORK_HOURS / step - 1 }, (_, k) => {
-              const h = WORKDAY.start + (k + 1) * step;
-              return {
-                key: `${d.date}-${h}`,
-                h,
-                x: ((i + (h - WORKDAY.start) / WORK_HOURS) / n) * 100,
-              };
-            }),
-          )
-        : [],
-    cellsPerDay: (step: number) => (step ? WORK_HOURS / step : 1),
+      pos = i + (h - WORKDAY.start) / (WORKDAY.end - WORKDAY.start);
+    }
+    return Math.max(0, Math.min(100, (pos / n) * 100));
   };
 }
 
-/** "10a", "2p": an hour mark inside a day. */
-export const shortHour = (h: number) => `${h % 12 || 12}${h < 12 ? 'a' : 'p'}`;
-
-export const byStart = <T extends { start: string }>(list: readonly T[]) =>
-  list.toSorted((a, b) => a.start.localeCompare(b.start));
-
-export const phaseState = (a: ScheduleActivity[]) =>
-  a.every((x) => x.state === 'done')
-    ? 'done'
-    : a.some((x) => ['running', 'waiting', 'blocked'].includes(x.state))
-      ? 'running'
-      : 'planned';
-
-export const PHASE_WORD = { done: 'Done', running: 'Under way', planned: 'Planned' } as const;
+/** Custom properties for the CSS module to read (a position, a width, a hue). */
+export const vars = (v: Record<string, string | number>) => v as CSSProperties;
 
 /** A person's face, in their team's hue. */
 export function faceOf(a: AgentView | undefined, id: string, working = false): Face {

@@ -1218,7 +1218,7 @@ export class DemoProject {
         ? new Date(this.now() + deadlineMs - minutesAgo * 60_000).toISOString()
         : null,
       evidence: (def.evidence ?? []).map((e) => ({ label: e.label, ...jumpTarget(e.go) })),
-      sourceTaskId: null,
+      sourceTaskId: def.taskId ?? null,
       waitNote: def.waitNote ?? null,
       reversible: def.reversible ?? def.type !== 'gate',
       gate: def.gate

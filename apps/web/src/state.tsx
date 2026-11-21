@@ -49,8 +49,11 @@ export interface ProjectUi {
   /** The Workbench as the story of the work, or every file with one open. */
   wbView: 'story' | 'files';
   bpFilter: string;
-  planView: 'today' | 'engagement' | 'list';
+  /** How the activity list is grouped. */
+  planGroup: 'phase' | 'owner' | 'status';
   planFilter: string;
+  /** An activity to bring into view in the list, once (set when Bliss opens a row). */
+  planFocus: string | null;
   teamFilter: 'all' | 'working' | 'idle';
   breakpoint: 'desktop' | 'tablet' | 'phone';
   activity: { sev: 'all' | 'warn' | 'bad'; agent: string };
@@ -67,8 +70,9 @@ const DEFAULT_UI: ProjectUi = {
   wbArtifact: null,
   wbView: 'story',
   bpFilter: 'all',
-  planView: 'today',
-  planFilter: 'all',
+  planGroup: 'phase',
+  planFilter: 'open',
+  planFocus: null,
   teamFilter: 'all',
   breakpoint: 'desktop',
   activity: { sev: 'all', agent: 'all' },

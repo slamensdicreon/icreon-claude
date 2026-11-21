@@ -1,0 +1,128 @@
+/* Plan, Bliss face: the activity list, distilled. */
+
+.bliss {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  padding: var(--space-3) 0 var(--space-8);
+  max-width: calc(var(--measure) * 0.85);
+}
+.voice {
+  margin: 0;
+  text-wrap: balance;
+}
+.voice b {
+  font-weight: 600;
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.step,
+.gateStep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: calc(var(--row) + var(--space-3));
+  padding: var(--space-3) 0;
+  border: 0;
+  border-top: 1px solid var(--mist);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+}
+.step {
+  cursor: pointer;
+}
+.step:hover .text b {
+  text-decoration: underline;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+}
+.when {
+  flex: none;
+  width: calc(var(--row) * 1.5);
+  color: var(--text-3);
+}
+.when[data-tone='held'] {
+  color: var(--gold);
+}
+.text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.35;
+}
+.text b {
+  font-weight: 600;
+}
+.text :global(.type-meta) {
+  color: var(--text-3);
+}
+.right {
+  flex: none;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.diamond {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  margin: 0 var(--space-3);
+  border-radius: 3px;
+  background: var(--coral);
+  transform: rotate(45deg);
+}
+.quiet {
+  margin: 0;
+  color: var(--text-3);
+}
+.done {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+}
+.done b {
+  color: var(--ink);
+}
+.more {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--mist);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-5);
+  min-height: calc(var(--row) - var(--space-3));
+  cursor: pointer;
+}
+.more svg {
+  transform: rotate(-90deg);
+}
+
+@media (max-width: 640px) {
+  .when {
+    width: auto;
+    min-width: calc(var(--row) * 0.9);
+  }
+  .right {
+    display: none;
+  }
+  .step,
+  .gateStep {
+    gap: var(--space-3);
+  }
+}
