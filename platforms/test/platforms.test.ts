@@ -1562,6 +1562,12 @@ describe('Optimizely pack', () => {
       appPath: 'head',
     });
     expect(pack.buildRecipe).toEqual({ generate: [], build: 'build', readOnly: [] });
+    // The hosting project's name is derived from the project's with the platform after it: a
+    // client's plain name is usually held by its site on another platform already.
+    expect(pack.fields.hostingProject).toMatchObject({
+      defaultFrom: 'name',
+      defaultSuffix: '-optimizely',
+    });
     expect(pack.toolCredential('optimizely-cms')?.credentialId).toBe('cms-api-client');
     expect(pack.toolCredential('optimizely-graph')?.credentialId).toBe('graph-single-key');
     expect(pack.toolCredential('sitecore-authoring')).toBeUndefined();

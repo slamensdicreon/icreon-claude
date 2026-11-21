@@ -407,16 +407,21 @@ export function HostingPanel({
 
 /**
  * What intake recorded about the target. Before Start, a value no credential check depends on
- * can change here (a hosting project name that turned out to be taken).
+ * can change here. One can still change after Start (`late`): the hosting project's name, until
+ * the project is made, because a name another project holds stops the build and nobody on the
+ * team can rename it.
  */
 export function IntakePanel({
   values,
   spec,
   open,
+  late = [],
 }: {
   values: Record<string, string | string[]>;
   spec: PlaybookSummary['intake'] | null;
   open: boolean;
+  /** Keys that can still change although the project has started. */
+  late?: string[];
 }) {
   const { projectId, run } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
@@ -429,7 +434,9 @@ export function IntakePanel({
       <p className={`${s.lead} ${s.sentence}`}>
         {open
           ? 'What intake recorded about the target. Values a credential was checked against are fixed; the others can change until Start.'
-          : 'What intake recorded about the target. Fixed once the project started; reset the project to change them.'}
+          : late.length
+            ? 'What intake recorded about the target. Fixed once the project started, except the hosting project’s name, which can change until the team has created it; reset the project to change the others.'
+            : 'What intake recorded about the target. Fixed once the project started; reset the project to change them.'}
       </p>
       <div className={s.tableWrap}>
         <table className={`${s.table} ${s.stackOnPhone} type-table`}>
@@ -491,7 +498,7 @@ export function IntakePanel({
                   )}
                 </td>
                 <td className={s.actionsCell}>
-                  {open && !checked.has(f.key) && editing !== f.key && (
+                  {(open || late.includes(f.key)) && !checked.has(f.key) && editing !== f.key && (
                     <Action
                       label={`Change ${f.label}`}
                       onClick={() => {

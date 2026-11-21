@@ -34,6 +34,11 @@ export const IntakeFieldSpec = z.object({
   defaultValue: z.string().nullable(),
   /** Prefilled from another wizard value, slugged (a hosting project from the project name). */
   defaultFrom: z.enum(['name']).nullable(),
+  /**
+   * Added to a value derived with `defaultFrom` (`-optimizely`), so a client's second project on
+   * another platform doesn't take the name its first one holds.
+   */
+  defaultSuffix: z.string().nullable().optional(),
 });
 export type IntakeFieldSpec = z.infer<typeof IntakeFieldSpec>;
 

@@ -194,6 +194,8 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
         pattern: null,
         defaultValue: null,
         defaultFrom: 'name',
+        // A client often has a site on another platform under its plain name already.
+        defaultSuffix: '-optimizely',
       },
     },
     // One instance hosts many applications: its URL, locales, API key and Graph keys are the

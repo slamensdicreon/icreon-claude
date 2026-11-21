@@ -121,16 +121,19 @@ export const credentialsOf = (pb: PlaybookSummary | null): IntakeCredentialSpec[
 export const fieldsOf = (pb: PlaybookSummary | null): IntakeFieldSpec[] =>
   (pb?.intake.steps ?? []).flatMap((s) => s.fields);
 
+/** A field's value derived from the project's name: slugged, with the field's suffix. */
+const fromName = (fs: IntakeFieldSpec, name: string) => {
+  const base = fs.defaultFrom === 'name' ? slug(name) : '';
+  return base ? `${base}${fs.defaultSuffix ?? ''}` : '';
+};
+
 /** The value a target field is sent with: typed, else derived from the name, else its default. */
 export const fieldValue = (fs: IntakeFieldSpec, a: Pick<Answers, 'target' | 'f'>) =>
-  (a.target[fs.key] ?? '').trim() ||
-  (fs.defaultFrom === 'name' ? slug(a.f.name) : '') ||
-  fs.defaultValue ||
-  '';
+  (a.target[fs.key] ?? '').trim() || fromName(fs, a.f.name) || fs.defaultValue || '';
 
 /** What a field shows when empty: the value it would take. */
 export const fieldPlaceholder = (fs: IntakeFieldSpec, name: string) =>
-  (fs.defaultFrom === 'name' ? slug(name) : '') || fs.defaultValue || fs.placeholder || '';
+  fromName(fs, name) || fs.defaultValue || fs.placeholder || '';
 
 export function fieldOk(fs: IntakeFieldSpec, a: Pick<Answers, 'target' | 'f'>): boolean {
   const v = fieldValue(fs, a);
