@@ -124,7 +124,24 @@ describe('optimizely scenario', () => {
       parse(await readFile(`${PLAYBOOK}/fixtures/blueprint.example.yaml`, 'utf8')),
     );
     const site = Blueprint.parse({ version: 1, collections: OPTIMIZELY_SITE });
-    expect(site.collections).toEqual(example.collections);
+    // Item for item, by key, name, status and pilot. The example also carries each item's model
+    // contract (attrs) and the 404 page it records as dropped, which the simulation doesn't
+    // narrate: nothing is built for either.
+    const built = (collections: Blueprint['collections']) =>
+      Object.fromEntries(
+        Object.entries(collections).map(([name, items]) => [
+          name,
+          items
+            .filter((i) => i.status !== 'drop')
+            .map(({ key, name: itemName, status, pilot }) => ({
+              key,
+              name: itemName,
+              status,
+              pilot,
+            })),
+        ]),
+      );
+    expect(built(site.collections)).toEqual(built(example.collections));
 
     // A project with a source repository and no Experimentation licence.
     const compiled = compilePlan(run.playbook, example, { features: ['source-repo'] });

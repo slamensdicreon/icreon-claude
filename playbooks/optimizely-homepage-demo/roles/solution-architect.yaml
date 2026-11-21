@@ -34,6 +34,8 @@ tools:
     ops:
       - check
 acceptance:
+  - validator:blueprint.coverage
+  - validator:discovery.blueprint
   - validator:blueprint.demo-slice
 escalateWhen:
   - decisionNeeded

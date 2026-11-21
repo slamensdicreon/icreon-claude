@@ -12,7 +12,9 @@ import {
 } from '@lw/connectors';
 import type { PlatformPack } from '../src/index';
 import { hostOf, list, text, type TargetValues } from '../src/values';
+import { blueprintChecks } from './blueprint-checks';
 import { optimizelyChecks } from './checks';
+import { discoveryChecks } from './discovery-checks';
 import { optimizelyFacts } from './facts';
 
 export const OPTIMIZELY = 'optimizely';
@@ -294,7 +296,9 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     // (src/cms/registry.generated.ts, not committed), so there is no separate step. Agents add a
     // component as a folder; nothing every component shares changes for it.
     buildRecipe: { generate: [], build: 'build', readOnly: [] },
-    checks: optimizelyChecks(cfg),
+    // The CMS's, Graph's and the head's checks; the Blueprint's model contract as this platform
+    // writes it; and discovery's, which read the source site and the project's documents.
+    checks: { ...optimizelyChecks(cfg), ...blueprintChecks(), ...discoveryChecks(cfg) },
     facts: (call, body, target) => optimizelyFacts(call, body, optimizelyBindings(target)),
     pageComponents: { server: 'optimizely-cms', op: 'page.components' },
     // A key that has already created and published content on the instance has content rights:
