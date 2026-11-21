@@ -9,8 +9,12 @@
 # project's prefix) with display templates, the page is an experience type that references shared
 # header, footer and navigation blocks, the team creates the demo's application itself through the
 # REST API, and delivery is Optimizely Graph, which serves published content only.
+#
+# 0.1.1: the build repository's starter generates its component registry from the component
+# folders and carries no samples, so a component is one folder and branches built at the same time
+# never edit the same file; the prompts say so.
 id: optimizely-homepage-demo
-version: 0.1.0
+version: 0.1.1
 name: Optimizely homepage demo
 description: >-
   Audits a prospect's whole site in numbers, then blueprints and builds their homepage,

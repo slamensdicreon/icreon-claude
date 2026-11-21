@@ -16,8 +16,10 @@ export interface OptimizelyVerifyConfig {
   cmsHostSuffixes: string[];
   /**
    * The template repository an Optimizely build repository is generated from: Optimizely's own
-   * Next.js starter, unchanged, in a folder of its own. In our build organization, because
-   * Optimizely publishes its starter through a scaffolding tool, not as a template repository.
+   * Next.js starter in a folder of its own, without its samples and with a generated component
+   * registry, so that branches each adding a component never edit the same file. In our build
+   * organization, because Optimizely publishes its starter through a scaffolding tool, not as a
+   * template repository.
    */
   starter: { owner: string; repo: string; appPath: string };
   fetch: typeof fetch;

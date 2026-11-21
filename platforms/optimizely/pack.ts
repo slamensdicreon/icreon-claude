@@ -281,11 +281,13 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
             }
           : undefined,
     knowledgeDir: fileURLToPath(new URL('./knowledge', import.meta.url)),
-    // Optimizely's official Next.js starter, kept unchanged in a template repository of ours:
-    // the team adds the design system, the model files and the registry in the project's own.
+    // Optimizely's official Next.js starter in a template repository of ours, without its samples
+    // and with what a live build proved (routes, preview, a generated registry): the team adds
+    // the design system and one folder per component in the project's own.
     starter: cfg.starter,
-    // The starter has one build script and generates nothing first. Agents never write the
-    // lock file by hand or the CLI's local manifest.
+    // The starter's `type-check` and `build` scripts each generate the component registry first
+    // (src/cms/registry.generated.ts, not committed), so there is no separate step. Agents add a
+    // component as a folder; nothing every component shares changes for it.
     buildRecipe: { generate: [], build: 'build', readOnly: [] },
     checks: optimizelyChecks(cfg),
     facts: (call, body, target) => optimizelyFacts(call, body, optimizelyBindings(target)),

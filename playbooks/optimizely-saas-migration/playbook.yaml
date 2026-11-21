@@ -13,8 +13,12 @@
 # and live preview; then content. The head shows published content only, so content is published
 # where it is built, as releases the Director approves; and the API key's content rights are
 # confirmed in phase 0, because no read shows them.
+#
+# 0.5.1: the build repository's starter generates its component registry from the component
+# folders and carries no samples, so a component is one folder and branches built at the same time
+# never edit the same file; the prompts say so.
 id: optimizely-saas-migration
-version: 0.5.0
+version: 0.5.1
 name: Build an Optimizely CMS (SaaS) website
 description: >-
   Rebuilds a client's live site as an Optimizely CMS (SaaS) application with a Next.js head on

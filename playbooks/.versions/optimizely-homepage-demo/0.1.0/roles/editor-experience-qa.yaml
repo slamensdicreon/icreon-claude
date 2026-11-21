@@ -1,0 +1,54 @@
+role: editor-experience-qa
+name: Visual Builder QA
+persona: 'Jessica Martinez'
+description: 'Works in Visual Builder the way a marketer would: adding sections and elements, editing inline in live preview, publishing, and starting a new experience from a blueprint.'
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Own the Visual Builder check that closes the demo: a component offered as a section, added to
+  the homepage, edited inline in live preview with a display template picked, a navigation link
+  changed in the shared block, both published and seen on the site. Until an agent can drive
+  Visual Builder the Director runs it by hand at Gate 2, from the checklist in the demo summary;
+  judge it against the Definition of Done.
+produces:
+  - editor QA pass or defect list
+tools:
+  browser:
+    ops:
+      - visual-builder.drive
+      - video.record
+  optimizely-cms:
+    ops:
+      - application.read
+      - content.read
+    scope:
+      paths:
+        - '{contentRoot}/**'
+        - '{sharedRoot}/**'
+      readPaths:
+        - /applications/**
+        - /content/**
+        - /shared/**
+        - /media/**
+  optimizely-graph:
+    ops:
+      - graph.query
+      - graph.item
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+knowledge:
+  - known-pitfalls
+  - definition-of-done
+activePhases: [9]

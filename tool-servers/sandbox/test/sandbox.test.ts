@@ -53,7 +53,9 @@ describe('working copies', () => {
     const fake = fakeBox(
       {
         'examples/basic-nextjs/node_modules/.package-lock.json': '{}',
-        'examples/basic-nextjs/package.json': JSON.stringify({ scripts: { 'next:build': 'x' } }),
+        'examples/basic-nextjs/package.json': JSON.stringify({
+          scripts: { 'next:build': 'x', 'type-check': 'x' },
+        }),
       },
       (cmd, args) =>
         cmd === 'git' && args[0] === 'rev-parse'
@@ -309,6 +311,27 @@ describe('working copies', () => {
       'type-check',
       'app:build',
     ]);
+  });
+
+  it("builds a starter that has no type-check script on its build alone (Optimizely's scaffold)", async () => {
+    const scripts = { dev: 'x', build: 'x', start: 'x', lint: 'x' };
+    const fake = fakeBox({ 'head/package.json': JSON.stringify({ scripts }) }, (cmd, args) =>
+      cmd === 'git' && args[0] === 'rev-parse' ? { exitCode: 0, output: 'abc1234\n' } : null,
+    );
+    const s = new SandboxToolServer({
+      provider: fake.provider,
+      facts: async () => ({
+        repo: 'icreon-launchworks/acme',
+        branch: 'main',
+        appPath: 'head',
+        recipe: { generate: [], build: 'build', readOnly: [] },
+      }),
+      buildEnv: async () => ({}),
+    });
+    const r = await s.call('exec.build', {}, ctx);
+    // A missing script would answer "Missing script: type-check" and turn every build red.
+    expect(fake.runs.filter((x) => x.cmd === 'npm').map((x) => x.args[1])).toEqual(['build']);
+    expect(r.summary).toBe('Build green: build passed (nothing uncommitted, at abc1234)');
   });
 
   it('keeps CI settings read-only everywhere, and a platform file read-only only on its platform', () => {
