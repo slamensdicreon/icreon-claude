@@ -137,6 +137,34 @@ export const isInAppIcreonRoute = (url: string) => IN_APP_ICREON_ROUTES.some((r)
 const deny = (reply: FastifyReply, status: number, code: string, message: string) =>
   reply.status(status).send({ error: { code, message } });
 
+/** API keys as a setting holds them: `login:sha256hex` pairs, comma-separated. Hashes only. */
+export const parseApiKeys = (value: string): { login: string; sha256: string }[] =>
+  value
+    .split(',')
+    .map((s) => s.trim().split(':'))
+    .filter((p): p is [string, string] => p.length === 2 && /^[0-9a-f]{64}$/i.test(p[1]!))
+    .map(([login, sha256]) => ({ login, sha256 }));
+
+/**
+ * The members a deployment's settings name, in Icreon's organization: its operators and their
+ * API keys as Directors, and the holders of watcher keys as Watchers, who see every project and
+ * change nothing (an agent that follows a project, a status page). Only added, never changed: a
+ * role set since is kept, and a login that is both stays a Director.
+ */
+export async function seedSettingsMembers(
+  orgs: OrganizationStore,
+  named: { directors: string[]; watchers: string[] },
+): Promise<void> {
+  const add = async (login: string, role: MemberRole, from: string) => {
+    const subject = githubSubject(login);
+    const mine = await orgs.membershipsOf(subject);
+    if (!mine.some((m) => m.organizationId === DEFAULT_ORGANIZATION))
+      await orgs.setMember(DEFAULT_ORGANIZATION, subject, role, from);
+  };
+  for (const login of new Set(named.directors)) await add(login, 'director', 'OPERATORS');
+  for (const login of new Set(named.watchers)) await add(login, 'watcher', 'WATCHER_API_KEYS');
+}
+
 /** Who the caller is, as memberships name them. */
 export const subjectOf = (req: FastifyRequest, signedIn: boolean): string | null =>
   !signedIn

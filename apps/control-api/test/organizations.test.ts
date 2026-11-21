@@ -335,6 +335,37 @@ describe('roles', () => {
     expect((await as('alice')('GET', '/integrations/github')).status).not.toBe(403);
   });
 
+  it('seeds the members a deployment names: operators as Directors, watcher keys as Watchers', async () => {
+    const { parseApiKeys, seedSettingsMembers } = await import('../src/organizations');
+    const hash = 'ab'.repeat(32);
+    // A setting's value: pairs with a 64-character hash; anything else is left out.
+    expect(
+      parseApiKeys(` steve:${hash} , follower:${hash.toUpperCase()},broken:123,,noHash`),
+    ).toEqual([
+      { login: 'steve', sha256: hash },
+      { login: 'follower', sha256: hash.toUpperCase() },
+    ]);
+    expect(parseApiKeys('')).toEqual([]);
+
+    const orgs = new MemoryOrganizationStore();
+    const roleOf = async (login: string) =>
+      (await orgs.membershipsOf(githubSubject(login))).find(
+        (m) => m.organizationId === DEFAULT_ORGANIZATION,
+      )?.role;
+    await seedSettingsMembers(orgs, {
+      directors: ['steve', 'both'],
+      watchers: ['follower', 'both'],
+    });
+    expect(await roleOf('steve')).toBe('director');
+    // A key that only watches never becomes a Director, and a login in both lists stays one.
+    expect(await roleOf('follower')).toBe('watcher');
+    expect(await roleOf('both')).toBe('director');
+    // Only added, never changed: a role set since is kept on the next start.
+    await orgs.setMember(DEFAULT_ORGANIZATION, githubSubject('follower'), 'director', 'steve');
+    await seedSettingsMembers(orgs, { directors: [], watchers: ['follower'] });
+    expect(await roleOf('follower')).toBe('director');
+  });
+
   it('opens only routes that exist to Watchers', async () => {
     await start();
     const { WATCHER_ROUTES } = await import('../src/organizations');
