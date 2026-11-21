@@ -523,3 +523,23 @@ describe('media', () => {
     expect(cms.uploads).toHaveLength(0);
   });
 });
+
+describe("Optimizely's refusals, in words an agent can act on", () => {
+  it('says what shape a value should have when the CMS only names the types', async () => {
+    const { problem } = await import('../src/cms');
+    const said = problem(400, {
+      errors: [
+        {
+          field: 'initialVersion.properties.logoUrl.value',
+          detail:
+            "The requested operation requires an element of type 'String', but the target element has type 'Object'.",
+        },
+      ],
+    });
+    expect(said).toContain('initialVersion.properties.logoUrl.value');
+    expect(said).toContain('That property takes a plain string: a `url` property is "https://…"');
+    expect(problem(400, { detail: "Property 'Header' is required." })).toBe(
+      "Optimizely answered 400: Property 'Header' is required.",
+    );
+  });
+});

@@ -594,8 +594,15 @@ export class SandboxToolServer implements ToolServer {
           .map((f) => f.replace(/^\.\//, ''))
           .filter(Boolean)
           .slice(0, 3000);
+        // find's complaint about a folder that isn't there is not a file in it.
+        if (r.exitCode !== 0)
+          return {
+            code: 404,
+            body: { files: [] },
+            summary: `No folder ${a.data.path ?? '.'} in the working copy: paths start at the repository's root (${facts.appPath}/src/…)`,
+          };
         return {
-          code: r.exitCode === 0 ? 200 : 404,
+          code: 200,
           body: { files },
           summary: `${files.length} files${a.data.path ? ` under ${a.data.path}` : ''}`,
         };

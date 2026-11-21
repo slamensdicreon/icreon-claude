@@ -627,7 +627,7 @@ class Rest {
 }
 
 /** Optimizely's problem details as one sentence an agent can act on. */
-function problem(status: number, body: unknown): string {
+export function problem(status: number, body: unknown): string {
   const b = (body ?? {}) as {
     title?: string;
     detail?: string;
@@ -642,7 +642,12 @@ function problem(status: number, body: unknown): string {
     .map((e) => [e.field, e.detail].filter(Boolean).join(': '))
     .filter(Boolean);
   const said = errors.length ? errors.join('; ') : (b.detail ?? b.title ?? '');
-  return `Optimizely answered ${status}${said ? `: ${said}` : ''}`;
+  // The CMS's words for a value of the wrong shape, most often a link object on a `url` property.
+  const shape =
+    /requires an element of type 'String', but the target element has type 'Object'/.test(said)
+      ? ' That property takes a plain string: a `url` property is "https://…" or "/path", and the link object ({ url, text, title, target }) is for a `link` property only.'
+      : '';
+  return `Optimizely answered ${status}${said ? `: ${said}` : ''}${shape}`;
 }
 
 type Parsed<S extends z.ZodType> = z.ZodSafeParseResult<z.infer<S>>;

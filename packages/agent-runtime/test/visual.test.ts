@@ -79,3 +79,36 @@ it('grounds the judge in measured sections and last round, and sorts major from 
   expect(sent[0]!.system).toContain('Never report the reverse of one of them');
   expect(sent[0]!.system).toContain('"minor" is the rest');
 });
+
+it('says which screen the pages are shown on when it is not a desktop', async () => {
+  const sent: { system: string; content: { type: string; text?: string }[] }[] = [];
+  const client = {
+    messages: {
+      parse: async (req: {
+        system: string;
+        messages: { content: { type: string; text?: string }[] }[];
+      }) => {
+        sent.push({ system: req.system, content: req.messages[0]!.content });
+        const parsed: ScreenVerdict = { verdict: 'match', differences: [], minor: [] };
+        return {
+          parsed_output: parsed,
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    },
+  } as unknown as Anthropic;
+  const page = { path: '/', source: [], candidate: [], model: 'm', effort: 'low' as const };
+  await compareScreens(page, client);
+  await compareScreens({ ...page, view: { name: 'phone', width: 390 } }, client);
+  // A desktop comparison reads as it always did.
+  expect(sent[0]!.system).not.toContain('as a phone shows them');
+  expect(sent[0]!.content.find((c) => c.text?.startsWith('Page /'))!.text).toBe(
+    'Page /. The source, top to bottom:',
+  );
+  expect(sent[1]!.system).toContain('as a phone shows them, 390 px wide');
+  expect(sent[1]!.system).toContain('a page that scrolls sideways');
+  expect(sent[1]!.content.find((c) => c.text?.startsWith('Page /'))!.text).toBe(
+    'Page /, on a phone (390 px wide). The source, top to bottom:',
+  );
+});
