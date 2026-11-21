@@ -5,8 +5,8 @@
  */
 import type { EscalationView } from '@lw/contracts';
 import { post } from '../../lib/api';
-import { isWatching } from '../../lib/role';
 import { clock } from '../../lib/fmt';
+import { TYPE_LABEL } from '../../lib/escalation';
 import { TypedConfirm } from '../../overlays/Dialogs';
 import { useApp, type Surface } from '../../state';
 import { hueOf, type CardAction } from './parts';
@@ -22,12 +22,12 @@ export const KIND: Record<string, string> = {
 };
 /** The one action a Needs-you row offers. */
 const ROW_ACTION: Record<string, string> = {
-  decision: 'Choose',
+  decision: 'Answer',
   gate: 'Review',
-  access: 'Grant',
-  blocker: 'Unblock',
-  budget: 'Review',
-  risk: 'Review',
+  access: 'Answer',
+  blocker: 'Answer',
+  budget: 'Answer',
+  risk: 'Answer',
 };
 const WORKSTREAM: Record<string, string> = {
   discovery: 'Discovery',
@@ -40,6 +40,9 @@ export const kindOf = (x: EscalationView) => KIND[x.type] ?? 'Decide';
 /** The Everything pill: the gate's own label ("Gate 1") or the kind. */
 export const pillOf = (x: EscalationView) =>
   x.type === 'gate' && x.typeLabel ? x.typeLabel : kindOf(x);
+/** The kind as a plain word for a row's pill: a gate's own label ("Gate 1"), else Decision, Review… */
+export const kindWordOf = (x: EscalationView) =>
+  x.type === 'gate' && x.typeLabel ? x.typeLabel : (TYPE_LABEL[x.type] ?? kindOf(x));
 /** The pill's color: the team that raised it; a gate is ink. */
 export const pillHue = (x: EscalationView) =>
   x.type === 'gate' ? 'var(--ink)' : hueOf(x.raisedBy?.workstream ?? null);
@@ -68,6 +71,44 @@ export function raisedLine(x: EscalationView, ago: string): string {
   return `${verb} ${r.firstName}${team} · ${ago}`;
 }
 
+/** The decision as a plain question; the title on cards raised without one. */
+export const questionOf = (x: EscalationView) => x.question?.trim() || x.title;
+
+/** The option in a few plain words (Bliss); its label when the raiser wrote none. */
+export const shortOf = (o: EscalationView['options'][number]) => o.short?.trim() || o.label;
+
+/** "If you don't answer: The contact page", or what happens meanwhile. */
+export function fallbackOf(x: EscalationView): string | null {
+  const d = x.deadline ? x.options.find((o) => o.id === x.defaultOptionId) : undefined;
+  if (d) return `If you don't answer: ${shortOf(d)}`;
+  return x.waitNote;
+}
+
+/** "24 min left", "1 h 05 m left". */
+export function minutesLeft(deadline: string, now: number): string {
+  const m = Math.max(0, Math.round((Date.parse(deadline) - now) / 60_000));
+  return m >= 60
+    ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} m left`
+    : `${m} min left`;
+}
+
+/** "2:24 PM · 24 min left", or "No deadline": a row's clock, without option letters. */
+export const dueOf = (x: EscalationView, tz: string, now: number) =>
+  x.deadline ? `${clock(x.deadline, tz)} · ${minutesLeft(x.deadline, now)}` : 'No deadline';
+
+/** Where the API wrote no gist: the context's first sentence, stopped before a long list. */
+export function shortContext(text: string): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  let first = /^(.+?[.!?])(?=\s+["“(]?[A-Z0-9])/.exec(t)?.[1] ?? t;
+  const colon = first.indexOf(': ');
+  if (colon > 20 && first.length - colon > 70) first = `${first.slice(0, colon)}.`;
+  return first.length > 170 ? `${first.slice(0, first.lastIndexOf(' ', 168))}…` : first;
+}
+
+const COUNT = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+/** Counts under ten as words ("Three"). */
+export const countWord = (n: number) => COUNT[n] ?? String(n);
+
 /** The option Cypher would pick, then the other one. */
 export function picks(x: EscalationView) {
   const pickId =
@@ -82,14 +123,15 @@ export function picks(x: EscalationView) {
  * caller's data once a command lands.
  */
 export function useYoursActions(projectId: string, projectName: string, after?: () => void) {
-  const { run, switchProject, go, projectId: current, openOverlay, closeOverlay } = useApp();
+  const { run, openProject, go, projectId: current, openOverlay, closeOverlay } = useApp();
   const base = `/projects/${projectId}`;
   const done = (ok: boolean) => {
     if (ok) after?.();
   };
+  /** Opens a surface of the card's project, on that card when `patch` names it. */
   const open = (surface: Surface, patch?: { expanded: string }) => {
-    if (current !== projectId) switchProject(projectId);
-    go(surface, current === projectId ? patch : undefined);
+    if (current !== projectId) openProject(projectId, surface, patch);
+    else go(surface, patch);
   };
   // Undo, from a toast: the server keeps a short window in which a settled card can be taken back.
   const undoAction = (x: EscalationView) => ({
@@ -101,12 +143,14 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
         'Undoing',
       ).then(done),
   });
-  const resolve = (x: EscalationView, optionId: string) => {
+  /** Answers the card; `notes` (a note, or what an option asks for) reach the agent with it. */
+  const resolve = (x: EscalationView, optionId: string, notes?: string) => {
     const chose = x.options.find((o) => o.id === optionId)?.label;
     void run(
       () =>
         post(`${base}/escalations/${x.escalationId}/resolve`, {
           optionId,
+          ...(notes?.trim() ? { notes: notes.trim() } : {}),
           ...(x.group ? { all: true } : {}),
         }),
       {
@@ -154,57 +198,6 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
     ).then(done);
   };
 
-  /**
-   * The card's primary and secondary actions, as the Yours card shows them. A gate offers "Read it"
-   * from the Dashboard and "Approve" / "Send back" inside its project (Mission Control board).
-   */
-  const cardActions = (
-    x: EscalationView,
-    where: 'portfolio' | 'project' = 'portfolio',
-  ): { primary: CardAction; secondary: CardAction | null } => {
-    // A Watcher reads and follows; the Director decides.
-    if (isWatching())
-      return x.type === 'gate'
-        ? { primary: { label: 'Read it', run: () => open('workbench') }, secondary: null }
-        : {
-            primary: { label: 'Open', run: () => open('inbox', { expanded: x.escalationId }) },
-            secondary: null,
-          };
-    if (x.type === 'gate')
-      return where === 'portfolio'
-        ? {
-            primary: { label: 'Read it', run: () => open('workbench') },
-            secondary: {
-              label: 'Approve now',
-              run: () => approve(x),
-              leaves: !x.gate?.requiresConfirmation,
-            },
-          }
-        : {
-            primary: {
-              label: 'Approve',
-              run: () => approve(x),
-              leaves: !x.gate?.requiresConfirmation,
-            },
-            secondary: {
-              label: 'Send back',
-              run: () => open('inbox', { expanded: x.escalationId }),
-            },
-          };
-    const { pick, other } = picks(x);
-    if (!pick)
-      return {
-        primary: { label: 'Open', run: () => open('inbox', { expanded: x.escalationId }) },
-        secondary: null,
-      };
-    return {
-      primary: { label: pick.label, run: () => resolve(x, pick.id), leaves: true },
-      secondary: other
-        ? { label: other.label, run: () => resolve(x, other.id), leaves: true }
-        : { label: 'Later', run: () => defer(x), leaves: true },
-    };
-  };
-
   /** The one action on a Needs-you row: open it where it's decided. */
   const rowAction = (x: EscalationView): CardAction => ({
     label: ROW_ACTION[x.type] ?? 'Open',
@@ -230,5 +223,24 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
       'Sending it back',
     ).then(done);
 
-  return { cardActions, rowAction, resolve, defer, approve, open, resume, undo, sendBack };
+  /**
+   * An answer in the Director's own words, for none of the options: it goes to Cypher as a message
+   * about the card, which answers the card or passes it to the team. The card stays open meanwhile.
+   */
+  const reply = (x: EscalationView, text: string) =>
+    void run(
+      () =>
+        post(`${base}/messages`, {
+          body: `About "${questionOf(x)}": ${text.trim()}`,
+          about: x.escalationId,
+        }),
+      {
+        title: 'Sent to Cypher',
+        detail: 'Your answer goes to the team. The card stays here until it is settled.',
+        tone: 'info',
+      },
+      'Sending your answer',
+    ).then(done);
+
+  return { rowAction, resolve, reply, defer, approve, open, resume, undo, sendBack };
 }

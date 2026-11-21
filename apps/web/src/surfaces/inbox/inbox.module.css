@@ -151,6 +151,16 @@
 .clock[data-yours] {
   color: var(--coral-text);
 }
+.clockCol {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+.clockCol :global(.type-meta) {
+  color: var(--text-3);
+}
 .chev {
   flex: none;
   color: var(--text-3);

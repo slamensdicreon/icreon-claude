@@ -356,6 +356,10 @@ export interface AgentDecision {
   question: string;
   options: string[];
   recommended: string;
+  /** What it is about for the Director, in plain words. */
+  plain?: string;
+  /** What each option means, in a few plain words, in the options' order. */
+  hints?: string[];
 }
 
 /** A question an agent stopped on, for its Lead to see before the Director does. */

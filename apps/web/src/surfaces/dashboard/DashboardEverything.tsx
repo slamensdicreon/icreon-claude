@@ -2,7 +2,14 @@ import type { PortfolioOverview } from '@lw/contracts';
 import { age, clock, localDate } from '../../lib/fmt';
 import { useNow } from '../../state';
 import { EscalationLines, SpendBars, Swatch } from '../../ui/cypher/charts';
-import { leftOf, pillHue, pillOf, useYoursActions } from '../../ui/cypher/cards';
+import {
+  dueOf,
+  fallbackOf,
+  kindWordOf,
+  pillHue,
+  questionOf,
+  useYoursActions,
+} from '../../ui/cypher/cards';
 import { Avatar, Bar, hueOf, Kpi, NeedsRow, Panel } from '../../ui/cypher/parts';
 import s from './dashboard.module.css';
 import { ProjectsTable } from './ProjectsTable';
@@ -36,7 +43,7 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
             <p className={`${s.empty} type-body-small`}>Nothing needs you.</p>
           )}
           {o.yours.map((y) => (
-            <YoursRow key={y.escalation.escalationId} y={y} now={now} refresh={refresh} />
+            <YoursRow key={y.escalation.escalationId} y={y} tz={tz} now={now} refresh={refresh} />
           ))}
         </Panel>
       </div>
@@ -118,10 +125,12 @@ export function DashboardEverything({ o, refresh }: { o: PortfolioOverview; refr
 
 function YoursRow({
   y,
+  tz,
   now,
   refresh,
 }: {
   y: PortfolioOverview['yours'][number];
+  tz: string;
   now: number;
   refresh: () => void;
 }) {
@@ -129,11 +138,11 @@ function YoursRow({
   const act = useYoursActions(y.projectId, y.project, refresh);
   return (
     <NeedsRow
-      type={pillOf(x)}
+      type={kindWordOf(x)}
       hue={pillHue(x)}
-      title={x.title}
-      meta={[y.project, x.raisedBy?.name, `${age(x.raisedAt, now)}`].filter(Boolean).join(' · ')}
-      clock={leftOf(x, now)}
+      title={questionOf(x)}
+      meta={[y.project, fallbackOf(x), `${age(x.raisedAt, now)}`].filter(Boolean).join(' · ')}
+      clock={dueOf(x, tz, now)}
       clockYours={!!x.deadline}
       action={act.rowAction(x)}
     />

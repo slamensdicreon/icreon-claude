@@ -8,7 +8,14 @@ import type {
 import { useState } from 'react';
 import { age, clock, elapsed, usd } from '../../lib/fmt';
 import { useApp, useNow, useProjectResource, useTeam } from '../../state';
-import { leftOf, pillHue, pillOf, useYoursActions } from '../../ui/cypher/cards';
+import {
+  dueOf,
+  fallbackOf,
+  pillHue,
+  kindWordOf,
+  questionOf,
+  useYoursActions,
+} from '../../ui/cypher/cards';
 import { Avatar, Bar, Chips, NeedsRow, Panel, PhaseStrip } from '../../ui/cypher/parts';
 import { gateShort, openCards, phaseOwners, stripOf, word } from './model';
 import s from './mission.module.css';
@@ -125,11 +132,13 @@ export function MissionEverything({ mc }: { mc: MissionControlSnapshot }) {
         {cards.map((x) => (
           <NeedsRow
             key={x.escalationId}
-            type={pillOf(x)}
+            type={kindWordOf(x)}
             hue={pillHue(x)}
-            title={x.title}
-            meta={[x.raisedBy?.name, age(x.raisedAt, now), x.impact].filter(Boolean).join(' · ')}
-            clock={leftOf(x, now)}
+            title={questionOf(x)}
+            meta={[fallbackOf(x), x.raisedBy?.firstName, age(x.raisedAt, now)]
+              .filter(Boolean)
+              .join(' · ')}
+            clock={dueOf(x, p.timezone, now)}
             clockYours={!!x.deadline}
             action={act.rowAction(x)}
           />
