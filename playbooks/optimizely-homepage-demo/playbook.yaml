@@ -43,7 +43,7 @@ charter:
       measure: >-
         The header, footer and navigation are shared blocks the homepage's experience type
         references; the navigation is its own block whose menu items a marketer edits once for
-        every page (head.header-footer).
+        every page (head.header-footer, parity.chrome).
     - id: homepage-parity
       title: The homepage looks and reads like the live site
       measure: >-
@@ -62,7 +62,8 @@ charter:
       measure: >-
         The discovery crawl covers the whole site and the page inventory's siteAudit records it:
         pages, page layouts, forms, languages and sites, with any floor said as one. The Blueprint
-        covers only what the demo builds (inventory.complete, blueprint.demo-slice).
+        covers only what the demo builds (discovery.inventory, blueprint.coverage,
+        blueprint.demo-slice).
 intake:
   source:
     repo: optional

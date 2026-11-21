@@ -1,17 +1,29 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { OPTIMIZELY_DEFAULTS, SITECORE_DEFAULTS } from '@lw/connectors';
+import { createProjectState } from '@lw/domain';
+import { InMemoryEventStore, type Projections } from '@lw/events';
 import { loadFixtures } from '@lw/orchestrator';
 import { compilePlan } from '@lw/plan';
-import { optimizelyBindings } from '@lw/platforms';
+import { createPlatforms, optimizelyBindings } from '@lw/platforms';
 import { loadPlaybook } from '@lw/playbook-sdk';
-import { inScope } from '@lw/tool-gateway';
+import { inScope, MemoryBlobStore } from '@lw/tool-gateway';
 import { OptimizelyCmsToolServer, OptimizelyGraphToolServer } from '@lw/tool-optimizely';
+import { ArtifactLibrary } from '@lw/tool-workspace';
 import { describe, expect, it } from 'vitest';
-import { CHECKS } from '../src';
+import { CHECKS, selfCheck } from '../src';
 
 const dir = (id: string) => fileURLToPath(new URL(`../../../playbooks/${id}`, import.meta.url));
 const PLAYBOOKS = ['optimizely-saas-migration', 'optimizely-homepage-demo'];
+// No source site answers here: a check that reads one finds nothing to compare.
+const OPTIMIZELY = createPlatforms({
+  sitecore: SITECORE_DEFAULTS,
+  optimizely: {
+    ...OPTIMIZELY_DEFAULTS,
+    fetch: (async () => new Response('', { status: 404 })) as typeof fetch,
+  },
+}).get('optimizely')!;
 // Two projects on one instance: content types, templates and Graph are shared between them.
 const acme = optimizelyBindings({ application: 'Acme Site', typePrefix: 'Acme' });
 
@@ -101,6 +113,8 @@ describe('Optimizely website playbook: the order the platform sets', () => {
       'head.pages-render',
       'parity.render',
       'parity.visual',
+      'parity.chrome',
+      'seo.titles',
       'routes.resolve',
     ]);
     for (const t of plan.tasks)
@@ -159,10 +173,27 @@ describe('Optimizely website playbook: the order the platform sets', () => {
     expect(ids(['content-rights-proven'])).not.toContain('confirm-content-rights');
     for (const id of ['smoke-test', 'prove-experimentation'])
       expect(template(id).manual, id).toBeDefined();
-    // No check that reads another platform's contract or endpoints.
+    // No check that reads another platform's contract or endpoints: the Blueprint's model
+    // contract is checked by this platform's own check of that id (see below), which its pack
+    // registers and which replaces the shared one.
     const named = pb.plan.templates.flatMap((t) => t.acceptance);
-    expect(named).not.toContain('validator:blueprint.coverage');
+    expect(template('draft-blueprint').acceptance).toEqual([
+      'validator:blueprint.coverage',
+      'validator:discovery.blueprint',
+    ]);
+    expect(Object.keys(OPTIMIZELY.checks ?? {})).toEqual(
+      expect.arrayContaining(['blueprint.coverage', 'discovery.blueprint']),
+    );
     expect(named).not.toContain('validator:editing-host.responds');
+    // What the SitecoreAI playbooks check by the same ids, on the corresponding steps.
+    expect(template('crawl-site').acceptance).toEqual(['validator:discovery.inventory']);
+    expect(template('migrate-shared-chrome').acceptance).toEqual([
+      'validator:head.header-footer',
+      'validator:parity.chrome',
+    ]);
+    // SEO properties are drafts until the phase 8 release, which is judged on the titles again.
+    expect(template('seo-properties').acceptance).toEqual(['validator:seo.titles']);
+    expect(template('publish-site').acceptance).toContain('validator:seo.titles');
   });
 
   it('names in its prompts only tools the role is granted, and only validator runs that exist', async () => {
@@ -188,6 +219,112 @@ describe('Optimizely website playbook: the order the platform sets', () => {
     expect(missing).toEqual([]);
     // A role granted an operation no server offers doesn't run on a live project.
     expect(pb.roles.find((r) => r.role === 'parity-auditor')!.tools.validators).toBeUndefined();
+  });
+});
+
+describe('the Blueprint check an Optimizely project runs', () => {
+  /** A Blueprint in this platform's model contract: one section, the shared header, one page. */
+  const blueprint = (pilot: boolean) => ({
+    version: 1,
+    collections: {
+      components: [
+        {
+          key: 'hero',
+          name: 'Hero',
+          ...(pilot ? { pilot: true } : {}),
+          attrs: {
+            contentType: 'AcmeHero',
+            behaviour: 'section',
+            properties: [{ name: 'heading', type: 'string' }],
+            displayTemplates: [{ key: 'AcmeHeroDefault', default: true }],
+          },
+        },
+        {
+          key: 'site-header',
+          name: 'Site Header',
+          attrs: {
+            contentType: 'AcmeSiteHeader',
+            behaviour: 'shell',
+            shared: true,
+            properties: [{ name: 'logo', type: 'contentReference', allowedTypes: ['_image'] }],
+          },
+        },
+      ],
+      templates: [
+        {
+          key: 'landing',
+          name: 'Landing',
+          attrs: { kind: 'experience', contentType: 'AcmeLanding' },
+        },
+      ],
+      pages: [{ key: 'home', name: 'Home', attrs: { path: '/', template: 'landing' } }],
+      media: [],
+    },
+  });
+  const checker = async (playbookId: string, content: unknown) => {
+    const store = new InMemoryEventStore();
+    const library = new ArtifactLibrary(store, new MemoryBlobStore());
+    const state = {
+      ...createProjectState('p1'),
+      intake: { platform: 'optimizely', target: { application: 'Acme Site', typePrefix: 'Acme' } },
+    };
+    const write = (artifactId: string, body: unknown) =>
+      library.write('p1', {
+        artifactId,
+        kind: artifactId === 'blueprint' ? 'blueprint' : 'inventory',
+        title: artifactId,
+        format: 'json',
+        content: JSON.stringify(body),
+        producer: 'solution-architect',
+      });
+    await write('blueprint', content);
+    await write('page-inventory', { origin: 'https://www.acme.com', pages: [{ path: '/' }] });
+    const run = selfCheck({
+      store,
+      projections: { catchUp: async () => {}, get: () => state } as unknown as Projections,
+      playbook: await loadPlaybook(dir(playbookId)),
+      library,
+      platform: {
+        checks: OPTIMIZELY.checks,
+        read: async () => ({ code: 404, body: { error: 'Not connected' } }),
+        credential: async () => null,
+      },
+    });
+    return async () =>
+      (
+        await run('p1', {
+          taskId: 'draft-blueprint',
+          templateId: 'draft-blueprint',
+          acceptance: [],
+          collection: null,
+          itemKeys: [],
+        })
+      ).find((r) => r.id === 'blueprint.coverage');
+  };
+
+  it("is the platform's own: it reads this platform's contract, not the shared check's", async () => {
+    const check = await checker('optimizely-saas-migration', blueprint(true));
+    expect(await check()).toMatchObject({ status: 'pass' });
+    // The shared check, which reads another platform's contract, fails the same Blueprint.
+    const shared = await CHECKS['blueprint.coverage']!({
+      projectId: 'p1',
+      library: {
+        read: async (_p: string, id: string) =>
+          id === 'blueprint' ? { content: JSON.stringify(blueprint(true)) } : null,
+      },
+    } as never);
+    expect(shared).toMatchObject({ status: 'fail' });
+    expect(shared.detail).toContain('hero has no fields');
+  });
+
+  it('wants a pilot slice on the website playbook, whose plan proves one, and not on the demo', async () => {
+    const website = await checker('optimizely-saas-migration', blueprint(false));
+    expect(await website()).toMatchObject({
+      status: 'fail',
+      detail: expect.stringContaining('no pilot components'),
+    });
+    const demo = await checker('optimizely-homepage-demo', blueprint(false));
+    expect(await demo()).toMatchObject({ status: 'pass' });
   });
 });
 

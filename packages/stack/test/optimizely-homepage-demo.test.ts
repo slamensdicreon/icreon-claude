@@ -34,6 +34,21 @@ describe('optimizely-homepage-demo playbook', () => {
     expect(pb.plan.templates.find((t) => t.id === 'draft-blueprint')?.acceptance).toContain(
       'validator:blueprint.demo-slice',
     );
+    // Beside it, what the SitecoreAI demo checks by the same ids on the corresponding steps:
+    // the model contract and discovery's decisions, the shared blocks' content, the page title.
+    const acceptance = (id: string) => pb.plan.templates.find((t) => t.id === id)?.acceptance;
+    expect(acceptance('crawl-site')).toEqual(['validator:discovery.inventory']);
+    expect(acceptance('draft-blueprint')).toEqual([
+      'validator:blueprint.coverage',
+      'validator:discovery.blueprint',
+      'validator:blueprint.demo-slice',
+    ]);
+    expect(acceptance('migrate-shared-chrome')).toEqual([
+      'validator:head.header-footer',
+      'validator:parity.chrome',
+    ]);
+    expect(acceptance('seo-properties')).toEqual(['validator:seo.titles']);
+    expect(acceptance('publish-site')).toContain('validator:seo.titles');
     // Always our demo instance and the demo's own application: every release is approved once,
     // in the playbook. The Director's cards are the two gates and the two steps by hand.
     for (const t of pb.plan.templates.filter((t) => t.release))

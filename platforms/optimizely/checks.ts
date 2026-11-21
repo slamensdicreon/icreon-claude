@@ -1,4 +1,5 @@
-import type { OptimizelyVerifyConfig } from '@lw/connectors';
+import { mapLimit, type OptimizelyVerifyConfig } from '@lw/connectors';
+import { few, titleIn } from '../src/discovery';
 import type { CheckResult, PlatformCheck, PlatformCheckContext } from '../src/index';
 // Reading a page as a visitor does is the same on every platform.
 import {
@@ -6,6 +7,7 @@ import {
   isChallengePage,
   redirectedAway,
   showsHeading,
+  titleOf,
   visibleText as readableText,
   wordsOf,
 } from '../sitecoreai/checks';
@@ -138,11 +140,23 @@ const pageRef = (path: string): PageRef => {
   };
 };
 
-/** The Blueprint's pages that have a route of their own: kept, with a path, not an error page. */
-const routedPages = (ctx: PlatformCheckContext) =>
+/** Where the Blueprint sends a page's visitors instead (a structural parent the source redirects). */
+const redirectOf = (p: Item) => {
+  const v = p.attrs?.redirect ?? p.attrs?.redirectTo ?? p.attrs?.redirectsTo;
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+};
+
+/** The Blueprint's kept pages that have a source path and are not an error page. */
+const pathedPages = (ctx: PlatformCheckContext) =>
   built(ctx.blueprint?.collections.pages).filter(
     (p) => !p.attrs?.errorPage && typeof p.attrs?.path === 'string' && p.attrs.path.startsWith('/'),
   );
+
+/**
+ * The Blueprint's pages that have a route of their own: kept, with a path, not an error page, and
+ * not one whose visitors are redirected elsewhere (there is no page of it to judge).
+ */
+const routedPages = (ctx: PlatformCheckContext) => pathedPages(ctx).filter((p) => !redirectOf(p));
 
 /**
  * The pages a check covers: the task's own (a page's migration is judged on that page), else
@@ -158,13 +172,21 @@ function pagesOf(ctx: PlatformCheckContext, cap = 20): PageRef[] {
   return paths.length ? paths.slice(0, cap).map(pageRef) : [pageRef('/')];
 }
 
-/** One verdict over the task's pages: every failure named by its page, pending only when nothing failed. */
+/**
+ * One verdict over the task's pages: every failure named by its page, pending only when nothing
+ * failed. One page at a time unless the check says how many it reads at once.
+ */
 const eachPage =
-  (one: (ctx: PlatformCheckContext, page: PageRef) => Promise<CheckResult>): PlatformCheck =>
+  (
+    one: (ctx: PlatformCheckContext, page: PageRef) => Promise<CheckResult>,
+    opts: { cap?: number; atOnce?: number } = {},
+  ): PlatformCheck =>
   async (ctx) => {
-    const pages = pagesOf(ctx);
-    const results: { page: PageRef; result: CheckResult }[] = [];
-    for (const p of pages) results.push({ page: p, result: await one(ctx, p) });
+    const pages = pagesOf(ctx, opts.cap);
+    const results = await mapLimit(pages, opts.atOnce ?? 1, async (p) => ({
+      page: p,
+      result: await one(ctx, p),
+    }));
     if (results.length === 1) return results[0]!.result;
     const of = (status: CheckResult['status']) => results.filter((r) => r.result.status === status);
     const data = results.map((r) => ({
@@ -275,6 +297,96 @@ function headingsOf(properties: Record<string, unknown> | undefined): string[] {
   walk(properties ?? {});
   return out;
 }
+
+/** A reference to another item, as a property holds it. */
+const REFERENCE = /^cms:\/\/content\/([0-9a-f-]{32,36})$/i;
+
+/** The items a block's or a page's properties point at, by key. */
+function referencesIn(v: unknown, out: string[] = []): string[] {
+  if (typeof v === 'string') {
+    const key = REFERENCE.exec(v.trim())?.[1];
+    if (key) out.push(key.replace(/-/g, '').toLowerCase());
+  } else if (Array.isArray(v)) v.forEach((x) => referencesIn(x, out));
+  else if (v && typeof v === 'object') Object.values(v).forEach((x) => referencesIn(x, out));
+  return out;
+}
+
+/** Copy nobody wrote for the site: what a block shows while it waits for its content. */
+const PLACEHOLDERS = [
+  /lorem ipsum|\bplaceholder\b|\b(?:text|title|heading|link|label|copy) goes here\b|\b(?:your|add|enter|insert) (?:a |the |your )?(?:text|title|heading|link|label|copy) here\b|\blink text\b|\bmenu item \d|\bcolumn heading\b|\bsection heading\b|\bexample\.(?:com|org)\b/gi,
+  /\bTODO\b|\bTBD\b/g,
+];
+const placeholdersIn = (text: string) => [
+  ...new Set(PLACEHOLDERS.flatMap((p) => text.match(p) ?? []).map((m) => m.toLowerCase())),
+];
+
+/**
+ * What a shared block holds, as a visitor would meet it: its texts, its links, its list items
+ * (columns, groups, menu entries), the items with nothing in them, and the short texts a page
+ * showing the block must show too (each link's text, each item's heading).
+ */
+function blockContent(properties: Record<string, unknown> | undefined) {
+  const texts: string[] = [];
+  const links: { text: string; url: string }[] = [];
+  const owed: string[] = [];
+  let items = 0;
+  let emptyItems = 0;
+  const held = () => texts.length + links.length;
+  const walk = (v: unknown, name: string, inItem: boolean) => {
+    if (typeof v === 'string') {
+      const t = v.trim();
+      // A reference or an address is not copy.
+      if (!t || REFERENCE.test(t) || /^(https?:|mailto:|tel:|\/|#)/i.test(t)) return;
+      texts.push(t);
+      if (inItem && /^(heading|title|label|name)$/i.test(name)) owed.push(t);
+    } else if (Array.isArray(v)) {
+      for (const x of v) {
+        if (typeof x === 'string' && REFERENCE.test(x.trim())) items++;
+        walk(x, name, inItem);
+      }
+    } else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      if (typeof o.html === 'string') {
+        const t = visibleText(o.html);
+        if (t) texts.push(t);
+      } else if ('url' in o && (typeof o.url === 'string' || o.url == null) && !o.properties) {
+        // A link, also one whose address was never set.
+        const text = String(o.text ?? '').trim();
+        links.push({ text, url: String(o.url ?? '').trim() });
+        if (text) owed.push(text);
+      } else if (o.properties && typeof o.properties === 'object') {
+        // An item of a list of inline components: a column, a group, a link, a menu entry.
+        items++;
+        const before = held();
+        const references = referencesIn(o.properties).length;
+        for (const [k, x] of Object.entries(o.properties)) walk(x, k, true);
+        if (held() === before && !references) emptyItems++;
+      } else for (const [k, x] of Object.entries(o)) walk(x, k, inItem);
+    }
+  };
+  for (const [k, x] of Object.entries(properties ?? {})) walk(x, k, false);
+  return {
+    texts,
+    links,
+    items,
+    emptyItems,
+    // What it points at: a logo, the navigation.
+    references: referencesIn(properties ?? {}).length,
+    owed: [...new Set(owed)].filter((t) => t.length > 1),
+  };
+}
+
+/**
+ * A page's <title> as a browser tab shows it, or '' when it has none. Next.js may stream a page's
+ * metadata into its body, so the head is read first and then the rest (an icon's own <title>
+ * left out).
+ */
+const pageTitle = (html: string) =>
+  titleIn(html) || titleOf(html.replace(/<svg\b[\s\S]*?<\/svg>/gi, ' '));
+
+/** The first element of a tag on a page, markup and all (the header, the footer). */
+const regionOf = (html: string, tag: string) =>
+  new RegExp(`<${tag}\\b[\\s\\S]*?</${tag}>`, 'i').exec(html)?.[0] ?? '';
 
 /** A source page and the new one, or why they can't be compared yet. */
 async function sourceAndCandidate(
@@ -759,13 +871,16 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
     'experience.redirects-resolve': async (ctx) => {
       const { languages } = optimizelyTarget({ target: ctx.target });
       if (!ctx.blueprint) return pending('There is no approved Blueprint to check against.');
-      const moved = routedPages(ctx)
-        .map((p) => ({ from: String(p.attrs!.path), to: p.attrs?.route }))
+      // A page that moved to a new route, and a page the Blueprint keeps as a parent while its
+      // visitors go elsewhere (attrs.redirect, as the source did): the head redirects both.
+      const external = (to: string) => /^https?:\/\//i.test(to);
+      const moved = pathedPages(ctx)
+        .map((p) => ({ from: String(p.attrs!.path), to: redirectOf(p) ?? p.attrs?.route }))
         .filter(
           (m): m is { from: string; to: string } =>
             typeof m.to === 'string' &&
-            m.to.startsWith('/') &&
-            pageRef(m.to).path !== pageRef(m.from).path,
+            (external(m.to) ||
+              (m.to.startsWith('/') && pageRef(m.to).path !== pageRef(m.from).path)),
         );
       if (!moved.length)
         return pass(
@@ -789,19 +904,22 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
         } catch {
           /* reported as no answer */
         }
-        const target = pageRef(m.to);
-        const landed = location
-          ? new URL(location, `https://${host.host}`).pathname.replace(/\/$/, '')
-          : '';
-        const wanted = [target.path, target.route(languages[0] ?? 'en').replace(/\/$/, '')].map(
-          (x) => x.replace(/\/$/, ''),
-        );
+        const landedAt = location ? new URL(location, `https://${host.host}`) : null;
+        const landed = landedAt ? landedAt.pathname.replace(/\/$/, '') : '';
+        const target = external(m.to) ? null : pageRef(m.to);
+        const wanted = target
+          ? [target.path, target.route(languages[0] ?? 'en').replace(/\/$/, '')].map((x) =>
+              x.replace(/\/$/, ''),
+            )
+          : [];
+        const arrived = target
+          ? wanted.includes(landed)
+          : landedAt?.href.replace(/\/$/, '') === m.to.replace(/\/$/, '');
         if (status !== 301 && status !== 308)
           problems.push(
             `${m.from} answered ${status || 'nothing'}, not a permanent redirect to ${m.to}`,
           );
-        else if (!wanted.includes(landed))
-          problems.push(`${m.from} redirects to ${location}, not ${m.to}`);
+        else if (!arrived) problems.push(`${m.from} redirects to ${location}, not ${m.to}`);
       }
       return problems.length
         ? fail(problems.slice(0, 20), { moved: moved.length })
@@ -809,6 +927,222 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
             `${moved.length} moved ${moved.length === 1 ? 'page redirects' : 'pages redirect'} permanently to ${moved.length === 1 ? 'its' : 'their'} new address.`,
             { moved: moved.length },
           );
+    },
+
+    // The shared header, footer and navigation have their content: every page shows them, so the
+    // task that fills them, once, before the pages, passes only when each block holds its links
+    // and items (footer columns, menu groups and entries) with nothing empty and no placeholder
+    // copy, and the start page renders what they hold.
+    'parity.chrome': async (ctx) => {
+      const { typePrefix, languages } = optimizelyTarget({ target: ctx.target });
+      if (!ctx.blueprint) return pending('There is no approved Blueprint to check against.');
+      const kept = built(ctx.blueprint.collections.components).filter(
+        (c) => c.attrs?.inline !== true,
+      );
+      const marked = kept.filter((c) => c.attrs?.shared === true);
+      const shared = marked.length
+        ? marked
+        : kept.filter((c) => /header|footer|nav|menu/i.test(`${c.key} ${c.name}`));
+      if (!shared.length) return pending('The Blueprint marks no component as shared.');
+      const app = await application(ctx);
+      if (isResult(app)) return app;
+      const host = buildHost(app);
+      if (!host) return fail(['The application has no host']);
+      const start = await pageContent(ctx, `/content/${app.key}`, 'The start page');
+      if (isResult(start)) return start;
+
+      // The blocks the start page shows: the ones it points at (its header and footer), and the
+      // ones those point at (the navigation). One nothing points at is looked for by its name.
+      type Block = { contentType?: string; properties?: Record<string, unknown> };
+      const byType = new Map(shared.map((c) => [typeKeyOf(c, typePrefix).toLowerCase(), c]));
+      const found = new Map<string, Block>();
+      const seen = new Set<string>();
+      const queue = referencesIn(start.properties);
+      for (let reads = 0; queue.length && found.size < shared.length && reads < 24;) {
+        const key = queue.shift()!;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        reads++;
+        const r = await ctx.read('optimizely-cms', 'content.read', { key });
+        if (r.code === 404) continue;
+        if (r.code !== 200)
+          return pending(`An item the start page points at could not be read: ${reason(r)}`);
+        const block = r.body as Block;
+        const component = byType.get(String(block.contentType ?? '').toLowerCase());
+        // An image or another page: not a shared block, and not followed.
+        if (!component) continue;
+        found.set(component.key, block);
+        queue.push(...referencesIn(block.properties));
+      }
+      const problems: string[] = [];
+      const unreferenced: string[] = [];
+      for (const c of shared) {
+        if (found.has(c.key)) continue;
+        const path = `/shared/${app.key}/${c.name}`;
+        const r = await ctx.read('optimizely-cms', 'content.read', { path });
+        if (r.code === 200) {
+          found.set(c.key, r.body as Block);
+          unreferenced.push(c.name);
+        } else if (r.code === 404)
+          problems.push(
+            `${c.name} has no shared block: neither the start page nor a block it shows points at one of type ${typeKeyOf(c, typePrefix)}, and there is none at ${path}. Create it under /shared/${app.key}/, fill it from the source, point the start page (or the header) at it and publish`,
+          );
+        else return pending(`${c.name}'s shared block could not be read: ${reason(r)}`);
+      }
+
+      const held = shared.flatMap((c) => {
+        const block = found.get(c.key);
+        return block ? [{ component: c, ...blockContent(block.properties) }] : [];
+      });
+      for (const b of held) {
+        const name = b.component.name;
+        if (b.component.attrs?.children && !b.items && !b.links.length)
+          problems.push(
+            `${name} has no items: create each column, group and link (or menu entry) in it, from the source site's ${name.toLowerCase()}`,
+          );
+        else if (!b.texts.length && !b.links.length && !b.items && !b.references)
+          problems.push(`${name} has no content: fill its shared block from the source`);
+        if (b.emptyItems)
+          problems.push(
+            `${name} has ${b.emptyItems} empty ${b.emptyItems === 1 ? 'item' : 'items'}: fill each from the source, or remove it`,
+          );
+        const nowhere = b.links.filter((l) => l.text && (!l.url || l.url === '#'));
+        if (nowhere.length)
+          problems.push(
+            `${name} has ${nowhere.length === 1 ? 'a link that goes' : 'links that go'} nowhere: ${few(nowhere.map((l) => `"${l.text}"`))}`,
+          );
+        const placeholders = placeholdersIn(
+          [...b.texts, ...b.links.map((l) => l.text)].join(' | '),
+        );
+        if (placeholders.length)
+          problems.push(`${name} holds placeholder copy: "${placeholders.join('", "')}"`);
+      }
+
+      // And the start page renders them.
+      const url = `https://${host.host}/${languages[0] ?? 'en'}/`;
+      const p = await page(cfg, url);
+      if (p.status !== 200)
+        return fail([
+          `The start page answered ${p.status || 'nothing'} on ${host.host}`,
+          ...problems,
+        ]);
+      // On the page: in what a visitor reads, or in a label (a link shown as an icon alone).
+      const text = fold(visibleText(p.html));
+      const markup = fold(
+        p.html.replace(/<(script|style|template)\b[\s\S]*?<\/\1>/gi, ' ').replace(/&amp;/g, '&'),
+      );
+      const shown = (t: string) => text.includes(fold(t)) || markup.includes(fold(t));
+      for (const tag of ['header', 'footer']) {
+        const region = regionOf(p.html, tag);
+        if (!region) problems.push(`the start page has no ${tag}`);
+        const placeholders = placeholdersIn(visibleText(region));
+        if (placeholders.length)
+          problems.push(
+            `the start page's ${tag} shows placeholder copy: "${placeholders.join('", "')}"`,
+          );
+      }
+      for (const b of held) {
+        const missing = b.owed.filter((t) => !shown(t));
+        // Nine in ten is the bar, as for a page's headings: a component may leave one out on
+        // purpose (a link it shows only when signed in).
+        if (missing.length > b.owed.length * 0.1)
+          problems.push(
+            `${b.component.name} holds ${b.owed.length} links and headings, and ${missing.length} are not on the start page (${few(missing.map((t) => `"${t}"`))}): ${
+              unreferenced.includes(b.component.name)
+                ? 'nothing the start page shows points at the block, so point the start page (or the header) at it and publish'
+                : 'publish the block and the start page, and check its component renders every item'
+            }`,
+          );
+      }
+      const data = {
+        blocks: held.map((b) => ({
+          component: b.component.key,
+          links: b.links.length,
+          items: b.items,
+          owed: b.owed.length,
+        })),
+      };
+      return problems.length
+        ? fail(problems, data)
+        : pass(
+            `The shared ${held.map((b) => b.component.name).join(', ')} hold their content (${held.reduce((n, b) => n + b.links.length, 0)} links, ${held.reduce((n, b) => n + b.items, 0)} items, no placeholders) and the start page of ${host.host} renders it.`,
+            data,
+          );
+    },
+
+    // Page titles: each page's <title> on the new site is the source page's <title>. Sites often
+    // give a page an SEO title its heading doesn't carry; the SEO step sets it on the page, and
+    // the head puts it in the <title>. Content parity leaves titles to this check.
+    'seo.titles': (ctx) => {
+      const { languages } = optimizelyTarget({ target: ctx.target });
+      // What every page of the task shares: where the source is, and where the build is looked at.
+      let both:
+        Promise<{ origin: string; app: ApplicationView; host: string } | CheckResult> | undefined;
+      const sites = () =>
+        (both ??= (async () => {
+          const inv = ((await ctx.document('page-inventory')) ??
+            (await ctx.document('parity-inventory'))) as { origin?: string } | null;
+          const origin = inv?.origin?.replace(/\/$/, '');
+          if (!origin)
+            return pending('No source inventory gives the source site to compare titles with.');
+          const app = await application(ctx);
+          if (isResult(app)) return app;
+          const host = buildHost(app);
+          if (!host) return fail(['The application has no host to read the pages on']);
+          return { origin, app, host: host.host };
+        })());
+      return eachPage(
+        async (c, pg) => {
+          const at = await sites();
+          if ('status' in at) return at;
+          const sourceUrl = `${at.origin}${pg.path === '/' ? '/' : pg.path}`;
+          const url = `https://${at.host}${pg.route(languages[0] ?? 'en')}`;
+          const [source, candidate] = await Promise.all([page(cfg, sourceUrl), page(cfg, url)]);
+          if (candidate.status !== 200)
+            return fail([`${url} answered ${candidate.status || 'nothing'}`]);
+          if (source.status !== 200 || isChallengePage(source.html))
+            return pending(
+              `The source page ${sourceUrl} could not be read (${source.status || 'no answer'}${source.status === 200 ? ', a bot check' : ''}), so its title was not compared.`,
+            );
+          if (redirectedAway(sourceUrl, source.url))
+            return pending(`The source page moved to ${source.url}: it has no title of its own.`);
+          const want = pageTitle(source.html);
+          if (!want) return pending(`The source page ${sourceUrl} has no <title> to compare.`);
+          const have = pageTitle(candidate.html);
+          const data = { title: have, source: want };
+          if (fold(have) === fold(want))
+            return pass(`${pg.label} carries its source page's title, "${want}".`, data);
+          // The head shows the published page. What the page's latest version holds says whose
+          // fault a different title is: nobody set it, it is set and waits for its release, or
+          // it is published and the head doesn't read it.
+          const held = await pageContent(c, pg.cms(at.app.key), pg.label);
+          if (isResult(held)) return held;
+          const set = Object.entries(held.properties).find(
+            ([name, v]) => /title/i.test(name) && typeof v === 'string' && fold(v) === fold(want),
+          );
+          if (!set)
+            return fail(
+              [
+                `${pg.label} has the title "${have}"; the source page's is "${want}". Set it in the page's SEO title property, word for word`,
+              ],
+              data,
+            );
+          if ((held.status ?? '').toLowerCase() !== 'published')
+            return {
+              ...pending(
+                `${pg.label} holds the source's title in ${set[0]} ("${want}") in a version that is not published yet. The head shows published content only, so its <title> is compared once the page is published.`,
+              ),
+              data,
+            };
+          return fail(
+            [
+              `${pg.label} has the title "${have}", but its published ${set[0]} property holds the source's "${want}": the head's <title> doesn't read the page's title property. That's head code (generateMetadata in the page route): send it back to integrate-head, not to content. A page published in the last minute may still be served from the host's cache: check once more first`,
+            ],
+            data,
+          );
+        },
+        { cap: 60, atOnce: 6 },
+      )(ctx);
     },
 
     // The start page carries the shared header and footer, and they render.

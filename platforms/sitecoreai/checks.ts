@@ -1066,7 +1066,7 @@ const PLACEHOLDERS = [
 ];
 
 export async function getText(
-  cfg: VerifyConfig,
+  cfg: Pick<VerifyConfig, 'fetch' | 'timeoutMs'>,
   url: string,
 ): Promise<{ status: number; body: string; url?: string }> {
   try {

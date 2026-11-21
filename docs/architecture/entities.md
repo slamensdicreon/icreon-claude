@@ -56,8 +56,9 @@ an entity (an instance's shared facts and secrets) and is offered to every playb
 | ---------------------------------------------------------------------------------------------- | ---------- |
 | `build.green`, `deploy.commit-matches`, `editing-host.deployed`, `editing-host.responds`, `credentials.verified`, `inventory.complete`, `notes.cited`, `blueprint.coverage`, `head.sections` | Shared (`packages/stack/src/review.ts`) |
 | `parity.render`, `parity.visual`, `parity.page` (the judge and the word-coverage logic)       | Shared logic, entity read |
+| `discovery.inventory`, `discovery.blueprint` (reading the source site and the project's documents) | Shared logic (`platforms/src/discovery.ts`); each entity's rules for forms, redirects and the 404 page (`platforms/<entity>/discovery-checks.ts`) |
 | `component-map.registered`, `serialization.replays`, `head.editing-scripts`, `rendering-host.set`, `structural.*`, `edge.published`, `routes.resolve`, `media.alt-text` | SitecoreAI entity (the first four still sit in the shared file: see the coupling map) |
-| `types.defined`, `types.pushed`, `structural.application`, `structural.content-types`, `structural.templates`, `structural.experiences`, `hostname.registered`, `head.preview-route`, `editor.element-enabled`, `editor.new-experience`, `graph.published`, `manifest.replays`, `experience.redirects-resolve` | Optimizely entity: `platforms/optimizely/checks.ts` (the last one still to build) |
+| `types.defined`, `types.pushed`, `structural.application`, `structural.content-types`, `structural.templates`, `structural.experiences`, `hostname.registered`, `head.preview-route`, `editor.element-enabled`, `editor.new-experience`, `graph.published`, `manifest.replays`, `experience.redirects-resolve`, `parity.chrome`, `seo.titles`, and its own `blueprint.coverage` | Optimizely entity: `platforms/optimizely/checks.ts`; `blueprint.coverage` reads Optimizely's Blueprint contract (`platforms/optimizely/blueprint-checks.ts`) and replaces the shared one for its projects |
 
 **Roles and prompts.** Thirteen of the SitecoreAI playbook's twenty-four roles are
 platform-free (the Chief of Staff, the four Leads, Solution Architect, Repo Analyst, Content
@@ -238,7 +239,7 @@ draws it, cleanup on delete, a simulated project, and the product's wording.
 | O6  | Catalog grouping and UI: `entity.yaml`, `GET /entities`, the wizard's entity step | S |
 | O7  | Run both playbooks end to end with the Director on a live project (the first build was made through the same REST calls and tool servers, to prove them) | – |
 | O8  | Webhooks from Graph to the head for on-demand revalidation; the head revalidates on a timer until then. Enabling a locale stays a Director step: locales are instance-wide | S |
-| O9  | Two shared checks still read SitecoreAI's contract, so the Optimizely plans leave them out: `blueprint.coverage` (`attrs.fields`, `attrs.rendering`, `attrs.queryBudget`) and `editing-host.responds` (`/api/editing/config`). The Blueprint is judged by the Discovery Lead and Gate 1 | S |
+| O9  | Done for `blueprint.coverage` (2026-11-21): the Optimizely pack registers its own check under that id, reading its own contract (content type key, typed properties, composition behaviour, display templates, limits), and a pack's check of an id replaces the shared one. `editing-host.responds` (`/api/editing/config`) still reads SitecoreAI's endpoint, so the Optimizely plans leave it out | S |
 | O10 | The large-site bulk import (`packages/stack/src/import`, the page-template checks) writes through `sitecore-authoring` only. An Optimizely site of several hundred pages is migrated page by page | L |
 | O11 | Blueprints need a right of their own on the instance; where the API key lacks it an editor saves the blueprint in Visual Builder | – |
 

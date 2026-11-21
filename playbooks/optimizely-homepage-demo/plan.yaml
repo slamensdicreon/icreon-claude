@@ -62,7 +62,9 @@ templates:
     phase: 1
     role: content-analyst
     title: Crawl the source site and build the page inventory
-    acceptance: [validator:inventory.complete]
+    # Compared with a sample of source pages: each page's <title> and meta description, forms,
+    # URLs that redirect elsewhere, embedded layout data, media hosts, and how much it covers.
+    acceptance: [validator:discovery.inventory]
   - id: platform-notes
     phase: 1
     role: research-agent
@@ -74,9 +76,15 @@ templates:
     role: solution-architect
     title: Draft the Implementation Blueprint
     dependsOn: [inventory-repo, inventory-live-ui, crawl-site, platform-notes]
+    # blueprint.coverage: this platform's model contract. The homepage on its experience type;
+    # every component with its prefixed content type key, typed properties, composition behaviour,
+    # display templates with one default and limits on child items; the shared blocks marked.
+    # discovery.blueprint: every source form placed, redirects decided, the 404 page recorded as
+    # dropped, source components mapped, media hosts named.
     # blueprint.demo-slice: the homepage and what it uses, the navigation its own component, the
     # 404 page recorded as dropped, nothing else kept.
-    acceptance: [validator:blueprint.demo-slice]
+    acceptance:
+      [validator:blueprint.coverage, validator:discovery.blueprint, validator:blueprint.demo-slice]
 
   # 3 — Foundation
   - id: design-system
@@ -193,7 +201,9 @@ templates:
       rollback: >-
         Publish the blocks' and the start page's earlier versions again (create a version from
         each and publish it), or leave them: the application is the demo's own.
-    acceptance: [validator:head.header-footer]
+    # parity.chrome: each shared block holds its links and items with no placeholder copy, and
+    # the homepage renders them.
+    acceptance: [validator:head.header-footer, validator:parity.chrome]
   - id: prove-slice
     phase: 5
     role: structural-validator
@@ -267,6 +277,10 @@ templates:
     role: content-migrator
     title: Fill the homepage's SEO properties from the source
     uses: [optimizely-cms, browser, blackboard, artifacts]
+    # The homepage's title property holds the source page's <title>. It is a draft until the
+    # phase 8 release: the check fails when the property isn't set, and compares the head's
+    # <title> itself once the page is published (publish-site runs it again).
+    acceptance: [validator:seo.titles]
 
   # 8 — Deployment and publishing
   - id: finalize-head
@@ -306,7 +320,8 @@ templates:
         Publish the previous versions again (the ones now previouslyPublished can't be; create a
         version from each and publish it); reverting the repository doesn't change what Graph
         serves.
-    acceptance: [validator:graph.published, validator:routes.resolve]
+    # seo.titles: with the SEO properties published, the homepage's <title> is the source's.
+    acceptance: [validator:graph.published, validator:routes.resolve, validator:seo.titles]
 
   # 9 — Demo review. The demo closes on the Director's check in Visual Builder: agents have no
   # Visual Builder sign-in, so it's a person's check, and it's the script for the meeting.
