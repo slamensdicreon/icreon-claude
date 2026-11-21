@@ -23,8 +23,12 @@
 # setting's choice key has two characters or more, a new branch starts from the design system, a
 # page type an application starts on has no required property, and the push says why the CMS
 # refused it.
+# 0.1.5: from phases 5 and 6 of the first live run. The editing host is deployed again once the
+# application's host is set, an upload carries its alt text (and can be given one later), a `url`
+# property is a plain string, a favicon in ICO is not uploaded, and every component is built and
+# compared for a phone and a tablet as well as a desktop.
 id: optimizely-homepage-demo
-version: 0.1.4
+version: 0.1.5
 name: Optimizely homepage demo
 description: >-
   Audits a prospect's whole site in numbers, then blueprints and builds their homepage,

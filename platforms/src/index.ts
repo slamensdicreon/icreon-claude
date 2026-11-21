@@ -110,6 +110,12 @@ export interface PlatformPack {
     target: TargetValues,
   ): FactDraft[];
   /**
+   * The screens a page is compared with its source on, as a model sees both (parity.visual).
+   * Absent: a desktop's alone. A platform whose editor previews a page on a phone and a tablet
+   * names them, so a page that only holds together at desktop width fails before the review.
+   */
+  screens?: ('desktop' | 'tablet' | 'phone')[];
+  /**
    * The environment variables the head needs on its host, resolved from the project's sealed
    * credentials and the platform's own APIs. Absent for platforms with no head.
    */

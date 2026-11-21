@@ -25,8 +25,12 @@
 # setting's choice key has two characters or more, a new branch starts from the design system, a
 # page type an application starts on has no required property, and the push says why the CMS
 # refused it.
+# 0.1.2: from phases 5 and 6 of the first live run. The editing host is deployed again once the
+# application's host is set, an upload carries its alt text (and can be given one later), a `url`
+# property is a plain string, a favicon in ICO is not uploaded, and every component is built and
+# compared for a phone and a tablet as well as a desktop.
 id: optimizely-customer-portal
-version: 0.1.1
+version: 0.1.2
 name: Build an Optimizely CMS (SaaS) customer portal
 description: >-
   Rebuilds a client or customer portal prototype as a portal on Optimizely CMS (SaaS): a sign-in

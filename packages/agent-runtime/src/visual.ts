@@ -30,7 +30,13 @@ export interface ScreenInput {
   previous?: string[];
   /** Both pages' sections as measured in the browser, in order: facts to ground the comparison. */
   measured?: string;
+  /** The screen both pages were shot at when it isn't a desktop's: a tablet's or a phone's. */
+  view?: { name: 'tablet' | 'phone'; width: number };
 }
+
+/** What a narrow screen adds to look for: the faults a desktop comparison can't show. */
+const NARROW = (view: { name: string; width: number }) =>
+  `Both pages are shown as a ${view.name} shows them, ${view.width} px wide, not at desktop width. Compare them as that visitor sees them, and also report as major: content wider than the screen (cut off at the right edge, or a page that scrolls sideways); a navigation that stays spread out where the source's collapses into a menu button, or links shown as text where the source has icons; columns or cards that stay side by side where the source stacks them, or stack where the source keeps a row or a carousel; text that overlaps or runs under another element.`;
 
 const SYSTEM = `You check a website migration the way the client will: the source page and the new site's page, each as full-page desktop screenshots cut into slices from top to bottom. The new page must look like the source: same sections in the same order, same layouts, same imagery, same colours and bands, same header and footer.
 
@@ -68,9 +74,15 @@ export async function compareScreens(
     model: input.model,
     max_tokens: 4000,
     output_config: { effort: input.effort, format: zodOutputFormat(ScreenVerdict) },
-    system: input.accepted?.length
-      ? `${SYSTEM}\n\nThe Director has already decided these differences, so don't report them; report anything else as usual:\n${input.accepted.map((a) => `- ${a}`).join('\n')}`
-      : SYSTEM,
+    system: [
+      SYSTEM,
+      ...(input.view ? [NARROW(input.view)] : []),
+      ...(input.accepted?.length
+        ? [
+            `The Director has already decided these differences, so don't report them; report anything else as usual:\n${input.accepted.map((a) => `- ${a}`).join('\n')}`,
+          ]
+        : []),
+    ].join('\n\n'),
     messages: [
       {
         role: 'user',
@@ -84,7 +96,10 @@ export async function compareScreens(
                 },
               ]
             : []),
-          { type: 'text', text: `Page ${input.path}. The source, top to bottom:` },
+          {
+            type: 'text',
+            text: `Page ${input.path}${input.view ? `, on a ${input.view.name} (${input.view.width} px wide)` : ''}. The source, top to bottom:`,
+          },
           ...input.source.map(image),
           { type: 'text', text: 'The new site, top to bottom:' },
           ...input.candidate.map(image),

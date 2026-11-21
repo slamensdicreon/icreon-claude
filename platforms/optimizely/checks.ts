@@ -1217,7 +1217,7 @@ export function optimizelyChecks(cfg: OptimizelyVerifyConfig): Record<string, Pl
             `${pg.label} matches the source${r.minor?.length ? ` (minor: ${r.minor.slice(0, 5).join('; ')})` : ''}.`,
             r,
           )
-        : fail(r.differences.slice(0, 12), r);
+        : fail(r.differences.slice(0, 18), r);
     }),
 
     // The pages say what the source's say: nine in ten of a source page's own words are on the

@@ -255,14 +255,19 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
   const screens = opts.screens;
   // What the last comparison of each page said, so the next one doesn't contradict it.
   const lastFindings = new Map<string, string[]>();
-  /** Desktop screenshots of both pages, sliced, judged side by side. */
+  /** The widths the browser shoots each screen at, as its tool server names them. */
+  const SCREEN_WIDTH = { desktop: 1440, tablet: 834, phone: 390 } as const;
+  /**
+   * Screenshots of both pages, sliced, judged side by side: at desktop width, then on each
+   * narrower screen the platform names. One verdict: a difference seen only on a phone says so.
+   */
   const compareScreens =
     screens && judge
       ? async (projectId: string, page: ScreenPair): Promise<ScreenComparison> => {
-          const shoot = async (url: string) => {
+          const shoot = async (url: string, on: keyof typeof SCREEN_WIDTH) => {
             const r = await readOnly(projectId, 'browser', 'screenshot', {
               url,
-              breakpoints: ['desktop'],
+              breakpoints: [on],
             });
             const ref = (r.body as { shots?: { ref?: string }[] } | null)?.shots?.[0]?.ref;
             if (r.code !== 200 || !ref)
@@ -270,10 +275,6 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
             return sliceScreenshot(await blobs.get(ref));
           };
           try {
-            const [source, candidate] = await Promise.all([
-              shoot(page.source),
-              shoot(page.candidate),
-            ]);
             // What the Director settled (a widget left out, a deliberate accessibility change)
             // is not a difference to report on every page again.
             const state = opts.projections.get(projectId);
@@ -287,22 +288,55 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
                   role: judge.role,
                 })
                 .catch(() => [])) ?? [];
-            const key = `${projectId}:${page.path}`;
-            const verdict = await screens({
-              path: page.path,
-              source,
-              candidate,
-              model: judge.model.id,
-              effort: judge.model.effort,
-              accepted: [
-                ...accepted.map((r) => `${r.ref}: when ${r.when} ${r.then}`),
-                ...(await decidedForPage(projectId, page.path)),
-              ],
-              previous: lastFindings.get(key),
-              measured: await measuredSections(projectId, page),
-            });
-            lastFindings.set(key, [...verdict.differences, ...(verdict.minor ?? [])]);
-            return verdict;
+            const settled = [
+              ...accepted.map((r) => `${r.ref}: when ${r.when} ${r.then}`),
+              ...(await decidedForPage(projectId, page.path)),
+            ];
+            const all = { differs: false, differences: [] as string[], minor: [] as string[] };
+            let tokens = 0;
+            for (const on of ['desktop', ...(opts.platform.screens ?? [])].filter(
+              (x, i, list): x is keyof typeof SCREEN_WIDTH => list.indexOf(x) === i,
+            )) {
+              const narrow = on !== 'desktop';
+              let source: Uint8Array[];
+              let candidate: Uint8Array[];
+              try {
+                [source, candidate] = await Promise.all([
+                  shoot(page.source, on),
+                  shoot(page.candidate, on),
+                ]);
+              } catch (err) {
+                // The desktop comparison is the check; a narrower screen that can't be shot
+                // (a source that refuses that browser) leaves the others standing.
+                if (!narrow) throw err;
+                continue;
+              }
+              const key = `${projectId}:${page.path}${narrow ? `:${on}` : ''}`;
+              const verdict = await screens({
+                path: page.path,
+                source,
+                candidate,
+                model: judge.model.id,
+                effort: judge.model.effort,
+                accepted: settled,
+                previous: lastFindings.get(key),
+                ...(narrow
+                  ? { view: { name: on, width: SCREEN_WIDTH[on] } }
+                  : { measured: await measuredSections(projectId, page) }),
+              });
+              lastFindings.set(key, [...verdict.differences, ...(verdict.minor ?? [])]);
+              const where = narrow ? `On a ${on} (${SCREEN_WIDTH[on]} px): ` : '';
+              all.differs ||= verdict.verdict === 'differs';
+              all.differences.push(...verdict.differences.map((d) => where + d));
+              all.minor.push(...(verdict.minor ?? []).map((d) => where + d));
+              tokens += verdict.tokens;
+            }
+            return {
+              verdict: all.differs ? 'differs' : 'match',
+              differences: all.differences,
+              minor: all.minor,
+              tokens,
+            };
           } catch (err) {
             return { error: (err as Error).message };
           }

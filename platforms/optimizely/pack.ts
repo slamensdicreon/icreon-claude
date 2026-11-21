@@ -298,6 +298,9 @@ export function createOptimizely(cfg: OptimizelyVerifyConfig): PlatformPack {
     // (src/cms/registry.generated.ts, not committed), so there is no separate step. Agents add a
     // component as a folder; nothing every component shares changes for it.
     buildRecipe: { generate: [], build: 'build', readOnly: [] },
+    // Visual Builder shows every page on a phone and a tablet: a page is compared with its source
+    // there too, not only at desktop width.
+    screens: ['tablet', 'phone'],
     // The CMS's, Graph's and the head's checks; the Blueprint's model contract as this platform
     // writes it; and discovery's, which read the source site and the project's documents.
     checks: { ...optimizelyChecks(cfg), ...blueprintChecks(), ...discoveryChecks(cfg) },

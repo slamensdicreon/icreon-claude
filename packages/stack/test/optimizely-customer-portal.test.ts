@@ -21,7 +21,7 @@ const pack = createPlatforms({ sitecore: SITECORE_DEFAULTS, optimizely: OPTIMIZE
 describe('optimizely-customer-portal playbook', () => {
   it('loads, with the Blueprint gate and the UAT gate, and the same portal the other platform builds', async () => {
     const pb = await loadPlaybook(PORTAL);
-    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.1' });
+    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.2' });
     expect(pb.manifest.phases).toHaveLength(8);
     expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
       2, 7,
