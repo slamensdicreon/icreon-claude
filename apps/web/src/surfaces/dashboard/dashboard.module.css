@@ -6,11 +6,6 @@
   gap: var(--space-7);
   padding: var(--space-3) 0 var(--space-8);
 }
-.three {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
-}
 .four {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -22,7 +17,57 @@
   gap: var(--space-4);
 }
 .more {
-  margin: calc(var(--space-5) * -1) 0 0;
+  margin: 0;
+  color: var(--text-3);
+  text-align: center;
+}
+/* What is yours, under Cypher's sentence: a quiet line each, opening its project's Needs you. */
+.yours {
+  width: 100%;
+  max-width: calc(var(--measure) * 0.6);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.yoursLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--mist);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.yoursLine:hover {
+  border-color: var(--text-3);
+}
+.yoursText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.yoursText :global(.type-meta) {
+  color: var(--text-3);
+}
+.yoursProject {
+  color: var(--coral-text);
+}
+.yoursQuestion {
+  font-size: 17px;
+  font-weight: 700;
+}
+.yoursChev {
+  flex: none;
   color: var(--text-3);
 }
 
@@ -219,9 +264,6 @@
   .four,
   .kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .three {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 760px) {

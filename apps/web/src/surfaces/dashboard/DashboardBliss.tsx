@@ -1,9 +1,10 @@
 import type { PortfolioOverview, PortfolioProject } from '@lw/contracts';
 import { ProjectIcon } from '../../ui/project-icon';
-import { age, clock } from '../../lib/fmt';
+import { clock } from '../../lib/fmt';
 import { useMode } from '../../mode/mode';
 import { useApp, useNow } from '../../state';
-import { clockOf, kindOf, raisedLine, shortContext, useYoursActions } from '../../ui/cypher/cards';
+import { countWord, fallbackOf, questionOf, useYoursActions } from '../../ui/cypher/cards';
+import { Icon } from '../../theme/icons';
 import {
   Button,
   Handled,
@@ -12,10 +13,8 @@ import {
   ProjectTile,
   SectionHeading,
   urgencyOf,
-  YoursCard,
 } from '../../ui/cypher/parts';
 import { useEyeState } from '../../voice/eye';
-import { ago } from '../mission/model';
 import s from './dashboard.module.css';
 import { platformOf, playbookShort } from './projectNames';
 import { showProjectsView, type View } from './ProjectsTable';
@@ -30,7 +29,7 @@ const TILES = 6;
  * (moving, ready to start, paused, finished) and the book by platform: Bliss never lists fifty
  * tiles. Each line opens the Everything table on that view.
  */
-export function DashboardBliss({ o, refresh }: { o: PortfolioOverview; refresh: () => void }) {
+export function DashboardBliss({ o }: { o: PortfolioOverview }) {
   const { switchProject } = useApp();
   const eye = useEyeState();
   const now = useNow(30_000);
@@ -50,22 +49,19 @@ export function DashboardBliss({ o, refresh }: { o: PortfolioOverview; refresh: 
       />
 
       {shown.length > 0 && (
-        <section className={s.three} aria-label="Yours" id="yours">
+        // What is yours, one quiet line each: the project, the question and what silence does.
+        // Each opens its project's Needs you on that card, where it is answered in full.
+        <section className={s.yours} aria-label="Yours" id="yours">
           {shown.map((y) => (
-            <YoursTile
-              key={y.escalation.escalationId}
-              y={y}
-              tz={o.timezone}
-              now={now}
-              refresh={refresh}
-            />
+            <YoursLine key={y.escalation.escalationId} y={y} tz={o.timezone} />
           ))}
+          {o.yours.length > 3 && (
+            <p className={`${s.more} type-meta`}>
+              {countWord(o.yours.length - 3)} more {o.yours.length - 3 === 1 ? 'waits' : 'wait'}{' '}
+              their turn in Everything.
+            </p>
+          )}
         </section>
-      )}
-      {o.yours.length > 3 && (
-        <p className={`${s.more} type-meta`}>
-          {o.yours.length - 3} more wait their turn in Everything.
-        </p>
       )}
 
       {o.projects.length > TILES ? (
@@ -254,34 +250,22 @@ function ProjectLines({ projects, calm }: { projects: PortfolioProject[]; calm: 
   );
 }
 
-function YoursTile({
-  y,
-  tz,
-  now,
-  refresh,
-}: {
-  y: PortfolioOverview['yours'][number];
-  tz: string;
-  now: number;
-  refresh: () => void;
-}) {
+function YoursLine({ y, tz }: { y: PortfolioOverview['yours'][number]; tz: string }) {
   const x = y.escalation;
-  const act = useYoursActions(y.projectId, y.project, refresh);
-  const { primary, secondary } = act.cardActions(x);
-  const body = x.gist ?? shortContext(x.context);
+  const act = useYoursActions(y.projectId, y.project);
+  const by = x.deadline ? `By ${clock(x.deadline, tz).replace(/\s?[AP]M$/, '')}` : null;
   return (
-    <YoursCard
-      kind={kindOf(x)}
-      project={y.project}
-      clock={clockOf(x, tz).replace(/\s?[AP]M$/, '')}
-      clockYours={!!x.deadline}
-      title={x.title}
-      body={body}
-      rec={x.recommendation ?? null}
-      primary={primary}
-      secondary={secondary}
-      raiser={x.raisedBy ?? null}
-      meta={raisedLine(x, ago(age(x.raisedAt, now)))}
-    />
+    <button
+      type="button"
+      className={s.yoursLine}
+      onClick={() => act.open('inbox', { expanded: x.escalationId })}
+    >
+      <span className={s.yoursText}>
+        <span className={`${s.yoursProject} type-label`}>{y.project}</span>
+        <span className={s.yoursQuestion}>{questionOf(x)}</span>
+        <span className="type-meta">{[by, fallbackOf(x)].filter(Boolean).join(' · ')}</span>
+      </span>
+      <Icon name="forward" size={20} className={s.yoursChev} />
+    </button>
   );
 }

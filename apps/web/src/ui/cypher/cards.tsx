@@ -5,7 +5,6 @@
  */
 import type { EscalationView } from '@lw/contracts';
 import { post } from '../../lib/api';
-import { isWatching } from '../../lib/role';
 import { clock } from '../../lib/fmt';
 import { TYPE_LABEL } from '../../lib/escalation';
 import { TypedConfirm } from '../../overlays/Dialogs';
@@ -124,14 +123,15 @@ export function picks(x: EscalationView) {
  * caller's data once a command lands.
  */
 export function useYoursActions(projectId: string, projectName: string, after?: () => void) {
-  const { run, switchProject, go, projectId: current, openOverlay, closeOverlay } = useApp();
+  const { run, openProject, go, projectId: current, openOverlay, closeOverlay } = useApp();
   const base = `/projects/${projectId}`;
   const done = (ok: boolean) => {
     if (ok) after?.();
   };
+  /** Opens a surface of the card's project, on that card when `patch` names it. */
   const open = (surface: Surface, patch?: { expanded: string }) => {
-    if (current !== projectId) switchProject(projectId);
-    go(surface, current === projectId ? patch : undefined);
+    if (current !== projectId) openProject(projectId, surface, patch);
+    else go(surface, patch);
   };
   // Undo, from a toast: the server keeps a short window in which a settled card can be taken back.
   const undoAction = (x: EscalationView) => ({
@@ -198,57 +198,6 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
     ).then(done);
   };
 
-  /**
-   * The card's primary and secondary actions, as the Yours card shows them. A gate offers "Read it"
-   * from the Dashboard and "Approve" / "Send back" inside its project (Mission Control board).
-   */
-  const cardActions = (
-    x: EscalationView,
-    where: 'portfolio' | 'project' = 'portfolio',
-  ): { primary: CardAction; secondary: CardAction | null } => {
-    // A Watcher reads and follows; the Director decides.
-    if (isWatching())
-      return x.type === 'gate'
-        ? { primary: { label: 'Read it', run: () => open('workbench') }, secondary: null }
-        : {
-            primary: { label: 'Open', run: () => open('inbox', { expanded: x.escalationId }) },
-            secondary: null,
-          };
-    if (x.type === 'gate')
-      return where === 'portfolio'
-        ? {
-            primary: { label: 'Read it', run: () => open('workbench') },
-            secondary: {
-              label: 'Approve now',
-              run: () => approve(x),
-              leaves: !x.gate?.requiresConfirmation,
-            },
-          }
-        : {
-            primary: {
-              label: 'Approve',
-              run: () => approve(x),
-              leaves: !x.gate?.requiresConfirmation,
-            },
-            secondary: {
-              label: 'Send back',
-              run: () => open('inbox', { expanded: x.escalationId }),
-            },
-          };
-    const { pick, other } = picks(x);
-    if (!pick)
-      return {
-        primary: { label: 'Open', run: () => open('inbox', { expanded: x.escalationId }) },
-        secondary: null,
-      };
-    return {
-      primary: { label: pick.label, run: () => resolve(x, pick.id), leaves: true },
-      secondary: other
-        ? { label: other.label, run: () => resolve(x, other.id), leaves: true }
-        : { label: 'Later', run: () => defer(x), leaves: true },
-    };
-  };
-
   /** The one action on a Needs-you row: open it where it's decided. */
   const rowAction = (x: EscalationView): CardAction => ({
     label: ROW_ACTION[x.type] ?? 'Open',
@@ -293,5 +242,5 @@ export function useYoursActions(projectId: string, projectName: string, after?: 
       'Sending your answer',
     ).then(done);
 
-  return { cardActions, rowAction, resolve, reply, defer, approve, open, resume, undo, sendBack };
+  return { rowAction, resolve, reply, defer, approve, open, resume, undo, sendBack };
 }

@@ -117,3 +117,30 @@ test('Mission Control in Everything lists the questions, not the error titles', 
   await expect(panel.getByText(/, then [A-D]\b/)).toHaveCount(0);
   run.clean();
 });
+
+test('the Dashboard lists what is yours as quiet lines that open the card in its project', async ({
+  page,
+}) => {
+  await page.request.post(`${API}/projects/${PROJECT}/scenarios/kit`, { data: {} });
+  const run = await open(page, '/', { mode: 'bliss' });
+  const yours = page.getByRole('region', { name: 'Yours' });
+  const line = yours.getByRole('button').first();
+  await expect(line).toBeVisible();
+  // The project, the question and what silence does; nothing to answer from here.
+  await expect(yours.getByRole('radio')).toHaveCount(0);
+  const question = (await line.locator('span > span').nth(1).textContent())!.trim();
+  await line.click();
+  await expect(page).toHaveURL(/\/p\/[^/]+\/inbox/);
+  await expect(page.getByRole('region', { name: question })).toBeVisible();
+  run.clean();
+});
+
+test('the Dashboard in Everything lists the questions, not the error titles', async ({ page }) => {
+  await page.request.post(`${API}/projects/${PROJECT}/scenarios/thumb`, { data: {} });
+  const run = await open(page, '/');
+  const panel = page.getByRole('region', { name: 'Needs you' }).first();
+  await expect(panel.getByText(/Retry, or skip the images for now\?/)).toBeVisible();
+  await expect(panel.getByText('Thumbnail upload returned 403')).toHaveCount(0);
+  await expect(panel.getByText(/, then [A-D]\b/)).toHaveCount(0);
+  run.clean();
+});

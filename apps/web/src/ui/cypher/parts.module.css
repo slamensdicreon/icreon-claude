@@ -82,27 +82,6 @@
   gap: var(--space-3);
   color: var(--text-3);
 }
-.verdict,
-.verdictPlain {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  color: var(--ink);
-}
-.verdict {
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--surface-quiet);
-}
-.verdictPlain {
-  color: var(--text-2);
-}
-.verdict b,
-.verdictPlain b {
-  font-weight: 700;
-  color: var(--ink);
-}
-
 /* ---------- buttons ---------- */
 .button {
   display: inline-flex;
@@ -167,64 +146,6 @@
 .button:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-/* ---------- cards that are yours ---------- */
-.yours {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-5);
-  border-radius: var(--radius-xl);
-  background: var(--surface);
-  box-shadow: var(--shadow-card);
-  min-width: 0;
-}
-.cardLabel {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--coral-text);
-}
-.labelText {
-  min-width: 0;
-}
-.clock {
-  margin-left: auto;
-  color: var(--text-3);
-  white-space: nowrap;
-}
-.clock[data-yours] {
-  color: var(--coral-text);
-}
-.yoursTitle {
-  margin: 0;
-  color: var(--ink);
-  /* Bliss reads at a glance: a long title stops at three lines (Everything shows it whole). */
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.body {
-  margin: 0;
-  color: var(--text-2);
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.who {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-3);
-  margin-top: auto;
 }
 
 /* ---------- projects and people ---------- */
@@ -587,40 +508,27 @@
 /* ---------- motion: arrivals, departures and changing values ---------- */
 
 /* Cards arrive rising, a beat apart, so the eye reads them in order. */
-.yours,
 .tile,
 .kpi,
 .panel {
   animation: rise var(--dur-3) var(--ease-out) both;
 }
-:is(.yours, .tile, .kpi, .panel):nth-child(2) {
+:is(.tile, .kpi, .panel):nth-child(2) {
   animation-delay: 50ms;
 }
-:is(.yours, .tile, .kpi, .panel):nth-child(3) {
+:is(.tile, .kpi, .panel):nth-child(3) {
   animation-delay: 100ms;
 }
-:is(.yours, .tile, .kpi, .panel):nth-child(4) {
+:is(.tile, .kpi, .panel):nth-child(4) {
   animation-delay: 150ms;
 }
-:is(.yours, .tile, .kpi, .panel):nth-child(n + 5) {
+:is(.tile, .kpi, .panel):nth-child(n + 5) {
   animation-delay: 200ms;
 }
 @keyframes rise {
   from {
     opacity: 0;
     transform: translateY(var(--space-3));
-  }
-}
-
-/* A settled card leaves: it fades, gives a little and lifts away while the answer goes in. */
-.yours[data-leaving] {
-  animation: leave var(--dur-2) var(--ease-in) forwards;
-  pointer-events: none;
-}
-@keyframes leave {
-  to {
-    opacity: 0;
-    transform: translateY(calc(var(--space-2) * -1)) scale(0.97);
   }
 }
 
@@ -657,7 +565,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .yours,
   .tile,
   .kpi,
   .panel,
