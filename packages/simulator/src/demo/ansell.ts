@@ -1640,7 +1640,6 @@ export const ansell: DemoScenario = {
     }),
     'E-07': () => ({
       id: 'E-07',
-      taskId: 't12',
       type: 'decision',
       title: 'Where search reads its content',
       question: 'How should site search find products after the move?',
