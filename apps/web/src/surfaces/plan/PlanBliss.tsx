@@ -1,25 +1,19 @@
 /*
  * Plan, Bliss face: the activity list, distilled. The same activities in the same words as
  * Everything, cut to what the Director reads: one sentence on where things stand, the phases,
- * the decisions that hold work (each naming the activity it holds), what is moving now, what comes
- * next, and one line for what is done. Any activity opens Everything on that row, so changing
+ * what is moving now, what comes next, and one line for what is done. Decisions are not here: they
+ * live in Needs you and on Mission Control. Any activity opens Everything on that row, so changing
  * face keeps the Director's place.
  */
 import type { ScheduledTask, ScheduleSnapshot } from '@lw/contracts';
 import { useMemo, type ReactNode } from 'react';
 import { useMode } from '../../mode/mode';
-import { useApp, useMission, useNow, useProjectResource, useRoster } from '../../state';
+import { useApp, useNow, useProjectResource, useRoster } from '../../state';
 import { Icon } from '../../theme/icons';
-import { kindOf, useYoursActions } from '../../ui/cypher/cards';
-import { Avatar, hueOf, PhaseStrip, QuietCard, SectionHeading } from '../../ui/cypher/parts';
-import { clock } from '../../lib/fmt';
-import { Decision } from '../mission/Decision';
-import { openCards } from '../mission/model';
+import { Avatar, hueOf, PhaseStrip, SectionHeading } from '../../ui/cypher/parts';
 import {
   activitiesOf,
-  activityOfCard,
   faceOf,
-  holdsOf,
   isHeld,
   isMoving,
   isOpen,
@@ -33,13 +27,10 @@ import {
 import { Glyph } from './parts';
 import s from './planBliss.module.css';
 
-/** Decision cards shown here; the rest wait in Needs you. */
-const MAX_CARDS = 3;
 const MAX_NEXT = 4;
 
 export function PlanBliss() {
   const sched = useProjectResource<ScheduleSnapshot>('/schedule').data;
-  const mc = useMission().data;
   const { byId } = useRoster();
   const { setUi } = useApp();
   const { setMode } = useMode();
@@ -49,20 +40,13 @@ export function PlanBliss() {
     () => new Map<string, ScheduledTask>((sched?.tasks ?? []).map((t) => [t.taskId, t])),
     [sched],
   );
-  const act = useYoursActions(mc?.project.id ?? '', mc?.project.name ?? '');
-  if (!sched || !mc) return <p className="type-body">Reading the plan…</p>;
+  if (!sched) return <p className="type-body">Reading the plan…</p>;
 
   const tz = sched.timezone;
-  const hm = (t: string) => clock(t, tz).replace(/\s?[AP]M$/, '');
-  const cards = openCards(mc);
-  const holds = holdsOf(all, cards);
-  const free = (a: Activity) => !holds.has(a.key);
-  const moving = all
-    .filter((a) => isMoving(a) && free(a))
-    .sort((a, b) => a.end.localeCompare(b.end));
-  const held = all.filter((a) => isHeld(a) && free(a));
+  const moving = all.filter(isMoving).sort((a, b) => a.end.localeCompare(b.end));
+  const held = all.filter(isHeld);
   const next = all
-    .filter((a) => isOpen(a) && free(a) && !isMoving(a) && !isHeld(a))
+    .filter((a) => isOpen(a) && !isMoving(a) && !isHeld(a))
     .sort((a, b) => a.start.localeCompare(b.start))
     .slice(0, MAX_NEXT);
   const done = all.filter((a) => !isOpen(a));
@@ -84,21 +68,6 @@ export function PlanBliss() {
     <Avatar face={faceOf(byId(a.agentId), a.agentId, isMoving(a))} size="md" />
   );
 
-  const holdsLine = (escalationId: string) => {
-    const card = cards.find((c) => c.escalationId === escalationId);
-    const a = card && activityOfCard(all, card);
-    if (!a) return null;
-    return (
-      <p className={`${s.holds} type-meta`}>
-        Holds{' '}
-        <button type="button" className={s.link} onClick={() => openRow(a)}>
-          {a.title}
-        </button>{' '}
-        · {name(a)}
-      </p>
-    );
-  };
-
   const strip = sched.phases.map((p) => {
     const n = p.activities.length || 1;
     return {
@@ -119,61 +88,14 @@ export function PlanBliss() {
           : done.length === all.length
             ? 'Everything is done. '
             : ''}
-        {cards.length > 0 ? (
+        {finish && (
           <>
-            <span className={s.yours}>
-              {cards.length === 1 ? 'One thing needs you' : `${cards.length} things need you`}
-            </span>
-            {finish && (
-              <>
-                ; the rest runs on its own until <b>{finish}</b>.
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <b>Nothing needs you.</b>
-            {finish && <> The plan lands {finish}.</>}
+            The plan lands <b>{finish}</b>.
           </>
         )}
       </p>
 
       <PhaseStrip phases={strip} labelled />
-
-      {cards.length > 0 && (
-        <section className={s.section} aria-labelledby="plan-yours">
-          <SectionHeading>
-            <span id="plan-yours">Needs you</span>
-          </SectionHeading>
-          {cards.slice(0, MAX_CARDS).map((x, i) => {
-            if (i === 0)
-              return (
-                <div key={x.escalationId} className={s.card}>
-                  {holdsLine(x.escalationId)}
-                  <Decision x={x} mc={mc} />
-                </div>
-              );
-            const { primary, secondary } = act.cardActions(x, 'project');
-            return (
-              <div key={x.escalationId} className={s.card}>
-                {holdsLine(x.escalationId)}
-                <QuietCard
-                  label={`${kindOf(x)} · ${x.deadline ? `before ${hm(x.deadline)}` : 'no clock'}`}
-                  title={x.title}
-                  rec={x.recommendation ?? null}
-                  primary={primary}
-                  secondary={secondary}
-                />
-              </div>
-            );
-          })}
-          {cards.length > MAX_CARDS && (
-            <p className={`${s.quiet} type-meta`}>
-              {cards.length - MAX_CARDS} more wait their turn in Needs you.
-            </p>
-          )}
-        </section>
-      )}
 
       <section className={s.section} aria-labelledby="plan-now">
         <SectionHeading>
@@ -215,7 +137,7 @@ export function PlanBliss() {
                   when="Held"
                   face={face(a)}
                   title={a.title}
-                  line={`${name(a)} · waiting on ${dep?.title ?? 'something outside the plan'}`}
+                  line={`${name(a)} · waiting on ${dep?.title ?? 'a decision'}`}
                   tone="held"
                   onOpen={() => openRow(a)}
                 />
@@ -244,7 +166,7 @@ export function PlanBliss() {
                 <span className={s.diamond} aria-hidden="true" />
                 <span className={s.text}>
                   <b>{gate.gateLabel}</b>
-                  <span className="type-meta">Yours, when {gate.name} is ready</span>
+                  <span className="type-meta">Director gate, after {gate.name}</span>
                 </span>
               </li>
             )}

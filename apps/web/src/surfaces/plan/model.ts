@@ -75,10 +75,6 @@ export function holdsOf(
   return out;
 }
 
-/** The activity a card holds, if any. */
-export const activityOfCard = (activities: Activity[], card: EscalationView) =>
-  card.sourceTaskId ? activities.find((a) => a.taskIds.includes(card.sourceTaskId!)) : undefined;
-
 type Tasks = ReadonlyMap<string, ScheduledTask>;
 
 /** The task an activity is on: the one moving or held, else the next one not finished. */
