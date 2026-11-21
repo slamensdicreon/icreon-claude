@@ -24,7 +24,6 @@ import {
   PostgresVault,
   Projections,
   DEFAULT_ORGANIZATION,
-  githubSubject,
   MemoryOrganizationStore,
   PostgresOrganizationStore,
   MemoryLicenseStore,
@@ -66,6 +65,7 @@ import { Client, Connection } from '@temporalio/client';
 import { NativeConnection } from '@temporalio/worker';
 import { z } from 'zod';
 import { buildApp, type WorkerHeartbeat } from './app';
+import { parseApiKeys, seedSettingsMembers } from './organizations';
 import { GithubApp, VaultCredentials } from '@lw/connectors';
 import { IntakeService, type StartInput } from './intake';
 import { workosInvitations } from './people';
@@ -145,6 +145,12 @@ const env = z
     OPERATORS: z.string().default(''),
     /** `login:sha256hex` pairs, comma-separated: operator API keys, stored as hashes only. */
     OPERATOR_API_KEYS: z.string().default(''),
+    /**
+     * The same form, for keys that only watch: their holders see every project of Icreon's
+     * organization and change nothing (the Watcher role). A list of its own, so a watcher is
+     * added without knowing the operators' keys (a sensitive setting can't be read back).
+     */
+    WATCHER_API_KEYS: z.string().default(''),
     GITHUB_ORG: z.string().optional(),
     SESSION_SECRET: z.string().optional(),
     /** This API's public URL (for the OAuth callback) and the Control Center's URL. */
@@ -209,6 +215,8 @@ const workos =
     : null;
 if (env.AUTH === 'workos' && !workos)
   throw new Error('AUTH=workos needs WORKOS_CLIENT_ID and WORKOS_KEY (or WORKOS_API_KEY).');
+const operatorKeys = parseApiKeys(env.OPERATOR_API_KEYS);
+const watcherKeys = parseApiKeys(env.WATCHER_API_KEYS);
 const auth =
   env.AUTH !== 'none'
     ? {
@@ -242,10 +250,8 @@ const auth =
         operators: env.OPERATORS.split(',')
           .map((s) => s.trim())
           .filter(Boolean),
-        apiKeys: env.OPERATOR_API_KEYS.split(',')
-          .map((s) => s.trim().split(':'))
-          .filter((p): p is [string, string] => p.length === 2 && /^[0-9a-f]{64}$/i.test(p[1]!))
-          .map(([login, sha256]) => ({ login, sha256 })),
+        // Both kinds of key sign in the same way; what a holder may do is their membership's.
+        apiKeys: [...operatorKeys, ...watcherKeys],
         requiredOrg: env.GITHUB_ORG,
         cronSecret: env.CRON_SECRET?.trim() || null,
         adminConsoleKey:
@@ -491,15 +497,13 @@ const organizations: OrganizationStore = opened.sql
 // stakeholder sees it). Without sign-in only: a deployment's roles come from its memberships.
 if (!auth && env.LOCAL_ROLE)
   await organizations.setMember(DEFAULT_ORGANIZATION, 'local', env.LOCAL_ROLE, 'LOCAL_ROLE');
-// Today's operators (and their API keys) are Icreon's Directors. Only added, never changed: a role
-// set since is kept.
+// Today's operators (and their API keys) are Icreon's Directors; a watcher key's holder is a
+// Watcher. Only added, never changed: a role set since is kept.
 if (auth)
-  for (const login of new Set([...auth.operators, ...auth.apiKeys.map((k) => k.login)])) {
-    const subject = githubSubject(login);
-    const mine = await organizations.membershipsOf(subject);
-    if (!mine.some((m) => m.organizationId === DEFAULT_ORGANIZATION))
-      await organizations.setMember(DEFAULT_ORGANIZATION, subject, 'director', 'OPERATORS');
-  }
+  await seedSettingsMembers(organizations, {
+    directors: [...auth.operators, ...operatorKeys.map((k) => k.login)],
+    watchers: watcherKeys.map((k) => k.login),
+  });
 // In memory, the rules and knowledge stores ask the organizations whose a project is (an
 // organization's own rules reach its projects only); in the database they join it themselves.
 const ownerOf = async (projectId: string) =>

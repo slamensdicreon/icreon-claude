@@ -105,6 +105,7 @@ Set them in the project's settings. Variables the images already default are in
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | api               | The OAuth app                                                          |
 | `OPERATORS`                                | api               | Comma-separated GitHub logins allowed in                               |
 | `OPERATOR_API_KEYS`                        | api               | `login:sha256` pairs (comma-separated): API keys for scripts and agents acting as an operator; only the key hashes are stored|
+| `WATCHER_API_KEYS`                         | api               | Optional: the same form as `OPERATOR_API_KEYS`, for keys that only watch. A holder is a Watcher in Icreon's organization: every project's progress, read only. A list of its own, because a sensitive setting can't be read back to add to |
 | `GITHUB_ORG`                               | api               | Optional: also require active membership of this org                   |
 | `SESSION_SECRET`                           | api               | 32+ random characters (`openssl rand -hex 32`)                         |
 | `CREDENTIALS_KEY`                          | api, worker       | 32 random bytes, base64 (`openssl rand -base64 32`). Seals project credentials (each platform's: Sitecore clients and Edge Context IDs, an Optimizely API key and Graph keys; and the GitHub App's keys) in Postgres. The worker opens them for tool calls; without it no tool that needs a project credential connects |
