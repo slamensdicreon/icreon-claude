@@ -435,7 +435,7 @@ export function IntakePanel({
         {open
           ? 'What intake recorded about the target. Values a credential was checked against are fixed; the others can change until Start.'
           : late.length
-            ? 'What intake recorded about the target. Fixed once the project started, except the hosting project’s name, which can change until the team has created it; reset the project to change the others.'
+            ? 'What intake recorded about the target. Fixed once the project started, except the hosting project’s name, which can change until this project’s own hosting project exists; reset the project to change the others.'
             : 'What intake recorded about the target. Fixed once the project started; reset the project to change them.'}
       </p>
       <div className={s.tableWrap}>

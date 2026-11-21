@@ -1,0 +1,349 @@
+# Task templates for a customer portal on Optimizely CMS (SaaS). The plan compiler expands them
+# over the approved Blueprint's collections: components, templates (the portal's page type),
+# pages, media and personas. Before Gate 1 each forEach template shows as one placeholder task,
+# so the whole plan is visible from day one.
+#
+# What a portal is, in the plan's shape: the shell (sign-in, sessions, the sign-in gate, role
+# navigation, demo data, content by role) is code, built once before the components; every word
+# on a screen is a property; and the presentation path is walked by a person, persona by
+# persona, before the project closes.
+#
+# The order the platform sets, proven on a live instance by the website playbooks: content types
+# first, the page type included (pushes are additive, this project's prefixed keys only); then
+# the application, which can't exist without its start page, with its hosts and live preview;
+# then content. The head shows published content only (a draft shows inside Visual Builder
+# alone), so the tasks judged on what the head renders publish what they wrote.
+#
+# Releases. Publishing a portal page is a standing release: it is the portal's own application,
+# on the project's own Vercel addresses, and nothing reaches a visitor of the client's site. On
+# the editing address every page but the sign-in screen sits behind the demo sign-in; production
+# runs the bare starter until phase 6, which has none of the portal's components to show the
+# content with. Creating the application (the first write on the instance) and the two releases
+# of phase 6 ask the Director.
+#
+# Acceptance checks. A portal page answers a signed-out reader with the sign-in screen, so the
+# checks that read a page as a visitor (the website playbooks' render, route, header and parity
+# checks) say nothing here and are left out: the portal's own checks sign in as a demo persona
+# first (portal.sign-in, portal.pilot-page, portal.pages-render, portal.role-content,
+# portal.production). The Blueprint is judged by blueprint.portal (this platform's model
+# contract and where each role's content is placed) and blueprint.personas (shared: it reads
+# only the personas, pages and components). There is no parity check: fidelity to the prototype
+# is the Director's walk, as on every customer portal. Every component's sections sit in the
+# shell's own wrapper, not the website playbooks' band wrapper, so head.sections is left out too.
+
+pilot:
+  phase: 4
+  collection: components
+  optionalGate: pilot-slice-review
+  # The rest of the build waits until the slice is proven end to end: its components built and
+  # pushed, the application on its hosts, a page composed from them and published, the demo
+  # accounts signing in and that page rendered for a signed-in persona.
+  verify: [compose-pilot, prove-pilot-slice]
+
+templates:
+  # 0 — Intake and access verification
+  - id: verify-access
+    phase: 0
+    role: deployment-engineer
+    title: Verify credentials and record instance facts
+    acceptance: [validator:credentials.verified]
+  # A REST API key can read the instance and push content types and still be refused every
+  # content write (403, "Required access is 'create'") until an admin gives it content rights on
+  # the Root. No call can test that without writing, and the first write is after Gate 1 (the
+  # application, in phase 4), so the Director confirms it here. If it is missed, that first write
+  # stops as an access card saying the same.
+  # Left out when the key has already created and published content on the instance (the
+  # platform reads that as the project starts): its rights are then proven, not asked for.
+  - id: confirm-content-rights
+    phase: 0
+    role: deployment-engineer
+    unless: content-rights-proven
+    title: Give the API key content rights in the CMS
+    manual: >-
+      In the CMS, open Settings > Set Access Rights and select the Root. Add the API key (search
+      for its client ID) and give it Read, Create, Change, Delete and Publish. Without these the
+      key pushes content types but every content write is refused, and the build stops after
+      Gate 1. If the key already has them (a saved connection an earlier project used), check it
+      is listed there and mark this done saying so.
+
+  # 1 — Prototype discovery
+  - id: inventory-prototype
+    phase: 1
+    role: repo-analyst
+    title: Inventory the prototype's screens, personas, interactions and data
+    when: source-repo
+    uses: [github, artifacts]
+    acceptance: [validator:inventory.complete]
+  # No repository: the running prototype is the source, read as rendered.
+  - id: inventory-prototype-live
+    phase: 1
+    role: repo-analyst
+    title: Inventory the running prototype's screens and design system
+    unless: source-repo
+    uses: [browser, artifacts]
+    acceptance: [validator:inventory.complete]
+  - id: platform-notes
+    phase: 1
+    role: research-agent
+    title: Verify platform facts and write Platform Notes
+
+  # 2 — Blueprint
+  - id: draft-blueprint
+    phase: 2
+    role: solution-architect
+    title: Draft the portal Blueprint
+    dependsOn: [inventory-prototype, inventory-prototype-live, platform-notes]
+    # blueprint.portal: every screen placed, every component a prefixed content type with
+    # properties and a default display template of its own, a pilot, the page type, a start page
+    # and a sign-in screen, and every role's content placed on its page for that role alone.
+    acceptance: [validator:blueprint.portal, validator:blueprint.personas]
+
+  # 3 — Foundation
+  - id: design-system
+    phase: 3
+    role: component-engineer
+    title: Extract the design system (tokens, type, spacing, primitives)
+  - id: portal-shell
+    phase: 3
+    role: component-engineer
+    title: Build the portal shell (sign-in, sessions, role navigation, demo data, content by role)
+    dependsOn: [design-system]
+    acceptance: [validator:build.green]
+  - id: prepare-hosting
+    phase: 3
+    role: deployment-engineer
+    title: Deploy the head to Vercel, with the demo data store
+    release:
+      # Changes only this project's own build, with a rollback: approved once, here.
+      standing: true
+      rollback: >-
+        Delete the Vercel project and its Blob store; nothing is published, no host is
+        registered and no content changes.
+
+  # 4 — Components, the page type and the application
+  # Each component is one branch: its content type and display template in a model file, its
+  # React component beside it, built green, dry-run push clean.
+  - id: port-{key}
+    phase: 4
+    role: component-engineer
+    forEach: components
+    title: Build {name}
+    dependsOn: [design-system, portal-shell]
+    acceptance: [validator:build.green, validator:types.defined]
+  - id: integrate-head
+    phase: 4
+    role: head-integrator
+    title: Configure the head as the editing host
+    dependsOn: [prepare-hosting, portal-shell]
+    # Ends with its change, the shell included, live on the editing address: a task waiting on
+    # it is checked again the moment it finishes, against that build.
+    acceptance: [validator:editing-host.deployed]
+  # Visual Builder offers a component only when its type is in the CMS and its code is on the
+  # editing host: one task lands both. The accepted branch joins the integration branch, the
+  # content model is pushed from it (this project's keys only, never forced), and the editing
+  # address is redeployed.
+  - id: integrate-{key}
+    phase: 4
+    role: head-integrator
+    forEach: components
+    title: Integrate {name} and push its content type
+    dependsOn: ['port-{key}', integrate-head]
+    # A build redone after a page sent it back reaches the editing host only through this task.
+    redoWith: ['port-{key}']
+    acceptance: [validator:structural.content-types, validator:editing-host.deployed]
+    metric: components_registered
+  # The portal's page type is code (the Component Engineer) and reaches the CMS through an
+  # integration (the Head Integrator). It refers to no other type (the shell is code, not a
+  # shared block), so it waits on no component.
+  - id: define-type-{key}
+    phase: 4
+    role: component-engineer
+    forEach: templates
+    title: Define {name} page type
+    dependsOn: [design-system, portal-shell]
+    acceptance: [validator:build.green, validator:types.defined]
+  - id: push-type-{key}
+    phase: 4
+    role: head-integrator
+    forEach: templates
+    title: Integrate {name} page type and push it
+    dependsOn: ['define-type-{key}', integrate-head]
+    redoWith: ['define-type-{key}']
+    acceptance: [validator:structural.templates, validator:editing-host.deployed]
+  # The application gets the dashboard as its start page (an empty draft of the page type just
+  # pushed), assets of its own, the production address as its primary host (what Graph's routes
+  # are on) and the editing address as its preview host, with live preview. This is the first
+  # content write: an API key without content rights stops here.
+  - id: provision-application
+    phase: 4
+    role: deployment-engineer
+    title: Create the portal's application, with its hosts and live preview
+    dependsOn: [push-type-*]
+    release:
+      rollback: >-
+        Remove the hosts from the application; the application and its empty start page can then
+        be deleted in Settings > Applications. Nothing else on the instance refers to them.
+    acceptance:
+      [
+        validator:structural.application,
+        validator:hostname.registered,
+        validator:head.preview-route,
+      ]
+  # The pilot's proof, in two steps. First the Page Composer composes the start page from the
+  # pilot components and publishes it, so the chain from a content type in code to a page a
+  # signed-in persona reads is run once before the rest is built.
+  - id: compose-pilot
+    phase: 4
+    role: content-migrator
+    title: Compose the pilot page and publish it
+    dependsOn: [provision-application]
+    release:
+      # Publishes only the portal's own start page, on the project's own hosts.
+      standing: true
+      rollback: >-
+        The start page had no published version before: unpublish it in the CMS, or leave it;
+        the dashboard's own composition replaces these sections in phase 5.
+    acceptance: [validator:graph.published, validator:portal.pilot-page]
+  # Then the slice is read back: the types in the CMS, each pilot component ready for Visual
+  # Builder, the preview route on the editing address, the demo accounts signing in and nobody
+  # else, the pilot page rendered for a signed-in persona. Visual Builder itself is checked by
+  # the Director in the UAT.
+  - id: prove-pilot-slice
+    phase: 4
+    role: structural-validator
+    title: Prove the pilot slice end to end (sign-in, the head, ready for Visual Builder)
+    dependsOn: [compose-pilot]
+    acceptance:
+      [
+        validator:types.pushed,
+        validator:editor.element-enabled,
+        validator:head.preview-route,
+        validator:portal.sign-in,
+        validator:portal.pilot-page,
+      ]
+  - id: validate-components
+    phase: 4
+    role: structural-validator
+    title: Validate content types and display templates
+    dependsOn: [integrate-*, push-type-*]
+    # Everything the Blueprint builds is in the CMS by now, the page type included.
+    acceptance:
+      [validator:structural.content-types, validator:types.pushed, validator:editor.element-enabled]
+
+  # 5 — Pages, media and role content
+  # Each page is published when it is composed, so the head and its checks can read it. A
+  # role's own sections are part of the page: the Page Composer places them with the page.
+  - id: compose-{key}
+    phase: 5
+    role: content-migrator
+    forEach: pages
+    batchSize: 6
+    title: Compose {name}
+    dependsOn: [validate-components, provision-application]
+    metric: pages_migrated
+    release:
+      # Publishes only the portal's own pages, on the project's own hosts.
+      standing: true
+      rollback: >-
+        Publish the page's earlier version again (create a version from it and publish that), or
+        unpublish it in the CMS; the application's hosts are the project's own Vercel addresses.
+    acceptance: [validator:structural.experiences, validator:portal.pages-render]
+  - id: upload-media-{key}
+    phase: 5
+    role: media-migrator
+    forEach: media
+    batchSize: 20
+    title: Upload {name}
+    metric: media_uploaded
+    acceptance: [validator:media.alt-text]
+  - id: validate-pages
+    phase: 5
+    role: structural-validator
+    title: Validate pages and their compositions
+    dependsOn: [compose-*]
+    acceptance: [validator:structural.experiences, validator:portal.pages-render]
+  # No step by hand here: a section's audience is a display setting the agents write with the
+  # page. This task proves each persona sees their own sections and writes the plan a marketer
+  # changes them from.
+  - id: role-content
+    phase: 5
+    role: content-migrator
+    when: personalization
+    title: Prove each role's content and write the role content plan
+    dependsOn: [validate-pages]
+    acceptance: [validator:portal.role-content]
+
+  # 6 — Release
+  - id: finalize-head
+    phase: 6
+    role: head-integrator
+    title: Finalize production configuration
+    dependsOn: [validate-pages]
+    acceptance: [validator:editing-host.deployed]
+  # The content model is code: the repository alone must rebuild it. A dry-run push from the
+  # reviewed integration branch builds the model and sends nothing; the CMS's own export of the
+  # project's types and templates must be the same.
+  - id: replay-model
+    phase: 6
+    role: head-integrator
+    title: Prove the content model replays from the repository
+    dependsOn: [finalize-head]
+    acceptance: [validator:manifest.replays]
+  # Two separate releases: success in one proves nothing about the other.
+  - id: deploy-code
+    phase: 6
+    role: deployment-engineer
+    title: Deploy the reviewed commit to production and the editing address
+    dependsOn: [finalize-head]
+    release:
+      rollback: Promote the previous production deployment again in Vercel (instant rollback).
+    acceptance: [validator:deploy.commit-matches]
+  # Pages were published as they were composed; what changed since (late fixes) is still a
+  # draft. This publishes those and verifies the portal where the presenter will use it:
+  # production, signed in.
+  - id: publish-site
+    phase: 6
+    role: deployment-engineer
+    title: Publish the final versions and verify the portal on production
+    dependsOn: [deploy-code]
+    release:
+      rollback: >-
+        Publish the previous versions again (the ones now previouslyPublished can't be; create a
+        version from each and publish it); reverting the repository doesn't change what Graph
+        serves.
+    acceptance: [validator:graph.published, validator:portal.production]
+
+  # 7 — UAT and presentation readiness. The project closes on the Director's UAT of the portal
+  # as built, on production: Visual Builder is a person's tool (agents have no Visual Builder
+  # sign-in), and the presentation path is walked by a person, persona by persona.
+  - id: handover-pack
+    phase: 7
+    role: handover-writer
+    title: Write the presenter script, UAT checklist, reset procedure and handover pack
+  - id: walk-{key}
+    phase: 7
+    role: editor-experience-qa
+    forEach: personas
+    title: Walk {name}'s presentation path on production
+    dependsOn: [handover-pack]
+    manual: >-
+      On production: sign out, sign in as this persona from the demo accounts, and walk the path
+      the presenter script gives for them, step by step: navigation shows only their pages, the
+      dashboard greets them with their own content (the sections shown to their role, when the
+      portal has them, and none of another role's), every journey completes (forms submit, lists
+      update, drawers open), nothing shows another persona's data; then sign out. Mark it done
+      naming any step that failed, and send each failure back to its task.
+  - id: director-uat
+    phase: 7
+    role: editor-experience-qa
+    title: Director UAT in Visual Builder, then reset the demo
+    dependsOn: [walk-*]
+    manual: >-
+      Work through the UAT checklist in the handover pack. In Visual Builder, on the dashboard
+      and one other page: see the page render in the preview frame, edit a property inline in
+      live preview and undo it, add a section from one of the components, pick its display
+      template and remove it. When the portal has content by role: select a section the
+      checklist names, change its Shown to setting to another role and publish, sign in on
+      production as that role and see it (a published page shows within a minute), then set it
+      back and publish. Then Reset demo so the presenter starts clean. Mark it done naming
+      anything that failed; send each failure back to its task before you accept at Gate 2.

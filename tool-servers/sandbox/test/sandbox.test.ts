@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  modelFaults,
   moduleIncludes,
   pullFailed,
+  pushFailure,
   readOnly,
   safePath,
   SandboxToolServer,
@@ -912,5 +914,254 @@ describe('exec.optimizely-cli', () => {
     const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
     expect((await s.call('exec.optimizely-cli', { command: 'push' }, ctx)).code).toBe(422);
     expect(fake.runs.some((r) => r.args.includes('optimizely-cms-cli'))).toBe(false);
+  });
+});
+
+describe('a content model the CMS would refuse', () => {
+  const optimizely = async () => ({ ...(await facts()), typePrefix: 'Acme' });
+  const manifestPath = 'examples/basic-nextjs/.optimizely-manifest.json';
+  const good = {
+    contentTypes: [
+      {
+        key: 'AcmeHero',
+        properties: {
+          heading: { type: 'string', isRequired: true, isLocalized: true },
+          links: { type: 'array', items: { type: 'link' } },
+        },
+      },
+    ],
+    displayTemplates: [
+      { key: 'AcmeHeroDefault', settings: { columns: { choices: { cols3: {}, cols4: {} } } } },
+    ],
+  };
+  const server = (manifest: object, answers: Parameters<typeof fakeBox>[1] = () => null) => {
+    const fake = fakeBox({ [manifestPath]: JSON.stringify(manifest) }, answers);
+    const s = new SandboxToolServer({
+      provider: fake.provider,
+      facts: optimizely,
+      buildEnv: async () => ({}),
+    });
+    const pushes = () => fake.runs.filter((r) => r.args.includes('optimizely-cms-cli')).length;
+    return { s, pushes };
+  };
+
+  it('finds nothing wrong with the names the CMS uses', () => {
+    expect(modelFaults(good)).toEqual([]);
+    expect(modelFaults({})).toEqual([]);
+  });
+
+  it('stops at the dry run on `required` and `localized`, naming the properties and the fix', async () => {
+    const { s, pushes } = server({
+      ...good,
+      contentTypes: [
+        {
+          key: 'AcmeHero',
+          properties: {
+            heading: { type: 'string', required: true, localized: true },
+            links: { type: 'array', items: { type: 'link', localized: true } },
+            image: { type: 'contentReference' },
+          },
+        },
+      ],
+    });
+    const r = await s.call('exec.optimizely-cli', { command: 'push' }, ctx);
+    expect(r.code).toBe(422);
+    expect(r.summary).toContain('2 properties use `required` or `localized`');
+    expect(r.summary).toContain('AcmeHero.heading, AcmeHero.links');
+    expect(r.summary).toContain('`isRequired` and `isLocalized`');
+    // Nothing was sent: only the dry run ran.
+    expect(pushes()).toBe(1);
+  });
+
+  it("stops on a display setting's one-character choice key", async () => {
+    const { s } = server({
+      ...good,
+      displayTemplates: [
+        { key: 'AcmeGridDefault', settings: { columns: { choices: { '3': {}, cols4: {} } } } },
+      ],
+    });
+    const r = await s.call('exec.optimizely-cli', { command: 'push-dry-run' }, ctx);
+    expect(r.code).toBe(422);
+    expect(r.summary).toContain('AcmeGridDefault.columns "3"');
+  });
+
+  it("says why the CMS refused a push, in the CMS's words", async () => {
+    const refusal = [
+      '\u001b[31m✖  Error\u001b[39m',
+      '\u001b[31mError 400: One or more validation errors occurred. (InvalidModel)\u001b[39m',
+      '  - ERROR 1',
+      "\u001b[2m      [DETAIL] The field 'colour' does not exist on type 'ContentTypeProperty'.\u001b[22m",
+      '\u001b[2m      [FIELD]  contentTypes[0].properties.text.colour\u001b[22m',
+    ].join('\n');
+    const { s } = server(good, (cmd, args) =>
+      args.includes('--only') ? { exitCode: 1, output: refusal } : null,
+    );
+    const r = await s.call('exec.optimizely-cli', { command: 'push' }, ctx);
+    expect(r.code).toBe(500);
+    expect(r.summary).toBe(
+      "The CMS refused the push: Error 400: One or more validation errors occurred. (InvalidModel) The field 'colour' does not exist on type 'ContentTypeProperty'. contentTypes[0].properties.text.colour",
+    );
+  });
+
+  it('says what the CMS took when it refused only part of a push', () => {
+    const output = [
+      '✔ Configuration file uploaded',
+      'Outcomes:',
+      '  - Successfully imported 21 content types.',
+      'Errors:',
+      '  - The choices object contains a field whose name is too short.',
+    ].join('\n');
+    expect(pushFailure(output)).toBe(
+      'The choices object contains a field whose name is too short. What it did take: Successfully imported 21 content types.',
+    );
+    expect(pushFailure('')).toBe('the CLI gave no reason');
+  });
+});
+
+describe('new work starts from the design system', () => {
+  const opened = (answers: Parameters<typeof fakeBox>[1], created = false, task = 'port-hero') => {
+    const fake = fakeBox({}, answers);
+    const provider: BoxProvider = { open: async () => ({ box: fake.box, created }) };
+    const s = new SandboxToolServer({ provider, facts, buildEnv: async () => ({}) });
+    const git = () => fake.runs.filter((r) => r.cmd === 'git').map((r) => r.args.join(' '));
+    return { s, git, ctx: { ...ctx, taskId: task } };
+  };
+  const onMain = (cmd: string, args: string[]) =>
+    cmd === 'git' && args.join(' ') === 'rev-parse --abbrev-ref HEAD'
+      ? { exitCode: 0, output: 'main\n' }
+      : null;
+  const missing = (branch: string) => (cmd: string, args: string[]) =>
+    cmd === 'git' && args.includes('fetch') && args.at(-1) === branch
+      ? { exitCode: 128, output: `fatal: couldn't find remote ref ${branch}` }
+      : null;
+
+  it('a branch made here starts from the design system as accepted', async () => {
+    const { s, git, ctx } = opened(
+      (cmd, args) => missing('launchworks/port-hero')(cmd, args) ?? onMain(cmd, args),
+    );
+    const r = await s.call('workspace.open', { ref: 'launchworks/port-hero' }, ctx);
+    expect(r.code).toBe(200);
+    expect(r.summary).toContain('started from launchworks/design-system');
+    const ran = git();
+    expect(ran.indexOf('checkout -B launchworks/port-hero')).toBeGreaterThan(-1);
+    expect(ran.indexOf('reset -q --hard FETCH_HEAD')).toBeGreaterThan(
+      ran.findIndex((l) => l.endsWith('fetch origin launchworks/design-system')),
+    );
+  });
+
+  it('a machine just cloned starts from it too', async () => {
+    const { s, ctx } = opened(onMain, true);
+    const r = await s.call('workspace.open', {}, ctx);
+    expect(r.summary).toContain('started from launchworks/design-system');
+  });
+
+  it('stays on the default branch while there is no design system yet', async () => {
+    const { s, git, ctx } = opened(
+      (cmd, args) =>
+        missing('launchworks/port-hero')(cmd, args) ??
+        missing('launchworks/design-system')(cmd, args) ??
+        onMain(cmd, args),
+    );
+    const r = await s.call('workspace.open', { ref: 'launchworks/port-hero' }, ctx);
+    expect(r.summary).not.toContain('started from');
+    expect(git()).not.toContain('reset -q --hard FETCH_HEAD');
+  });
+
+  it("leaves alone a branch that has work of its own, and the design system's own branch", async () => {
+    // On GitHub already: it is checked out as pushed.
+    const pushed = opened(onMain);
+    await pushed.s.call('workspace.open', { ref: 'launchworks/port-hero' }, pushed.ctx);
+    expect(pushed.git()).toContain('checkout -B launchworks/port-hero FETCH_HEAD');
+    expect(pushed.git().some((l) => l.endsWith('fetch origin launchworks/design-system'))).toBe(
+      false,
+    );
+    // Kept from an earlier run, not pushed yet: its commits stay.
+    const kept = opened((cmd, args) =>
+      cmd === 'git' && args.join(' ') === 'rev-parse --abbrev-ref HEAD'
+        ? { exitCode: 0, output: 'launchworks/port-hero\n' }
+        : missing('launchworks/port-hero')(cmd, args),
+    );
+    await kept.s.call('workspace.open', {}, kept.ctx);
+    expect(kept.git()).not.toContain('reset -q --hard FETCH_HEAD');
+    // The design system task's first run: its branch is made from the default branch.
+    const own = opened(
+      (cmd, args) => missing('launchworks/design-system')(cmd, args) ?? onMain(cmd, args),
+      false,
+      'design-system',
+    );
+    await own.s.call('workspace.open', { ref: 'launchworks/design-system' }, own.ctx);
+    expect(own.git()).not.toContain('reset -q --hard FETCH_HEAD');
+  });
+});
+
+describe('reading files as another branch has them', () => {
+  it('reads from the branch on GitHub without touching the working copy', async () => {
+    const fake = fakeBox({}, (cmd, args) =>
+      cmd === 'git' && args[0] === 'show'
+        ? args[1] === 'FETCH_HEAD:examples/basic-nextjs/src/components/ui/Section.tsx'
+          ? { exitCode: 0, output: 'export const Section = () => null;\n' }
+          : { exitCode: 128, output: 'fatal: path does not exist' }
+        : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call(
+      'fs.read',
+      {
+        ref: 'launchworks/integration',
+        paths: [
+          'examples/basic-nextjs/src/components/ui/Section.tsx',
+          'examples/basic-nextjs/src/components/ui/missing.ts',
+        ],
+      },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      code: 200,
+      body: {
+        ref: 'launchworks/integration',
+        files: [
+          {
+            path: 'examples/basic-nextjs/src/components/ui/Section.tsx',
+            content: 'export const Section = () => null;\n',
+          },
+          { path: 'examples/basic-nextjs/src/components/ui/missing.ts', error: 'not found' },
+        ],
+      },
+    });
+    expect(fake.runs.some((x) => x.cmd === 'git' && x.args[0] === 'checkout')).toBe(false);
+  });
+
+  it('lists what the branch has', async () => {
+    const fake = fakeBox({}, (cmd, args) =>
+      cmd === 'git' && args[0] === 'ls-tree'
+        ? {
+            exitCode: 0,
+            output: 'head/src/components/ui/Section.tsx\nhead/src/components/ui/settings.ts\n',
+          }
+        : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const r = await s.call(
+      'fs.list',
+      { ref: 'launchworks/design-system', path: 'head/src/components/ui' },
+      ctx,
+    );
+    expect(r).toMatchObject({
+      code: 200,
+      body: {
+        files: ['head/src/components/ui/Section.tsx', 'head/src/components/ui/settings.ts'],
+      },
+    });
+    expect(r.summary).toBe('2 files on launchworks/design-system under head/src/components/ui');
+  });
+
+  it('says so when the branch is not on GitHub, and refuses anything but an agent branch', async () => {
+    const fake = fakeBox({}, (cmd, args) =>
+      cmd === 'git' && args.includes('fetch') ? { exitCode: 128, output: 'fatal' } : null,
+    );
+    const s = new SandboxToolServer({ provider: fake.provider, facts, buildEnv: async () => ({}) });
+    const none = await s.call('fs.read', { ref: 'launchworks/design-system', paths: ['a'] }, ctx);
+    expect(none.code).toBe(404);
+    expect((await s.call('fs.read', { ref: 'main', paths: ['a'] }, ctx)).code).toBe(422);
   });
 });

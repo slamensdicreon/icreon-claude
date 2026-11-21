@@ -30,6 +30,9 @@ tools:
       - crawl
       - snapshot
       - screenshot
+      # A page's sections (headings, text, background images) when a snapshot reads little, its
+      # forms, and where a URL ends up.
+      - page.markup
       # The page's content as its CMS delivered it (fields, images, links, lists the page builds
       # in the browser), when it embeds its layout data, as some Next.js sites do.
       - page.data
@@ -48,7 +51,9 @@ tools:
     ops:
       - check
 acceptance:
-  - validator:inventory.complete
+  # The discovery crawl's: titles, descriptions, forms, redirects, layout data, media hosts and
+  # sitemap coverage, against a sample of source pages.
+  - validator:discovery.inventory
 escalateWhen:
   - rejectedTwice
   - accessDenied

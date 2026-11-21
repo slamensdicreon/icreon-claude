@@ -427,6 +427,32 @@ export async function releasePlatformHosts(
   }
 }
 
+/**
+ * Whose the Vercel project of a name is: this project's (linked to its build repository),
+ * another's, nobody's (`none`), or `null` when Vercel couldn't say.
+ */
+export async function hostingOwner(
+  w: Pick<HostingWiring, 'token' | 'teamId' | 'fetch'>,
+  name: string,
+  repo: string | null,
+): Promise<'ours' | 'another' | 'none' | null> {
+  const doFetch = w.fetch ?? fetch;
+  const url = `https://api.vercel.com/v9/projects/${encodeURIComponent(name)}?teamId=${encodeURIComponent(w.teamId)}`;
+  try {
+    const r = await doFetch(url, {
+      headers: { authorization: `Bearer ${w.token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (r.status === 404) return 'none';
+    if (r.status !== 200) return null;
+    const link = ((await r.json()) as { link?: { org?: string; repo?: string } | null }).link;
+    const linked = link?.org && link.repo ? `${link.org}/${link.repo}` : null;
+    return linked && repo && linked.toLowerCase() === repo.toLowerCase() ? 'ours' : 'another';
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteHostingProject(
   w: Pick<HostingWiring, 'token' | 'teamId' | 'fetch'>,
   name: string,

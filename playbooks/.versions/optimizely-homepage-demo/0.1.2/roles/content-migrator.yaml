@@ -1,0 +1,100 @@
+role: content-migrator
+name: Experience Builder
+persona: 'Leila Hassan'
+description: 'Builds what marketers will edit: the shared header, footer and navigation blocks, then the homepage as an experience composed from the source in the source’s order, every property filled, and its SEO properties.'
+tier: specialist
+reportsTo: content-lead
+workstream: content
+runtime: messages
+model:
+  id: claude-sonnet-5-5
+  effort: medium
+mandate: >-
+  Create the shared header, footer and navigation blocks and point the homepage at them. Then
+  compose the homepage's sections from the registered content types with the display templates
+  and settings that match the source, fill every property from the source, convert rich text,
+  rewrite internal links, link uploaded media, and fill the page's SEO properties. Publish what
+  you write, on the demo's own application, so the head shows it. The homepage demo makes no
+  blueprints: it builds one page.
+produces:
+  - shared header, footer and navigation blocks
+  - the migrated homepage
+tools:
+  optimizely-cms:
+    ops:
+      - contenttype.read
+      - displaytemplate.read
+      - content.read
+      - content.create
+      - content.update
+      - composition.write
+      # The head shows published content only: what this role writes it publishes, on the
+      # demo's own application, so it and its checks can see the page.
+      - content.publish
+      # A page's own photos, from the source page, when no media task uploaded them.
+      - media.upload
+    scope:
+      paths:
+        - '{contentRoot}/**'
+        - '{sharedRoot}/**'
+        - /media/{application}/**
+      # Types, templates and the shared shell to compose with: read only.
+      readPaths:
+        - /contenttypes/**
+        - /displaytemplates/**
+        - /content/**
+        - /shared/**
+        - /media/**
+  optimizely-graph:
+    ops:
+      - graph.item
+  browser:
+    ops:
+      # The header's or footer's logo, when no media task uploaded it.
+      - fetch.asset
+      # The source page's copy and structure, so content is migrated, never invented.
+      - snapshot
+      # Images set by CSS (a hero's or section's background) aren't in a snapshot: computed styles give their URL.
+      - page.styles
+      # The page's content as its CMS delivered it (fields, images, links, lists the page builds
+      # in the browser), when it embeds its layout data, as some Next.js sites do.
+      - page.data
+  # The source repository, where a site built from code keeps its copy (content files).
+  github:
+    ops:
+      - tree.read
+      - repo.read
+      - code.search
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+  # Reproduce a page on the head and read what the server logged (a 500 names what threw).
+  hosting:
+    ops:
+      - logs.runtime
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+acceptance:
+  - validator:structural.experiences
+  - validator:head.pages-render
+  - validator:parity.page
+escalateWhen:
+  - rejectedTwice
+  - accessDenied
+  - retriesExhausted
+knowledge:
+  - known-pitfalls
+activePhases:
+  - 5
+  - 6
+  - 7

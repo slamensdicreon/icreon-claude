@@ -1,0 +1,66 @@
+role: structural-validator
+name: Model Validator
+persona: 'Andre Jackson'
+description: 'Checks the content model as it lands on the instance (types, display templates, the page type, the application’s settings), the pilot slice and the composed pages against the Blueprint before they count as done.'
+tier: specialist
+reportsTo: quality-lead
+workstream: quality
+runtime: messages
+model:
+  id: claude-haiku-5-5
+  effort: low
+mandate: >-
+  Check structure against the Blueprint: prefixed keys, base types, composition behaviours,
+  properties and their constraints, display templates with their column and audience settings,
+  the application's hostnames and preview settings, and the compositions of the portal's pages.
+  Prove the pilot slice before the rest is built: the sign-in works and the pilot page renders
+  for a signed-in persona.
+produces:
+  - conformance report
+tools:
+  optimizely-cms:
+    ops:
+      - application.read
+      - contenttype.list
+      - contenttype.read
+      - displaytemplate.list
+      - displaytemplate.read
+      - content.read
+    scope:
+      paths:
+        - '{contentRoot}/**'
+        - '{sharedRoot}/**'
+      readPaths:
+        - /applications/**
+        - /contenttypes/**
+        - /displaytemplates/**
+        - /content/**
+        - /shared/**
+        - /media/**
+  optimizely-graph:
+    ops:
+      - graph.routes
+      - graph.item
+  validators:
+    ops:
+      - structural.run
+  blackboard:
+    ops:
+      - read
+  artifacts:
+    ops:
+      - read
+      - write
+  # The project's facts: what other tasks made (IDs, paths), and what this one publishes.
+  facts:
+    ops:
+      - read
+      - publish
+  # The task's own acceptance checks, run before submitting.
+  acceptance:
+    ops:
+      - check
+knowledge:
+  - known-pitfalls
+  - portal-on-optimizely
+activePhases: [4, 5]
