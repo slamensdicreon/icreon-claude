@@ -105,6 +105,7 @@ Set them in the project's settings. Variables the images already default are in
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | api               | The OAuth app                                                          |
 | `OPERATORS`                                | api               | Comma-separated GitHub logins allowed in                               |
 | `OPERATOR_API_KEYS`                        | api               | `login:sha256` pairs (comma-separated): API keys for scripts and agents acting as an operator; only the key hashes are stored|
+| `MORE_OPERATOR_API_KEYS` | api | Optional: more operator keys, in the same form as `OPERATOR_API_KEYS`. A list of its own, so a key is added or removed without retyping the keys already saved (a sensitive setting can't be read back) |
 | `WATCHER_API_KEYS`                         | api               | Optional: the same form as `OPERATOR_API_KEYS`, for keys that only watch. A holder is a Watcher in Icreon's organization: every project's progress, read only. A list of its own, because a sensitive setting can't be read back to add to |
 | `GITHUB_ORG`                               | api               | Optional: also require active membership of this org                   |
 | `SESSION_SECRET`                           | api               | 32+ random characters (`openssl rand -hex 32`)                         |
