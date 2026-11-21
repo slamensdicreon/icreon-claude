@@ -49,6 +49,9 @@ templates:
       for its client ID) and give it Read, Create, Change, Delete and Publish. Without these the
       key pushes content types but every content write is refused, and the build stops after
       Gate 1. If the key already has them, check it is listed there and mark this done saying so.
+      Blueprints have a right of their own, which these don't include: if a CMS admin can let the
+      key create blueprints, say so here; if not, say that too, and in phase 5 you will be asked
+      to save each page type's blueprint yourself in Visual Builder.
 
   # 1 — Discovery and analysis
   - id: inventory-repo
