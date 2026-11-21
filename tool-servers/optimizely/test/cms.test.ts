@@ -470,6 +470,31 @@ describe('media', () => {
     expect(cms.uploads).toHaveLength(1);
   });
 
+  it('wants alt text with an upload, and gives it to an image that is already there', async () => {
+    const { cms, call, blobs } = await withApp();
+    const ref = await blobs.put('p', 'assets/icon.bin', PNG);
+    const path = '/media/acme_site/icons/icon.png';
+    const none = await call('media.upload', { path, ref });
+    expect(none.code).toBe(422);
+    expect(JSON.stringify(none.body)).toContain('Give `alt`');
+    expect(cms.uploads).toHaveLength(0);
+    await call('media.upload', { path, ref, alt: 'An icon' });
+    const item = cms.content.get(key(path))!;
+    // The same words again change nothing.
+    const same = await call('media.upload', { path, ref, alt: 'An icon' });
+    expect(same).toMatchObject({ code: 200, body: { uploaded: false, alt: 'An icon' } });
+    expect(item.versions).toHaveLength(1);
+    // Other words: a new published version of the same file, never a second upload.
+    const set = await call('media.upload', { path, ref, alt: 'A laptop icon' });
+    expect(set).toMatchObject({ code: 200, body: { uploaded: false, altSet: true } });
+    expect(set.summary).toContain('its alt text is now "A laptop icon"');
+    expect(item.versions.at(-1)).toMatchObject({
+      status: 'published',
+      properties: { AltText: { value: 'A laptop icon' } },
+    });
+    expect(cms.uploads).toHaveLength(1);
+  });
+
   it('refuses AVIF, files of other projects and hosts that are not the source', async () => {
     const { cms, call, blobs } = await withApp();
     const avif = await blobs.put('p', 'assets/a.avif', AVIF);

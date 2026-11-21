@@ -1,0 +1,289 @@
+# Example Blueprint for the homepage demo on Optimizely CMS (SaaS): the homepage of a large
+# software company's site, as the proof project built it on a live instance (its 19 content types
+# and 11 display templates, less the error message component, which the demo doesn't build). The
+# homepage's experience type, the components on it, the header, footer and navigation as shared
+# blocks, and their media. The rest of the
+# site is the page inventory's audit, not the Blueprint's. One image on the homepage that won't
+# move (an expired campaign banner) is dropped with its reason.
+#
+# What the example shows of the platform's model: every key carries the project's prefix (Acme
+# here); every component has a default display template of its own; a variant is a display
+# template (Featured Banner: Promo, Feature, Message); what varies per placement is a setting
+# (the band's tone, the hero tab, Horizontal Card's image side); repeating items are inline child
+# types with a limit. It passes the checks the Blueprint step names (blueprint.coverage,
+# discovery.blueprint, blueprint.demo-slice).
+version: 1
+collections:
+  components:
+    - key: site-header
+      name: Site Header
+      pilot: true
+      attrs:
+        contentType: AcmeSiteHeader
+        behaviour: shell
+        content: shared
+        shared: true
+        pages: ['/']
+        properties:
+          - { name: logo, type: contentReference, allowedTypes: [_image] }
+          - { name: navigation, type: contentReference, allowedTypes: [AcmeMainNavigation] }
+          - { name: signIn, type: link }
+    - key: main-navigation
+      name: Main Navigation
+      pilot: true
+      attrs:
+        contentType: AcmeMainNavigation
+        behaviour: shell
+        content: shared
+        shared: true
+        pages: ['/']
+        children:
+          contentType: AcmeNavGroup
+          max: 8
+          properties: [{ name: label, type: string }, { name: links, type: array }]
+    - key: site-footer
+      name: Site Footer
+      pilot: true
+      attrs:
+        contentType: AcmeSiteFooter
+        behaviour: shell
+        content: shared
+        shared: true
+        pages: ['/']
+        properties:
+          - { name: legal, type: richText, localized: true }
+        children:
+          contentType: AcmeFooterColumn
+          max: 6
+          properties: [{ name: heading, type: string }, { name: links, type: array }]
+    - key: announcement-banner
+      name: Announcement Banner
+      pilot: true
+      attrs:
+        contentType: AcmeAnnouncementBanner
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: message, type: richText, required: true, localized: true }
+          - { name: link, type: link }
+        displayTemplates:
+          - {
+              key: AcmeAnnouncementBannerDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, navy] },
+            }
+    - key: hero-with-tabs
+      name: Hero with Tabs
+      pilot: true
+      attrs:
+        contentType: AcmeHeroWithTabs
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: richText, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+          - { name: cta, type: link }
+        displayTemplates:
+          - {
+              key: AcmeHeroWithTabsDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none] },
+            }
+    - key: promo-card-carousel
+      name: Promo Card Carousel
+      pilot: true
+      attrs:
+        contentType: AcmePromoCardCarousel
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmePromoCard
+          max: 12
+          properties:
+            [
+              { name: title, type: string },
+              { name: text, type: richText },
+              { name: image, type: contentReference, allowedTypes: [_image] },
+              { name: link, type: link },
+            ]
+        displayTemplates:
+          - {
+              key: AcmePromoCardCarouselDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, faint], tab: [all, personal, business] },
+            }
+    - key: quick-links
+      name: Quick Links
+      pilot: true
+      attrs:
+        contentType: AcmeQuickLinks
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmeQuickLink
+          max: 8
+          properties: [{ name: label, type: string }, { name: link, type: link }]
+        displayTemplates:
+          - {
+              key: AcmeQuickLinksDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, faint], tab: [all, personal, business] },
+            }
+    - key: featured-banner
+      name: Featured Banner
+      pilot: true
+      attrs:
+        contentType: AcmeFeaturedBanner
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: richText, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+          - { name: cta, type: link }
+        # One display template per variant of the source component.
+        displayTemplates:
+          - key: AcmeFeaturedBannerPromo
+            name: Promo
+            default: true
+            settings: { tone: [none, navy], tab: [all, personal, business], headingLevel: [h2, h1] }
+          - key: AcmeFeaturedBannerFeature
+            name: Feature
+            settings: { tone: [none, navy], tab: [all, personal, business], headingLevel: [h2, h1] }
+          - key: AcmeFeaturedBannerMessage
+            name: Message
+            settings: { tone: [none, navy], tab: [all, personal, business], headingLevel: [h2, h1] }
+    - key: feature-card-grid
+      name: Feature Card Grid
+      pilot: true
+      attrs:
+        contentType: AcmeFeatureCardGrid
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmeFeatureCard
+          max: 6
+          properties:
+            [
+              { name: title, type: string },
+              { name: text, type: richText },
+              { name: icon, type: contentReference, allowedTypes: [_image] },
+            ]
+        displayTemplates:
+          - {
+              key: AcmeFeatureCardGridDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, faint] },
+            }
+    - key: horizontal-card
+      name: Horizontal Card
+      pilot: true
+      attrs:
+        contentType: AcmeHorizontalCard
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: heading, type: string, required: true, localized: true }
+          - { name: text, type: richText, localized: true }
+          - { name: image, type: contentReference, allowedTypes: [_image] }
+          - { name: cta, type: link }
+        # Image left or right is a setting of the one template, not a second template.
+        displayTemplates:
+          - {
+              key: AcmeHorizontalCardDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, faint], imageSide: [left, right] },
+            }
+    - key: social-follow
+      name: Social Follow
+      pilot: true
+      attrs:
+        contentType: AcmeSocialFollow
+        behaviour: section
+        content: page
+        pages: ['/']
+        properties:
+          - { name: heading, type: string, localized: true }
+        children:
+          contentType: AcmeSocialLink
+          max: 8
+          properties:
+            [
+              { name: label, type: string },
+              { name: link, type: link },
+              { name: icon, type: contentReference, allowedTypes: [_image] },
+            ]
+        displayTemplates:
+          - {
+              key: AcmeSocialFollowDefault,
+              name: Default,
+              default: true,
+              settings: { tone: [none, faint] },
+            }
+  templates:
+    - key: experience
+      name: Experience
+      attrs:
+        kind: experience
+        contentType: AcmeExperience
+        # What the head's <title> and meta description read.
+        properties:
+          - { name: metaTitle, type: string, localized: true }
+          - { name: metaDescription, type: string, localized: true }
+        shell:
+          - { property: header, component: site-header }
+          - { property: footer, component: site-footer }
+  pages:
+    - key: home
+      name: Home
+      attrs: { path: '/', template: experience }
+    - key: not-found
+      name: Page not found
+      status: drop
+      attrs: { path: '/404', errorPage: 404, reason: The homepage demo builds no 404 page }
+
+  media:
+    - key: campaign-banner
+      name: campaign-2019.jpg
+      status: drop
+      attrs:
+        {
+          url: 'https://cdn.example.com/home/campaign-2019.jpg',
+          pages: ['/'],
+          reason: Expired 2019 campaign banner; won't move,
+        }
+    - key: logo-header
+      name: header-logo.png
+      attrs: { url: 'https://cdn.example.com/home/header-logo.png', pages: ['/'], shared: true }
+    - key: hero-background
+      name: home-hero-background.webp
+      attrs: { url: 'https://cdn.example.com/home/home-hero-background.webp', pages: ['/'] }
+    - key: promo-card-1
+      name: home-promo-card-1.webp
+      attrs: { url: 'https://cdn.example.com/home/home-promo-card-1.webp', pages: ['/'] }
+    - key: feature-card-1
+      name: home-feature-card-1.webp
+      attrs: { url: 'https://cdn.example.com/home/home-feature-card-1.webp', pages: ['/'] }
+    - key: social-icon-1
+      name: social-icon-1.webp
+      attrs: { url: 'https://cdn.example.com/home/social-icon-1.webp', pages: ['/'] }

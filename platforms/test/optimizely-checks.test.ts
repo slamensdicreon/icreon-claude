@@ -388,6 +388,18 @@ describe('Optimizely parity checks', () => {
     expect(await run('parity.render', ctx({}, inventory), pages)).toMatchObject({
       status: 'pending',
     });
+    // A whole page whose one heading is the site's notice to automated readers: nothing to owe.
+    const noticed = {
+      ...pages,
+      'https://www.acme.com/': {
+        status: 200,
+        html: `<main><h1>Your current User-Agent string appears to be from an automated process, if this is incorrect, please click this link:</h1>${'<p>Real copy of the page.</p>'.repeat(30)}</main>`,
+      },
+    };
+    expect(await run('parity.render', ctx({}, inventory), noticed)).toMatchObject({
+      status: 'pending',
+      detail: 'The source page https://www.acme.com/ shows no headings to compare.',
+    });
     const challenged = {
       ...pages,
       'https://www.acme.com/': { status: 200, html: '<title>Just a moment...</title>' },
@@ -615,6 +627,72 @@ describe('Optimizely content, media and redirect checks', () => {
     );
     expect(r).toMatchObject({ status: 'fail', detail: 'icon.svg has no alt text' });
     expect(await run('media.alt-text', ctx(media([])))).toMatchObject({ status: 'pending' });
+  });
+
+  it('holds a task that uploads one file to that file, not to another task’s image', async () => {
+    const images = {
+      'optimizely-graph graph.query': {
+        code: 200,
+        body: {
+          data: {
+            _Image: {
+              total: 3,
+              items: [
+                {
+                  AltText: 'A Surface Pro',
+                  _metadata: { displayName: 'promo-card-surface-pro-13.jpg' },
+                },
+                {
+                  AltText: null,
+                  _metadata: { displayName: 'quicklink-store-xbox-controller.svg' },
+                },
+                { AltText: '', _metadata: { displayName: 'hero-background-light-desktop.jpg' } },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const blueprint = {
+      collections: {
+        media: [
+          { key: 'promo-surface-pro-13', name: 'Promo card: Surface Pro 13-inch' },
+          { key: 'quicklink-store-xbox-controller', name: 'Quick link icon: Xbox controller' },
+          {
+            key: 'hero-bg',
+            name: 'Hero background (light, desktop)',
+            attrs: { url: 'https://cdn.acme.com/img/Hero-Background-Light.jpg?fmt=png' },
+          },
+        ],
+      },
+    };
+    const of = (item: string) =>
+      run(
+        'media.alt-text',
+        ctx(images, { blueprint, scope: { collection: 'media', items: [item] } }),
+      );
+    // Its own image is described: the others' are theirs to put right.
+    expect(await of('promo-surface-pro-13')).toMatchObject({
+      status: 'pass',
+      detail:
+        "No image of promo-surface-pro-13 lacks alt text (3 images in the application's media, 2 of other tasks still without).",
+    });
+    // Found by its key, and by its source file's name.
+    expect(await of('quicklink-store-xbox-controller')).toMatchObject({
+      status: 'fail',
+      detail:
+        'quicklink-store-xbox-controller.svg has no alt text: call media.upload again with its path and `alt`',
+    });
+    expect((await of('hero-bg')).detail).toMatch(
+      /^hero-background-light-desktop.jpg has no alt text/,
+    );
+    // A task over the whole collection still answers for every image.
+    expect(
+      await run(
+        'media.alt-text',
+        ctx(images, { blueprint, scope: { collection: 'media', items: [] } }),
+      ),
+    ).toMatchObject({ status: 'fail' });
   });
 
   it('wants a moved page to redirect permanently to its new address', async () => {

@@ -49,6 +49,7 @@ import {
   deleteHostingProject,
   releasePlatformHosts,
   hostingBuildUsage,
+  hostingOwner,
   hostingStatus,
   recipients,
   resendNotifier,
@@ -146,6 +147,12 @@ const env = z
     /** `login:sha256hex` pairs, comma-separated: operator API keys, stored as hashes only. */
     OPERATOR_API_KEYS: z.string().default(''),
     /**
+     * More operator keys, in the same form. A list of its own because a sensitive setting can't
+     * be read back: an operator's key is added, or taken away again, here without retyping the
+     * keys already in OPERATOR_API_KEYS.
+     */
+    MORE_OPERATOR_API_KEYS: z.string().default(''),
+    /**
      * The same form, for keys that only watch: their holders see every project of Icreon's
      * organization and change nothing (the Watcher role). A list of its own, so a watcher is
      * added without knowing the operators' keys (a sensitive setting can't be read back).
@@ -215,7 +222,10 @@ const workos =
     : null;
 if (env.AUTH === 'workos' && !workos)
   throw new Error('AUTH=workos needs WORKOS_CLIENT_ID and WORKOS_KEY (or WORKOS_API_KEY).');
-const operatorKeys = parseApiKeys(env.OPERATOR_API_KEYS);
+const operatorKeys = [
+  ...parseApiKeys(env.OPERATOR_API_KEYS),
+  ...parseApiKeys(env.MORE_OPERATOR_API_KEYS),
+];
 const watcherKeys = parseApiKeys(env.WATCHER_API_KEYS);
 const auth =
   env.AUTH !== 'none'
@@ -594,6 +604,7 @@ const app = await buildApp({
     buildOrg: env.GITHUB_BUILD_ORG,
     connections: integrations ?? undefined,
     organizations,
+    hostingOwner: hosting ? (name, repo) => hostingOwner(hosting, name, repo) : undefined,
   }),
   organizations,
   licenses,

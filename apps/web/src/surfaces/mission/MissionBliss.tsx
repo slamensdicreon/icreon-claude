@@ -1,18 +1,18 @@
 import type { MissionControlSnapshot, PlanSnapshot } from '@lw/contracts';
 import { clock, usd } from '../../lib/fmt';
 import { useApp, useNow, useProjectResource } from '../../state';
-import { kindOf, useYoursActions } from '../../ui/cypher/cards';
+import { countWord, fallbackOf, questionOf, useYoursActions } from '../../ui/cypher/cards';
 import {
   Closing,
   Handled,
   Hero,
   PhaseStrip,
-  QuietCard,
   SectionHeading,
   TeamLine,
   urgencyOf,
 } from '../../ui/cypher/parts';
-import { Decision } from './Decision';
+import { Icon } from '../../theme/icons';
+import { BlissBrief } from '../inbox/Brief';
 import { useEyeState } from '../../voice/eye';
 import { leadFace, openCards, phaseOwners, stripOf, teamName, voiceOf, word } from './model';
 import s from './mission.module.css';
@@ -85,29 +85,37 @@ export function MissionBliss({ mc }: { mc: MissionControlSnapshot }) {
         )}
       />
 
-      {first && <Decision x={first} mc={mc} />}
+      {first && <BlissBrief key={first.escalationId} x={first} mc={mc} />}
 
       {rest.length > 0 && (
-        <section className={s.two} aria-label="Also yours">
-          {rest.slice(0, 2).map((x) => {
-            const { primary, secondary } = act.cardActions(x, 'project');
-            return (
-              <QuietCard
-                key={x.escalationId}
-                label={`${kindOf(x)} · ${x.deadline ? `before ${hm(x.deadline)}` : 'no clock'}`}
-                title={x.title}
-                rec={x.recommendation ?? null}
-                primary={primary}
-                secondary={secondary}
-              />
-            );
-          })}
+        // The others, one quiet line each: the question and what silence does. Each opens in
+        // Needs you, where decisions are made one at a time.
+        <section className={s.upNext} aria-label="Also yours">
+          {rest.slice(0, 2).map((x) => (
+            <button
+              key={x.escalationId}
+              type="button"
+              className={s.upNextRow}
+              onClick={() => act.open('inbox', { expanded: x.escalationId })}
+            >
+              <span className={s.upNextText}>
+                <span className={s.upNextQuestion}>{questionOf(x)}</span>
+                <span className="type-meta">
+                  {[x.deadline ? `By ${hm(x.deadline)}` : null, fallbackOf(x)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </span>
+              <Icon name="forward" size={20} className={s.upNextChev} />
+            </button>
+          ))}
+          {rest.length > 2 && (
+            <p className={`${s.more} type-meta`}>
+              {countWord(rest.length - 2)} more {rest.length - 2 === 1 ? 'waits' : 'wait'} their
+              turn in Needs you.
+            </p>
+          )}
         </section>
-      )}
-      {rest.length > 2 && (
-        <p className={`${s.more} type-meta`}>
-          {rest.length - 2} more wait their turn in Needs you.
-        </p>
       )}
 
       <section className={s.teamAndHandled} aria-label="The team and what was handled">

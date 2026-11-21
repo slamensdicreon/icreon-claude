@@ -91,6 +91,17 @@ export const EscalationOption = z.object({
   recommended: z.boolean().default(false),
   /** Letter shown on the card and typed as a shortcut (A, B, C). Defaults to the position. */
   key: z.string().max(2).nullable().default(null),
+  /** The option itself in a few plain words, for Bliss ("Ansell's system"); the label when absent. */
+  short: z.string().max(50).nullable().optional(),
+  /** What choosing it means, in a few plain words beside the option in Bliss ("works today"). */
+  hint: z.string().max(60).nullable().optional(),
+  /** What choosing it means, in one plain sentence, for the card in Everything. */
+  detail: z.string().max(240).nullable().optional(),
+  /**
+   * What the team still needs from the Director when this option is chosen, as a short question
+   * ("Who at Ansell IT should Emily ask?"). The answer travels as the resolution's notes.
+   */
+  asks: z.string().max(120).nullable().optional(),
 });
 export type EscalationOption = z.infer<typeof EscalationOption>;
 
@@ -147,6 +158,13 @@ export const EscalationCard = z.object({
   escalationId: z.string(),
   type: EscalationType,
   title: z.string().max(120),
+  /** The decision as a plain question for the Director; the card shows the title when absent. */
+  question: z.string().max(140).nullable().optional(),
+  /**
+   * What it is about in one or two plain sentences: no file names, codes or tool names. The
+   * card's gist uses it before reading one out of the context.
+   */
+  plain: z.string().max(280).nullable().optional(),
   context: z.string(),
   impact: z.string(),
   options: z.array(EscalationOption).min(1).max(4),
@@ -431,7 +449,8 @@ export const EventBody = z.discriminatedUnion('type', [
       /** The live site being migrated; the crawl and QA tools may only reach its host. */
       sourceUrl: z.string().url().nullable().optional(),
       buildRepo: BuildRepo.optional(),
-      hosting: HostingState.optional(),
+      /** `null` forgets it: the hosting project was renamed before it was made. */
+      hosting: HostingState.nullable().optional(),
       /** Budgets the Director changed after start. */
       budgets: Budgets.optional(),
       /** Intake target values changed in Settings before Start, merged over intake's. */

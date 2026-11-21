@@ -212,6 +212,9 @@ async function runTask(projectId: string, input: TaskItem, ctl: Control): Promis
           question: detail.question,
           options: detail.options,
           recommended: detail.recommended,
+          // Absent unless the agent wrote them, so earlier histories carry the same decision.
+          ...(typeof detail.plain === 'string' ? { plain: detail.plain } : {}),
+          ...(Array.isArray(detail.hints) ? { hints: detail.hints } : {}),
         };
         return { outcome: 'needs_decision', state, attempt, decision, spent };
       }

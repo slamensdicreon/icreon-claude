@@ -28,7 +28,7 @@ Each scripted engagement is created on its own playbook and plays that playbook'
 (`apps/control-api/src/sim-projects.ts` lists them; the scenarios are in `packages/simulator`):
 `sitecoreai-migration` for Acme and Northwind, `optimizely-saas-migration` for Globex. No CMS,
 repository or host is called for any of them. A playbook without a scenario (the homepage demos,
-the customer portal) has no simulated project yet; the demo project itself is a SitecoreAI build.
+the customer portals, on either platform) has no simulated project yet; the demo project itself is a SitecoreAI build.
 
 When the API is deployed with `DEMO_RUNNER=separate`, the demo runner
 (`pnpm --filter @lw/control-api demo-runner`) plays the same engagements with the same

@@ -472,7 +472,7 @@ export class OptimizelyCmsToolServer implements ToolServer {
     },
     'media.upload': {
       description:
-        "Upload an image to the application's own media at /media/<application>/<folder…>/<file name>, with its alt text, and publish it. Give the ref of a file browser.fetch.asset stored, or a sourceUrl on the source site. Uploading a path that exists returns the item already there. AVIF is not accepted by the CMS: download it as WebP, PNG or JPEG first.",
+        "Upload an image to the application's own media at /media/<application>/<folder…>/<file name>, with its alt text, and publish it. Give the ref of a file browser.fetch.asset stored, or a sourceUrl on the source site. `alt` is required. Uploading a path that exists returns the item already there, and sets its alt text when you give one it doesn't have. AVIF is not accepted by the CMS: download it as WebP, PNG or JPEG first.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -678,6 +678,8 @@ interface Version {
   routeSegment?: string;
   properties?: Record<string, { value?: unknown }>;
   composition?: unknown;
+  /** A media item's file, as the CMS stores it: a new version names it again. */
+  media?: unknown;
 }
 
 /** One call's work against one project's application. */
@@ -1620,13 +1622,53 @@ class Work {
     const fileName = `${base}.${kind}`;
     const path = `${at.path.replace(/\/[^/]+$/, '')}/${fileName}`;
     const key = keyForPath(this.facts.cmsUrl, path);
+    const alt = a.data.alt?.trim();
     const existing = await this.node(key);
-    if (existing)
+    if (existing) {
+      // The file stays; its alt text can still be given, or put right. An image uploaded
+      // without one had no way to get it: the path was "already uploaded" for good.
+      const latest = await this.latest(key, this.locale);
+      const had = String(latest?.properties?.AltText?.value ?? '').trim();
+      if (alt && alt !== had) {
+        const properties = { ...(latest?.properties ?? {}), AltText: { value: alt } };
+        let version = latest?.version;
+        if (latest?.status === 'draft' && version) {
+          await this.rest.send('PATCH', `/content/${key}/versions/${version}`, {
+            json: { properties },
+            patch: true,
+          });
+        } else {
+          // A published version can't be changed: a new one, of the same file.
+          const res = await this.rest.send('POST', `/content/${key}/versions`, {
+            json: {
+              displayName: latest?.displayName ?? fileName,
+              ...(latest?.routeSegment ? { routeSegment: latest.routeSegment } : {}),
+              ...(latest?.media ? { media: latest.media } : {}),
+              properties,
+            },
+          });
+          version =
+            (res.body as Version | undefined)?.version ??
+            (await this.latest(key, this.locale))?.version;
+        }
+        if (version)
+          await this.rest.send('POST', `/content/${key}/versions/${version}:publish`, { json: {} });
+        return {
+          code: 200,
+          body: { path, key, ref: contentRef(key), fileName, uploaded: false, alt, altSet: true },
+          summary: `${path} is already uploaded; its alt text is now "${alt.slice(0, 80)}"`,
+        };
+      }
       return {
         code: 200,
-        body: { path, key, ref: contentRef(key), fileName, uploaded: false },
-        summary: `${path} is already uploaded`,
+        body: { path, key, ref: contentRef(key), fileName, uploaded: false, alt: had || null },
+        summary: `${path} is already uploaded${had ? '' : ', without alt text: call media.upload again with this path and `alt` to give it one'}`,
       };
+    }
+    if (!alt)
+      return rejected(
+        'Give `alt`: what the image shows, from the source (its alt text, or a short factual description). It is stored on the image, where components read it.',
+      );
     const container = await this.containerOf({
       ...at,
       path,
@@ -1644,7 +1686,7 @@ class Work {
             container,
             initialVersion: {
               displayName: fileName,
-              properties: a.data.alt ? { AltText: { value: a.data.alt } } : {},
+              properties: { AltText: { value: alt } },
             },
           }),
         ],
@@ -1666,11 +1708,11 @@ class Work {
         ref: contentRef(key),
         fileName,
         bytes: bytes.byteLength,
-        alt: a.data.alt ?? null,
+        alt,
         uploaded: true,
         from,
       },
-      summary: `Uploaded ${fileName} to ${path}${a.data.alt ? '' : ' (no alt text given)'}`,
+      summary: `Uploaded ${fileName} to ${path}`,
     };
   }
 }

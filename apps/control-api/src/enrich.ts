@@ -124,7 +124,10 @@ export function enrichEscalation(s: ProjectState, x: EscalationView): Escalation
       names: firstNames(s),
     }),
     raisedBy: raisedByOf(s, x),
-    gist: cardGist({ ...x, names: firstNames(s) }),
+    // The raiser's own plain sentence when it wrote one; else one read out of the context.
+    gist: x.plain?.trim()
+      ? firstNames(s)(x.plain.trim())
+      : cardGist({ ...x, names: firstNames(s) }),
   };
 }
 

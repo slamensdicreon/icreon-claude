@@ -384,6 +384,7 @@ export async function composeStack(opts: StackOptions): Promise<Stack> {
       // The validators check the whole Blueprint.
       scope: { collection: null, items: [] },
       blueprint,
+      plan: { pilot: Boolean(opts.playbook.plan.pilot) },
       read: (server, op, args) => readOnly(projectId, server, op, args),
       credential: (id) => credential(projectId, id),
       compareScreens: compareScreens && ((page) => compareScreens(projectId, page)),

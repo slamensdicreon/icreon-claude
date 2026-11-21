@@ -1161,15 +1161,33 @@ export class DemoProject {
     const make = this.def.escalations[id];
     if (!make) throw new CommandError(404, 'unknown_scenario', `No escalation ${id} in this demo.`);
     const def = make();
+    const words = (o: NonNullable<DemoEscalation['options']>[number] | undefined) => ({
+      short: o?.short ?? null,
+      hint: o?.hint ?? null,
+      detail: o?.detail ?? null,
+      asks: o?.asks ?? null,
+    });
     const options =
       def.type === 'gate'
         ? [
-            { id: 'approve', label: 'Approve', recommended: true, key: null },
-            { id: 'send_back', label: 'Send back with notes', recommended: false, key: null },
+            {
+              id: 'approve',
+              label: 'Approve',
+              recommended: true,
+              key: null,
+              ...words(def.options?.[0]),
+            },
+            {
+              id: 'send_back',
+              label: 'Send back with notes',
+              recommended: false,
+              key: null,
+              ...words(def.options?.[1]),
+            },
           ]
         : (def.options ?? []).map((o, i) => {
             const key = String.fromCharCode(65 + i);
-            return { id: key, label: o.label, recommended: o.rec ?? false, key };
+            return { id: key, label: o.label, recommended: o.rec ?? false, key, ...words(o) };
           });
     const deadlineMs =
       def.deadlineMinutes && def.defaultIdx !== undefined
@@ -1190,6 +1208,8 @@ export class DemoProject {
       type: def.type,
       typeLabel: def.typeLabel ?? null,
       title: def.title,
+      question: def.question ?? null,
+      plain: def.plain ?? null,
       context: def.context,
       impact: def.impact,
       options,

@@ -113,11 +113,7 @@ export function SettingsPage() {
             values={p.intake.target}
             spec={pb?.intake ?? null}
             open={p.status === 'intake'}
-            late={
-              (p.status === 'running' || p.status === 'paused') && !p.hosting
-                ? ['hostingProject']
-                : []
-            }
+            late={p.status === 'running' || p.status === 'paused' ? ['hostingProject'] : []}
           />
         ),
       ],
