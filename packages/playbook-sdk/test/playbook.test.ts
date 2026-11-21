@@ -236,7 +236,7 @@ describe('optimizely-customer-portal playbook', () => {
 
   it('loads and passes bundle validation, with the Blueprint and acceptance gates', async () => {
     const pb = await loadPlaybook(PORTAL);
-    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.0' });
+    expect(pb.manifest).toMatchObject({ platform: 'optimizely', version: '0.1.1' });
     expect(pb.manifest.phases).toHaveLength(8);
     expect(pb.manifest.phases.filter((p) => p.gate === 'director').map((p) => p.number)).toEqual([
       2, 7,
@@ -444,6 +444,6 @@ describe('the catalog, across platforms', () => {
     // registry (0.1.1).
     expect(
       catalog.get('optimizely-homepage-demo')!.older!.map((o) => o.playbook.manifest.version),
-    ).toEqual(['0.1.2', '0.1.1', '0.1.0']);
+    ).toEqual(['0.1.3', '0.1.2', '0.1.1', '0.1.0']);
   });
 });

@@ -23,8 +23,13 @@
 # would otherwise surface mid-migration, and the model contract at Gate 1), the shared header,
 # footer and navigation are checked for content, page titles against the source's, and the pilot
 # is judged on the start page alone.
+# 0.5.4: from the first live run. Model files name a property's options `isRequired` and
+# `isLocalized` (the Blueprint's `required` and `localized` are refused by the CMS), a display
+# setting's choice key has two characters or more, a new branch starts from the design system, a
+# page type an application starts on has no required property, and the push says why the CMS
+# refused it.
 id: optimizely-saas-migration
-version: 0.5.3
+version: 0.5.4
 name: Build an Optimizely CMS (SaaS) website
 description: >-
   Rebuilds a client's live site as an Optimizely CMS (SaaS) application with a Next.js head on

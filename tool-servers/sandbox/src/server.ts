@@ -306,7 +306,7 @@ export class SandboxToolServer implements ToolServer {
     },
     'exec.optimizely-cli': {
       description:
-        "Run Optimizely's CLI on the app's content model (optimizely.config.mjs). `push-dry-run` builds the manifest and sends nothing: it lists the content types and display templates the repository defines. `push` sends them to the CMS, additively and never with --force; it refuses a model with any key outside the project's prefix, because content types are shared by every application on the instance.",
+        "Run Optimizely's CLI on the app's content model (optimizely.config.mjs). `push-dry-run` builds the manifest and sends nothing: it lists the content types and display templates the repository defines. `push` sends them to the CMS, additively. There is no forcing a change that could lose data (a property removed or retyped): the one change it applies over the CMS's warning is a property that stops being required, which loses nothing, and only when that is all the CMS objects to. It refuses a model with any key outside the project's prefix, because content types are shared by every application on the instance.",
       inputSchema: {
         type: 'object',
         properties: { command: { type: 'string', enum: ['push-dry-run', 'push'] } },
@@ -961,7 +961,20 @@ export class SandboxToolServer implements ToolServer {
             summary: `Content model valid: ${contentTypes.length} content types, ${displayTemplates.length} display templates (dry run, nothing sent)`,
           };
         // Scoped to the keys just checked: a scoped push leaves locales and applications alone.
-        const pushed = await cli(['--only', [...contentTypes, ...displayTemplates].join(',')]);
+        const all = ['--only', [...contentTypes, ...displayTemplates].join(',')];
+        let pushed = await cli(all);
+        // The CMS calls a property that stops being required a possible loss of data, though no
+        // value can be lost by it, and takes it only when told to. When that is everything it
+        // objects to, those types alone are sent again with the override, then the whole model.
+        const relaxed = pushed.exitCode === 0 ? null : relaxedOnly(pushed.output, prefix);
+        if (relaxed) {
+          const eased = await cli(['--only', relaxed.types.join(','), '--force']);
+          pushed = eased.exitCode === 0 ? await cli(all) : eased;
+        }
+        const made =
+          relaxed && pushed.exitCode === 0
+            ? `; made optional first, which the CMS takes only when told to: ${named(relaxed.properties)}`
+            : '';
         return {
           code: pushed.exitCode === 0 ? 200 : 500,
           body: {
@@ -969,10 +982,11 @@ export class SandboxToolServer implements ToolServer {
             sent: pushed.exitCode === 0,
             exitCode: pushed.exitCode,
             output: pushed.output,
+            ...(relaxed ? { madeOptional: relaxed.properties } : {}),
           },
           summary:
             pushed.exitCode === 0
-              ? `Pushed ${contentTypes.length} content types and ${displayTemplates.length} display templates to the CMS`
+              ? `Pushed ${contentTypes.length} content types and ${displayTemplates.length} display templates to the CMS${made}`
               : `The CMS refused the push: ${pushFailure(pushed.output)}`,
         };
       }
@@ -1125,14 +1139,18 @@ export function modelFaults(manifest: unknown): string[] {
   ];
 }
 
-/** Why the CMS refused a push, from the CLI's output: its error lines, without colours or labels. */
-export function pushFailure(output: string): string {
-  const lines = output
+/** The CLI's output as lines, without colours. */
+const cliLines = (output: string) =>
+  output
     // eslint-disable-next-line no-control-regex
     .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '')
     .split(/[\r\n]+/)
     .map((l) => l.trim())
     .filter(Boolean);
+
+/** Why the CMS refused a push, from the CLI's output: its error lines, without colours or labels. */
+export function pushFailure(output: string): string {
+  const lines = cliLines(output);
   const at = lines.findIndex((l) => /^Error \d+:|^Errors:$/.test(l));
   const said = (at < 0 ? lines.slice(-3) : lines.slice(at))
     .filter((l) => !/^Errors:$|^- ERROR \d+$/.test(l))
@@ -1145,6 +1163,33 @@ export function pushFailure(output: string): string {
     0,
     340,
   );
+}
+
+/**
+ * A refused push whose every objection is a property of the project's own types that stops being
+ * required: the types and properties it names. Null when the CMS objects to anything else (a
+ * property removed or retyped, another team's type), because the override that lets this through
+ * would let that through too. The CMS lists every such objection in one answer.
+ */
+export function relaxedOnly(
+  output: string,
+  prefix: string,
+): { types: string[]; properties: string[] } | null {
+  const lines = cliLines(output);
+  const at = lines.indexOf('Errors:');
+  if (at < 0) return null;
+  // Each objection is a list item; a spinner's line can land among them.
+  const objections = lines.slice(at + 1).filter((l) => l.startsWith('- '));
+  const relaxed = objections.map((l) =>
+    /^- Property '([^']+)' on content type '([^']+)' changes 'isRequired' from 'true' to 'false'\./.exec(
+      l,
+    ),
+  );
+  if (!relaxed.length || relaxed.some((m) => !m || !m[2]!.startsWith(prefix))) return null;
+  return {
+    types: [...new Set(relaxed.map((m) => m![2]!))],
+    properties: relaxed.map((m) => `${m![2]}.${m![1]}`),
+  };
 }
 
 /** The line that says why a build failed: the page that failed to prerender, else the first error. */
